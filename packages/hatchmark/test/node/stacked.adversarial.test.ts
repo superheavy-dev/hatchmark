@@ -13,9 +13,11 @@ import { Oracle, removeProjects, run, writeProject } from "./fixture.js";
 type Key = string | number | boolean | null;
 interface StackSeries {
   label: string;
+  metric?: string;
   splitValue?: Key;
   values: Value[];
   share?: Value[];
+  partial?: { index: number }[];
 }
 interface Option {
   key: string;
@@ -107,6 +109,20 @@ function balancesCsv(): string {
   return `${lines.join("\n")}\n`;
 }
 
+/** A second source that stops on Apr 15 (a horizon inside April), for the horizon cut. */
+function returnsCsv(): string {
+  const rand = rng(1558);
+  const regions = ["North America", "Europe", "Asia-Pacific", "Latin America"];
+  const lines = ["returned_at,region,amount"];
+  for (let i = 0; i < 200; i++) {
+    const day = Math.floor(rand() * 105);
+    const at = `${new Date(Date.UTC(2026, 0, 1, 15) + day * 86_400_000).toISOString().slice(0, 19)}Z`;
+    lines.push([at, regions[Math.floor(rand() * 4)], (5 + rand() * 40).toFixed(2)].join(","));
+  }
+  lines.push("2026-04-15T20:00:00Z,Europe,12.00");
+  return `${lines.join("\n")}\n`;
+}
+
 const usd = { type: "currency", currency: "USD" };
 const num = { type: "number" };
 const M = (label: string, body: object, format: object = usd) => ({
@@ -163,6 +179,13 @@ const METRICS = {
   bal_entity: B("Balance (last per account)", { over_time: "last", entity: "account_id" }),
   bal_avg: B("Balance (avg)", { over_time: "avg" }),
   bal_max: B("Balance (max)", { over_time: "max" }),
+  returns_amt: M("Returns", {
+    type: "aggregate",
+    table: "returns",
+    time: "returned_at",
+    aggregate: "sum",
+    column: "amount",
+  }),
 };
 
 const YTD = { asOf: "2026-06-30", range: "year_to_date", compare: "none" };
@@ -356,6 +379,35 @@ const DASHBOARDS = {
     ],
   },
   checks: { title: "Checks", period: YTD, blocks: CHECKS },
+  horizons: {
+    title: "Horizons",
+    period: YTD,
+    blocks: [
+      {
+        type: "bar",
+        id: "h_multi_pct",
+        metrics: ["revenue", "returns_amt"],
+        grain: "month",
+        stack: "percent",
+      },
+      {
+        type: "area",
+        id: "h_multi",
+        metrics: ["revenue", "returns_amt"],
+        grain: "month",
+        stack: true,
+      },
+      {
+        type: "area",
+        id: "h_split_pct",
+        metrics: ["returns_amt"],
+        grain: "month",
+        grains: ["month", "quarter"],
+        split: "region",
+        stack: "percent",
+      },
+    ],
+  },
 };
 
 const CONFIG = {
@@ -374,6 +426,7 @@ const CONFIG = {
   sources: {
     orders: { type: "csv", path: "data/orders.csv" },
     balances: { type: "csv", path: "data/balances.csv" },
+    returns: { type: "csv", path: "data/returns.csv" },
   },
 };
 
@@ -517,6 +570,7 @@ beforeAll(async () => {
     "hatchmark.json": CONFIG,
     "data/orders.csv": ordersCsv(),
     "data/balances.csv": balancesCsv(),
+    "data/returns.csv": returnsCsv(),
     ...Object.fromEntries(Object.entries(METRICS).map(([n, m]) => [`metrics/${n}.json`, m])),
     ...Object.fromEntries(Object.entries(DASHBOARDS).map(([n, d]) => [`dashboards/${n}.json`, d])),
   });
@@ -773,6 +827,47 @@ describe("stacked charts against a SQL oracle (HAT-58 harness)", () => {
         ).toEqual([]);
         expect(tooltip(html, `${id}-${o.key.replace(":", "-")}`, o.series, o.totals)).toEqual([]);
       }
+    }
+  });
+
+  it("horizons: a split stack's totals end with its series; past any stacked metric's horizon there is no total or share", async () => {
+    const returns = path.join(project.root, "data/returns.csv");
+    await oracle.rows(
+      `CREATE TABLE r AS SELECT CAST(returned_at AS TIMESTAMPTZ) AS ts, region, CAST(amount AS DOUBLE) AS amount FROM read_csv('${returns}', all_varchar = true)`,
+    );
+    const result = await run(project.root, project.project, "horizons");
+    expect(result.data).toBeDefined();
+    for (const o of block(result.data, "h_split_pct").grains?.options ?? []) {
+      const unit = o.key.split(":")[0] as string;
+      const t = await grouped(
+        `SELECT ${bucket(unit)} AS m, sum(amount) AS v FROM r WHERE ${win("2026-07-01")} GROUP BY ALL`,
+        ["m"],
+      );
+      const p = await grouped(
+        `SELECT ${bucket(unit)} AS m, region, sum(amount) AS v FROM r WHERE ${win("2026-07-01")} GROUP BY ALL`,
+        ["m", "region"],
+      );
+      const cutFrom = (o.series[0]?.partial?.[0]?.index ?? -2) + 1;
+      expect(cutFrom, `${o.key} partial bucket`).toBeGreaterThan(0);
+      const live = o.axis.buckets.slice(0, cutFrom);
+      expect(compare({ ...o, percent: true }, live, t, p, { sumsToOne: true }), o.key).toEqual([]);
+      for (let i = cutFrom; i < o.axis.buckets.length; i++) {
+        expect(o.totals?.[i], `${o.key} total ${i}`).toBeNull();
+        expect(o.series.every((s) => s.values[i] === null && (s.share?.[i] ?? null) === null)).toBe(
+          true,
+        );
+      }
+    }
+    for (const id of ["h_multi_pct", "h_multi"]) {
+      const b = block(result.data, id);
+      const returnsSeries = b.series.find((s) => s.metric === "returns_amt");
+      const revenue = b.series.find((s) => s.metric === "revenue");
+      b.axis.buckets?.forEach((m, i) => {
+        if (returnsSeries?.values[i] !== null) return;
+        expect(revenue?.values[i], `${id} ${m}: revenue still shown`).not.toBeNull();
+        expect(b.totals?.[i], `${id} ${m}: no total without Returns`).toBeNull();
+        expect(revenue?.share?.[i] ?? null, `${id} ${m}: no share without Returns`).toBeNull();
+      });
     }
   });
 });

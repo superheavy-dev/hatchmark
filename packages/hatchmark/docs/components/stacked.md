@@ -31,6 +31,8 @@ Every other field is the [bar](bar.md) or [area](line.md) block's: `by` or `grai
   (SQL `ROLLUP`), never the sum of the segments. For several metrics, the total is their sum.
 - **A share is the segment divided by that total**, as a fraction (0.42 is 42%); it is empty when the
   total is 0 or undefined. A 100% stack draws the shares and still prints and lists the values.
+- Each series ends at its metric's horizon ([numbers.md](../numbers.md)). A bucket at or past the
+  horizon of any stacked metric has no total and no shares, since a part of the whole is missing.
 - `limit` keeps the top categories; each one's total still covers every split value.
 - Filters and grain switches recompute totals and shares with the rest of the block: every grain in
   `grains` carries its own.

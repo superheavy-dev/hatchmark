@@ -389,19 +389,27 @@ class Assembler {
   }
 
   /**
-   * A split stack's totals cut at the split metric's horizon like its series, so a bucket past the
-   * horizon has no total either. Several metrics' totals are sums of already cut series.
+   * A stack's totals cut at the horizon of every stacked metric, like its series: a bucket past any
+   * of them has no total and no shares, since a part of the whole is missing there.
    */
   cutTotals(
     stacked: { series: Series[]; extra: StackTotals },
-    expression: MeasureExpression | undefined,
+    expressions: (MeasureExpression | undefined)[],
     buckets: string[],
     grain: ResolvedGrain,
   ): { series: Series[]; extra: StackTotals } {
     const { totals } = stacked.extra;
-    if (expression === undefined || totals === undefined) return stacked;
-    const cut = this.cut({ values: totals }, expression, buckets, grain).values;
-    return { series: stacked.series, extra: { ...stacked.extra, totals: cut } };
+    if (totals === undefined) return stacked;
+    const cut = expressions.reduce(
+      (values, expression) => this.cut({ values }, expression, buckets, grain).values,
+      totals,
+    );
+    return {
+      series: stacked.series.map((s) =>
+        s.share ? { ...s, share: s.share.map((v, i) => (cut[i] === null ? null : v)) } : s,
+      ),
+      extra: { ...stacked.extra, totals: cut },
+    };
   }
 
   /** HM4061: a part-of-whole chart (100% stack) with a negative value. */
@@ -492,7 +500,7 @@ class Assembler {
           : (i) => this.evaluate(plan.measures[first], 1, [axis.buckets[i] ?? null, null]),
         plan,
       ),
-      block.split === undefined ? undefined : plan.measures[first],
+      block.metrics.map((m) => plan.measures[m]),
       axis.buckets,
       grain,
     );
@@ -539,7 +547,7 @@ class Assembler {
           ).map((one) => this.cut(one, plan.measures[one.metric], axis.buckets, grain)),
           axis.buckets,
         ),
-        split ? plan.measures[first] : undefined,
+        expressions,
         axis.buckets,
         grain,
       );
