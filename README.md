@@ -33,7 +33,7 @@ CI runs lint, typecheck with build, and tests on Node 22 and the current LTS for
 
 ### Component previews
 
-The `preview` job (`.github/workflows/preview.yml`) builds a static gallery of every component variant, light and dark, desktop and 390 px, plus the example dashboard, and deploys it to Cloudflare Workers. Each pull request gets a stable URL, `https://pr-<number>-hatchmark-preview.hatchmark.workers.dev`, posted as a comment that updates on every push; main deploys to `https://hatchmark-preview.hatchmark.workers.dev`. Components appear once the renderer registers them in [`packages/preview/src/entries.ts`](packages/preview/src/entries.ts); see [packages/preview/README.md](packages/preview/README.md) for the plug-in point and how deploys work.
+The preview workflow (`.github/workflows/preview.yml`) builds a static gallery of every component variant, light and dark, desktop and 390 px, and deploys it to Cloudflare Workers. `preview-build` builds the site without secrets; `preview-deploy` deploys the built files without running any code from the pull request. Each pull request gets a stable URL, `https://pr-<number>-hatchmark-preview.hatchmark.workers.dev`, posted as a comment that updates on every push; main deploys to `https://hatchmark-preview.hatchmark.workers.dev`. Components appear once the renderer registers them in [`packages/preview/src/entries.ts`](packages/preview/src/entries.ts); see [packages/preview/README.md](packages/preview/README.md) for the plug-in point and how deploys work.
 
 ## License
 

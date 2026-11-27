@@ -3,7 +3,7 @@ import { entries } from "../src/entries.js";
 import { buildLabel, renderPlaceholder, renderSite, type SiteInput } from "../src/page.js";
 
 const build = { pr: 12, sha: "1a5224b64c0ffee0000000000000000000000000" };
-const empty: SiteInput = { entries: [], head: "", build, dashboard: false };
+const empty: SiteInput = { entries: [], head: "", build };
 const kpi = (variant: string, title = variant) => ({
   component: "kpi",
   variant,
@@ -60,11 +60,11 @@ describe("preview site", () => {
     expect(() => renderSite({ ...empty, entries: [kpi("Bad Id")] })).toThrow(/lowercase/);
   });
 
-  it("offers the example dashboard only when it was built", () => {
-    expect(renderSite(empty).get("index.html")).toContain("Example dashboard not built yet");
-    const shell = renderSite({ ...empty, dashboard: true }).get("index.html") ?? "";
-    expect(shell).toContain('href="dashboard/"');
-    expect(shell).toContain("&quot;dashboard&quot;:&quot;dashboard/&quot;");
+  it("frames the gallery and offers the theme and width toggles", () => {
+    const shell = renderSite(empty).get("index.html") ?? "";
+    expect(shell).toContain('<iframe id="frame" title="Preview" src="components/">');
+    expect(shell).toContain('value="dark"');
+    expect(shell).toContain('value="mobile"');
   });
 
   it("puts the head markup into the gallery", () => {

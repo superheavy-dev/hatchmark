@@ -1,15 +1,15 @@
 # @hatchmark/preview
 
-Builds and deploys the component preview gallery for every pull request. Private workspace package, never published; the `hatchmark` package does not depend on it.
+Builds the component preview gallery that every pull request deploys. Private workspace package, never published; the `hatchmark` package does not depend on it.
 
 ## What it builds
 
-`pnpm --filter @hatchmark/preview run site` (after `pnpm build`) writes a static site to `dist/site/`:
+`pnpm --filter @hatchmark/preview run site` (after `pnpm build`) writes static files to `dist/`:
 
-- `index.html`: the gallery shell. A toolbar switches between the component gallery and the example dashboard, light and dark, and desktop and a 390 px frame. The page renders inside an iframe, so at 390 px the content's own viewport is 390 px wide and mobile media queries really apply. The state lives in the URL hash (`#view=components&theme=dark&width=mobile`), so a link reproduces what the reviewer saw.
-- `components/index.html`: every registered entry, grouped by component, or "No components yet" with the build info.
-- `dashboard/`: the example dashboard, once it can be built (see below).
-- `404.html`.
+- `dist/site/index.html`: the gallery shell. A toolbar switches between light and dark and between desktop and a 390 px frame. The gallery renders inside an iframe, so at 390 px its own viewport is 390 px wide and mobile media queries really apply. The state lives in the URL hash (`#theme=dark&width=mobile`), so a link reproduces what the reviewer saw.
+- `dist/site/components/index.html`: every registered entry, grouped by component, or "No components yet" with the build info.
+- `dist/site/404.html`.
+- `dist/placeholder/index.html`: the page production shows when a pull request has to create the Worker before main has deployed.
 
 The output is deterministic: the same entries give the same bytes. Only the build info changes, read from `PREVIEW_PR` (pull request number) and `PREVIEW_SHA` (full commit sha).
 
@@ -24,24 +24,16 @@ The shell sets `data-theme="light"` or `data-theme="dark"` on the `<html>` eleme
 
 To import render functions, add `"hatchmark": "workspace:*"` to this package's `dependencies` and import from `hatchmark`. Type-checking then needs `packages/hatchmark` built first.
 
-## Example dashboard
-
-When `packages/hatchmark/examples/global-sales` exists and `hatchmark --help --json` lists a `build` command, the site builder runs
-
-```sh
-hatchmark build --cwd packages/hatchmark/examples/global-sales --out dist/site/dashboard
-```
-
-and links the result. If the final flags differ, change the one call in `buildDashboard` in `src/build.ts`. A failing build fails the preview job rather than hiding the dashboard.
+The example dashboard is not part of the gallery yet. The renderer PR adds it: build it into `dist/site/dashboard/` from `src/build.ts` and add a view toggle to the shell.
 
 ## Deploy
 
-`src/deploy.ts` deploys `dist/site/` as a static-assets-only Cloudflare Worker named `hatchmark-preview` (`wrangler.jsonc`). `.github/workflows/preview.yml` runs it:
+`.github/workflows/preview.yml` has two jobs with stable names:
 
-- Pull request: `wrangler versions upload --preview-alias pr-<number>`. Production traffic is untouched. The stable URL is `https://pr-<number>-hatchmark-preview.hatchmark.workers.dev`; wrangler also prints a URL for the exact version. The job posts both as one sticky comment on the pull request, updated in place on every push.
-- Push to main: `wrangler deploy`, so `https://hatchmark-preview.hatchmark.workers.dev` shows main's gallery.
-- Merge queue: builds the site, does not deploy, so the required `preview` check reports.
+- `preview-build` (`contents: read`, no secrets) checks out the pull request, installs, runs this builder and uploads `dist/site` and `dist/placeholder` as the `preview-site` artifact. This is the required check; it also runs in the merge queue.
+- `preview-deploy` (`pull-requests: write`, Cloudflare secrets) runs no code from the pull request: no checkout, no install, no repository scripts. It downloads the artifact, writes the Worker config inline (a static-assets-only Worker named `hatchmark-preview`), and runs `npx --yes wrangler@<pinned version>`.
+  - Pull request: `wrangler versions upload --preview-alias pr-<number>`, leaving production untouched. The stable URL is `https://pr-<number>-hatchmark-preview.hatchmark.workers.dev`, and wrangler also returns a URL for the exact version. The job posts both as one sticky comment, updated in place on every push.
+  - Push to main: `wrangler deploy`, so `https://hatchmark-preview.hatchmark.workers.dev` shows main's gallery. Missing credentials fail the job.
+  - Pull requests from forks and Dependabot get no secrets; the job skips the deploy with a notice.
 
-`versions upload` cannot create a Worker and does not turn on preview URLs. When the Worker does not exist yet, wrangler stops with "You cannot upload a new version of a Worker that does not yet exist" (it maps Cloudflare errors 10007 and 10090 to that message); the deploy script then first deploys a placeholder page with `wrangler deploy`, which creates the Worker with `workers_dev` and `preview_urls` on, then retries the upload.
-
-Runs without Cloudflare credentials (pull requests from forks and Dependabot) build the site and skip the deploy with a notice. URLs are read from the file wrangler writes to `WRANGLER_OUTPUT_FILE_PATH`, not scraped from its logs.
+`versions upload` cannot create a Worker and does not turn on preview URLs. When the Worker does not exist yet, wrangler stops with "You cannot upload a new version of a Worker that does not yet exist" (its mapping of Cloudflare errors 10007 and 10090). The job then deploys the placeholder with `wrangler deploy`, which creates the Worker with `workers_dev` and `preview_urls` on, and retries the upload. URLs are read from the file wrangler writes to `WRANGLER_OUTPUT_FILE_PATH`, not scraped from its logs.

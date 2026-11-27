@@ -13,8 +13,6 @@ export interface SiteInput {
   entries: readonly GalleryEntry[];
   head: string;
   build: BuildInfo;
-  /** Whether `dashboard/index.html` was built next to the gallery. */
-  dashboard: boolean;
 }
 
 const ID = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
@@ -106,15 +104,12 @@ header .info { color: var(--muted); margin-right: auto; }
 button { font: inherit; color: var(--muted); background: none; border: 0; padding: 3px 10px; cursor: pointer; }
 button + button { border-left: 1px solid var(--line); }
 button[aria-pressed="true"] { color: var(--fg); background: var(--surface); }
-button:disabled { cursor: not-allowed; opacity: 0.5; }
 main { flex: 1; display: flex; justify-content: center; background: var(--surface); min-height: 0; }
 iframe { width: 100%; height: 100%; border: 0; background: var(--bg); }
 body[data-width="mobile"] iframe { width: 390px; border-inline: 1px solid var(--line); }`;
 
 const SHELL_SCRIPT = `const frame = document.getElementById("frame");
-const pages = JSON.parse(frame.dataset.pages);
 const state = {
-  view: "components",
   theme: matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light",
   width: "desktop",
 };
@@ -126,48 +121,36 @@ function themeFrame() {
   if (root) root.dataset.theme = state.theme;
 }
 function apply() {
-  if (!(state.view in pages)) state.view = "components";
   document.documentElement.dataset.theme = state.theme;
   document.body.dataset.width = state.width;
   for (const button of document.querySelectorAll("button[data-key]")) {
     button.setAttribute("aria-pressed", String(state[button.dataset.key] === button.value));
   }
-  if (frame.getAttribute("src") !== pages[state.view]) frame.setAttribute("src", pages[state.view]);
   themeFrame();
   history.replaceState(null, "", "#" + new URLSearchParams(state));
 }
 frame.addEventListener("load", themeFrame);
 document.addEventListener("click", (event) => {
   const button = event.target.closest("button[data-key]");
-  if (!button || button.disabled) return;
+  if (!button) return;
   state[button.dataset.key] = button.value;
   apply();
 });
 apply();`;
 
-function toggle(key: string, label: string, options: [string, string, boolean?][]): string {
+function toggle(key: string, label: string, options: [string, string][]): string {
   const buttons = options.map(
-    ([value, text, disabled]) =>
-      `<button type="button" data-key="${key}" value="${value}" aria-pressed="false"${disabled ? ' disabled title="Not built yet"' : ""}>${text}</button>`,
+    ([value, text]) =>
+      `<button type="button" data-key="${key}" value="${value}" aria-pressed="false">${text}</button>`,
   );
   return `<div role="group" aria-label="${label}">${buttons.join("")}</div>`;
 }
 
 function shell(input: SiteInput): string {
   const label = buildLabel(input.build);
-  const pages: Record<string, string> = { components: "components/" };
-  if (input.dashboard) pages.dashboard = "dashboard/";
-  const dashboardLink = input.dashboard
-    ? '<a href="dashboard/">Open the example dashboard</a>'
-    : '<span class="info">Example dashboard not built yet</span>';
   const body = `<header>
 <strong>Hatchmark preview</strong>
 <span class="info" title="${escapeHtml(input.build.sha ?? "")}">${escapeHtml(label)}</span>
-${dashboardLink}
-${toggle("view", "View", [
-  ["components", "Components"],
-  ["dashboard", "Example dashboard", !input.dashboard],
-])}
 ${toggle("theme", "Theme", [
   ["light", "Light"],
   ["dark", "Dark"],
@@ -177,7 +160,7 @@ ${toggle("width", "Width", [
   ["mobile", "390 px"],
 ])}
 </header>
-<main><iframe id="frame" title="Preview" data-pages="${escapeHtml(JSON.stringify(pages))}"></iframe></main>
+<main><iframe id="frame" title="Preview" src="components/"></iframe></main>
 <script>
 ${SHELL_SCRIPT}
 </script>`;
