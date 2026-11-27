@@ -944,7 +944,9 @@ class Assembler {
       );
     }
     const spans = [block.x, block.y, block.size].flatMap((m) =>
-      m === undefined ? [] : [[m, span(this.bounds(plan.measures[m]), this.context.timezone)] as const],
+      m === undefined
+        ? []
+        : [[m, span(this.bounds(plan.measures[m]), this.context.timezone)] as const],
     );
     const window = spans.find(([, s]) => s !== undefined)?.[1];
     const allTime = window ? spans.filter(([, s]) => s === undefined).map(([m]) => m) : [];
