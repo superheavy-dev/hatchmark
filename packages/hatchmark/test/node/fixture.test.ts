@@ -33,3 +33,11 @@ it("copies a project without walking its build cache, which a concurrent build m
     "hatchmark.json",
   ]);
 });
+
+it("removes its temporary directory when the copy fails", async () => {
+  const prefix = `hatchmark-fixture-${crypto.randomUUID()}-`;
+  await expect(copyProject(path.join(tmpdir(), `${prefix}missing`), prefix)).rejects.toThrow(
+    /ENOENT/,
+  );
+  expect((await readdir(tmpdir())).filter((name) => name.startsWith(prefix))).toEqual([]);
+});

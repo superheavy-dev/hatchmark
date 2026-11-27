@@ -33,16 +33,17 @@ export const EXAMPLE = fileURLToPath(new URL("../../examples/global-sales/", imp
 
 const LEFT_OUT = new Set([".hatchmark", "dist"]);
 
-/**
- * Copies a project into a fresh temporary directory named after prefix, without its build cache or
- * build output, and returns the copy. The caller removes it.
- */
 export async function copyProject(from: string, prefix: string): Promise<string> {
   const root = await mkdtemp(path.join(tmpdir(), prefix));
-  await cp(from, root, {
-    recursive: true,
-    filter: (src) => !LEFT_OUT.has(path.relative(from, src).split(path.sep)[0] ?? ""),
-  });
+  try {
+    await cp(from, root, {
+      recursive: true,
+      filter: (src) => !LEFT_OUT.has(path.relative(from, src).split(path.sep)[0] ?? ""),
+    });
+  } catch (error) {
+    await rm(root, { recursive: true, force: true });
+    throw error;
+  }
   return root;
 }
 
