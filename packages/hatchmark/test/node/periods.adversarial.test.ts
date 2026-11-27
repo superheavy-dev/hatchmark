@@ -110,7 +110,7 @@ const EDGES: Record<string, Window> = {
 };
 
 describe("period filter presets match the oracle (from the embedded data-hm-periods payload)", () => {
-  it("the payload has every preset, the span from the first day with data, and customers as preset-only", () => {
+  it("the payload has every preset, the span from the first day with data, and no preset-only metric", () => {
     expect(asOf).toBe("2026-10-31");
     expect(payload.filter).toBe("period");
     expect(Object.keys(payload.presets)).toEqual([
@@ -124,7 +124,7 @@ describe("period filter presets match the oracle (from the embedded data-hm-peri
       "last_12_months",
     ]);
     expect(payload.custom?.span).toEqual({ start: "2024-11-01", end: "2026-11-01" });
-    expect(payload.custom?.presetOnly).toEqual(["customers"]);
+    expect(payload.custom?.presetOnly ?? []).toEqual([]);
   });
 
   it("every preset: KPIs with previous, change and change_pct, every grain of the region lines, the channel bar and the country table", () => {
@@ -164,7 +164,7 @@ describe("custom ranges through customRangeDashboard match the oracle", () => {
     expect(diff.cells).toBeGreaterThan(20_000);
   });
 
-  it("a custom range equal to a preset's dates equals that preset, but for preset-only metrics and a calendar comparison", () => {
+  it("a custom range equal to a preset's dates equals that preset, but for a calendar comparison", () => {
     const diff = new Diff();
     for (const [key, preset] of Object.entries(payload.presets)) {
       const span = preset.period.current as { start: string; end: string };
@@ -181,12 +181,6 @@ describe("custom ranges through customRangeDashboard match the oracle", () => {
         ...(sameComparison ? [] : ["previous", "previousValue", "change", "changePct"]),
       ];
       compareData(strip(data), strip(preset), new Set(skip), new Set(["customers"]), diff, key);
-      const k = data.blocks.find((b) => b.id === "customers");
-      diff.same(
-        `${key} customers presetOnly`,
-        k && "presetOnly" in k ? k.presetOnly : undefined,
-        true,
-      );
     }
     record(diff);
     expect(diff.problems.slice(0, 10)).toEqual([]);
