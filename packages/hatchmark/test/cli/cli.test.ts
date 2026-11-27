@@ -447,7 +447,16 @@ describe("review regressions (HAT-16)", () => {
 describe("help", () => {
   it("gives every command its own help with one example", async () => {
     const cwd = await tempDir();
-    for (const command of ["init", "check", "build", "schema", "explain", "version", "doctor"]) {
+    for (const command of [
+      "init",
+      "check",
+      "build",
+      "dev",
+      "schema",
+      "explain",
+      "version",
+      "doctor",
+    ]) {
       const out = await cli([command, "--help"], { cwd, tty: true });
       expect(out.code, command).toBe(0);
       expect(out.stdout, command).toContain(`Usage: hatchmark ${command}`);
@@ -459,7 +468,7 @@ describe("help", () => {
         usage: expect.stringContaining(`hatchmark ${command}`),
       });
     }
-    expect((await cli(["help"], { cwd })).json().commands).toHaveLength(7);
+    expect((await cli(["help"], { cwd })).json().commands).toHaveLength(8);
     const top = await cli([], { cwd, tty: true });
     expect(top.code).toBe(0);
     expect(top.stdout).toContain("Exit codes: 0 ok");

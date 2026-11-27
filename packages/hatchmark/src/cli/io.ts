@@ -36,4 +36,6 @@ export interface CommandResult {
   json: unknown;
   /** Printed in human mode. */
   human: string;
+  /** The command already printed its result while it ran (hatchmark dev); print nothing more. */
+  printed?: boolean;
 }

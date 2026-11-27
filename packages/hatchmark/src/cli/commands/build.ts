@@ -20,7 +20,12 @@ import {
   createDuckDbExecutor,
   nodeProjectHost,
 } from "../../node/index.js";
-import { FONT_FILES, renderDashboardPage, renderIndexPage } from "../../render/index.js";
+import {
+  FONT_FILES,
+  type PageAssets,
+  renderDashboardPage,
+  renderIndexPage,
+} from "../../render/index.js";
 import {
   checkReferences,
   loadProject,
@@ -256,31 +261,10 @@ export async function build(
     };
   }
 
-  const files = new Map<string, Uint8Array | string>();
-  const fonts: Record<string, string> = {};
-  for (const font of FONT_FILES) {
-    const content = await readAsset(`fonts/${font.file}`);
-    const name = hashedName(font.file, content);
-    files.set(`${ASSET_DIR}/${name}`, content);
-    fonts[font.file] = name;
-  }
-  files.set(`${ASSET_DIR}/OFL.txt`, await readAsset("fonts/OFL.txt"));
-  const runtime = await readAsset("runtime/hatchmark.js");
-  const runtimeName = hashedName("hatchmark.js", runtime);
-  files.set(`${ASSET_DIR}/${runtimeName}`, runtime);
-  const assetsFrom = (prefix: string) => ({
-    runtime: `${prefix}${ASSET_DIR}/${runtimeName}`,
-    fonts: Object.fromEntries(
-      Object.entries(fonts).map(([file, name]) => [file, `${prefix}${ASSET_DIR}/${name}`]),
-    ),
-  });
-  const sources = [
-    ...new Set(
-      Object.values(config.sources).flatMap((s) =>
-        s.type === "lookup" ? [] : [path.posix.basename(s.path)],
-      ),
-    ),
-  ].sort();
+  const assets = await bundledAssets();
+  const files = new Map<string, Uint8Array | string>(assets.files);
+  const { assetsFrom } = assets;
+  const sources = sourceNames(config);
   for (const data of pages) {
     files.set(
       `${data.name}/index.html`,
@@ -378,6 +362,49 @@ function cacheLine(cache: CacheStats): string {
     return `warning: the build cache is off: ${cache.reason}; the build ran without it`;
   const total = cache.hits + cache.misses;
   return `Reused ${cache.hits} of ${total} quer${total === 1 ? "y" : "ies"} from ${cache.dir}/`;
+}
+
+/**
+ * The runtime and fonts every page loads, keyed by their path in the output directory
+ * (_hatchmark/ with content-hashed names), and the URLs of those files from a page whose path
+ * to the output directory is prefix. hatchmark dev serves the same files under the same URLs.
+ */
+export async function bundledAssets(): Promise<{
+  files: Map<string, Uint8Array>;
+  assetsFrom(prefix: string): PageAssets;
+}> {
+  const files = new Map<string, Uint8Array>();
+  const fonts: Record<string, string> = {};
+  for (const font of FONT_FILES) {
+    const content = await readAsset(`fonts/${font.file}`);
+    const name = hashedName(font.file, content);
+    files.set(`${ASSET_DIR}/${name}`, content);
+    fonts[font.file] = name;
+  }
+  files.set(`${ASSET_DIR}/OFL.txt`, await readAsset("fonts/OFL.txt"));
+  const runtime = await readAsset("runtime/hatchmark.js");
+  const runtimeName = hashedName("hatchmark.js", runtime);
+  files.set(`${ASSET_DIR}/${runtimeName}`, runtime);
+  return {
+    files,
+    assetsFrom: (prefix) => ({
+      runtime: `${prefix}${ASSET_DIR}/${runtimeName}`,
+      fonts: Object.fromEntries(
+        Object.entries(fonts).map(([file, name]) => [file, `${prefix}${ASSET_DIR}/${name}`]),
+      ),
+    }),
+  };
+}
+
+/** The data file names a dashboard page's footer lists. */
+export function sourceNames(config: ProjectConfig): string[] {
+  return [
+    ...new Set(
+      Object.values(config.sources).flatMap((s) =>
+        s.type === "lookup" ? [] : [path.posix.basename(s.path)],
+      ),
+    ),
+  ].sort();
 }
 
 async function runAll(

@@ -31,6 +31,11 @@ export const CODES = {
     explanation:
       "hatchmark init manages one block in AGENTS.md between a <!-- hatchmark:start --> line and a <!-- hatchmark:end --> line. It found a different number of markers, or the end before the start, and left AGENTS.md alone rather than guess. The diagnostic lists the marker lines. Keep exactly one start line before one end line, or delete every marker line so init appends a fresh block.",
   },
+  HM0006: {
+    title: "dev server cannot listen",
+    explanation:
+      "hatchmark dev could not listen on the port and host it was given: another process uses the port, or the host is not an address of this machine. Stop the other process, or pass another --port or --host. Without --port, dev tries the next free port on its own.",
+  },
   HM1001: {
     title: "file cannot be read",
     explanation:
