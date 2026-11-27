@@ -225,8 +225,13 @@ describe("usage errors", () => {
       [["version", "--format", "xml"], 'unknown --format "xml"'],
       [["init", "--template", "tiny"], 'unknown template "tiny"'],
       [["schema", "metrc"], 'unknown schema kind "metrc"'],
-      [["explain"], "missing argument <code>"],
+      [["explain"], "missing argument <code> or <metric>"],
       [["explain", "HM9999"], 'unknown diagnostic code "HM9999"'],
+      [["explain", "--block", "revenue"], "missing option --dashboard"],
+      [
+        ["explain", "revenue", "--dashboard", "sales"],
+        'unexpected argument "revenue" with --dashboard and --block',
+      ],
     ];
     for (const [argv, message] of cases) {
       const out = await cli(argv, { cwd });
@@ -479,6 +484,61 @@ describe("schema, explain, version, doctor", () => {
       code: "HM2003",
       title: "unknown metric",
     });
+  });
+
+  it("prints the SQL of a metric, of a block, and of every block with check --sql", async () => {
+    const cwd = await tempDir();
+    await cli(["init", "shop"], { cwd });
+    const metric = await cli(["explain", "revenue", "--cwd", "shop"], { cwd });
+    expect(metric.code).toBe(0);
+    const explained = metric.json();
+    expect(explained).toMatchObject({ format_version: "1", metric: "revenue" });
+    expect(explained.as_of).toMatch(/^\d{4}-\d{2}-\d{2}$/);
+    expect(explained.queries).toHaveLength(1);
+    expect(explained.queries[0]).toMatchObject({ source: "orders" });
+    expect(explained.queries[0].sql).toContain("date_trunc('month'");
+    expect(explained.queries[0].sql).toContain("$hm_p1");
+
+    const human = await cli(["explain", "revenue", "--cwd", "shop"], { cwd, tty: true });
+    expect(human.stdout).toContain(
+      `-- revenue by month over last_12_months as of ${explained.as_of}`,
+    );
+    expect(human.stdout).toMatch(/>= CAST\('\d{4}-\d{2}-01' AS DATE\)/);
+    expect(human.stdout).not.toContain("$hm_p");
+
+    const unknown = await cli(["explain", "revenu", "--cwd", "shop"], { cwd });
+    expect(unknown.code).toBe(2);
+    expect(unknown.json().diagnostics[0]).toMatchObject({
+      message: 'unknown metric "revenu"',
+      help: 'did you mean "revenue"?',
+    });
+
+    const check = await cli(["check", "--sql", "--cwd", "shop"], { cwd });
+    expect(check.code).toBe(0);
+    const blocks: { dashboard: string; block: string; queries: { id: string }[] }[] =
+      check.json().sql;
+    expect(blocks.length).toBeGreaterThan(1);
+    const first = blocks[0] as (typeof blocks)[number];
+    const block = await cli(
+      ["explain", "--dashboard", first.dashboard, "--block", first.block, "--cwd", "shop"],
+      { cwd },
+    );
+    expect(block.code).toBe(0);
+    expect(block.json()).toMatchObject({
+      dashboard: first.dashboard,
+      block: first.block,
+      queries: first.queries,
+    });
+    const missing = await cli(
+      ["explain", "--dashboard", first.dashboard, "--block", "nope", "--cwd", "shop"],
+      { cwd },
+    );
+    expect(missing.code).toBe(2);
+    expect(missing.json().diagnostics[0]).toMatchObject({
+      code: "HM0002",
+      message: `unknown block "nope" in dashboard "${first.dashboard}"`,
+    });
+    expect((await cli(["check", "--cwd", "shop"], { cwd })).json()).not.toHaveProperty("sql");
   });
 
   it("reports versions and environment checks", async () => {

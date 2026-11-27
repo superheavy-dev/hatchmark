@@ -54,8 +54,9 @@ const COMMANDS: Record<string, Command> = {
   },
   check: {
     help: checkHelp,
-    options: { strict: { type: "boolean" } },
-    run: (ctx, positionals, flags) => check(ctx, positionals, { strict: flags.strict === true }),
+    options: { strict: { type: "boolean" }, sql: { type: "boolean" } },
+    run: (ctx, positionals, flags) =>
+      check(ctx, positionals, { strict: flags.strict === true, sql: flags.sql === true }),
   },
   build: {
     help: buildHelp,
@@ -68,7 +69,15 @@ const COMMANDS: Record<string, Command> = {
         : build(ctx, typeof flags.out === "string" ? { out: flags.out } : {}),
   },
   schema: { help: schemaHelp, options: {}, run: (ctx, positionals) => schema(ctx, positionals) },
-  explain: { help: explainHelp, options: {}, run: (ctx, positionals) => explain(ctx, positionals) },
+  explain: {
+    help: explainHelp,
+    options: { dashboard: { type: "string" }, block: { type: "string" } },
+    run: (ctx, positionals, flags) =>
+      explain(ctx, positionals, {
+        ...(typeof flags.dashboard === "string" ? { dashboard: flags.dashboard } : {}),
+        ...(typeof flags.block === "string" ? { block: flags.block } : {}),
+      }),
+  },
   version: { help: versionHelp, options: {}, run: (ctx) => version(ctx) },
   doctor: { help: doctorHelp, options: {}, run: (ctx) => doctor(ctx) },
 };

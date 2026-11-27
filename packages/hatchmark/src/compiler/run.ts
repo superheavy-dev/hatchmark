@@ -48,7 +48,7 @@ function failure(message: string): Diagnostic {
 }
 
 /** Errors in the project that keep this dashboard from running: all but other dashboards'. */
-function blockingErrors(project: Project, dashboard: string): Diagnostic[] {
+export function blockingErrors(project: Project, dashboard: string): Diagnostic[] {
   const others = new Set(
     [...project.dashboards.values()].filter((d) => d.name !== dashboard).map((d) => d.file),
   );
@@ -58,24 +58,14 @@ function blockingErrors(project: Project, dashboard: string): Diagnostic[] {
 }
 
 /**
- * Plans a dashboard, runs its queries and assembles DashboardData, with the filter defaults bound.
- * The project is checked first: any error in hatchmark.json, a metric, or this dashboard is
- * returned without running anything. "latest_data" resolves once, before any query runs, to the
- * last date in every time column the plan reads, so every window ends on the same day. Queries run
- * one after another in plan order, except comparisons that have no window (a period filter set to
- * all_time), which are skipped so their KPIs show no comparison. A failing query or an empty
- * latest_data is an HM2015 error.
+ * The ExecutionContext of a plan with nothing bound: "latest_data" resolved once to the last date
+ * in every time column the plan reads, and every window checked against the supported dates. An
+ * empty latest_data or a date out of range is an HM2015 error.
  */
-export async function runDashboard(
-  project: Project,
-  dashboard: string,
+export async function executionContext(
+  plan: QueryPlan,
   executor: DashboardExecutor,
-): Promise<{ data?: DashboardData; diagnostics: Diagnostic[] }> {
-  const errors = blockingErrors(project, dashboard);
-  if (errors.length > 0) return { diagnostics: errors };
-  const { plan, diagnostics } = planDashboard(project, dashboard);
-  if (plan === undefined) return { diagnostics };
-
+): Promise<{ context?: ExecutionContext; diagnostics: Diagnostic[] }> {
   const message = (error: unknown) => (error instanceof Error ? error.message : String(error));
   let asOf = plan.period.asOf;
   if (asOf === "latest_data") {
@@ -84,14 +74,11 @@ export async function runDashboard(
     try {
       latest = columns.length === 0 ? undefined : await executor.latestDate(columns, plan.timezone);
     } catch (error) {
-      return {
-        diagnostics: [...diagnostics, failure(`cannot resolve latest_data: ${message(error)}`)],
-      };
+      return { diagnostics: [failure(`cannot resolve latest_data: ${message(error)}`)] };
     }
     if (latest === undefined) {
       return {
         diagnostics: [
-          ...diagnostics,
           failure(
             columns.length === 0
               ? "latest_data needs a time column, but no metric on this dashboard has one; set period.asOf to a date"
@@ -121,8 +108,35 @@ export async function runDashboard(
     }
   } catch (error) {
     if (!(error instanceof RangeError)) throw error;
-    return { diagnostics: [...diagnostics, failure(error.message)] };
+    return { diagnostics: [failure(error.message)] };
   }
+  return { context, diagnostics: [] };
+}
+
+/**
+ * Plans a dashboard, runs its queries and assembles DashboardData, with the filter defaults bound.
+ * The project is checked first: any error in hatchmark.json, a metric, or this dashboard is
+ * returned without running anything. "latest_data" resolves once, before any query runs, to the
+ * last date in every time column the plan reads, so every window ends on the same day. Queries run
+ * one after another in plan order, except comparisons that have no window (a period filter set to
+ * all_time), which are skipped so their KPIs show no comparison. A failing query or an empty
+ * latest_data is an HM2015 error.
+ */
+export async function runDashboard(
+  project: Project,
+  dashboard: string,
+  executor: DashboardExecutor,
+): Promise<{ data?: DashboardData; diagnostics: Diagnostic[] }> {
+  const errors = blockingErrors(project, dashboard);
+  if (errors.length > 0) return { diagnostics: errors };
+  const { plan, diagnostics } = planDashboard(project, dashboard);
+  if (plan === undefined) return { diagnostics };
+
+  const resolved = await executionContext(plan, executor);
+  if (resolved.context === undefined)
+    return { diagnostics: [...diagnostics, ...resolved.diagnostics] };
+  const { context } = resolved;
+  const message = (error: unknown) => (error instanceof Error ? error.message : String(error));
   const results = new Map<string, QueryResult>();
   const imprecise = new Map<string, Diagnostic>();
   for (const query of plan.queries) {
