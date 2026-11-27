@@ -71,6 +71,8 @@ What it doesn't change:
   the one that fits the locale it writes (`sunday` for en-US); change it to suit your team.
   `weekStart` is the older spelling of `anchors.week`.
 - Dates are bucketed in `timezone`, and amounts are in `currency` or the metric's own currency.
+- Dates use the Gregorian calendar, even for a locale whose default calendar is another one: a
+  `th-TH` project shows 2026, not 2569.
 - A table's CSV download uses the same syntax in every locale: comma-separated, with `.` as the
   decimal point and full-precision values, so other tools read it as numbers. Its rows follow the
   order the table shows. A spreadsheet app set to a locale that uses `;` as its list separator, such
