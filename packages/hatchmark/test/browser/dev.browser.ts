@@ -1,5 +1,5 @@
 /// <reference lib="dom" />
-import { cp, mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { cp, mkdir, mkdtemp, readFile, rename, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -141,3 +141,110 @@ function hexToRgb(hex: string): string {
   const n = Number.parseInt(hex.slice(1), 16);
   return `rgb(${(n >> 16) & 255}, ${(n >> 8) & 255}, ${n & 255})`;
 }
+
+/** A dev server of its own on a fresh copy of the example; change edits the copy before it starts. */
+async function ownServer(change?: (dir: string) => Promise<void>) {
+  const root = await mkdtemp(path.join(tmpdir(), "hatchmark-dev-routes-"));
+  await cp(EXAMPLE, root, {
+    recursive: true,
+    filter: (src) => !src.split(path.sep).includes("dist"),
+  });
+  await change?.(root);
+  const started = await startDevServer({ root, port: 0, host: "127.0.0.1", log: () => {} });
+  if ("report" in started) throw new Error(JSON.stringify(started.report));
+  return {
+    root,
+    server: started.server,
+    close: async () => {
+      await started.server.close();
+      await rm(root, { recursive: true, force: true });
+    },
+  };
+}
+
+const connected = (page: Page) =>
+  page.waitForEvent("console", {
+    predicate: (m) => m.text().includes("[vite] connected"),
+    timeout: 15_000,
+  });
+
+/** The tab comes back by itself to the live dashboard, and a later edit swaps in over HMR. */
+async function expectLiveAgain(page: Page, root: string, restore: () => Promise<void>) {
+  const reconnected = connected(page);
+  await restore();
+  await expect
+    .poll(() => page.locator("h1").textContent(), { timeout: 15_000 })
+    .toBe("Global sales");
+  await reconnected;
+  await page.evaluate(() => {
+    (window as unknown as { hmMarker: boolean }).hmMarker = true;
+  });
+  const file = path.join(root, "dashboards/sales.json");
+  await writeFile(
+    file,
+    (await readFile(file, "utf8")).replace('"Revenue by channel"', '"Channel revenue"'),
+  );
+  await expect
+    .poll(() => page.locator(".hm-bar h2").textContent(), { timeout: 15_000 })
+    .toBe("Channel revenue");
+  expect(await page.evaluate(() => (window as unknown as { hmMarker?: boolean }).hmMarker)).toBe(
+    true,
+  );
+}
+
+describe("an open dev tab whose dashboard comes and goes", () => {
+  it("shows a tab whose first build failed that its file was removed, then the live page", async () => {
+    const own = await ownServer(async (root) => {
+      const file = path.join(root, "dashboards/sales.json");
+      await writeFile(
+        file,
+        (await readFile(file, "utf8")).replace('"metric": "orders"', '"metric": "orderz"'),
+      );
+    });
+    const page = await browser.newPage({ viewport: { width: 1280, height: 860 } });
+    try {
+      const ready = connected(page);
+      await page.goto(new URL("/sales/", own.server.url).href);
+      await ready;
+      expect(await page.locator("h1").textContent()).toBe("Waiting for a good build");
+      expect(await page.locator("#hm-dev-overlay").isVisible()).toBe(true);
+      const good = await readFile(path.join(EXAMPLE, "dashboards/sales.json"), "utf8");
+      const removed = connected(page);
+      await rm(path.join(own.root, "dashboards/sales.json"));
+      await expect
+        .poll(() => page.locator("h1").textContent(), { timeout: 15_000 })
+        .toBe("Dashboard removed");
+      await removed;
+      expect(await page.locator("#hm-dev-overlay").count()).toBe(0);
+      await expectLiveAgain(page, own.root, () =>
+        writeFile(path.join(own.root, "dashboards/sales.json"), good),
+      );
+    } finally {
+      await page.close();
+      await own.close();
+    }
+  });
+
+  it("shows a live tab that its file was moved away, then reloads it when the file is back", async () => {
+    const own = await ownServer();
+    const page = await browser.newPage({ viewport: { width: 1280, height: 860 } });
+    try {
+      const ready = connected(page);
+      await page.goto(new URL("/sales/", own.server.url).href);
+      await ready;
+      expect(await page.locator("h1").textContent()).toBe("Global sales");
+      const file = path.join(own.root, "dashboards/sales.json");
+      const hold = path.join(own.root, "sales.hold");
+      const removed = connected(page);
+      await rename(file, hold);
+      await expect
+        .poll(() => page.locator("h1").textContent(), { timeout: 15_000 })
+        .toBe("Dashboard removed");
+      await removed;
+      await expectLiveAgain(page, own.root, () => rename(hold, file));
+    } finally {
+      await page.close();
+      await own.close();
+    }
+  });
+});

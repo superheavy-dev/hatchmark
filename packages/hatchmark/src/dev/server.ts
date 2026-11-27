@@ -247,9 +247,13 @@ export async function startDevServer(
       const previous = project;
       project = next;
       config = spec;
-      for (const name of new Set([...pages.keys(), ...runDiagnostics.keys()])) {
+      for (const name of new Set([
+        ...(previous?.dashboards.keys() ?? []),
+        ...pages.keys(),
+        ...runDiagnostics.keys(),
+      ])) {
         if (next.dashboards.has(name)) continue;
-        if (pages.has(name)) updates.push({ event: "hatchmark:reload", data: { dashboard: name } });
+        updates.push({ event: "hatchmark:reload", data: { dashboard: name } });
         pages.delete(name);
         plans.delete(name);
         runDiagnostics.delete(name);
@@ -267,6 +271,9 @@ export async function startDevServer(
           ...(plan?.horizons.map((h) => h.source) ?? []),
         ]);
         const page = pages.get(name);
+        if (previous !== undefined && !previous.dashboards.has(name)) {
+          updates.push({ event: "hatchmark:reload", data: { dashboard: name } });
+        }
         const affected =
           configChanged ||
           segmentsChanged ||
@@ -326,7 +333,12 @@ export async function startDevServer(
       send({ event: "hatchmark:ok", data: {} });
     }
     if (!booted || updates.length === 0) return;
-    for (const update of updates) send(update);
+    const sent = new Set<string>();
+    for (const update of updates) {
+      const key = JSON.stringify(update);
+      if (!sent.has(key)) send(update);
+      sent.add(key);
+    }
     const what = updates.map((u) =>
       u.event === "hatchmark:update"
         ? `${u.data.dashboard}: ${u.data.cards.length} card${u.data.cards.length === 1 ? "" : "s"} updated`
@@ -394,7 +406,7 @@ export async function startDevServer(
   await enqueue("all");
   booted = true;
 
-  const page = (name: string | undefined): string => {
+  const page = (name: string | undefined, removed = false): string => {
     const state = `<script type="application/json" id="hm-dev">${scriptJson({ dashboard: name ?? INDEX })}</script>`;
     const client = `${state}<script type="module" src="/@vite/client"></script><script type="module" src="/@id/${CLIENT_ID}"></script>`;
     let html: string;
@@ -410,14 +422,21 @@ export async function startDevServer(
         })),
         { assets: assets.assetsFrom("") },
       );
-    } else
-      html = waitingPage(name === undefined ? assets.assetsFrom("") : assets.assetsFrom("../"));
+    } else {
+      html = statePage(
+        name === undefined ? assets.assetsFrom("") : assets.assetsFrom("../"),
+        removed ? "Dashboard removed" : "Waiting for a good build",
+        removed
+          ? `${config?.dashboardsDir ?? "dashboards"}/${name}.json does not exist. This page reloads when it comes back.`
+          : "This page reloads when the dashboard builds.",
+      );
+    }
     const overlay = errors ? overlayHtml(errors) : "";
     return html.replace("</head>", `${client}</head>`).replace("</body>", `${overlay}</body>`);
   };
 
-  const waitingPage = (urls: PageAssets) =>
-    `<!doctype html>\n<html lang="en">\n<head>\n<meta charset="utf-8">\n<meta name="viewport" content="width=device-width, initial-scale=1">\n<title>Hatchmark dev</title>\n${pageHead(urls)}\n</head>\n<body>\n<div class="hm-root"><div class="hm-page"><header class="hm-header"><div class="hm-titles"><div class="hm-brand"><span class="hm-logo" aria-hidden="true"></span>${esc(config?.name ?? "Hatchmark")}</div><div class="hm-title"><h1>Waiting for a good build</h1><p class="hm-caption">This page reloads when the dashboard builds.</p></div></div></header></div></div>\n</body>\n</html>\n`;
+  const statePage = (urls: PageAssets, heading: string, caption: string) =>
+    `<!doctype html>\n<html lang="en">\n<head>\n<meta charset="utf-8">\n<meta name="viewport" content="width=device-width, initial-scale=1">\n<title>Hatchmark dev</title>\n${pageHead(urls)}\n</head>\n<body>\n<div class="hm-root"><div class="hm-page"><header class="hm-header"><div class="hm-titles"><div class="hm-brand"><span class="hm-logo" aria-hidden="true"></span>${esc(config?.name ?? "Hatchmark")}</div><div class="hm-title"><h1>${esc(heading)}</h1><p class="hm-caption">${esc(caption)}</p></div></div></header></div></div>\n</body>\n</html>\n`;
 
   const plugin: Plugin = {
     name: "hatchmark",
@@ -461,6 +480,14 @@ export async function startDevServer(
           if (name !== undefined && (pages.has(name) || project?.dashboards.has(name))) {
             if (match?.[2] === undefined) return redirect(`/${encodeURIComponent(name)}/`);
             return html(page(name));
+          }
+          if (name !== undefined && match?.[2] !== undefined && /^[\w.-]+$/.test(name)) {
+            res.writeHead(404, {
+              "content-type": "text/html; charset=utf-8",
+              "cache-control": "no-store",
+            });
+            res.end(page(name, true));
+            return;
           }
           next();
         };

@@ -143,8 +143,10 @@ and the dashboards whose queries read an edited data file. Everything re-runs wh
   rest of the page, scroll position included, is left alone.
 - A structural change reloads the page: a block added, removed or moved, a changed span or block
   type, or anything outside the grid (title, description, filters, period, footer, theme).
-- An open page of a dashboard that was removed or renamed reloads, and gets a 404. The index
-  reloads when a dashboard is added, removed or retitled, or the project name changes.
+- An open page of a dashboard that was removed or renamed reloads into a "Dashboard removed" page
+  (status 404), which reloads into the live dashboard when its file comes back. This holds for a
+  page whose dashboard never built, too. The index reloads when a dashboard is added, removed or
+  retitled, or the project name changes.
 
 A data file that several sources read re-runs every dashboard that reads any of them. The file
 watcher ignores a second change to a file within 50 ms of the first, so dev checks each file again

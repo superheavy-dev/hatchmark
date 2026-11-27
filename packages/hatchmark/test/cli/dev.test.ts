@@ -100,7 +100,9 @@ describe("hatchmark dev", { timeout: 30_000 }, () => {
 
   it("serves every dashboard as hatchmark build writes it, plus the dev client", async () => {
     const out = path.join(dir, "built");
-    expect(await run(["build", "--cwd", dir, "--out", "built", "--json"], quietIO)).toBe(0);
+    expect(
+      await run(["build", "--cwd", dir, "--out", "built", "--no-cache", "--json"], quietIO),
+    ).toBe(0);
     const index = await fetch(new URL("/", server.url));
     expect(index.status).toBe(200);
     const indexHtml = await index.text();
