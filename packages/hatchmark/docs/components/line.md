@@ -27,10 +27,12 @@ What it draws:
   labels with the year on January and on the first label.
 - Up to six lines are named by direct labels at their ends (name and latest value), stacked 2 px
   apart with leader lines when they would overlap. When the plot is narrower than 320 px or there
-  are more than six lines, a readout above the plot names the lines with their latest values
-  instead, and updates as the reader hovers or drags. Line names are never shortened: the readout
-  drops to fewer columns (one name per row on a phone) and the chart grows to fit it. Only a name
-  wider than the whole card is cut, at the end, with the full name on hover.
+  are more than six lines, a key above the plot names them instead: the period in small subtle
+  text, then "● Name $Value" for every line, flowing across the card and wrapping like a sentence.
+  Values are in the body text colour, names muted, both at the same size and weight. The period
+  and values update as the reader hovers, drags or steps with the keys. The plot keeps its height:
+  a longer key makes the chart taller. Line names are never shortened; only a name wider than the
+  whole card is cut, at the end, with the full name on hover.
 - Hover (or tap, or the arrow keys) shows a crosshair, the points, and a tooltip with every line's
   value at that date.
 - Missing values leave a gap. A window with no data keeps the axis and says "No revenue in this

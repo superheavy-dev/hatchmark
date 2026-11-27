@@ -18,6 +18,7 @@ let allUrl: string;
 let gapUrl: string;
 let dailyUrl: string;
 let narrowUrl: string;
+let densityUrl: string;
 type Box = { x: number; y: number; width: number; height: number };
 
 beforeAll(async () => {
@@ -102,6 +103,14 @@ beforeAll(async () => {
     blocks: [
       { ...twoSeries, id: "span_one", span: 1, axis: longLine.axis },
       { ...twoSeries, id: "span_three", span: 3, axis: longLine.axis },
+    ],
+  });
+  densityUrl = await page("density", {
+    ...SALES,
+    metrics: { ...SALES.metrics, ...longLineMetrics },
+    blocks: [
+      { ...eight, id: "two_long", span: 6, series: eight.series.slice(0, 2) },
+      { ...eight, id: "eight_long", span: 6 },
     ],
   });
 });
@@ -313,6 +322,35 @@ describe("browser runtime", () => {
       });
     expect(problems).toEqual([]);
   });
+
+  for (const width of [390, 1440]) {
+    it(`keeps the plot the same height with 2 and with 8 long-named series at ${width} px`, async () => {
+      const page = await browser.newPage({ viewport: { width, height: 900 } });
+      await page.goto(densityUrl);
+      const plots = await page
+        .locator(".hm-card svg[data-hm-plot]")
+        .evaluateAll((svgs: SVGSVGElement[]) =>
+          svgs
+            .filter((svg) => svg.getBoundingClientRect().width > 0)
+            .map((svg) => {
+              const [, top = 0, , bottom = 0] = (svg.getAttribute("data-hm-plot") ?? "")
+                .split(",")
+                .map(Number);
+              const scale = svg.getBoundingClientRect().width / svg.viewBox.baseVal.width;
+              return {
+                plot: (bottom - top) * scale,
+                key: svg.querySelectorAll(".hm-rv").length,
+                svg: svg.getBoundingClientRect().height,
+              };
+            }),
+        );
+      expect(plots).toHaveLength(2);
+      const [two, eight] = plots as [(typeof plots)[number], (typeof plots)[number]];
+      expect(eight.key).toBe(8);
+      expect(Math.abs(two.plot - eight.plot)).toBeLessThanOrEqual(0.5);
+      expect(eight.svg).toBeGreaterThan(two.svg);
+    });
+  }
 
   it("switches to dark with data-theme", async () => {
     const page = await browser.newPage();

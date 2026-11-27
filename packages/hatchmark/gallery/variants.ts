@@ -158,7 +158,7 @@ const worldRegions = WORLD_REGIONS.map((region, k) =>
 const LINES: GalleryVariant[] = [
   one("line", "line-single", "One series, 24 months", { ...REVENUE_LINE, span: 12 }),
   one("line", "line-split", "Split by region, direct labels", { ...REGION_LINE, span: 12 }),
-  one("line", "line-narrow", "Narrow card: pinned readout instead of direct labels", {
+  one("line", "line-narrow", "Narrow card: a key above the plot instead of direct labels", {
     ...REGION_LINE,
     id: "region_narrow",
     span: 4,
@@ -166,7 +166,7 @@ const LINES: GalleryVariant[] = [
   one(
     "line",
     "line-long-names",
-    "Long series names: full direct labels, readout reflows on phones",
+    "Long series names: full direct labels, the key wraps on phones",
     line("world_regions", "North America still brings in the most revenue", {
       span: 8,
       series: worldRegions,
@@ -175,7 +175,7 @@ const LINES: GalleryVariant[] = [
   one(
     "line",
     "line-long-names-narrow",
-    "Long series names in a narrow card: readout in fewer columns",
+    "Long series names in a narrow card: the key wraps across the card",
     line("world_regions_narrow", "Revenue by world region", { span: 4, series: worldRegions }),
   ),
   one(

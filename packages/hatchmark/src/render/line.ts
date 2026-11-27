@@ -2,7 +2,6 @@ import { area as d3area, line as d3line } from "d3-shape";
 import type { LineData, Value } from "../compiler/dashboard-data.js";
 import { timeLabels } from "./axis.js";
 import {
-  BODY,
   CAPTION,
   type ChartSize,
   drawYAxis,
@@ -26,12 +25,9 @@ import { seriesColor } from "./theme.js";
 export const DIRECT_LABEL_MIN_PLOT = 320;
 const MAX_DIRECT_SERIES = 6;
 const LINE_WIDTH = 1.75;
-const READOUT_PAD_X = 10;
-const READOUT_PAD_Y = 8;
-const READOUT_COLUMNS = 3;
-const READOUT_GAP = 8;
-/** A tall readout (long names in one column) grows the chart instead of squeezing the plot below this. */
-const READOUT_MIN_PLOT = 80;
+const LEGEND_NAME_X = 13;
+const LEGEND_GAP = 16;
+const LEGEND_ROW = LABEL_LINE + 4;
 
 /**
  * Each series' band as drawn: upper is the value itself, or for stacked areas the running total
@@ -66,8 +62,9 @@ export function plottedValues(block: LineData): Value[][] {
 
 /**
  * A line or area chart over a time axis. Direct labels sit at the line ends when the plot is at
- * least 320 px wide and there are at most 6 series; otherwise a pinned readout above the plot names
- * the series with their latest values (the runtime updates it on hover).
+ * least 320 px wide and there are at most 6 series; otherwise a key above the plot flows across the
+ * card, the period first and then each series' name and value (the runtime updates both on hover).
+ * The plot is always as tall as size.height allows; a longer key makes the chart taller.
  */
 export function renderLine(
   block: LineData,
@@ -112,79 +109,71 @@ export function renderLine(
     size.width - left - directWidth >= DIRECT_LABEL_MIN_PLOT;
 
   let readout = "";
-  let readoutHeight = 0;
+  let legendHeight = 0;
   if (!direct && !empty && series.length > 0) {
     const last = Math.max(...lastIndex);
-    const shown = series.map((s) =>
-      formatValue(s.values[last] ?? null, metricOf(ctx, s.metric), locale, "compact"),
-    );
-    const inner = size.width - 2 - READOUT_PAD_X * 2;
-    const needed = Math.max(
-      ...series.map((s, k) =>
-        Math.max(
-          13 + textWidth(s.label, { size: CAPTION }),
-          textWidth(shown[k] as string, { size: BODY, weight: 500 }),
+    const style = { size: CAPTION } as const;
+    const headers = block.axis.buckets.map((b) => formatBucket(b, block.axis.grain, locale));
+    const valueWidth = series.map((s) =>
+      Math.max(
+        0,
+        ...s.values.map((v) =>
+          textWidth(formatValue(v, metricOf(ctx, s.metric), locale, "compact"), style),
         ),
       ),
     );
-    let columns = Math.min(series.length, READOUT_COLUMNS);
-    while (columns > 1 && inner / columns - READOUT_GAP < needed) columns--;
-    const rows = Math.ceil(series.length / columns);
-    const inline = columns === 1 && series.length > 1;
-    const pitch = inline ? LABEL_LINE + 6 : 40;
-    readoutHeight = READOUT_PAD_Y * 2 + LABEL_LINE + 4 + rows * pitch - 6;
-    const colWidth = inner / columns;
-    const parts = [
-      `<rect x="0.5" y="0.5" width="${r(size.width - 1)}" height="${readoutHeight - 1}" rx="${ctx.theme.radius.control}"${paint.attrs("cardAlt", "border")}/>`,
-      svgText(
-        paint,
-        READOUT_PAD_X + 1,
-        READOUT_PAD_Y + LABEL_LINE / 2,
-        last >= 0 ? formatBucket(block.axis.buckets[last] as string, block.axis.grain, locale) : "",
-        { size: CAPTION, weight: 500, color: "textMuted", className: "hm-rh" },
-      ),
+    const items = [
+      { width: Math.max(0, ...headers.map((h) => textWidth(h, style))), k: -1 },
+      ...series.map((s, k) => ({
+        width: LEGEND_NAME_X + textWidth(s.label, style) + 6 + (valueWidth[k] as number),
+        k,
+      })),
     ];
-    series.forEach((s, k) => {
-      const col = k % columns;
-      const row = Math.floor(k / columns);
-      const x = READOUT_PAD_X + 1 + col * colWidth;
-      const y = READOUT_PAD_Y + LABEL_LINE + 4 + row * pitch;
-      const valueStyle = { size: BODY, weight: 500 } as const;
-      const room = inline
-        ? colWidth -
-          25 -
-          Math.max(
-            ...s.values.map((v) =>
-              textWidth(formatValue(v, metricOf(ctx, s.metric), locale, "compact"), valueStyle),
-            ),
-          )
-        : colWidth - 17;
-      parts.push(
-        `<circle cx="${r(x + 4)}" cy="${r(y + 8)}" r="4"${paint.attrs(seriesColor(k))}/>`,
-        svgText(paint, x + 13, y + 8, truncateEnd(s.label, room, { size: CAPTION }), {
-          size: CAPTION,
-          color: "textMuted",
-          ...(textWidth(s.label, { size: CAPTION }) > room ? { title: s.label } : {}),
-        }),
-        svgText(
-          paint,
-          inline ? size.width - 1 - READOUT_PAD_X : x,
-          inline ? y + 8 : y + 16 + 9,
-          shown[k] as string,
-          {
-            ...valueStyle,
-            color: "text",
-            className: `hm-rv hm-rv-${k}`,
-            ...(inline ? { anchor: "end" as const } : {}),
-          },
-        ),
-      );
-    });
+    const parts: string[] = [];
+    let x = 0;
+    let row = 0;
+    for (const item of items) {
+      if (x > 0 && x + item.width > size.width) {
+        x = 0;
+        row++;
+      }
+      const cy = row * LEGEND_ROW + LABEL_LINE / 2;
+      const s = series[item.k];
+      if (s === undefined) {
+        parts.push(
+          svgText(paint, x, cy, last >= 0 ? (headers[last] as string) : "", {
+            ...style,
+            color: "textSubtle",
+            className: "hm-rh",
+          }),
+        );
+      } else {
+        const room = size.width - x - LEGEND_NAME_X - 6 - (valueWidth[item.k] as number);
+        const name = truncateEnd(s.label, room, style);
+        parts.push(
+          `<circle cx="${r(x + 4)}" cy="${r(cy)}" r="4"${paint.attrs(seriesColor(item.k))}/>`,
+          svgText(paint, x + LEGEND_NAME_X, cy, name, {
+            ...style,
+            color: "textMuted",
+            ...(name === s.label ? {} : { title: s.label }),
+          }),
+          svgText(
+            paint,
+            x + LEGEND_NAME_X + textWidth(name, style) + 6,
+            cy,
+            formatValue(s.values[last] ?? null, metricOf(ctx, s.metric), locale, "compact"),
+            { ...style, color: "text", className: `hm-rv hm-rv-${item.k}` },
+          ),
+        );
+      }
+      x += item.width + LEGEND_GAP;
+    }
+    legendHeight = row * LEGEND_ROW + LABEL_LINE;
     readout = `<g class="hm-readout">${parts.join("")}</g>`;
   }
 
-  const top = readoutHeight > 0 ? readoutHeight + 16 : top0;
-  const height = Math.max(size.height, readoutHeight > 0 ? top + READOUT_MIN_PLOT + bottomBand : 0);
+  const top = legendHeight > 0 ? legendHeight + 16 : top0;
+  const height = top + size.height - top0;
   const plotBottom = height - bottomBand;
   const axis = yAxis(values, plotBottom - top, metric, locale);
   const [d0, d1] = axis.domain;
