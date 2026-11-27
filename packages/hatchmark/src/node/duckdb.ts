@@ -21,6 +21,7 @@ import {
   type Filter,
   normalizePath,
   type ProjectConfig,
+  parseTemporal,
   type Source,
   sameColumn,
 } from "../spec/index.js";
@@ -47,20 +48,29 @@ import {
  * as they are. Windows compare the local time with the window's dates (start inclusive, end
  * exclusive); buckets truncate it, with weeks starting on weekStart.
  *
- * Filters. A date literal (YYYY-MM-DD) compared with a timestamp column compares the row's local
+ * Filters. A value compared with a DATE or timestamp column must be strict ISO 8601 (parseTemporal;
+ * check reports HM3009 for the metric's time column). A day (YYYY-MM-DD) compares the row's local
  * calendar date, so eq is the whole day and between "2026-01-01" and "2026-01-31" covers all of
- * January 31; a value with a time of day compares local wall-clock time. neq keeps rows whose
- * column is null (IS DISTINCT FROM) and not_in keeps them too, because "not West" includes rows
- * whose region is unknown; eq, in, gt, gte, lt, lte and between never match null.
+ * January 31. A date-time with Z or an offset is that exact instant; without one it is wall-clock
+ * time in the project time zone. Either way the value is normalized here and bound as a
+ * parameter, and the comparison is between instants, so DuckDB never guesses a cast. neq keeps
+ * rows whose column is null (IS DISTINCT FROM) and not_in keeps them too, because "not West"
+ * includes rows whose region is unknown; eq, in, gt, gte, lt, lte and between never match null.
  *
- * Types. Measures are computed by DuckDB at full precision (DECIMAL, HUGEINT) and cast to DOUBLE
- * once at the end, so sums are exact up to 2^53 and keep about 15 significant digits beyond;
- * non-finite results (a SQL metric dividing by zero) become null. Sums of FLOAT and DOUBLE columns
- * (CSV numbers with a decimal point read as DOUBLE) add the values as DECIMAL(38, 9): exact to 9
- * decimal places, so totals of cents stay exact and do not depend on the order threads add rows
- * in, which keeps results byte-identical between runs; a value beyond ±10^29 fails the query. Dimension values: DECIMAL as
- * numbers, integers as numbers when they are safe integers and as decimal strings otherwise,
- * dates as YYYY-MM-DD, timestamps as local "YYYY-MM-DD HH:MM:SS" text, other types as text.
+ * Numbers. Integer and DECIMAL inputs aggregate exactly in DuckDB (HUGEINT, DECIMAL(38)) and are
+ * converted to a JavaScript number once. FLOAT and DOUBLE inputs sum with fsum (Kahan-Babuska
+ * compensated summation), so avg = fsum / count, and every floating result is rounded to 15
+ * significant digits: what parallel threads add in different orders differs below that, so results
+ * are byte-identical between runs, and nothing is truncated to a fixed number of decimals. Raw SQL
+ * metrics cannot be rewritten, so their queries run on one thread. A sum of no values is 0; a
+ * non-finite result (a SQL metric dividing by zero) is null, an undefined value. Dimension values:
+ * DECIMAL as numbers, integers as numbers when they are safe integers and as decimal strings
+ * otherwise, dates as YYYY-MM-DD, timestamps as local "YYYY-MM-DD HH:MM:SS" text, other types as
+ * text.
+ *
+ * Plans and config. Each query carries its source's file and reader options (PlannedQuery.input),
+ * so they are part of its id and of the plan hash. The executor refuses a query whose input
+ * differs from config's source of the same name: the plan was made for another hatchmark.json.
  */
 export async function createDuckDbExecutor(options: {
   root: string;
@@ -84,6 +94,12 @@ export async function createDuckDbExecutor(options: {
 
   return {
     async execute(query, context) {
+      const configured = options.config.sources[query.source];
+      if (configured === undefined || canonicalJson(configured) !== canonicalJson(query.input)) {
+        throw new Error(
+          `source "${query.source}" in this plan differs from hatchmark.json; plan the dashboard again`,
+        );
+      }
       return execute(connection, await load(query.source), query, context);
     },
     async latestDate(columns: TimeColumn[], timezone: string) {
@@ -234,12 +250,18 @@ function localTime(source: LoadedSource, name: string, timezone: string, sql: Sq
   );
 }
 
-const DATE_LITERAL = /^\d{4}-\d{2}-\d{2}$/;
+/** The column's value as an instant (TIMESTAMP WITH TIME ZONE), by the same rules as localTime. */
+function instant(source: LoadedSource, name: string, timezone: string, sql: Sql): string {
+  const { name: actual, type } = column(source, name);
+  const q = quote(actual);
+  if (type === "TIMESTAMP WITH TIME ZONE") return q;
+  if (type === "DATE") return `timezone(${sql.bind(timezone)}, CAST(${q} AS TIMESTAMP))`;
+  return `timezone('UTC', CAST(${q} AS TIMESTAMP))`;
+}
 
 /**
- * The two sides of comparing a column with one filter value, with the date semantics above: a
- * date literal against a timestamp compares the local date, other text against a timestamp the
- * local wall-clock time, text against a DATE column a date.
+ * The two sides of comparing a column with one filter value. On a DATE or timestamp column the
+ * value must be strict ISO 8601: a day compares the local date, a date-time compares instants.
  */
 function sides(
   source: LoadedSource,
@@ -249,16 +271,25 @@ function sides(
   sql: Sql,
 ): [string, string] {
   const { name: actual, type } = column(source, name);
-  if (typeof value === "string" && isTimestamp(type)) {
-    const local = localTime(source, actual, context.timezone, sql);
-    return DATE_LITERAL.test(value)
-      ? [`CAST(${local} AS DATE)`, `CAST(${sql.bind(value)} AS DATE)`]
-      : [local, `CAST(${sql.bind(value)} AS TIMESTAMP)`];
+  if (type !== "DATE" && !isTimestamp(type)) return [quote(actual), sql.bind(value)];
+  const parsed = typeof value === "string" ? parseTemporal(value) : undefined;
+  if (parsed === undefined) {
+    throw new Error(
+      `${JSON.stringify(value)} is not an ISO 8601 date or date-time, which column "${actual}" of source "${source.name}" needs (HM3009)`,
+    );
   }
-  if (typeof value === "string" && type === "DATE") {
-    return [quote(actual), `CAST(${sql.bind(value)} AS DATE)`];
+  if (parsed.kind === "date") {
+    const day =
+      type === "DATE"
+        ? quote(actual)
+        : `CAST(${localTime(source, actual, context.timezone, sql)} AS DATE)`;
+    return [day, `CAST(${sql.bind(parsed.text)} AS DATE)`];
   }
-  return [quote(actual), sql.bind(value)];
+  const right =
+    parsed.kind === "instant"
+      ? `CAST(${sql.bind(parsed.text)} AS TIMESTAMPTZ)`
+      : `timezone(${sql.bind(context.timezone)}, CAST(${sql.bind(parsed.text)} AS TIMESTAMP))`;
+  return [instant(source, actual, context.timezone, sql), right];
 }
 
 const OPERATORS = { eq: "=", gt: ">", gte: ">=", lt: "<", lte: "<=" } as const;
@@ -326,8 +357,12 @@ function aggregateSql(component: MeasureComponent, source: LoadedSource): string
       return `count(DISTINCT ${needs()})`;
     case "sum":
       return found?.type === "DOUBLE" || found?.type === "FLOAT"
-        ? `sum(CAST(${needs()} AS DECIMAL(38, 9)))`
+        ? `fsum(${needs()})`
         : `sum(${needs()})`;
+    case "avg":
+      return found?.type === "DOUBLE" || found?.type === "FLOAT"
+        ? `fsum(${needs()}) / count(${needs()})`
+        : `avg(${needs()})`;
     default:
       return `${component.aggregate}(${needs()})`;
   }
@@ -358,6 +393,21 @@ function dimensionSql(
     return `strftime(${localTime(source, name, context.timezone, sql)}, '%Y-%m-%d %H:%M:%S')`;
   }
   return `CAST(${q} AS VARCHAR)`;
+}
+
+/** Rounds a floating result to 15 significant digits, the digits every summation order agrees on. */
+function canonicalFloat(value: number): number | null {
+  return Number.isFinite(value) ? Number(value.toPrecision(15)) : null;
+}
+
+/** A measure as a number: exact types converted once, floating ones canonicalized; else null. */
+function measureValue(value: DuckDBValue, type: string): number | null {
+  if (typeof value === "number") {
+    return type === "DOUBLE" || type === "FLOAT" ? canonicalFloat(value) : value;
+  }
+  if (typeof value === "bigint") return Number(value);
+  if (value instanceof DuckDBDecimalValue) return value.toDouble();
+  return null;
 }
 
 function toValue(value: DuckDBValue): unknown {
@@ -422,13 +472,19 @@ async function execute(
     const inWhere = shared !== undefined;
     const filters = inWhere ? [] : c.filters.map((f) => filterSql(source, f, context, sql));
     const clause = filters.length > 0 ? ` FILTER (WHERE ${filters.join(" AND ")})` : "";
-    return `CAST(${aggregateSql(c, source)}${clause} AS DOUBLE)`;
+    const aggregate = `${aggregateSql(c, source)}${clause}`;
+    return c.aggregate === "sum" ? `coalesce(${aggregate}, 0)` : aggregate;
   });
 
+  const taken = (alias: string) => source.columns.some((c) => sameColumn(c.name, alias));
+  const dimRefs = query.dimensions.map((_, i) => {
+    let alias = `hm_d${i}`;
+    for (let n = 1; taken(alias); n++) alias = `hm_d${i}_${n}`;
+    return quote(alias);
+  });
   const dims = query.dimensions.map(
-    (d, i) => `${dimensionSql(source, d, context, sql)} AS "hm_d${i}"`,
+    (d, i) => `${dimensionSql(source, d, context, sql)} AS ${dimRefs[i]}`,
   );
-  const dimRefs = query.dimensions.map((_, i) => `"hm_d${i}"`);
   const grouped = dimRefs.length > 0;
   const select = [
     ...dimRefs,
@@ -452,7 +508,11 @@ async function execute(
       : []),
   ].join("\n");
 
-  const reader = await connection.runAndReadAll(text, sql.values(source));
+  const serial = components.some((c) => c.aggregate === "sql");
+  if (serial) await connection.run("SET threads = 1");
+  const reader = await connection
+    .runAndReadAll(text, sql.values(source))
+    .finally(() => (serial ? connection.run("RESET threads") : undefined));
   const types = reader.columnTypes().map(String);
   const dimCount = query.dimensions.length;
   const masks = new Map(
@@ -467,7 +527,9 @@ async function execute(
   const groupingSet: number[] = [];
   const rows = reader.getRows().map((row) => {
     if (grouped) groupingSet.push(masks.get(Number(row[row.length - 1])) ?? -1);
-    return row.slice(0, dimCount + components.length).map(toValue);
+    return row
+      .slice(0, dimCount + components.length)
+      .map((value, i) => (i < dimCount ? toValue(value) : measureValue(value, types[i] ?? "")));
   });
   return {
     columns: [

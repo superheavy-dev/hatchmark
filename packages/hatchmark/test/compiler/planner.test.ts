@@ -110,7 +110,10 @@ describe("planner", () => {
         period: { asOf: "2026-01-31", range: "all_time", compare: "previous_period" },
       }),
     );
-    expect(allTime.blocks[0]?.previous).toBeUndefined();
+    expect(query(allTime, ref(allTime.blocks[0]?.previous?.revenue)).window).toMatchObject({
+      range: "all_time",
+      shift: "previous_period",
+    });
   });
 
   it("splits avg into sum and count of the column, and marks what cannot be re-aggregated", () => {

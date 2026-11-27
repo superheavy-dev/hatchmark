@@ -120,6 +120,7 @@ function regionQuery(regionDefault: unknown): PlannedQuery {
   return {
     id: "orders_count",
     source: "orders",
+    input: { type: "csv", path: "data/orders.csv" },
     measures: [],
     dimensions: [],
     groupingSets: [[]],

@@ -101,6 +101,18 @@ const barBlock = z
           : customIssue("HM3007", ["grain"], 'use either "by" or "grain", not both'),
       );
     }
+    if (b.grain !== undefined) {
+      for (const key of ["sort", "limit"] as const) {
+        if (b[key] === undefined) continue;
+        ctx.addIssue(
+          customIssue(
+            "HM3007",
+            [key],
+            `a time bar shows every bucket in order; remove "${key}", or use "by" for categories`,
+          ),
+        );
+      }
+    }
     oneMetricWhenSplit(b, ctx);
   });
 

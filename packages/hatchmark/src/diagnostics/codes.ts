@@ -151,12 +151,17 @@ export const CODES = {
   HM3007: {
     title: "conflicting properties",
     explanation:
-      "Two properties that cannot be used together are both set, or a combination of values is not supported.",
+      "Two properties that cannot be used together are both set, or a combination of values is not supported, such as sort or limit on a time bar, or two period filters on one dashboard.",
   },
   HM3008: {
     title: "list default on a single-value select",
     explanation:
       'A select filter without "multiple": true picks one value, but its default is a list, so the page would open on a state the filter cannot show. Write the one value without brackets, set "multiple": true to allow several values, or remove the default to show everything. A one-item list has a safe fix that unwraps it.',
+  },
+  HM3009: {
+    title: "invalid date or time in a filter",
+    explanation:
+      'A filter on a metric\'s time column compares with a date or a time, written in strict ISO 8601 so it means the same everywhere. A day is YYYY-MM-DD, zero-padded ("2026-02-01", not "2026-2-1"), and means that whole day in the project time zone. A time is YYYY-MM-DDTHH:MM or YYYY-MM-DDTHH:MM:SS with up to 6 decimals: with Z or an offset such as -05:00 it is that exact moment, without one it is wall-clock time in the project time zone. The fix rewrites a near miss (unpadded parts, a space instead of T) into the strict form; read it before applying.',
   },
   HM4001: {
     title: "percent of total on a non-additive metric",

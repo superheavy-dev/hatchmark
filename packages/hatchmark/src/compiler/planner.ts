@@ -7,6 +7,7 @@ import {
   DEFAULT_PERIOD,
   type Metric,
   type Project,
+  type Source,
   type SpecFile,
   type TimeGrain,
 } from "../spec/index.js";
@@ -35,6 +36,7 @@ interface Context {
   file: SpecFile<"dashboard">;
   spec: Dashboard;
   metrics: Map<string, Metric>;
+  sources: Record<string, Source>;
   params: PlanParam[];
   range: QueryPlan["period"]["range"];
   compare: Comparison;
@@ -135,11 +137,14 @@ function planReading(
   const ids = new Map<string, string>();
   const queries: PlannedQuery[] = [];
   for (const [key, group] of groups) {
+    const input = ctx.sources[group.source];
+    if (input === undefined) continue;
     const dimensions: PlannedDimension[] = axes.map((axis) =>
       axis.kind === "column" ? axis : { kind: "time", column: group.time ?? "", grain: axis.grain },
     );
     const shape: Omit<PlannedQuery, "id"> = {
       source: group.source,
+      input,
       measures: group.metrics.flatMap((m) => {
         const metric = ctx.metrics.get(m);
         const measure = metric && plannedMeasure(m, metric);
@@ -207,7 +212,7 @@ function planBlockAt(
         const timed = hasTime(ctx, block.metric);
         return {
           measures: planReading(ctx, names, [], [[]], "none"),
-          ...(compare !== "none" && ctx.range !== "all_time" && timed
+          ...(compare !== "none" && timed
             ? { previous: planReading(ctx, names, [], [[]], compare) }
             : {}),
           ...(block.sparkline === true && timed
@@ -311,6 +316,7 @@ function context(
       file,
       spec,
       metrics,
+      sources: project.config.spec?.sources ?? {},
       params: resolveParams(project, dashboard),
       range: period.range,
       compare: period.compare,

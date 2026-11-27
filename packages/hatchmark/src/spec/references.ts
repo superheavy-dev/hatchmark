@@ -8,12 +8,13 @@ import {
   type JsonNode,
   type Severity,
 } from "../diagnostics/index.js";
-import { hasColumn } from "./common.js";
+import { hasColumn, sameColumn } from "./common.js";
 import { type Block, blockId, type Dashboard, DEFAULT_PERIOD } from "./dashboard.js";
 import { addPropertyFix, removeItemFix, replaceValueFix } from "./fixes.js";
 import { metricSources } from "./graph.js";
 import { isAdditive, type Metric } from "./metric.js";
 import type { Project, SpecFile } from "./project.js";
+import { parseTemporal, temporalRepair } from "./temporal.js";
 
 export const TEXT_REFERENCE_FIELDS = ["value", "previous", "change", "change_pct"] as const;
 function optional<K extends string, V>(key: K, value: V | undefined): { [P in K]?: V } {
@@ -111,6 +112,7 @@ function checkMetrics(project: Project, out: Diagnostic[]): void {
     const metric = file.spec;
     if (metric === undefined) continue;
     const r = reporter(file, out);
+    if (metric.type !== "ratio") checkTimeFilters(file, metric, r);
     if (metric.type !== "ratio") {
       if (project.config.spec && !sources.includes(metric.table)) {
         r.report("HM2001", "/table", `unknown source "${metric.table}"`, {
@@ -155,6 +157,54 @@ function checkMetrics(project: Project, out: Diagnostic[]): void {
       );
     }
   }
+}
+
+/**
+ * HM3009: a filter on the metric's time column must be a strict ISO 8601 date or date-time, so its
+ * meaning never depends on a database's cast rules (see parseTemporal).
+ */
+function checkTimeFilters(
+  file: SpecFile<"metric">,
+  metric: Metric & { type: "aggregate" | "sql" },
+  r: Reporter,
+): void {
+  const time = metric.time;
+  if (time === undefined) return;
+  (metric.filters ?? []).forEach((filter, i) => {
+    if (!sameColumn(filter.column, time)) return;
+    const values: [string, unknown][] =
+      filter.op === "between"
+        ? [
+            ["from", filter.from],
+            ["to", filter.to],
+          ]
+        : filter.op === "in" || filter.op === "not_in"
+          ? filter.values.map((v, j) => [`values/${j}`, v])
+          : "value" in filter
+            ? [["value", filter.value]]
+            : [];
+    for (const [key, value] of values) {
+      if (typeof value === "string" && parseTemporal(value) !== undefined) continue;
+      const pointer = `/filters/${i}/${key}`;
+      const repaired = typeof value === "string" ? temporalRepair(value) : undefined;
+      r.report("HM3009", pointer, `${JSON.stringify(value)} is not a date or time`, {
+        label: `"${time}" is the metric's time column`,
+        help: "write a day as YYYY-MM-DD, a local time as YYYY-MM-DDTHH:MM:SS, or an exact moment with Z or an offset such as -05:00",
+        ...optional(
+          "fix",
+          repaired === undefined
+            ? undefined
+            : replaceValueFix(
+                file.document,
+                pointer,
+                repaired,
+                "unsafe",
+                `replace with "${repaired}"`,
+              ),
+        ),
+      });
+    }
+  });
 }
 
 function reaches(
@@ -401,7 +451,21 @@ function checkDashboard(project: Project, file: SpecFile<"dashboard">, out: Diag
   });
 
   const filterIds = new Set<string>();
+  let periodFilter: string | undefined;
   (dashboard.filters ?? []).forEach((filter, i) => {
+    if (filter.type === "period") {
+      if (periodFilter !== undefined) {
+        r.report(
+          "HM3007",
+          `/filters/${i}`,
+          `a dashboard takes one period filter, and "${periodFilter}" is already one`,
+          {
+            help: "merge the options into one period filter; every block reads the same range",
+          },
+        );
+      }
+      periodFilter ??= filter.id;
+    }
     if (filterIds.has(filter.id)) {
       r.report("HM2008", `/filters/${i}/id`, `duplicate filter id "${filter.id}"`);
     }

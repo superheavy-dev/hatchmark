@@ -3,7 +3,6 @@ import {
   type Block,
   blockId,
   type Metric,
-  PERIOD_RANGES,
   type PeriodRange,
   type Project,
   type TimeGrain,
@@ -32,7 +31,14 @@ import type {
   QueryPlan,
   QueryResult,
 } from "./plan.js";
-import { nextDay, queryBounds, timeBuckets, type WindowBounds, windowBounds } from "./windows.js";
+import {
+  effectiveRange,
+  nextDay,
+  queryBounds,
+  timeBuckets,
+  type WindowBounds,
+  windowBounds,
+} from "./windows.js";
 
 type Key = string | number | boolean | null;
 
@@ -142,7 +148,8 @@ class Assembler {
   /**
    * A measure's value in one row. A row a query does not have reads as no rows: 0 for additive
    * components (sum, count, additive SQL), null for the others, so empty groups and empty time
-   * buckets are zero-filled exactly where the metric adds up.
+   * buckets are zero-filled exactly where the metric adds up. A null in a row the query has is an
+   * undefined value (a SQL metric's NULL or non-finite result) and stays null.
    */
   private measure(queryId: string, metric: string, key: string): Value {
     const indexed = this.queries.get(queryId);
@@ -154,7 +161,7 @@ class Assembler {
       const raw = row === undefined || at === undefined ? null : row[at];
       const value = typeof raw === "number" ? raw : null;
       const additive = measure.components.find((c) => c.id === id)?.reaggregate === "sum";
-      return value === null && additive ? 0 : value;
+      return value === null && additive && row === undefined ? 0 : value;
     };
     const { combine } = measure;
     return combine.op === "identity"
@@ -428,13 +435,11 @@ class Assembler {
 
   dashboardPeriod(): { range: PeriodRange; compare: QueryPlan["period"]["compare"] } {
     const param = this.plan.params.find((p) => p.kind === "period");
-    const bound = param && this.context.bindings[param.id];
-    const range =
-      typeof bound === "string" && (PERIOD_RANGES as readonly string[]).includes(bound)
-        ? (bound as PeriodRange)
-        : param?.kind === "period"
-          ? param.default
-          : this.plan.period.range;
+    const range = effectiveRange(
+      this.plan.period.range,
+      param?.kind === "period" ? param : undefined,
+      this.context.bindings,
+    );
     return { range, compare: this.plan.period.compare };
   }
 }

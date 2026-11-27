@@ -22,10 +22,12 @@ Every number on a page comes from one query plan, compiled from the specs and ru
 
 Metric filters and dashboard select filters compare a column with a value:
 
-- A date (`YYYY-MM-DD`) compared with a timestamp column compares the row's local calendar date:
-  `eq "2026-01-31"` matches the whole day, `between "2026-01-01"` and `"2026-01-31"` includes all of
-  January 31, and `gt "2026-01-31"` starts on February 1. A value with a time of day compares the
-  local wall-clock time.
+- A value compared with a date or timestamp column is strict ISO 8601; anything else is HM3009.
+  A day, zero-padded `YYYY-MM-DD`, compares the row's local calendar date: `eq "2026-01-31"`
+  matches the whole day, `between "2026-01-01"` and `"2026-01-31"` includes all of January 31,
+  and `gt "2026-01-31"` starts on February 1. A date-time (`YYYY-MM-DDTHH:MM`, optional seconds
+  and up to 6 decimals) with `Z` or an offset such as `-05:00` is that exact instant; without one
+  it is wall-clock time in the project time zone.
 - `neq` and `not_in` keep rows whose column is null: "not West" includes rows whose region is
   unknown. SQL's `<>` would drop them; Hatchmark uses `IS DISTINCT FROM`. To drop them too, add a
   `not_null` filter.
@@ -54,10 +56,20 @@ Metric filters and dashboard select filters compare a column with a value:
 
 ## Precision
 
-DuckDB computes every aggregate at full precision and the result is converted to a JavaScript
-number once. Sums of floating-point columns (CSV numbers with a decimal point) are added as exact
-decimals with 9 decimal places, so a total of cents is exact and the same on every run. Integers
-are exact up to 2^53 (about 9 quadrillion).
+Integer and DECIMAL columns aggregate exactly in DuckDB and are converted to a JavaScript number
+once; integers are exact up to 2^53 (about 9 quadrillion). Floating-point columns (CSV numbers
+with a decimal point) sum with compensated (Kahan-Babuska) summation, and every floating-point
+result is rounded to 15 significant digits, so a total is the same, byte for byte, however many
+threads added it, and tiny values such as 4e-10 are never rounded away. SQL metrics run on one
+thread, since their SQL cannot be rewritten. A SQL result that is not a number (division by zero)
+is empty, never 0.
+
+## Plans
+
+A dashboard has at most one period filter (HM3007): the dashboard's period and every block read
+the range it selects. Each planned query carries its source's file and reader options, so
+changing a path or a delimiter changes the query's id and the plan hash. A time bar shows every
+bucket in order, so it takes no sort or limit (HM3007).
 
 ## Reading files
 

@@ -1,5 +1,5 @@
 import { type Comparison, PERIOD_RANGES, type PeriodRange, type TimeGrain } from "../spec/index.js";
-import type { ExecutionContext, PlannedQuery } from "./plan.js";
+import type { ExecutionContext, PlannedParam, PlannedQuery } from "./plan.js";
 
 /**
  * A window as calendar dates in the project time zone: start inclusive, end exclusive, both
@@ -153,20 +153,37 @@ export function queryBounds(
 ): WindowBounds | undefined {
   const { window } = query;
   if (window.column === undefined) return { kind: "unbounded" };
-  let range = window.range;
-  for (const param of query.params) {
-    if (param.kind !== "period" || param.column !== window.column) continue;
-    const bound = context.bindings[param.id];
-    if (bound === undefined) range = param.default;
-    else if (typeof bound === "string" && (PERIOD_RANGES as readonly string[]).includes(bound)) {
-      range = bound as PeriodRange;
-    } else {
-      throw new TypeError(
-        `period filter "${param.id}" is bound to ${JSON.stringify(bound)}, not a period range`,
-      );
-    }
+  const param = query.params.find(
+    (p): p is PlannedParam & { kind: "period" } =>
+      p.kind === "period" && p.column === window.column,
+  );
+  return windowBounds(
+    effectiveRange(window.range, param, context.bindings),
+    window.shift,
+    context.asOf,
+  );
+}
+
+/**
+ * The range a period filter makes current: its bound range, else its default, else the base range
+ * when there is no period filter. A dashboard has at most one period filter (check, HM3007), so
+ * the dashboard's period and every query it windows resolve to the same range. Throws on a binding
+ * that is not a period range.
+ */
+export function effectiveRange(
+  base: PeriodRange,
+  param: { id: string; default: PeriodRange } | undefined,
+  bindings: ExecutionContext["bindings"],
+): PeriodRange {
+  if (param === undefined) return base;
+  const bound = bindings[param.id];
+  if (bound === undefined) return param.default;
+  if (typeof bound === "string" && (PERIOD_RANGES as readonly string[]).includes(bound)) {
+    return bound as PeriodRange;
   }
-  return windowBounds(range, window.shift, context.asOf);
+  throw new TypeError(
+    `period filter "${param.id}" is bound to ${JSON.stringify(bound)}, not a period range`,
+  );
 }
 
 /** The first day of the time bucket a date falls in; weeks start on weekStart. */

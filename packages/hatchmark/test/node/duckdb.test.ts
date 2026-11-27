@@ -463,6 +463,7 @@ describe("DuckDB executor queries", () => {
   const weekQuery = (column: string): PlannedQuery => ({
     id: "q_week",
     source: "events",
+    input: { type: "csv", path: "events.csv" },
     measures: [
       {
         metric: "n",
