@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { parseAllDocuments } from "yaml";
+import { parseAllDocuments, stringify } from "yaml";
 import {
   type Position,
   parseYamlFile,
@@ -140,5 +140,51 @@ describe("span invariants", () => {
         }
       }
     }
+  });
+});
+
+describe("stringOffset on every scalar style", () => {
+  const WORDS = ["a", "bb", "é", "😀", "x#y", "q'q", 'd"d', "b\\s", "--", ":", "-", "  ", "\t"];
+  const STYLES = [
+    "PLAIN",
+    "QUOTE_SINGLE",
+    "QUOTE_DOUBLE",
+    "BLOCK_LITERAL",
+    "BLOCK_FOLDED",
+  ] as const;
+  it("maps a token's start and end to the token in the source, however the value is written", () => {
+    const random = lcg(1839);
+    let checked = 0;
+    for (let n = 0; n < 400; n++) {
+      const words = Array.from(
+        { length: 2 + Math.floor(random() * 14) },
+        () => WORDS[Math.floor(random() * WORDS.length)],
+      );
+      const at = Math.floor(random() * (words.length + 1));
+      words.splice(at, 0, "{{tok}}");
+      const value = words.join(random() < 0.2 ? "\n" : " ").trim();
+      const style = STYLES[Math.floor(random() * STYLES.length)] ?? "PLAIN";
+      const text = stringify(
+        { x: value },
+        {
+          version: "1.2",
+          defaultStringType: style,
+          lineWidth: 12 + Math.floor(random() * 30),
+          minContentWidth: 4,
+        },
+      );
+      const doc = new SpecDocument("x.yaml", text);
+      const node = doc.locate("/x")?.node;
+      if (node?.kind !== "string" || node.value !== value) continue;
+      const index = node.value.indexOf("{{tok}}");
+      const start = doc.stringOffset(node, index);
+      const end = doc.stringOffset(node, index + "{{tok}}".length, "end");
+      const where = JSON.stringify(text);
+      expect(text[start], where).toBe("{");
+      expect(text[end - 1], where).toBe("}");
+      expect(text.slice(start, end).replace(/\\\r?\n\s*/g, ""), where).toBe("{{tok}}");
+      checked++;
+    }
+    expect(checked).toBeGreaterThan(300);
   });
 });

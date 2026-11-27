@@ -154,9 +154,9 @@ const FILTER_VALUE_KEYS = new Set(["value", "values", "from", "to"]);
 function commentedValues(document: SpecDocument): Diagnostic[] {
   const found: Diagnostic[] = [];
   const text = document.text;
-  const check = (node: SpecNode): void => {
+  const check = (node: SpecNode, flow = false): void => {
     if (node.kind === "array") {
-      for (const item of node.items) check(item);
+      for (const item of node.items) check(item, flow || node.flow);
       return;
     }
     const plain =
@@ -167,7 +167,8 @@ function commentedValues(document: SpecDocument): Diagnostic[] {
     const comment = /^[ \t]+#/.exec(text.slice(node.end));
     if (comment === null) return;
     const lineEnd = text.slice(node.end).search(/\r\n|\r|\n|$/);
-    const written = text.slice(node.start, node.end + lineEnd).trimEnd();
+    const line = text.slice(node.start, node.end + lineEnd);
+    const written = (flow ? line.replace(/[\s,\]}]+$/, "") : line).trimEnd();
     found.push({
       code: "HM1008",
       severity: "warning",
@@ -182,6 +183,7 @@ function commentedValues(document: SpecDocument): Diagnostic[] {
     if (node === undefined) return;
     if (node.kind === "array") for (const item of node.items) walk(item);
     if (node.kind !== "object") return;
+    const flow = node.flow;
     const keys = new Set(node.members.map((m) => m.key));
     const select = node.members.some(
       (m) => m.key === "type" && m.value.kind === "string" && m.value.value === "select",
@@ -189,9 +191,10 @@ function commentedValues(document: SpecDocument): Diagnostic[] {
     for (const member of node.members) {
       if (
         (keys.has("op") && FILTER_VALUE_KEYS.has(member.key)) ||
-        (select && member.key === "default")
+        (select && member.key === "default") ||
+        member.key === "sql"
       )
-        check(member.value);
+        check(member.value, flow);
       else walk(member.value);
     }
   };
@@ -294,7 +297,7 @@ export async function loadProject(
             file: CONFIG_FILE,
             pointer,
             ...config.document.locationOf(pointer),
-            help: 'check the delimiter and quoting, or set "header": false',
+            help: "check the delimiter and quoting, or set header: false",
             docs: docsCommand("HM2014"),
           });
         } else if (header !== undefined) {

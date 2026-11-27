@@ -103,6 +103,6 @@ document after `---` (HM1006). A number must be written as JSON writes it: `0123
 would hide the lines after it. A `.json` or `.yml` file where a spec file belongs is not read;
 HM1007 names the `.yaml` file Hatchmark expects.
 
-A `#` after a space starts a comment, so `value: Store #12` reads as `Store`. A filter value or
-a select default followed by a comment on the same line is a warning (HM1008); quote the value to
-keep the `#`.
+A `#` after a space or tab starts a comment, so `value: Store #12` reads as `Store`. A filter
+value, a select default or a one-line `sql` followed by a comment on the same line is a warning
+(HM1008); quote the value to keep the `#`, or write SQL as a literal block.

@@ -182,26 +182,47 @@ describe("numbers YAML reads from spellings JSON does not have", () => {
       ).toEqual([]);
   });
 
-  it("warns when a comment follows an unquoted filter value or select default", () => {
-    const cases: [SpecKind, string, string][] = [
-      ["metric", eq("Store #12"), "Store"],
+  it("warns when a comment follows an unquoted filter value, select default or one-line sql", () => {
+    const cases: [SpecKind, string, string, string][] = [
+      ["metric", eq("Store #12"), "Store", "Store #12"],
+      ["metric", eq("Store\t#12"), "Store", "Store\t#12"],
       [
         "metric",
         metricWith("  - column: code\n    op: in\n    values:\n      - Store #12\n"),
         "Store",
+        "Store #12",
+      ],
+      [
+        "metric",
+        metricWith(
+          "  - column: code\n    op: in\n    values: [\n      paid,\n      Store #12,\n    ]\n",
+        ),
+        "Store",
+        "Store #12",
+      ],
+      [
+        "metric",
+        metricWith("  - column: code\n    op: in\n    values: [paid,\n      Store # 12]\n    ]\n"),
+        "Store",
+        "Store # 12",
       ],
       [
         "metric",
         metricWith("  - column: code\n    op: between\n    from: A # low\n    to: B\n"),
         "A",
+        "A # low",
       ],
-      ["dashboard", select("Store #12"), "Store"],
+      ["metric", sqlMetric("sum(amount) #- 1\n"), "sum(amount)", "sum(amount) #- 1"],
+      ["dashboard", select("Store #12"), "Store", "Store #12"],
     ];
-    for (const [kind, text, read] of cases) {
+    for (const [kind, text, read, quoted] of cases) {
       const parsed = parseSpecFile(kind, `${kind}s/probe.yaml`, text);
       const warning = parsed.diagnostics.find((d) => d.code === "HM1008");
       expect(warning, text).toMatchObject({ severity: "warning" });
       expect(warning?.message, text).toContain(JSON.stringify(read));
+      expect(warning?.help, text).toBe(
+        `quote it if the # is part of the value: ${JSON.stringify(quoted)}`,
+      );
     }
     for (const text of [
       eq('"Store #12"'),

@@ -599,7 +599,10 @@ export class SpecDocument {
           decoded++;
           continue;
         }
-        while (decoded < index && blank(node.value[decoded])) decoded++;
+        if (node.style === "double") {
+          const breaks = text.slice(pos, run).match(/\r\n|\r|\n/g)?.length ?? 0;
+          decoded += breaks === 1 ? 1 : breaks - 1;
+        } else while (decoded < index && blank(node.value[decoded])) decoded++;
         pos = run;
         continue;
       }
