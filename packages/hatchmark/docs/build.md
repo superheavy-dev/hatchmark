@@ -14,7 +14,8 @@ hatchmark build --json     # one line of JSON on stdout
 1. Loads the project and checks it, like `hatchmark check`. Any error stops the build before a
    query runs (exit 1, the same diagnostics as check).
 2. Plans every dashboard, runs its queries in DuckDB against the files in `dataDir`, and resolves
-   `asOf: "latest_data"` once per dashboard.
+   `asOf: "latest_data"` or `"latest_common_data"` once per dashboard from the source horizons.
+   The build machine's clock is read only to warn about future-dated rows (`HM4012`).
 3. Renders each dashboard with the Default theme and writes the output directory.
 
 Blocks the renderer does not draw yet (`bar_list`, `text`) are skipped with warning `HM4002`;

@@ -1,5 +1,6 @@
 import { type Filter, parseTemporal, sameColumn, WEEKDAYS } from "../spec/index.js";
 import { canonicalJson } from "./hash.js";
+import type { HorizonLag } from "./horizons.js";
 import { selectValues } from "./params.js";
 import type { ExecutionContext, MeasureComponent, PlannedQuery } from "./plan.js";
 import { queryBounds } from "./windows.js";
@@ -26,6 +27,8 @@ export interface SqlSource {
   name: string;
   relation: string;
   columns: { name: string; type: string }[];
+  /** Time zone of timestamps without an offset (the source's "timezone"); UTC when absent. */
+  timezone?: string;
 }
 
 /** A query's SQL and the layout of its result row. */
@@ -79,7 +82,7 @@ function localTime(source: SqlSource, name: string, timezone: string, sql: Sql):
   if (type === "DATE") return q;
   if (type === "TIMESTAMP WITH TIME ZONE") return `timezone(${sql.bind(timezone)}, ${q})`;
   if (isTimestamp(type)) {
-    return `timezone(${sql.bind(timezone)}, timezone('UTC', CAST(${q} AS TIMESTAMP)))`;
+    return `timezone(${sql.bind(timezone)}, timezone(${naiveZone(source, sql)}, CAST(${q} AS TIMESTAMP)))`;
   }
   throw new Error(
     `time column "${actual}" of source "${source.name}" has type ${type}; it needs DATE or TIMESTAMP`,
@@ -92,7 +95,12 @@ function instant(source: SqlSource, name: string, timezone: string, sql: Sql): s
   const q = quote(actual);
   if (type === "TIMESTAMP WITH TIME ZONE") return q;
   if (type === "DATE") return `timezone(${sql.bind(timezone)}, CAST(${q} AS TIMESTAMP))`;
-  return `timezone('UTC', CAST(${q} AS TIMESTAMP))`;
+  return `timezone(${naiveZone(source, sql)}, CAST(${q} AS TIMESTAMP))`;
+}
+
+/** The zone a timestamp without an offset is read in: the source's timezone, else UTC. */
+function naiveZone(source: SqlSource, sql: Sql): string {
+  return source.timezone === undefined ? "'UTC'" : sql.bind(source.timezone);
 }
 
 /**
@@ -337,13 +345,39 @@ export function querySql(
   };
 }
 
-/** The SQL of latest_data for one time column: its last local date. */
-export function latestDateSql(source: SqlSource, name: string, timezone: string): BuiltSql {
+/**
+ * The SQL of a source horizon (RFC 0001 section 6.1): the latest value of a column over all rows,
+ * with no filters, as a local wall-clock timestamp "YYYY-MM-DDTHH:MM:SS.ffffff" in the time zone,
+ * the instant the source is complete through. A DATE column is complete through the end of its
+ * latest date. A lag in days moves that local time back by whole days; a lag in hours moves the
+ * instant back. naive is true for a timestamp column without an offset.
+ */
+export function horizonSql(
+  source: SqlSource,
+  name: string,
+  timezone: string,
+  lag?: HorizonLag,
+): BuiltSql & { naive: boolean } {
   const sql = new Sql();
-  const local = localTime(source, name, timezone, sql);
+  const { name: actual, type } = column(source, name);
+  if (type !== "DATE" && !isTimestamp(type)) {
+    throw new Error(
+      `time column "${actual}" of source "${source.name}" has type ${type}; it needs DATE or TIMESTAMP`,
+    );
+  }
+  const latest =
+    type === "DATE"
+      ? `timezone(${sql.bind(timezone)}, CAST(max(${quote(actual)}) AS TIMESTAMP) + INTERVAL 1 DAY)`
+      : `max(${instant(source, actual, timezone, sql)})`;
+  const moved =
+    lag !== undefined && "hours" in lag ? `${latest} - to_hours(${sql.bind(lag.hours)})` : latest;
+  const local = `timezone(${sql.bind(timezone)}, ${moved})`;
+  const back =
+    lag !== undefined && "days" in lag ? `${local} - to_days(${sql.bind(lag.days)})` : local;
   return {
-    text: `SELECT max(CAST(${local} AS DATE)) FROM ${source.relation}`,
+    text: `SELECT strftime(${back}, '%Y-%m-%dT%H:%M:%S.%f') FROM ${source.relation}`,
     params: sql.values(),
+    naive: isTimestamp(type) && type !== "TIMESTAMP WITH TIME ZONE",
   };
 }
 

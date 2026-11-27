@@ -248,6 +248,31 @@ export const CODES = {
     explanation:
       'A ratio or formula combines a metric summed over each period (a flow, such as revenue) with one read at an instant (such as a balance, an active count or a trailing window). The result would change meaning with the grain: a month of revenue is not comparable with a balance, and a week of it even less. Give the flow a "trailing" window so it is read at an instant too.',
   },
+  HM4010: {
+    title: "source behind the as-of date",
+    explanation:
+      'A source is complete only through a moment more than a day before the dashboard\'s as-of instant, so its metrics end early or look like a drop. A source\'s horizon is the latest value of the time column its metrics use, over all rows, ignoring filters; a date column is complete through the end of its latest date. Check that the export is current, or set "freshness" on the source: {"lag": {"days": 1}} when the newest day is still filling, {"column": "exported_at"} to measure another column, or {"through": "as_of"} for a sparse source that is complete whenever the build runs.',
+  },
+  HM4011: {
+    title: "nothing to resolve latest_data from",
+    explanation:
+      'period.asOf is "latest_data" or "latest_common_data", which resolve to the newest or the oldest source horizon, but no source can vote: the dashboard\'s metrics have no time column, their time columns are empty, or every source says {"through": "as_of"}. Set period.asOf to a date, or give a source a freshness rule with a column or a date.',
+  },
+  HM4012: {
+    title: "data after the build machine's clock",
+    explanation:
+      "A source has rows more than a day after the clock of the machine that ran the build, such as a typo in a year or scheduled entries. With latest_data they move the as-of date into the future. The clock is only used for this warning; it never changes the output, so builds stay reproducible. Fix the rows, or set period.asOf to a date.",
+  },
+  HM4013: {
+    title: "empty window",
+    explanation:
+      "A block's window starts at or after the horizon of every source it reads, so it has no data to show: a KPI would be empty and a chart would have no points. Pick a range that ends after the data does, or set period.asOf to a date the data covers.",
+  },
+  HM4016: {
+    title: "timestamps without an offset",
+    explanation:
+      'A source has timestamps without a time zone offset. Hatchmark reads them as UTC, but the project\'s time zone is not UTC, so if they are local times every bucket and window is shifted by the offset. Set "timezone" on the source to the zone the timestamps were written in, or export them with an offset.',
+  },
   HM4019: {
     title: "evaluation-time lookup on a metric that is not point-in-time",
     explanation:

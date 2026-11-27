@@ -107,6 +107,7 @@ export default {
         timezone: "America/New_York",
         anchors: { ...DEFAULT_ANCHORS, week: "monday" },
         params: [],
+        horizons: [],
         blocks: [],
         queries: [],
         materialization: {},

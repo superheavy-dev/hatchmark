@@ -1,4 +1,5 @@
 import type { Anchors, Comparison, Format, RangeSpec, TimeGrain } from "../spec/index.js";
+import type { SourceHorizon } from "./horizons.js";
 
 /**
  * DashboardData: everything the renderer needs to draw one dashboard, produced by the engine from a
@@ -171,6 +172,8 @@ export interface DashboardData {
   project: string;
   /** The resolved end date of every window (latest_data resolved once per plan). */
   asOf: string;
+  /** What each source read is complete through (RFC 0001 section 6.1), sorted by source and column. */
+  horizons: SourceHorizon[];
   period: { range: RangeSpec; compare: Comparison; current?: DateSpan; previous?: DateSpan };
   locale: string;
   currency: string;

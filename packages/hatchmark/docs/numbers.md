@@ -7,8 +7,9 @@ Every number on a page comes from one query plan, compiled from the specs and ru
 ## Time
 
 - **Time zone.** Rows are placed in time in hatchmark.json's `timezone`. A `TIMESTAMP WITH TIME
-  ZONE` value is converted to it. A timestamp without an offset (`2026-01-31 18:30:00`) is read as
-  UTC and converted. A `DATE` is a calendar date and is used as it is.
+ZONE` value is converted to it. A timestamp without an offset (`2026-01-31 18:30:00`) is read in
+  the source's `timezone`, or as UTC when the source sets none, and converted; a non-UTC project
+  gets note HM4016 for such a source. A `DATE` is a calendar date and is used as it is.
 - **Windows.** A range is a span of calendar dates in that time zone, start inclusive and
   end exclusive: `{"start", "end"}` dates, a shorthand (`{"last": 30, "unit": "day"}`,
   `{"to_date": "quarter"}`, `{"last_complete": "month"}`) or a named alias of one
@@ -16,9 +17,17 @@ Every number on a page comes from one query plan, compiled from the specs and ru
   `previous_year` or `{"shift": {"unit": "week", "by": -1}}`), with days clamped to the target
   month. `resolveRange()` in `src/compiler/windows.ts` is the definition of every range and
   comparison. A row is in the window when its local time is.
-- **latest_data** resolves once per dashboard, before any query runs: the last local date in any
-  time column the dashboard reads, across all its sources. Every block's window ends on that day.
-  If one source's data ends earlier, its short windows are partial.
+- **Horizons.** A source is complete through its horizon: by default the latest value of the time
+  column a metric uses, over all rows, ignoring filters. A timestamp gives that instant; a date is
+  complete through the end of that day. The source's `freshness` can measure another column, take
+  a lag off, or fix the date (project.md). Each build's DashboardData lists the horizons it used.
+- **latest_data** resolves once per dashboard, before any query runs, to the newest horizon the
+  dashboard reads; the as-of date is its last local date, and every block's window ends on that
+  day. `latest_common_data` takes the oldest horizon instead, so no source ends before the others.
+  A source with `{"through": "as_of"}` doesn't vote; with no source left to vote, the build fails
+  with HM4011. Data checks warn when a source is more than a day behind the as-of (HM4010), when a
+  horizon is more than a day after the build machine's clock (HM4012; the clock never changes the
+  output), and when a block's window starts after every source it reads ends (HM4013).
 - **Buckets.** Time series bucket by local date; weeks start on the week anchor, and quarters and
   years on their `MM-DD` anchors (hatchmark.json `anchors`, or a block's `{"unit", "anchor"}`
   grain). The axis lists every

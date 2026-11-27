@@ -5,6 +5,13 @@
   "description": "Four complete quarters, Oct 2025 to Sep 2026, against the year before, at the grain you pick.",
   "project": "Global Sales",
   "asOf": "2026-10-31",
+  "horizons": [
+    {
+      "source": "orders",
+      "column": "ordered_at",
+      "through": "2026-10-31T18:54:53.000000"
+    }
+  ],
   "period": {
     "range": {
       "start": "2025-10-01",

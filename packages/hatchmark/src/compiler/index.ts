@@ -2,6 +2,7 @@ export * from "./assemble.js";
 export * from "./dashboard-data.js";
 export * from "./explain.js";
 export * from "./hash.js";
+export * from "./horizons.js";
 export * from "./params.js";
 export * from "./plan.js";
 export * from "./planner.js";

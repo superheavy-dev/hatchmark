@@ -167,6 +167,7 @@ const data: DashboardData = {
   description: d.meta.description,
   project: "Parcelwise",
   asOf: "2026-10-31",
+  horizons: [],
   period: { range: "last_complete_month", compare: "previous_period", current: OCT, previous: SEP },
   locale: "en-US",
   currency: "USD",

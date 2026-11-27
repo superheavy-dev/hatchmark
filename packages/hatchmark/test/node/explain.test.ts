@@ -180,7 +180,7 @@ describe("explain", () => {
       }),
       "dashboards/d.json": {
         title: "D",
-        period: { asOf: "2026-01-31", range: "all_time", compare: "none" },
+        period: { asOf: "2026-01-15", range: "all_time", compare: "none" },
         blocks: [{ type: "kpi", metric: "huge" }],
       },
     });

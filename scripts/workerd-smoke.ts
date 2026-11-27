@@ -63,7 +63,7 @@ try {
     'SELECT coalesce(sum("amount"), 0)\nFROM (SELECT * FROM "__hm_source_orders") AS "hm_rows"\nWHERE "ordered_at" >= CAST(\'2026-10-01\' AS DATE) AND "ordered_at" < CAST(\'2026-11-01\' AS DATE)',
   );
   assert.deepEqual(body.kpi.current, { start: "2026-10-01", end: "2026-11-01" });
-  assert.equal(body.planHash, "16eef3ef02f5f012d7a5a6154c470ae18c3de048a762c23c1d3486bd731d9b99");
+  assert.equal(body.planHash, "7d575f995275f3d6263a0c2a3aab5f19358e47ea5bab49b986fef1daa02f136d");
   assert.match(body.page, /^<!doctype html>/);
   assert.match(body.page, /<h1>Sales overview<\/h1>/);
   assert.match(body.page, /Data through Oct 31, 2026/);

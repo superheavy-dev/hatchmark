@@ -17,6 +17,7 @@ import {
   type SpecFile,
 } from "../spec/index.js";
 import { canonicalJson, sha256Hex } from "./hash.js";
+import { planHorizons } from "./horizons.js";
 import { paramsForQuery, resolveParams } from "./params.js";
 import {
   type BlockPlan,
@@ -116,10 +117,7 @@ export function notBuiltYet(
   }
   const source = sources[metric.table];
   if (source?.type === "lookup") return "lookup sources";
-  for (const option of ["snapshot", "freshness", "timezone"] as const) {
-    if (source !== undefined && source[option] !== undefined)
-      return `the source option "${option}"`;
-  }
+  if (source?.snapshot !== undefined) return 'the source option "snapshot"';
   if ((metric.segments ?? []).length > 0) return "segments";
   if ((metric.filters ?? []).some((f) => f.op === "in_table" || f.op === "not_in_table")) {
     return "in_table and not_in_table filters";
@@ -473,6 +471,7 @@ export function planDashboard(project: Project, dashboard: string): PlanResult<Q
       timezone: config?.timezone ?? "UTC",
       anchors: ctx.anchors,
       params: ctx.params,
+      horizons: planHorizons([...queries.values()], config?.sources ?? {}),
       blocks,
       queries: [...queries.values()],
       materialization: {},

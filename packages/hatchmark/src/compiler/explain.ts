@@ -70,9 +70,10 @@ export async function explainDashboard(
       ],
     };
   }
-  const resolved = await executionContext(plan, executor);
+  const resolved = await executionContext(project, plan, executor);
+  diagnostics.push(...resolved.diagnostics);
   const { context } = resolved;
-  if (context === undefined) return { diagnostics: [...diagnostics, ...resolved.diagnostics] };
+  if (context === undefined) return { diagnostics };
   const queries = new Map(plan.queries.map((q) => [q.id, q]));
   const explained: ExplainedBlock[] = [];
   try {

@@ -54,7 +54,7 @@ async function probe(
     "hatchmark.json": {
       ...PROJECT_DEFAULTS,
       name: "Probe",
-      sources: { orders: { type: "csv", path: "orders.csv" } },
+      sources: { orders: { type: "csv", path: "orders.csv", freshness: { through: "as_of" } } },
     },
     "orders.csv": options.text ?? CSV,
     "metrics/revenue.json": REVENUE,
@@ -180,7 +180,14 @@ describe("HAT-22 probes", () => {
           "hatchmark.json": {
             ...PROJECT_DEFAULTS,
             name: "Probe",
-            sources: { orders: { type: "csv", path: "other.csv", delimiter: ";" } },
+            sources: {
+              orders: {
+                type: "csv",
+                path: "other.csv",
+                delimiter: ";",
+                freshness: { through: "as_of" },
+              },
+            },
           },
           "other.csv": "day;amount\n2026-02-03;123\n",
         },
@@ -193,7 +200,12 @@ describe("HAT-22 probes", () => {
       planDashboard(b.project, "probe").plan,
     ];
     if (planA === undefined || planB === undefined) throw new Error("no plan");
-    expect(planB.queries[0]?.input).toEqual({ type: "csv", path: "other.csv", delimiter: ";" });
+    expect(planB.queries[0]?.input).toEqual({
+      type: "csv",
+      path: "other.csv",
+      delimiter: ";",
+      freshness: { through: "as_of" },
+    });
     expect(planHash(planA)).not.toBe(planHash(planB));
     expect(planA.queries[0]?.id).not.toBe(planB.queries[0]?.id);
 
@@ -219,7 +231,7 @@ describe("HAT-22 probes", () => {
       "hatchmark.json": {
         ...PROJECT_DEFAULTS,
         name: "Probe",
-        sources: { orders: { type: "csv", path: "orders.csv" } },
+        sources: { orders: { type: "csv", path: "orders.csv", freshness: { through: "as_of" } } },
       },
       "metrics/total.json": metric({
         type: "aggregate",
@@ -587,7 +599,7 @@ describe("HAT-23 blockers", () => {
       ...PROJECT_DEFAULTS,
       name: "Adv",
       timezone: NY,
-      sources: { orders: { type: "csv", path: "orders.csv" } },
+      sources: { orders: { type: "csv", path: "orders.csv", freshness: { through: "as_of" } } },
     },
     "orders.csv": ORDERS,
     ...Object.fromEntries(Object.entries(metrics).map(([n, m]) => [`metrics/${n}.json`, m])),

@@ -2,6 +2,13 @@ import { type Diagnostic, docsCommand } from "../diagnostics/index.js";
 import { checkReferences, type Project, parseDiagnostics } from "../spec/index.js";
 import { assemble } from "./assemble.js";
 import type { DashboardData } from "./dashboard-data.js";
+import {
+  type HorizonLag,
+  horizonFor,
+  type PlannedHorizon,
+  type SourceHorizon,
+  type TimeColumn,
+} from "./horizons.js";
 import type {
   ExecutionContext,
   MeasureExpression,
@@ -10,37 +17,20 @@ import type {
   QueryResult,
 } from "./plan.js";
 import { planDashboard } from "./planner.js";
-import { queryBounds, resolveRange, SUPPORTED_DATES } from "./windows.js";
-
-/** A time column a plan reads, by source. */
-export interface TimeColumn {
-  source: string;
-  column: string;
-}
+import { nextDay, previousDay, queryBounds, resolveRange, SUPPORTED_DATES } from "./windows.js";
 
 /**
- * A QueryExecutor that can also resolve "latest_data": the last date, in the time zone, that any
- * of the columns holds (max over all of them), or undefined when they hold no dates at all.
+ * A QueryExecutor that can also measure source horizons for "latest_data" (RFC 0001 section 6.1):
+ * the latest value of a column over all rows, as a local wall-clock timestamp
+ * "YYYY-MM-DDTHH:MM:SS.ffffff" in the time zone (horizonSql), undefined when the column is empty.
+ * naive is true for a timestamp column without an offset.
  */
 export interface DashboardExecutor extends QueryExecutor {
-  latestDate(columns: TimeColumn[], timezone: string): Promise<string | undefined>;
-}
-
-/**
- * Every time column a plan reads, for latest_data: the columns that window its queries, place them
- * on time axes, or that a period filter windows. Sorted, so the same plan asks the same question.
- */
-export function planTimeColumns(plan: QueryPlan): TimeColumn[] {
-  const seen = new Map<string, TimeColumn>();
-  const add = (source: string, column: string | undefined) => {
-    if (column !== undefined) seen.set(JSON.stringify([source, column]), { source, column });
-  };
-  for (const query of plan.queries) {
-    add(query.source, query.window.column);
-    for (const d of query.dimensions) if (d.kind === "time") add(query.source, d.column);
-    for (const p of query.params) if (p.kind === "period") add(p.source, p.column);
-  }
-  return [...seen.entries()].sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0)).map(([, c]) => c);
+  horizon(
+    column: TimeColumn,
+    timezone: string,
+    lag?: HorizonLag,
+  ): Promise<{ through?: string; naive: boolean }>;
 }
 
 function failure(message: string): Diagnostic {
@@ -57,44 +47,141 @@ export function blockingErrors(project: Project, dashboard: string): Diagnostic[
   );
 }
 
+/** Local midnight at the start of a date, in the form horizons take. */
+const midnight = (date: string) => `${date}T00:00:00.000000`;
+
+/** The last local date before an instant: its date, or the day before when it is midnight. */
+function dateBefore(instant: string): string {
+  const date = instant.slice(0, 10);
+  return instant.slice(11) === "00:00:00.000000" ? previousDay(date) : date;
+}
+
+/** The build machine's clock as local wall-clock time in the time zone, for HM4012 only. */
+function localNow(now: Date, timezone: string): string {
+  const parts = Object.fromEntries(
+    new Intl.DateTimeFormat("en-US", {
+      timeZone: timezone,
+      hourCycle: "h23",
+      year: "numeric",
+      month: "2-digit",
+      day: "2-digit",
+      hour: "2-digit",
+      minute: "2-digit",
+      second: "2-digit",
+    })
+      .formatToParts(now)
+      .map((p) => [p.type, p.value]),
+  );
+  return `${parts.year}-${parts.month}-${parts.day}T${parts.hour}:${parts.minute}:${parts.second}.000000`;
+}
+
 /**
- * The ExecutionContext of a plan with nothing bound: "latest_data" resolved once to the last date
- * in every time column the plan reads, and every window checked against the supported dates. An
- * empty latest_data or a date out of range is an HM2015 error.
+ * The ExecutionContext of a plan with nothing bound, and the data diagnostics of its horizons
+ * (RFC 0001 sections 6.1 and 6.3). Every source horizon the plan needs is measured once. The as-of
+ * instant T is the newest voting horizon for "latest_data", the oldest for "latest_common_data", and
+ * the end of the date for a fixed asOf; the as-of date is T's last local date. Every window is then
+ * checked against the supported dates.
+ *
+ * Errors: HM4011 when "latest_data" has no voting horizon to resolve from; HM2015 when a horizon
+ * cannot be measured or a date is out of range. Warnings: HM4010 for a source more than a day
+ * behind T, HM4012 for a horizon more than a day after the build machine's clock (now; the clock
+ * never changes the output), HM4013 for a block whose window starts at or after its horizon. Note:
+ * HM4016 for timestamps without an offset in a project whose time zone isn't UTC.
  */
 export async function executionContext(
+  project: Project,
   plan: QueryPlan,
   executor: DashboardExecutor,
+  now?: Date,
 ): Promise<{ context?: ExecutionContext; diagnostics: Diagnostic[] }> {
   const message = (error: unknown) => (error instanceof Error ? error.message : String(error));
-  let asOf = plan.period.asOf;
-  if (asOf === "latest_data") {
-    const columns = planTimeColumns(plan);
-    let latest: string | undefined;
-    try {
-      latest = columns.length === 0 ? undefined : await executor.latestDate(columns, plan.timezone);
-    } catch (error) {
-      return { diagnostics: [failure(`cannot resolve latest_data: ${message(error)}`)] };
+  const config = project.config;
+  const atSource = (source: string) => {
+    const pointer = `/sources/${source}`;
+    return { file: config.file, pointer, ...config.document.locationOf(pointer) };
+  };
+  const notes: Diagnostic[] = [];
+  const measured = new Map<PlannedHorizon, string | undefined>();
+  const naive = new Set<string>();
+  try {
+    for (const h of plan.horizons) {
+      if (typeof h.rule === "object" && "through" in h.rule) {
+        if (h.rule.through !== "as_of") measured.set(h, midnight(nextDay(h.rule.through)));
+        continue;
+      }
+      if (h.column === undefined) continue;
+      const lag = typeof h.rule === "object" ? h.rule.lag : undefined;
+      const result = await executor.horizon(
+        { source: h.source, column: h.column },
+        plan.timezone,
+        lag,
+      );
+      measured.set(h, result.through);
+      const declared = config.spec?.sources[h.source];
+      const zoned = declared !== undefined && declared.type !== "lookup" && declared.timezone;
+      if (result.naive && !zoned && plan.timezone !== "UTC") naive.add(h.source);
     }
-    if (latest === undefined) {
+  } catch (error) {
+    return { diagnostics: [failure(`cannot measure source horizons: ${message(error)}`)] };
+  }
+  for (const source of naive) {
+    notes.push({
+      code: "HM4016",
+      severity: "note",
+      message: `source "${source}" has timestamps without an offset, read as UTC, in a project whose time zone is ${plan.timezone}`,
+      ...atSource(source),
+      help: `set "timezone" on the source when its timestamps are local times, such as "${plan.timezone}"`,
+      docs: docsCommand("HM4016"),
+    });
+  }
+
+  let instant: string;
+  const asOfRule = plan.period.asOf;
+  if (asOfRule === "latest_data" || asOfRule === "latest_common_data") {
+    const voting = plan.horizons
+      .filter((h) => h.votes)
+      .map((h) => measured.get(h))
+      .filter((v): v is string => v !== undefined)
+      .sort();
+    const picked = asOfRule === "latest_data" ? voting[voting.length - 1] : voting[0];
+    if (picked === undefined) {
+      const empty = plan.horizons.filter((h) => h.votes && h.column !== undefined);
       return {
         diagnostics: [
-          failure(
-            columns.length === 0
-              ? "latest_data needs a time column, but no metric on this dashboard has one; set period.asOf to a date"
-              : `latest_data found no dates in ${columns.map((c) => `${c.source}.${c.column}`).join(", ")}`,
-          ),
+          {
+            code: "HM4011",
+            severity: "error",
+            message:
+              empty.length > 0
+                ? `${asOfRule} found no dates in ${empty.map((h) => `${h.source}.${h.column}`).join(", ")}`
+                : `${asOfRule} needs a source to resolve from, but no metric on this dashboard has a time column that votes`,
+            ...(empty.length > 0 && empty[0] ? atSource(empty[0].source) : {}),
+            help: 'set period.asOf to a date, or give a source a "freshness" rule',
+            docs: docsCommand("HM4011"),
+          },
         ],
       };
     }
-    asOf = latest;
+    instant = picked;
+  } else {
+    instant = midnight(nextDay(asOfRule));
   }
+  const asOf =
+    typeof asOfRule === "string" && /^\d{4}-\d{2}-\d{2}$/.test(asOfRule)
+      ? asOfRule
+      : dateBefore(instant);
 
+  const horizons = plan.horizons.flatMap((h): SourceHorizon[] => {
+    const through = measured.get(h) ?? (h.votes ? undefined : instant);
+    if (through === undefined) return [];
+    return [{ source: h.source, ...(h.column !== undefined ? { column: h.column } : {}), through }];
+  });
   const context: ExecutionContext = {
     asOf,
     timezone: plan.timezone,
     anchors: plan.anchors,
     bindings: {},
+    horizons,
   };
   try {
     if (!(asOf >= SUPPORTED_DATES.first && asOf <= SUPPORTED_DATES.last)) {
@@ -110,14 +197,74 @@ export async function executionContext(
     if (!(error instanceof RangeError)) throw error;
     return { diagnostics: [failure(error.message)] };
   }
-  return { context, diagnostics: [] };
+
+  const behind = `${previousDay(instant.slice(0, 10))}${instant.slice(10)}`;
+  const clock = now && localNow(now, plan.timezone);
+  const ahead = clock && `${nextDay(clock.slice(0, 10))}${clock.slice(10)}`;
+  const reported = new Set<string>();
+  for (const [h, through] of measured) {
+    if (through === undefined || reported.has(h.source)) continue;
+    if (through < behind) {
+      reported.add(h.source);
+      notes.push({
+        code: "HM4010",
+        severity: "warning",
+        message: `source "${h.source}" is complete through ${through.slice(0, 16).replace("T", " ")}, more than a day before the as-of ${instant.slice(0, 16).replace("T", " ")}`,
+        ...atSource(h.source),
+        help: 'check that the data is current, or set "freshness" on the source to say how complete it is',
+        docs: docsCommand("HM4010"),
+      });
+    }
+    if (ahead !== undefined && through > ahead) {
+      reported.add(h.source);
+      notes.push({
+        code: "HM4012",
+        severity: "warning",
+        message: `source "${h.source}" has data through ${through.slice(0, 16).replace("T", " ")}, more than a day after this machine's clock (${(clock as string).slice(0, 16).replace("T", " ")})`,
+        ...atSource(h.source),
+        help: "look for future-dated rows, such as a typo in a year or scheduled entries, or set period.asOf",
+        docs: docsCommand("HM4012"),
+      });
+    }
+  }
+
+  const file = project.dashboards.get(plan.dashboard);
+  const queries = new Map(plan.queries.map((q) => [q.id, q]));
+  for (const block of plan.blocks) {
+    const empty = block.queryIds.some((id) => {
+      const query = queries.get(id);
+      const column = query?.window.column;
+      if (query === undefined || column === undefined || query.window.shift !== "none")
+        return false;
+      const bounds = queryBounds(query, context);
+      if (bounds?.kind !== "bounded") return false;
+      const h = horizonFor(plan.horizons, query.source, column);
+      const through =
+        h === undefined ? undefined : (measured.get(h) ?? (h.votes ? undefined : instant));
+      const horizon = through === undefined || through > instant ? instant : through;
+      return midnight(bounds.start) >= horizon;
+    });
+    if (!empty) continue;
+    notes.push({
+      code: "HM4013",
+      severity: "warning",
+      message: `block "${block.blockId}" has no data in its window: every source it reads ends before the window starts`,
+      ...(file
+        ? { file: file.file, pointer: block.pointer, ...file.document.locationOf(block.pointer) }
+        : {}),
+      help: "pick a range that ends after the data does, or set period.asOf",
+      docs: docsCommand("HM4013"),
+    });
+  }
+  return { context, diagnostics: notes };
 }
 
 /**
  * Plans a dashboard, runs its queries and assembles DashboardData, with the filter defaults bound.
  * The project is checked first: any error in hatchmark.json, a metric, or this dashboard is
- * returned without running anything. "latest_data" resolves once, before any query runs, to the
- * last date in every time column the plan reads, so every window ends on the same day. Queries run
+ * returned without running anything. The as-of date resolves once, before any query runs, from the
+ * source horizons (executionContext), so every window ends on the same day. now is the build
+ * machine's clock, used only for the HM4012 warning. Queries run
  * one after another in plan order, except comparisons that have no window (a period filter set to
  * all_time), which are skipped so their KPIs show no comparison. A failing query or an empty
  * latest_data is an HM2015 error.
@@ -126,16 +273,17 @@ export async function runDashboard(
   project: Project,
   dashboard: string,
   executor: DashboardExecutor,
+  now?: Date,
 ): Promise<{ data?: DashboardData; diagnostics: Diagnostic[] }> {
   const errors = blockingErrors(project, dashboard);
   if (errors.length > 0) return { diagnostics: errors };
   const { plan, diagnostics } = planDashboard(project, dashboard);
   if (plan === undefined) return { diagnostics };
 
-  const resolved = await executionContext(plan, executor);
-  if (resolved.context === undefined)
-    return { diagnostics: [...diagnostics, ...resolved.diagnostics] };
+  const resolved = await executionContext(project, plan, executor, now);
+  diagnostics.push(...resolved.diagnostics);
   const { context } = resolved;
+  if (context === undefined) return { diagnostics };
   const message = (error: unknown) => (error instanceof Error ? error.message : String(error));
   const results = new Map<string, QueryResult>();
   const imprecise = new Map<string, Diagnostic>();

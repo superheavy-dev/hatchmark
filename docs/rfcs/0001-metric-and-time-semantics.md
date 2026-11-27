@@ -896,16 +896,13 @@ interface QueryPlan {
   anchors: { week: Weekday; quarter: string; year: string };
   /** "latest_data" resolves to the newest voting horizon, "latest_common_data" to the oldest. */
   asOfRule: "latest_data" | "latest_common_data" | "fixed";
-  /** What the executor must measure per source to resolve horizons and latest_data. */
-  horizons: Record<
-    string,
-    {
-      column?: string;
-      rule: "max" | { lagMs: number } | { lagDays: number } | { through: "as_of" | string };
-      votes: boolean;
-      columnType?: "date" | "timestamp";
-    }
-  >;
+  /** What the executor must measure to resolve horizons and latest_data: one entry per source and time column, sorted. */
+  horizons: {
+    source: string;
+    column?: string; // absent for a "through" rule
+    rule: "max" | { lag: { days: number } | { hours: number } } | { through: "as_of" | string };
+    votes: boolean;
+  }[];
   segments: { id: string; filters: Filter[]; sources: string[] }[];
   tests: {
     metric: string;
@@ -921,13 +918,14 @@ interface ExecutionContext {
   // existing, plus:
   /** Resolved once per plan, before any query: instants in UTC ISO 8601. */
   asOfInstant: string;
-  horizons: Record<string, string>;
+  /** Measured horizons as local wall-clock instants (YYYY-MM-DDTHH:MM:SS.ffffff), exclusive; DashboardData carries the same list. */
+  horizons: { source: string; column?: string; through: string }[];
   /** Bucket bounds computed by the core (bucketBounds in windows.ts) as local dates; the executor converts them with the plan timezone. */
   buckets?: { start: string; end: string; instant: string }[];
 }
 ```
 
-New pure core functions: `resolveRange(spec, shift, asOf, anchors)`, `bucketBounds(range, grain)`, `bucketStatus(bucket, horizon, timezone)`, `trimWindow(bounds, horizon, rangeKind)`, `targetValue(target, bucket, grain)`, `parseFormula(text)` and `parseRowExpr(text)` with positions. The executor gains one method, `horizon(source, column): Promise<string | undefined>`, which runs `select max(<column>)` with no filters.
+New pure core functions: `resolveRange(spec, shift, asOf, anchors)`, `bucketBounds(range, grain)`, `bucketStatus(bucket, horizon, timezone)`, `trimWindow(bounds, horizon, rangeKind)`, `targetValue(target, bucket, grain)`, `parseFormula(text)` and `parseRowExpr(text)` with positions. The executor gains one method, `horizon(column, timezone, lag?): Promise<{ through?: string; naive: boolean }>`, which runs `select max(<column>)` with no filters and returns it as local wall-clock time (a date column as the next local midnight), minus the lag, with whether the column holds timestamps without an offset.
 
 ## 12. SQL the executor generates
 

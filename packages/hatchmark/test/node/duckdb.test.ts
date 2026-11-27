@@ -451,7 +451,13 @@ describe("DuckDB executor against a SQL ROLLUP oracle", () => {
       { source: "sessions", column: "started_at" },
     ]);
     const { data, diagnostics } = await run(edge.root, edge.project, "latest");
-    expect(diagnostics).toEqual([]);
+    expect(diagnostics.map((d) => [d.code, d.pointer, d.message])).toEqual([
+      [
+        "HM4010",
+        "/sources/orders",
+        'source "orders" is complete through 2026-04-30 00:00, more than a day before the as-of 2026-05-03 00:00',
+      ],
+    ]);
     expect(data?.asOf).toBe("2026-05-02");
     expect(block<KpiData>(data, "orders")).toMatchObject({
       value: 2,

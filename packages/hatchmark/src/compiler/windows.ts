@@ -286,6 +286,11 @@ export function timeBuckets(start: string, end: string, grain: ResolvedGrain): s
   return out;
 }
 
+/** The day before a date. */
+export function previousDay(date: string): string {
+  return format(addDays(parse(date), -1));
+}
+
 /** The day after a date: the exclusive end of a span that ends with it. */
 export function nextDay(date: string): string {
   return format(addDays(parse(date), 1));

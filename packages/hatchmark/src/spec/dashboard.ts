@@ -256,9 +256,9 @@ export type DashboardFilter = z.infer<typeof dashboardFilterSchema>;
 
 export const periodSchema = z
   .strictObject({
-    asOf: z.union([z.literal("latest_data"), z.iso.date()]).meta({
+    asOf: z.union([z.literal("latest_data"), z.literal("latest_common_data"), z.iso.date()]).meta({
       description:
-        '"latest_data" (the last date in the data) or a fixed YYYY-MM-DD, so builds are reproducible.',
+        '"latest_data" (the newest source horizon), "latest_common_data" (the oldest, so every chart ends on the same day) or a fixed YYYY-MM-DD, so builds are reproducible.',
     }),
     range: rangeSchema,
     compare: comparison,

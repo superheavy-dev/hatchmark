@@ -20,6 +20,7 @@ const PLAN: QueryPlan = {
       sources: ["orders"],
     },
   ],
+  horizons: [{ source: "orders", column: "ordered_at", rule: "max", votes: true }],
   blocks: [
     {
       blockId: "revenue",
@@ -129,4 +130,4 @@ describe("planHash", () => {
   });
 });
 
-const GOLDEN = "aca2eb6445581fedd641d731894529430d52610ca3b9690f49f00b4ca98b4714";
+const GOLDEN = "7e3a476e5dd9523f21495fa464a834687b1dfb0aa7779232f3a93cbd01dddb0a";
