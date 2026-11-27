@@ -76,7 +76,15 @@ export function addPropertyFix(
     /^[|>](?:[1-9]?\+|\+[1-9]?)/.test(document.text.slice(lastValue.start));
   if (kept) {
     const rest = /^[^\r\n]*(?:\r\n|\r|\n)(?:[ \t]*(?:\r\n|\r|\n))*/.exec(document.text.slice(end));
-    const at = end + (rest?.[0].length ?? document.text.length - end);
+    if (rest === null) {
+      return {
+        range: document.rangeAt(last.keyStart, last.keyStart),
+        text: `${property}\n${" ".repeat(indent)}`,
+        applicability,
+        description,
+      };
+    }
+    const at = end + rest[0].length;
     return {
       range: document.rangeAt(at, at),
       text: `${" ".repeat(indent)}${property}\n`,

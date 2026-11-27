@@ -143,6 +143,8 @@ const OLD: Record<string, string> = {
   double: '"old"',
   literal: "|\n  old\n",
   literalKeep: "|+\n  old\n\n",
+  literalKeepEnd: "|+\n  old",
+  foldedKeep: ">+\n  old\n\n",
   folded: ">\n  old\n",
   comment: "old # c",
   multiplain: "old\n  more",
@@ -229,6 +231,8 @@ describe("fixes read back as exactly the value they write", () => {
       "end of file": "a: 1\nb: B",
       crlf: "a: 1\r\nb: B\r\n",
       "list item": "- a: 1\n  b: B\n",
+      "only member": "b: B",
+      "list item at end of file": "- a: 1\n  b: B",
       nested: "o:\n  a: 1\n  b: B\nz: 2\n",
     };
     const lasts: Record<string, string> = {
@@ -236,6 +240,8 @@ describe("fixes read back as exactly the value they write", () => {
       empty: "",
       literal: "|\n  x\n",
       literalKeep: "|+\n  x\n\n",
+      literalKeepEnd: "|+\n  x",
+      foldedKeep: ">+\n  x\n\n",
       literalStrip: "|-\n  x\n",
       folded: ">\n  x\n",
       comment: "x # c",
@@ -248,9 +254,10 @@ describe("fixes read back as exactly the value they write", () => {
     const failures: string[] = [];
     for (const [objectName, object] of Object.entries(objects))
       for (const [lastName, last] of Object.entries(lasts)) {
-        const nested = objectName === "list item" || objectName === "nested";
+        const list = objectName.startsWith("list item");
+        const nested = list || objectName === "nested";
         const text = object.replace("B", last.replace(/\n {2}/g, nested ? "\n    " : "\n  "));
-        const pointer = objectName === "list item" ? "/0" : objectName === "nested" ? "/o" : "";
+        const pointer = list ? "/0" : objectName === "nested" ? "/o" : "";
         const doc = new SpecDocument("x.yaml", text);
         expect(doc.errors, text).toEqual([]);
         const parent = (
@@ -263,10 +270,12 @@ describe("fixes read back as exactly the value they write", () => {
         for (const value of VALUES) {
           const fix = addPropertyFix(doc, pointer, "newkey", value, "safe", "add");
           const fixed = new SpecDocument("x.yaml", applyFix(text, fix));
-          const want =
-            pointer === ""
+          const { b, ...rest } = parent;
+          const added =
+            /[\r\n]$/.test(text) || !last.startsWith("|+")
               ? { ...parent, newkey: value }
-              : withValue(doc.value, pointer, { ...parent, newkey: value });
+              : { ...rest, newkey: value, b };
+          const want = pointer === "" ? added : withValue(doc.value, pointer, added);
           if (fixed.errors.length > 0 || !same(fixed.value, want))
             failures.push(
               `${objectName} after ${lastName}: ${JSON.stringify(value)} gives ${JSON.stringify(applyFix(text, fix))}`,
