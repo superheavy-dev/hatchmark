@@ -88,6 +88,20 @@ function objectKeys(root: z.ZodType, value: unknown, path: Path): string[] {
   return def.type === "object" ? Object.keys(def.shape) : [];
 }
 
+/** Properties an agent may try on a table for pagination, which tables leave out on purpose. */
+const PAGING_KEYS = new Set([
+  "pagination",
+  "paginate",
+  "paginated",
+  "page",
+  "pages",
+  "pagesize",
+  "page_size",
+  "perpage",
+  "per_page",
+  "offset",
+]);
+
 function valueAt(
   value: unknown,
   path: Path,
@@ -227,11 +241,20 @@ export function issuesToDiagnostics(
           const keyRange = found?.member
             ? document.rangeAt(found.member.keyStart, found.member.keyEnd)
             : undefined;
+          const paging =
+            PAGING_KEYS.has(extraKey.toLowerCase()) &&
+            (at.value as { type?: unknown } | undefined)?.type === "table";
           push("HM3002", keyPath, `unknown property "${extraKey}"`, {
             target: "key",
             expected: allowed,
-            ...(match ? { help: `did you mean "${match}"?` } : {}),
-            ...(match && keyRange
+            ...(paging
+              ? {
+                  help: 'tables do not paginate: a dashboard is read at a glance, and rows on a later page are easy to miss. Show the top rows with "limit" and fold the rest into one row with "other": true',
+                }
+              : match
+                ? { help: `did you mean "${match}"?` }
+                : {}),
+            ...(!paging && match && keyRange
               ? {
                   fix: {
                     range: keyRange,

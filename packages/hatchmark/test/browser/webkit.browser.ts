@@ -43,7 +43,12 @@ describe("WebKit keyboard", () => {
     const clipped = await wrap.evaluate((w) => w.scrollWidth > w.clientWidth);
     expect(clipped).toBe(true);
     await page.locator(".hm-bar svg").filter({ visible: true }).focus();
+    // The card's Download CSV button sits between the chart and the table; WebKit on macOS skips
+    // buttons on Tab unless full keyboard access is on, WebKit on Linux stops on it.
     await page.keyboard.press("Tab");
+    if (await page.evaluate(() => document.activeElement?.classList.contains("hm-csv"))) {
+      await page.keyboard.press("Tab");
+    }
     expect(await wrap.evaluate((w) => w === document.activeElement)).toBe(true);
     expect(await wrap.getAttribute("role")).toBe("region");
     expect(await wrap.evaluate((w) => w.getAttribute("aria-labelledby"))).toMatch(/-t$/);

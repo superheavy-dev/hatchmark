@@ -82,8 +82,9 @@ export const CODES = {
       'This block needs to place rows in time (a time series, a time-bucketed bar chart, or a KPI comparison), but the metric has no time field. Add "time": "<date column>" to the metric, or set compare to "none" on a KPI. A ratio metric uses the time columns of its numerator and denominator.',
   },
   HM2006: {
-    title: "percent of total names a metric the table does not show",
-    explanation: "Every name in percentOfTotal must also be listed in the table's metrics.",
+    title: "table option names a metric the table does not show",
+    explanation:
+      "Every name in a table's percentOfTotal or bars must also be listed in the table's metrics.",
   },
   HM2007: {
     title: "invalid metric reference in text",
@@ -312,6 +313,11 @@ export const CODES = {
     title: "negative values in a part-of-whole chart",
     explanation:
       'A chart stacked to 100% shows each value as a share of its total, which only works when every part is zero or more: a negative part makes the others add up to more than 100%. The chart is still drawn, with negative shares below zero, and this warning names the series. Use "stack": true or grouped bars, which show negative values honestly, or filter the metric to values that cannot be negative (such as gross revenue instead of net).',
+  },
+  HM4063: {
+    title: "Other row cannot be computed for a metric",
+    explanation:
+      'A table with "other": true folds the rows past its limit into one Other row, recomputed from the parts of those rows: sums and counts add up, min and max take the extreme, averages divide the summed sum by the summed count, and ratios divide two such metrics. Distinct counts, medians, SQL metrics declared additive: false and sums read with over_time min or max cannot be folded without the rows themselves (two rows can share a customer), so the Other row shows "—" for the metric. The total and subtotals are still recomputed from all rows and stay right. Remove "other" to show the rows past the limit as a count in the note instead, or show a foldable metric in this table.',
   },
   HM5001: {
     title: "too many points per series",

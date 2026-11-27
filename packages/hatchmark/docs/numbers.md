@@ -74,8 +74,13 @@ Metric filters and dashboard select filters compare a column with a value:
 - **Ratios** divide two metrics, possibly from different sources. Rows match on equal group values,
   null included. Division by zero or by an empty value is empty (null, shown as "—").
 - **avg** is sum over count of non-null values, so it stays right when groups are combined.
-- **limit** keeps the first rows after sorting. It never counts the total row, and the total still
-  covers every row.
+- **limit** keeps the first rows after sorting, ties broken by the group values. It never counts
+  the total row, and the total still covers every row.
+- **Other** (a table's `"other": true`) is recomputed from the parts of the rows past the limit:
+  sums and counts add, min and max take the extreme, averages and ratios divide folded sums.
+  Distinct counts, medians and non-additive SQL cannot be folded and show "—" (HM4063).
+- **Subtotals** come from the query's grouping sets (SQL ROLLUP), like the total, never from adding
+  the rows below them.
 - **Empty groups and buckets.** Sums and counts of no rows are 0; other aggregates (distinct counts,
   averages, ratios, medians, min, max) of no rows are empty.
 - **percentOfTotal** is a row's share of the grand total, for additive metrics only (HM4001).

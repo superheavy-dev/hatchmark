@@ -241,7 +241,11 @@ function card(block: LineData | BarData | TableData, ctx: RenderContext): string
   const { title, subtitle } = blockHeading(block, ctx);
   const id = `hm-${block.id}-t`;
   const body = block.type === "table" ? renderTable(block, ctx) : chartBody(block, ctx, title);
-  return `<section class="hm-card hm-${block.type}" style="--span:${block.type === "table" ? block.span : chartSpan(block)}" aria-labelledby="${esc(id)}"><header class="hm-card-head"><h2 id="${esc(id)}">${esc(title)}</h2>${subtitle ? `<p>${esc(subtitle)}</p>` : ""}</header>${body}</section>`;
+  if (block.type === "table") {
+    const download = `<button type="button" class="hm-csv" data-hm-csv="${esc(block.id)}" aria-label="Download ${esc(title)} as CSV" hidden>Download CSV</button>`;
+    return `<section class="hm-card hm-table" style="--span:${block.span}" aria-labelledby="${esc(id)}"><header class="hm-card-head hm-switch"><div class="hm-card-titles"><h2 id="${esc(id)}">${esc(title)}</h2>${subtitle ? `<p>${esc(subtitle)}</p>` : ""}</div>${download}</header>${body}</section>`;
+  }
+  return `<section class="hm-card hm-${block.type}" style="--span:${chartSpan(block)}" aria-labelledby="${esc(id)}"><header class="hm-card-head"><h2 id="${esc(id)}">${esc(title)}</h2>${subtitle ? `<p>${esc(subtitle)}</p>` : ""}</header>${body}</section>`;
 }
 
 function strip(kpis: KpiData[], ctx: RenderContext): GridItem {
@@ -334,7 +338,7 @@ export function pageStyles(assets: PageAssets, theme: Theme = DEFAULT_THEME): st
       ? ""
       : `.hm-grid>*{grid-column:1/-1}.hm-strip{--cols:2}.hm-kpi{grid-column:span 1}`;
     const mobile = layout.mobile
-      ? `.hm-header{flex-direction:column;align-items:flex-start}.hm-header-side{align-items:flex-start}.hm-kpi-value{font-size:20px;line-height:28px;letter-spacing:-0.01em}.hm-kpi-figure{gap:6px}.hm-track{display:none}`
+      ? `.hm-header{flex-direction:column;align-items:flex-start}.hm-header-side{align-items:flex-start}.hm-kpi-value{font-size:20px;line-height:28px;letter-spacing:-0.01em}.hm-kpi-figure{gap:6px}.hm-track{display:none}.hm-table td.hm-cellbar,.hm-table td.hm-share{padding-left:16px}`
       : "";
     return `@container hm ${query}{.hm-page{${width};padding:${layout.page}px 0}.hm-l${i}{display:block}${column}${mobile}}`;
   }).join("");
@@ -368,8 +372,13 @@ export function pageStyles(assets: PageAssets, theme: Theme = DEFAULT_THEME): st
     `.hm-table tr>:first-child{position:sticky;left:0;z-index:1;background:var(--hm-card)}.hm-table .hm-key span{display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}`,
     `.hm-table thead th{height:${d.tableRow - 4}px;font-size:12px;line-height:16px;font-weight:500;color:var(--hm-text-muted);border-bottom:1px solid var(--hm-border-strong);vertical-align:bottom;padding-bottom:4px}`,
     `.hm-table tfoot th,.hm-table tfoot td{font-weight:600;border-top:1px solid var(--hm-border-strong)}.hm-table .hm-null{color:var(--hm-text-subtle)}`,
-    `.hm-table td.hm-share{min-width:64px}.hm-track{display:inline-flex;width:80px;height:6px;margin-right:12px;background:var(--hm-card-alt);vertical-align:middle}.hm-track span{display:block;height:6px;background:var(--hm-context)}`,
+    `.hm-table td.hm-share{min-width:64px}.hm-table td.hm-cellbar,.hm-table td.hm-share{padding-left:108px}.hm-table tbody td.hm-cellbar,.hm-table tbody td.hm-share{position:relative}.hm-track{display:inline-flex;width:80px;height:6px;background:var(--hm-card-alt);vertical-align:middle}.hm-table td .hm-track{position:absolute;left:16px;top:50%;margin-top:-3px}.hm-track span{display:block;height:6px;background:var(--hm-context)}`,
     `.hm-table-note{font-size:12px;line-height:16px;color:var(--hm-text-subtle)}`,
+    `.hm-table thead th{position:sticky;top:0;z-index:2;background:var(--hm-card)}.hm-table thead tr>:first-child{z-index:3}.hm-tall{max-height:${d.tableRow - 4 + Math.round(15.5 * d.tableRow) + d.tableRow}px;overflow:auto;margin-right:-16px;padding-right:16px}.hm-tall thead th{border-bottom:0;box-shadow:inset 0 -1px 0 var(--hm-border-strong)}.hm-tall tfoot th,.hm-tall tfoot td{position:sticky;bottom:0;z-index:2;background:var(--hm-card);border-top:0;box-shadow:inset 0 1px 0 var(--hm-border-strong)}.hm-tall tfoot tr>:first-child{z-index:3}`,
+    `.hm-sort{font:inherit;color:inherit;background:none;border:0;padding:0;margin:0;cursor:pointer;display:inline-flex;align-items:center;gap:4px;text-align:inherit;white-space:nowrap}.hm-sort:hover,.hm-table th[aria-sort=ascending],.hm-table th[aria-sort=descending]{color:var(--hm-text)}.hm-sort:focus-visible{outline:2px solid var(--hm-focus);outline-offset:2px;border-radius:2px}.hm-caret{flex:none;visibility:hidden}.hm-sort:hover .hm-caret{visibility:visible;opacity:.5}[aria-sort=ascending] .hm-caret,[aria-sort=descending] .hm-caret{visibility:visible;opacity:1}[aria-sort=ascending] .hm-caret{transform:rotate(180deg)}`,
+    `.hm-table .hm-subtotal>*{font-weight:500;border-top:1px solid var(--hm-border)}.hm-table .hm-other{color:var(--hm-text-muted)}.hm-track{position:relative}.hm-zero{position:absolute;top:-2px;bottom:-2px;width:1px;background:var(--hm-baseline)}`,
+    `.hm-csv{flex:none;font:inherit;font-size:12px;line-height:16px;font-weight:500;padding:3px 10px;border:1px solid var(--hm-border);border-radius:${theme.radius.control}px;background:var(--hm-card-alt);color:var(--hm-text-muted);cursor:pointer}.hm-csv:hover{color:var(--hm-text)}.hm-csv:focus-visible{outline:2px solid var(--hm-focus);outline-offset:1px}.hm-csv[hidden]{display:none}`,
+    `@media print{.hm-tall{max-height:none;overflow:visible}.hm-csv{display:none}}`,
     `.hm-footer{display:flex;justify-content:space-between;gap:2px 12px;flex-wrap:wrap;padding-top:4px}`,
     `.hm-sr{position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap;border:0}`,
     `.hm-tip{position:absolute;z-index:10;pointer-events:none;min-width:168px;max-width:260px;display:flex;flex-direction:column;gap:6px;padding:8px 10px;background:var(--hm-card);border:1px solid var(--hm-border-strong);border-radius:${theme.radius.tooltip}px;box-shadow:var(--hm-shadow)}`,

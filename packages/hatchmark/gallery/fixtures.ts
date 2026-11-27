@@ -249,6 +249,7 @@ export const COUNTRY_TABLE: TableData = {
   by: [{ column: "country", label: "Country" }],
   metrics: ["revenue", "orders", "avg_order_value"],
   percentOfTotal: ["revenue"],
+  sort: { by: "revenue", order: "desc" },
   rows: COUNTRIES.slice(0, 12).map((c, i) => ({
     keys: [c.name],
     values: {

@@ -197,7 +197,41 @@ const tableBlock = z
       description: "Metrics that also show their share of the total. Additive metrics only.",
     }),
     sort: sort.optional(),
-    limit: z.number().int().min(1).max(1000).optional(),
+    limit: z.number().int().min(1).max(1000).optional().meta({
+      description:
+        "Rows shown, after sort. With subtotals, rows shown in each innermost group. Tables do not paginate.",
+    }),
+    other: z.boolean().optional().meta({
+      description:
+        'With limit: fold the rows past the limit into one "Other" row, recomputed from those rows.',
+    }),
+    subtotals: z.boolean().optional().meta({
+      description:
+        "A subtotal row for every group of each outer by column, recomputed from rows (not summed). Needs two or more by columns.",
+    }),
+    bars: z.array(metricName).optional().meta({
+      description: "Metrics that draw a bar in their cells, scaled across the rows shown.",
+    }),
+  })
+  .superRefine((b, ctx) => {
+    if (b.other === true && b.limit === undefined) {
+      ctx.addIssue(
+        customIssue(
+          "HM3007",
+          ["other"],
+          'other folds the rows past "limit" into one row; set "limit", or remove "other"',
+        ),
+      );
+    }
+    if (b.subtotals === true && b.by.length < 2) {
+      ctx.addIssue(
+        customIssue(
+          "HM3007",
+          ["subtotals"],
+          'subtotals group rows by the outer by columns; add a second column to "by", or remove "subtotals" (the total row covers one column)',
+        ),
+      );
+    }
   })
   .meta({ id: "TableBlock" });
 

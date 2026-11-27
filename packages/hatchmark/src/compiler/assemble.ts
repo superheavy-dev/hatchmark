@@ -39,6 +39,7 @@ import type {
   QueryPlan,
   QueryResult,
 } from "./plan.js";
+import { tableGroupingSets } from "./planner.js";
 import {
   bucketEnd,
   effectiveRange,
@@ -176,21 +177,51 @@ class Assembler {
    * undefined value (a SQL metric's NULL or non-finite result) and stays null.
    */
   private measure(queryId: string, metric: string, key: string): Value {
+    return this.measureOver(queryId, metric, [key], false);
+  }
+
+  /**
+   * A measure over rows of one grouping set. With fold, each component is combined across the rows
+   * first the way it re-aggregates (sum adds, min and max take the extreme, ignoring nulls), and a
+   * component that does not re-aggregate gives null, as does a component null in every row.
+   */
+  private measureOver(queryId: string, metric: string, keys: string[], fold: boolean): Value {
     const indexed = this.queries.get(queryId);
     const measure = indexed?.query.measures.find((m) => m.metric === metric);
     if (indexed === undefined || measure === undefined) return null;
-    const row = indexed.rows.get(key);
     const component = (id: string): Value => {
       const at = indexed.components.get(id);
-      const raw = row === undefined || at === undefined ? null : row[at];
-      const value = typeof raw === "number" ? raw : null;
-      const additive = measure.components.find((c) => c.id === id)?.reaggregate === "sum";
-      return value === null && additive && row === undefined ? 0 : value;
+      const reaggregate = measure.components.find((c) => c.id === id)?.reaggregate ?? "none";
+      const values = keys.map((key) => {
+        const row = indexed.rows.get(key);
+        const raw = row === undefined || at === undefined ? null : row[at];
+        const value = typeof raw === "number" ? raw : null;
+        return value === null && reaggregate === "sum" && row === undefined ? 0 : value;
+      });
+      if (!fold) return values[0] ?? null;
+      const present = values.filter((v): v is number => v !== null);
+      if (reaggregate === "none" || present.length === 0) return null;
+      if (reaggregate === "min") return present.reduce((m, v) => Math.min(m, v));
+      if (reaggregate === "max") return present.reduce((m, v) => Math.max(m, v));
+      return present.reduce((sum, v) => sum + v, 0);
     };
     const { combine } = measure;
     return combine.op === "identity"
       ? component(combine.component)
       : divide(component(combine.numerator), component(combine.denominator));
+  }
+
+  /** An expression over several rows of a grouping set folded into one (a table's Other row). */
+  fold(expression: MeasureExpression | undefined, set: number, rows: readonly Key[][]): Value {
+    if (expression === undefined) return null;
+    if (expression.op === "ref") {
+      const keys = rows.map((k) => rowKey(set, k));
+      return this.measureOver(expression.queryId, expression.metric, keys, true);
+    }
+    return divide(
+      this.fold(expression.numerator, set, rows),
+      this.fold(expression.denominator, set, rows),
+    );
   }
 
   evaluate(expression: MeasureExpression | undefined, set: number, keys: readonly Key[]): Value {
@@ -643,39 +674,94 @@ class Assembler {
   table(block: Block & { type: "table" }, plan: BlockPlan, common: Common): TableData {
     const expressions = block.metrics.map((m) => plan.measures[m]);
     const percent = block.percentOfTotal ?? [];
-    const hasTotal = block.totals !== false || percent.length > 0;
-    const blank: Key[] = block.by.map(() => null);
+    const width = block.by.length;
+    const sets = tableGroupingSets(block);
+    const setOf = (length: number) => sets.findIndex((s) => s.length === length);
+    const pad = (keys: readonly Key[]): Key[] => [
+      ...keys,
+      ...Array.from({ length: width - keys.length }, () => null),
+    ];
     const emptyOf = new Map(block.metrics.map((m) => [m, this.empty(plan.measures[m])]));
     const filled = block.metrics.filter((m) => emptyOf.get(m) === undefined);
     const empty = filled.length === 0 ? emptyOf.get(block.metrics[0] ?? "") : undefined;
     const value = (m: string, set: number, keys: Key[]) =>
       emptyOf.get(m) === undefined ? this.evaluate(plan.measures[m], set, keys) : null;
+    const totalSet = setOf(0);
     const totals: Record<string, Value> = {};
-    if (hasTotal) for (const m of block.metrics) totals[m] = value(m, 1, blank);
+    if (totalSet >= 0) for (const m of block.metrics) totals[m] = value(m, totalSet, pad([]));
     const shares = (values: Record<string, Value>): Record<string, Value> =>
       Object.fromEntries(percent.map((m) => [m, divide(values[m] ?? null, totals[m] ?? null)]));
-    const rows: TableRow[] = this.keys(
+    const row = (
+      keys: Key[],
+      get: (m: string) => Value,
+      extra: Pick<TableRow, "kind" | "level" | "count"> = {},
+    ): TableRow => {
+      const values: Record<string, Value> = {};
+      for (const m of block.metrics) values[m] = get(m);
+      return { keys, ...extra, values, ...(percent.length > 0 ? { share: shares(values) } : {}) };
+    };
+    const leaves = this.keys(
       filled.map((m) => plan.measures[m]),
       0,
-    ).map((keys) => {
-      const values: Record<string, Value> = {};
-      for (const m of block.metrics) values[m] = value(m, 0, keys);
-      return { keys, values, ...(percent.length > 0 ? { share: shares(values) } : {}) };
-    });
-    if (hasTotal) this.checkAdditive(block, common.id, rows, totals);
+    ).map((keys) => row(keys, (m) => value(m, 0, keys)));
+    if (totalSet >= 0) this.checkAdditive(block, common.id, leaves, totals);
 
     const sort = block.sort ?? { by: block.metrics[0] ?? "", order: "desc" as const };
     const column = block.by.indexOf(sort.by);
-    rows.sort((a, b) => {
-      if (column >= 0) {
-        const c = compareKeyOrdered(a.keys[column] ?? null, b.keys[column] ?? null, sort.order);
-        return c || compareKeys(a.keys, b.keys);
+    const order = (a: TableRow, b: TableRow): number =>
+      (column >= 0
+        ? compareKeyOrdered(a.keys[column] ?? null, b.keys[column] ?? null, sort.order)
+        : compareValues(a.values[sort.by] ?? null, b.values[sort.by] ?? null, sort.order)) ||
+      compareKeys(a.keys, b.keys);
+    /** The rows of one innermost group (or of the whole table): sorted, limited, then Other. */
+    const cut = (members: TableRow[], parent: readonly Key[]): TableRow[] => {
+      const sorted = members.sort(order);
+      if (block.limit === undefined || sorted.length <= block.limit) return sorted;
+      const rest = sorted.slice(block.limit);
+      const folded = rest.map((r) => r.keys);
+      return [
+        ...sorted.slice(0, block.limit),
+        ...(block.other === true
+          ? [
+              row(
+                pad(parent),
+                (m) =>
+                  emptyOf.get(m) === undefined ? this.fold(plan.measures[m], 0, folded) : null,
+                {
+                  kind: "other",
+                  count: rest.length,
+                },
+              ),
+            ]
+          : []),
+      ];
+    };
+    /** A group's subtotal rows and rows, depth first; groups ordered like rows. */
+    const nest = (members: TableRow[], parent: Key[]): TableRow[] => {
+      const level = parent.length + 1;
+      if (level === width) return cut(members, parent);
+      const groups = new Map<string, { keys: Key[]; members: TableRow[] }>();
+      for (const m of members) {
+        const keys = m.keys.slice(0, level);
+        const id = JSON.stringify(keys);
+        const group = groups.get(id) ?? { keys, members: [] };
+        group.members.push(m);
+        groups.set(id, group);
       }
-      return (
-        compareValues(a.values[sort.by] ?? null, b.values[sort.by] ?? null, sort.order) ||
-        compareKeys(a.keys, b.keys)
-      );
-    });
+      const set = setOf(level);
+      return [...groups.values()]
+        .map((g) => ({
+          ...g,
+          subtotal: row(pad(g.keys), (m) => value(m, set, pad(g.keys)), {
+            kind: "subtotal",
+            level,
+          }),
+        }))
+        .sort((a, b) => order(a.subtotal, b.subtotal))
+        .flatMap((g) => [g.subtotal, ...nest(g.members, g.keys)]);
+    };
+    const subtotals = block.subtotals === true && width > 1;
+    const rows = subtotals ? nest(leaves, []) : cut(leaves, []);
     const window = span(this.bounds(expressions[0]), this.context.timezone);
     return {
       ...common,
@@ -683,8 +769,11 @@ class Assembler {
       by: block.by.map((c) => ({ column: c, label: columnLabel(c) })),
       metrics: block.metrics,
       percentOfTotal: percent,
-      rows: block.limit === undefined ? rows : rows.slice(0, block.limit),
-      rowCount: rows.length,
+      sort,
+      ...(block.bars !== undefined && block.bars.length > 0 ? { bars: block.bars } : {}),
+      rows,
+      rowCount: leaves.length,
+      ...(subtotals ? { subtotals: true } : {}),
       ...(block.totals !== false
         ? { total: { values: totals, ...(percent.length > 0 ? { share: shares(totals) } : {}) } }
         : {}),
