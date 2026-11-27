@@ -54,11 +54,9 @@ export async function writeExample(
   config: Record<string, unknown>,
   dashboards: Record<string, unknown>,
 ): Promise<string> {
-  const root = await mkdtemp(path.join(tmpdir(), "hatchmark-example-"));
+  const root = await copyProject(EXAMPLE, "hatchmark-example-");
   roots.push(root);
-  await cp(EXAMPLE, root, { recursive: true });
   await rm(path.join(root, "dashboards"), { recursive: true, force: true });
-  await rm(path.join(root, "dist"), { recursive: true, force: true });
   await mkdir(path.join(root, "dashboards"));
   const base = JSON.parse(await readFile(path.join(EXAMPLE, "hatchmark.json"), "utf8"));
   await writeFile(path.join(root, "hatchmark.json"), JSON.stringify({ ...base, ...config }));
