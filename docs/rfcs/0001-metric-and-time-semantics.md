@@ -711,15 +711,15 @@ Accessibility: the dash or hollow point is never the only signal; the tooltip, t
 
 ### 6.7 What check says
 
-| Code   | Severity | When                                                                                                                         |
-| ------ | -------- | ---------------------------------------------------------------------------------------------------------------------------- |
-| HM4010 | warning  | a source's horizon is more than one day behind the dashboard's as-of; names the source, both dates and the fix (`freshness`) |
-| HM4011 | error    | `latest_data` has no source to resolve from                                                                                  |
+| Code   | Severity | When                                                                                                                           |
+| ------ | -------- | ------------------------------------------------------------------------------------------------------------------------------ |
+| HM4010 | warning  | a source's horizon is more than one day behind the dashboard's as-of; names the source, both dates and the fix (`freshness`)   |
+| HM4011 | error    | `latest_data` has no source to resolve from                                                                                    |
 | HM4012 | warning  | a column's newest value is more than a day after the build machine's clock (future-dated rows); names that value and the clock |
-| HM4013 | warning  | a block's window has no data before its horizon (a KPI that would be empty)                                                  |
-| HM4014 | warning  | `incomplete: "show"` on a flow whose last bucket is partial                                                                  |
-| HM4015 | warning  | a snapshot source has a bucket with no snapshot, or its last snapshot in a complete bucket isn't on the bucket's last day    |
-| HM4016 | note     | naive timestamps in a project whose timezone isn't UTC                                                                       |
+| HM4013 | warning  | a block's window has no data before its horizon (a KPI that would be empty)                                                    |
+| HM4014 | warning  | `incomplete: "show"` on a flow whose last bucket is partial                                                                    |
+| HM4015 | warning  | a snapshot source has a bucket with no snapshot, or its last snapshot in a complete bucket isn't on the bucket's last day      |
+| HM4016 | note     | naive timestamps in a project whose timezone isn't UTC                                                                         |
 
 ## 7. Goals and targets
 

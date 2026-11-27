@@ -1,5 +1,5 @@
 import { afterAll, describe, expect, it } from "vitest";
-import { explainDashboard, type KpiData, runDashboard } from "../../src/compiler/index.js";
+import { explainDashboard, type KpiData } from "../../src/compiler/index.js";
 import { createDuckDbExecutor } from "../../src/node/index.js";
 import { PROJECT_DEFAULTS } from "../../src/spec/index.js";
 import { metric, removeProjects, run, writeProject } from "./fixture.js";
@@ -394,7 +394,9 @@ describe("horizon edges (HAT-44 and HAT-45 on #19)", () => {
       ),
     );
     expect(through.data).toBeUndefined();
-    expect(through.diagnostics[0]?.message).toContain("9999-12-31");
+    expect(through.diagnostics.map((d) => d.message)).toEqual([
+      "the as-of instant 10000-01-01T00:00:00.000000Z is outside the supported dates 0001-01-01 to 9998-12-31",
+    ]);
   });
 
   it("warns with HM4013 only when every query of a block starts after its horizon", async () => {
@@ -545,9 +547,10 @@ describe("horizon edges (HAT-44 and HAT-45 on #19)", () => {
         ),
       );
       expect(built.data).toBeUndefined();
-      expect(built.diagnostics.map((d) => d.message)).toEqual([
-        "the as-of date 10000-01-01 is outside the supported dates 0001-01-01 to 9998-12-31",
-      ]);
+      expect(built.diagnostics.map((d) => d.code)).toEqual(["HM2015"]);
+      expect(built.diagnostics[0]?.message).toMatch(
+        /^the as-of instant 9999-12-31T\S+Z is outside the supported dates/,
+      );
     }
   });
 });

@@ -180,7 +180,20 @@ export async function executionContext(
     }
     instant = startOf(nextDay(asOfRule), tz);
   }
-  const asOf = formatWall(toLocal(instant - 1n, tz)).split("T")[0] as string;
+  const lastDay = toLocal(instant - 1n, tz);
+  if (
+    lastDay < parseInstant(SUPPORTED_DATES.first) ||
+    lastDay >= parseInstant(nextDay(SUPPORTED_DATES.last))
+  ) {
+    return {
+      diagnostics: [
+        failure(
+          `the as-of instant ${formatInstant(instant)} is outside the supported dates ${SUPPORTED_DATES.first} to ${SUPPORTED_DATES.last}`,
+        ),
+      ],
+    };
+  }
+  const asOf = formatWall(lastDay).slice(0, 10);
 
   const horizonOf = (h: PlannedHorizon) => measured.get(h) ?? (h.votes ? undefined : instant);
   const horizons = plan.horizons.flatMap((h): SourceHorizon[] => {
