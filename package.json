@@ -5,16 +5,16 @@
   "type": "module",
   "packageManager": "pnpm@12.21.0",
   "engines": {
-    "node": ">=22.12"
+    "node": "^22.18.0 || >=23.6.0"
   },
   "scripts": {
     "build": "pnpm -r build",
-    "typecheck": "pnpm -r typecheck",
+    "typecheck": "pnpm -r typecheck && tsc -p scripts/tsconfig.json",
     "lint": "biome check .",
     "format": "biome check --write .",
     "test": "vitest run",
     "gen:schema": "pnpm --filter hatchmark gen:schema",
-    "test:workerd": "node scripts/workerd-smoke.mjs"
+    "test:workerd": "node scripts/workerd-smoke.ts"
   },
   "devDependencies": {
     "@biomejs/biome": "2.6.9",

@@ -18,7 +18,7 @@ Hatchmark ships as one npm package, `hatchmark`, so a user installs one thing an
 
 ## Development
 
-Requires Node.js 22.12 or later and pnpm (the version is pinned in `package.json`).
+Requires Node.js 22.18 or later on the 22 line, or 23.6 or later (the first releases that run TypeScript without flags), and pnpm (the version is pinned in `package.json`).
 
 ```sh
 pnpm install
