@@ -34,6 +34,7 @@ import type {
 } from "./plan.js";
 import { planDashboard } from "./planner.js";
 import {
+  bucketEnd,
   bucketStart,
   measureHorizon,
   nextDay,
@@ -345,10 +346,17 @@ export async function executionContext(
               const query = queries.get(id);
               const horizon = query && measureHorizon(query, context);
               const bounds = query && queryBounds(query, context);
-              if (horizon === undefined || bounds?.kind !== "bounded") return false;
+              if (horizon === undefined || bounds === undefined) return false;
               const at = toLocal(horizon, tz);
-              const bucket = parseInstant(bucketStart(formatWall(at).slice(0, 10), grain));
-              return at > local(bounds.start) && bucket < at && bucket < local(bounds.end);
+              const start = bounds.kind === "bounded" ? local(bounds.start) : undefined;
+              if (start !== undefined && at <= start) return false;
+              const end = bounds.end === undefined ? at : local(bounds.end);
+              const last = formatWall((end < at ? end : at) - 1n).slice(0, 10);
+              const bucket = bucketStart(last, grain);
+              return (
+                (start !== undefined && start > parseInstant(bucket)) ||
+                at < parseInstant(bucketEnd(bucket, grain))
+              );
             }),
         )
         .map(([name]) => ({ name, unit: grain.unit })),

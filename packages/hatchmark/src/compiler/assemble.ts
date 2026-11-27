@@ -327,15 +327,18 @@ class Assembler {
     });
     const partialAt = new Set(series.flatMap((s) => (s.partial ?? []).map((p) => p.index)));
     const horizons = series.map((s) => this.horizon(plan.measures[s.metric]));
-    const past = (i: number) =>
-      horizons.every(
-        (h) =>
-          h !== undefined &&
-          parseInstant(axis.buckets[i] ?? "") >= toLocal(h, this.context.timezone),
+    const past = (i: number) => {
+      const bucket = axis.buckets[i] ?? "";
+      const from = i === 0 && axis.window.start > bucket ? axis.window.start : bucket;
+      return horizons.every(
+        (h) => h !== undefined && parseInstant(from) >= toLocal(h, this.context.timezone),
       );
+    };
     const empty = (i: number) => hidden.every((s) => s.values[i] === null);
     let first = 0;
-    while (first < axis.buckets.length && partialAt.has(first) && empty(first)) first++;
+    while (first < axis.buckets.length && (partialAt.has(first) || past(first)) && empty(first)) {
+      first++;
+    }
     let last = axis.buckets.length;
     while (last > first && (partialAt.has(last - 1) || past(last - 1)) && empty(last - 1)) last--;
     const { startAt, endAt, ...window } = axis.window;
