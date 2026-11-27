@@ -2,8 +2,6 @@ import { describe, expect, it } from "vitest";
 import { checkReferences, parseSpecFile } from "../../src/spec/index.js";
 import { applyFix, DASHBOARD, METRICS, projectFrom } from "./helpers.js";
 
-// Check guidance for the table options of HAT-48: other, subtotals, bars, and pagination.
-
 const columns = {
   orders: ["region", "country", "amount", "status", "ordered_at"],
   merchants: ["region", "country", "merchant_id"],

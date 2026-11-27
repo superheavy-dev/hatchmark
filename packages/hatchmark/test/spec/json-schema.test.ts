@@ -2,10 +2,6 @@ import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 import { jsonSchema, SCHEMA_FILES, type SpecKind } from "../../src/spec/index.js";
 
-/**
- * The $defs names each published schema ships. Editors and agents may refer to them, so removing or
- * renaming one is a deliberate change made here; a new named schema is added here too.
- */
 const DEFINITIONS: Record<SpecKind, string[]> = {
   project: ["Source", "Weekday"],
   metric: [
@@ -47,7 +43,6 @@ const DEFINITIONS: Record<SpecKind, string[]> = {
 
 const NAME_MAPS = new Set(["properties", "patternProperties", "$defs", "definitions"]);
 
-/** Every $ref value in a schema, skipping property names, which are data rather than keywords. */
 function collectRefs(node: unknown, refs: string[]): void {
   if (Array.isArray(node)) {
     for (const item of node) collectRefs(item, refs);

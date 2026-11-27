@@ -3,8 +3,6 @@ import { CODES } from "../../src/diagnostics/index.js";
 import { checkReferences, parseDiagnostics } from "../../src/spec/index.js";
 import { DASHBOARD, projectFrom } from "./helpers.js";
 
-/** The scatter block's schema and check's guards for it. */
-
 const dashboard = (...blocks: unknown[]) => ({ sales: { ...DASHBOARD, filters: [], blocks } });
 const project = (...blocks: unknown[]) => projectFrom({ dashboards: dashboard(...blocks) });
 const refs = (...blocks: unknown[]) => checkReferences(project(...blocks));

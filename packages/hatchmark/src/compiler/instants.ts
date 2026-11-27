@@ -1,9 +1,3 @@
-/**
- * Instants for source horizons (RFC 0001 section 6.1): microseconds since 1970-01-01T00:00:00Z as a
- * bigint, so sub-millisecond timestamps and every supported year compare exactly. A wall-clock time
- * in a time zone uses the same scale, read as if it were UTC.
- */
-
 export const DAY_US = 86_400_000_000n;
 
 const floorDiv = (a: bigint, b: bigint) => (a >= 0n ? a / b : -((-a + b - 1n) / b));
@@ -31,7 +25,6 @@ function civilFromDays(days: number): { y: number; m: number; d: number } {
   return { y: yoe + era * 400 + (m <= 2 ? 1 : 0), m, d };
 }
 
-/** Reads "YYYY-MM-DD", or "YYYY-MM-DDTHH:MM:SS[.ffffff][Z]", as microseconds on the UTC scale. */
 export function parseInstant(text: string): bigint {
   const match =
     /^(\d{4,5})-(\d{2})-(\d{2})(?:[T ](\d{2}):(\d{2}):(\d{2})(?:\.(\d{1,6}))?)?Z?$/.exec(text);
@@ -43,7 +36,6 @@ export function parseInstant(text: string): bigint {
   return seconds * 1_000_000n + BigInt(f.padEnd(6, "0"));
 }
 
-/** "YYYY-MM-DDTHH:MM:SS.ffffff", the inverse of parseInstant without the Z. */
 export function formatWall(us: bigint): string {
   const seconds = floorDiv(us, 1_000_000n);
   const micros = us - seconds * 1_000_000n;
@@ -54,12 +46,10 @@ export function formatWall(us: bigint): string {
   return `${p(y, 4)}-${p(m)}-${p(d)}T${p(Math.floor(rest / 3600))}:${p(Math.floor(rest / 60) % 60)}:${p(rest % 60)}.${String(micros).padStart(6, "0")}`;
 }
 
-/** An instant as UTC ISO 8601 with microseconds and Z. */
 export const formatInstant = (us: bigint) => `${formatWall(us)}Z`;
 
 const formatters = new Map<string, Intl.DateTimeFormat>();
 
-/** The time zone's offset from UTC at an instant, in seconds. */
 function offsetSeconds(us: bigint, timezone: string): bigint {
   let format = formatters.get(timezone);
   if (format === undefined) {
@@ -88,15 +78,10 @@ function offsetSeconds(us: bigint, timezone: string): bigint {
   return wall - seconds;
 }
 
-/** The wall-clock time an instant shows in a time zone. */
 export function toLocal(us: bigint, timezone: string): bigint {
   return us + offsetSeconds(us, timezone) * 1_000_000n;
 }
 
-/**
- * The instant a wall-clock time names in a time zone. A time repeated when clocks go back is its
- * first occurrence; a time skipped when they go forward is read with the offset before the change.
- */
 export function fromLocal(wall: bigint, timezone: string): bigint {
   const before = offsetSeconds(wall - DAY_US / 2n, timezone);
   const after = offsetSeconds(wall + DAY_US / 2n, timezone);
@@ -106,6 +91,5 @@ export function fromLocal(wall: bigint, timezone: string): bigint {
   return toLocal(second, timezone) === wall ? second : first;
 }
 
-/** "YYYY-MM-DD HH:MM" in a time zone, for messages. */
 export const describeInstant = (us: bigint, timezone: string) =>
   formatWall(toLocal(us, timezone)).slice(0, 16).replace("T", " ");

@@ -2,15 +2,6 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import type { TableData, TableRow, Value } from "../../src/compiler/index.js";
 import { buildProject, metric, Oracle, removeProjects, run, writeProject } from "./fixture.js";
 
-// Port of HAT-56's windows harness for hatchmark#24 after the rebase onto #20
-// (handoffs/HAT-56/windows.mjs). Three timestamp sources in America/New_York: orders end Oct 20
-// 12:00 local, visits end Oct 26 12:00 local (they set latest_data), and legacy ends Sep 15,
-// before the range [2026-10-01, 2026-11-01). The oracle applies docs/numbers.md as written: a
-// measure is complete through the earliest horizon of its sources (a ratio through its laggiest
-// operand), its window is [start, min(end, local midnight at or before that horizon)), and an empty
-// window makes the metric null everywhere. Other rows aggregate the raw rows of the folded groups;
-// subtotals and totals use WHERE over raw rows; ranking uses this file's own comparator.
-
 type Key = string | number | boolean | null;
 type Values = Record<string, Value>;
 type Source = "orders" | "visits" | "legacy";
@@ -43,9 +34,7 @@ const rnd = () => {
 };
 const pick = <T>(xs: T[]): T => xs[Math.floor(rnd() * xs.length)] as T;
 const pad = (n: number) => String(n).padStart(2, "0");
-/** A New York wall time written with its EDT offset (EDT holds through Nov 1). */
 const at = (day: string, hh = 12, mm = 0) => `${day}T${pad(hh)}:${pad(mm)}:00-04:00`;
-/** Day d counted from Sep 1 (31 is Oct 1). */
 const dayOf = (d: number) => (d <= 30 ? `2026-09-${pad(d)}` : `2026-10-${pad(d - 30)}`);
 const COUNTRIES: [string, string][] = [
   ["Americas", "United States"],
@@ -102,7 +91,6 @@ const TIME: Record<Source, string> = {
   legacy: "seen_at",
 };
 
-/** Leaf metrics: definition, oracle SQL over raw rows, source. An empty sum is 0 (sql.ts). */
 const LEAF: Record<string, [Record<string, unknown>, string, Source]> = {
   revenue: [{ aggregate: "sum", column: "amount" }, "COALESCE(SUM(amount), 0)", "orders"],
   orders: [{ aggregate: "count" }, "COUNT(*)", "orders"],
@@ -240,7 +228,6 @@ const sourcesOf = (n: string): Source[] => {
   const ratio = RATIO[n];
   return ratio ? ratio.flatMap(sourcesOf) : [LEAF[n]?.[2] as Source];
 };
-/** A metric's exclusive local window end, or null when its window is empty. */
 const windowEnd = (n: string): string | null => {
   const end = [`${END} 00:00:00`, ...sourcesOf(n).map((s) => horizon[s])].sort()[0] ?? "";
   return end <= `${START} 00:00:00` ? null : end;

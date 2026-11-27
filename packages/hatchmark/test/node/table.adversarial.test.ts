@@ -3,18 +3,9 @@ import type { TableData, TableRow, Value } from "../../src/compiler/index.js";
 import { checkReferences, PROJECT_DEFAULTS, parseDiagnostics } from "../../src/spec/index.js";
 import { metric, Oracle, removeProjects, run, writeProject } from "./fixture.js";
 
-// Attack suite for table top N + Other, subtotals and shares (HAT-48). Every expectation comes
-// from plain SQL on the same CSV files, written here and run on its own DuckDB database: Other rows
-// from the rows outside the top N (ranked with ROW_NUMBER, nulls last, ties by key), subtotals and
-// totals from GROUPING SETS, never from the engine's own numbers.
-
 let oracle: Oracle;
 let root = "";
 
-/**
- * Seeded rows with ties, null groups (DuckDB reads an empty CSV field as null), a group named
- * "Other", a group whose amounts are all null and a country only the visits source has.
- */
 function ordersCsv(): string {
   let state = 48;
   const next = () => {
@@ -118,7 +109,6 @@ afterAll(async () => {
   await removeProjects();
 });
 
-/** Builds one table block in the shared project and returns its data and check diagnostics. */
 async function table(block: Record<string, unknown>, filters: unknown[] = []) {
   const fixture = await writeProject({
     "hatchmark.json": {
@@ -146,7 +136,6 @@ async function table(block: Record<string, unknown>, filters: unknown[] = []) {
   return { data: result as TableData, checks, diagnostics };
 }
 
-/** The SQL select list for metrics over an orders subquery named o. */
 const SELECT = `
   CAST(coalesce(sum(amount), 0) AS DOUBLE) AS revenue,
   CAST(count(*) AS DOUBLE) AS orders,
@@ -235,8 +224,6 @@ describe("top N plus Other", () => {
   }
 
   it("breaks ties at the N boundary by key, the same on every build", async () => {
-    // MX and BR both have revenue 125; DE and FR both 125 too. The fourth place goes to the
-    // smallest key among the tied rows, and the others fall into Other.
     const ties = await oracle.rows(`
       SELECT country, CAST(sum(amount) AS DOUBLE) AS revenue FROM o GROUP BY country
       HAVING coalesce(sum(amount), 0) = 125 ORDER BY country`);
@@ -464,7 +451,6 @@ describe("subtotals", () => {
       "Other",
       null,
     ]);
-    // Every row of a group sits between its subtotal and the next group's.
     let region: unknown;
     for (const row of data.rows) {
       if (row.level === 1) region = row.keys[0];
@@ -501,7 +487,6 @@ describe("subtotals", () => {
       "aov",
       "biggest",
     ]);
-    // A group's shown rows plus its Other row add up to its subtotal.
     for (const sub of data.rows.filter((r) => r.kind === "subtotal")) {
       const members = data.rows.filter((r) => r.kind !== "subtotal" && r.keys[0] === sub.keys[0]);
       close(

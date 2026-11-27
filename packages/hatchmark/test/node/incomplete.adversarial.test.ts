@@ -4,12 +4,6 @@ import type { KpiData, LineData } from "../../src/compiler/index.js";
 import { PROJECT_DEFAULTS } from "../../src/spec/index.js";
 import { metric, Oracle, removeProjects, run, writeProject } from "./fixture.js";
 
-// Ported from HAT-51's adversarial harness on hatchmark#20 (RFC 0001 sections 6.1, 6.4, 6.5), with
-// the expectations moved to whole-day KPI windows: a KPI reads whole local days ending at the last
-// complete day, and a time series reads through the horizon instant. The oracle never calls the
-// planner, windows.ts or the executor: windows come from the RFC's wording, sums are plain SQL over
-// the CSV compared as instants, and partial shares are wall-clock arithmetic done with Intl.
-
 let oracle: Oracle;
 beforeAll(async () => {
   oracle = await Oracle.open();
@@ -55,7 +49,6 @@ async function dashboard(options: {
 const csv = (pairs: [string, number][]) =>
   `at,v\n${pairs.map(([at, v]) => `${at},${v}`).join("\n")}\n`;
 
-/** One row of value 1 every hour in [from, to] (UTC ISO, inclusive), so a sum counts hours. */
 function hourly(from: string, to: string): [string, number][] {
   const out: [string, number][] = [];
   for (let t = Date.parse(from); t <= Date.parse(to); t += 3_600_000) {
@@ -64,7 +57,6 @@ function hourly(from: string, to: string): [string, number][] {
   return out;
 }
 
-/** Oracle sum over [from, to) compared as instants (TIMESTAMPTZ), never as local wall time. */
 async function sumInstants(root: string, source: string, from: string, to: string) {
   const [r] = await oracle.rows(`
     SELECT coalesce(sum(v), 0) AS v FROM read_csv('${path.join(root, `${source}.csv`)}')
@@ -73,7 +65,6 @@ async function sumInstants(root: string, source: string, from: string, to: strin
   return Number(r?.v);
 }
 
-/** Local wall-clock milliseconds (as if UTC) of an instant in a zone, by Intl only. */
 function wall(instantMs: number, timeZone: string): number {
   const parts = Object.fromEntries(
     new Intl.DateTimeFormat("en-US", {
@@ -108,9 +99,6 @@ function bucketEnd(start: string, unit: string): number {
 
 describe("B: comparisons over the same whole days (RFC 6.4, day clamp as today)", () => {
   it("B1 quarter_to_date: a row after the as-of completes the as-of day", async () => {
-    // Same fixed as-of (May 15, 2026). Run a ends at 11 p.m. May 15, so May 14 is its last complete
-    // day: Apr 1 to May 14 against Jan 1 to Feb 14. Run b has one more row at 00:00 May 16, so May 15
-    // is complete: Apr 1 to May 15 against Jan 1 to Feb 15.
     const base = hourly("2026-01-01T00:00:00Z", "2026-05-15T23:00:00Z");
     const out: KpiData[] = [];
     for (const extra of [[], [["2026-05-16T00:00:00Z", 1] as [string, number]]]) {
@@ -159,10 +147,6 @@ describe("B: comparisons over the same whole days (RFC 6.4, day clamp as today)"
 });
 
 describe("B3: a sub-day horizon inside the repeated DST hour (RFC 6.1 measure horizon)", () => {
-  // New York falls back on Nov 1, 2026: 1:00-2:00 a.m. happens twice (EDT 05:00-06:00Z, then
-  // EST 06:00-07:00Z). den lags, so the ratio series ends at den's horizon instant; the oracle
-  // counts num rows strictly before that instant. No day of November is complete, so the KPI is
-  // empty.
   const ratio = { share: metric({ type: "ratio", numerator: "num", denominator: "den" }) };
   const cases: [string, string, [string, number][]][] = [
     [
@@ -327,7 +311,6 @@ describe("C: controls (expected to hold)", () => {
     expect(kpi.value).toBe(
       await sumInstants(root, "stale", "2028-02-22 00:00:00Z", "2028-02-29 00:00:00Z"),
     );
-    // RFC 6.2: a year shift moves the first day (Feb 22) and the last day (Feb 28) of the window.
     expect(kpi.previousValue).toBe(
       await sumInstants(root, "stale", "2027-02-22 00:00:00Z", "2027-03-01 00:00:00Z"),
     );

@@ -8,10 +8,6 @@ import { type Browser, chromium, type Frame, type Page } from "playwright";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { renderSite } from "../../src/page.js";
 
-/**
- * The preview shell in a real browser: a section in the shell's hash reaches the framed gallery and
- * survives the toolbar, and a gallery opened on its own sends the reader to the shell.
- */
 const tall = (component: string) => ({
   component,
   variant: "plain",
@@ -60,7 +56,6 @@ const hash = (page: Page) =>
   Object.fromEntries(new URLSearchParams(new URL(page.url()).hash.slice(1)));
 const gallery = (page: Page) => page.frameLocator("#frame");
 
-/** Distance from the top of the framed gallery's viewport to the section's heading. */
 async function sectionTop(page: Page, id: string): Promise<number> {
   const frame = page.frame({ url: /\/components\// }) as Frame;
   return frame.evaluate((target) => {
@@ -69,7 +64,6 @@ async function sectionTop(page: Page, id: string): Promise<number> {
   }, id);
 }
 
-/** Counts top-level document loads so a redirect loop shows up as more than the expected ones. */
 function countNavigations(page: Page): () => number {
   let count = 0;
   page.on("request", (request) => {

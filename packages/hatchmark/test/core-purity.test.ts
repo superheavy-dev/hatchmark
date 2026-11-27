@@ -21,10 +21,6 @@ function files(dir: URL): URL[] {
 const coreFiles = CORE.flatMap((module) => files(new URL(`../src/${module}/`, import.meta.url)));
 const label = (file: string) => file.split("/src/")[1] ?? file;
 
-/**
- * Every import of every core module as esbuild resolves it: static, side-effect, re-export,
- * dynamic import() and require(), however the source is formatted.
- */
 async function imports(
   entries: string[] = coreFiles.map((f) => fileURLToPath(f)),
 ): Promise<{ importer: string; kind: string; path: string }[]> {

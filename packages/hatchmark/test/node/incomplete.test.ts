@@ -4,9 +4,6 @@ import type { KpiData, LineData, TableData } from "../../src/compiler/index.js";
 import { PROJECT_DEFAULTS } from "../../src/spec/index.js";
 import { metric, Oracle, removeProjects, run, writeProject } from "./fixture.js";
 
-// Windows ended at each measure's horizon, comparisons over the same elapsed span, and partial
-// buckets (RFC 0001 sections 6.4 and 6.5).
-
 let oracle: Oracle;
 beforeAll(async () => {
   oracle = await Oracle.open();
@@ -203,8 +200,6 @@ describe("partial buckets", () => {
 });
 
 describe("windows at the horizon against SQL written here", () => {
-  // Hourly rows from Oct 1, 12:30 a.m. to Nov 29, 2:30 p.m. New York time, so Nov 28 is the last
-  // complete day. Each KPI is checked against a query with its whole-day bounds spelled out.
   const at = (hours: number) =>
     new Date(Date.UTC(2026, 9, 1, 4, 30) + hours * 3_600_000).toISOString();
   const hourly = (count: number) =>
@@ -240,7 +235,6 @@ describe("windows at the horizon against SQL written here", () => {
 });
 
 describe("whole days in KPIs, instants in series", () => {
-  // Rows as [UTC instant, value]; each expectation is summed here from the instants.
   const between = (pairs: [string, number][], from: string, to: string) =>
     pairs
       .filter(([at]) => Date.parse(at) >= Date.parse(from) && Date.parse(at) < Date.parse(to))
@@ -264,8 +258,6 @@ describe("whole days in KPIs, instants in series", () => {
         { type: "line", id: "l", metrics: ["orders"], grain: "day" },
       ],
     });
-    // Complete through 1:45 a.m. EST (06:45Z): the series includes the EDT 1:50 row and leaves out
-    // the EST 1:50 row; no day of November is complete, so the KPI shows no value.
     const expected = between(pairs, "2026-11-01T04:00:00Z", "2026-11-01T06:45:00.001Z");
     expect(expected).toBe(11);
     expect(block<LineData>("l").series[0]?.values[0]).toBe(expected);
@@ -370,8 +362,6 @@ describe("whole days in KPIs, instants in series", () => {
       },
       blocks: [{ type: "kpi", id: "k", metric: "orders" }],
     });
-    // As of Oct 10, last 3 months is Aug 1 to Oct 10, 71 days. Oct 10 isn't complete, so it slides
-    // back a day to Jul 31 to Oct 9, and previous_period is the 71 days before it.
     expect(block<KpiData>("k")).toMatchObject({
       value: between(pairs, "2026-07-31T00:00:00Z", "2026-10-10T00:00:00Z"),
       previousValue: between(pairs, "2026-05-21T00:00:00Z", "2026-07-31T00:00:00Z"),

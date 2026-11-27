@@ -4,12 +4,6 @@ import type { BarData, DashboardData, LineData, Value } from "../../src/compiler
 import { checkReferences, PROJECT_DEFAULTS } from "../../src/spec/index.js";
 import { metric, Oracle, removeProjects, run, writeProject } from "./fixture.js";
 
-/**
- * Stacked and 100% stacked blocks against an independent SQL oracle: every position's total is
- * recomputed from rows (not summed from segments), shares divide by that total, and grain switches,
- * limits, null groups and a select filter keep both right.
- */
-
 const NY = "America/New_York";
 const REGIONS = ["North America", "Europe", "Asia-Pacific", "Latin America", ""];
 const CHANNELS = ["Online store", "Marketplace", "Retail partners", ""];
@@ -22,7 +16,6 @@ function random(seed: number): () => number {
   };
 }
 
-/** Orders over Jan to Jun 2026 with null regions and channels, refunds and repeat customers. */
 function orders(): string {
   const rand = random(47);
   const lines = ["order_id,ordered_at,region,channel,status,amount,refund,customer_id"];
@@ -39,7 +32,6 @@ function orders(): string {
     const customer = `c${Math.floor(rand() * 90)}`;
     lines.push(`${i},${at},${region},${channel},${status},${amount},${refund},${customer}`);
   }
-  // Jan 31 23:30 in New York is Feb 1 UTC: the boundary row must land in January.
   lines.push("9000,2026-02-01T04:30:00Z,Europe,Marketplace,paid,500.00,0,c1");
   lines.push("9001,2026-06-30T16:00:00Z,North America,Online store,paid,80.00,0,c2");
   return `${lines.join("\n")}\n`;
@@ -152,7 +144,6 @@ let stacked: Awaited<ReturnType<typeof run>>;
 let csv: string;
 const LOCAL = `(ordered_at AT TIME ZONE '${NY}')`;
 const WINDOW = `${LOCAL} >= TIMESTAMP '2026-01-01' AND ${LOCAL} < TIMESTAMP '2026-07-01'`;
-/** Category charts read whole local days through the last complete one: the midnight at or before the data's horizon. */
 let CATEGORY: string;
 
 function block<T>(data: DashboardData | undefined, id: string): T {
@@ -161,7 +152,6 @@ function block<T>(data: DashboardData | undefined, id: string): T {
   return found as T;
 }
 
-/** The oracle's value for a key, with SQL NULL groups keyed as null. */
 async function grouped(sql: string, keys: string[]): Promise<Map<string, number | null>> {
   const rows = await oracle.rows(sql);
   return new Map(

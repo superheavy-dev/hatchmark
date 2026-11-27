@@ -1,11 +1,4 @@
 #!/usr/bin/env node
-// Renders the HAT-8 Parcelwise dataset with the Default theme in the regions of the Paper
-// "Desktop · Light · 1440" frame (T-0) and pixel-diffs each region against Paper's export, twice:
-// unmasked, and in scope only, where what T-0 draws beyond DashboardData (event annotations, the
-// pinned tooltip, the bar list, table subtotals and the "vs Sep" column) is masked or cut out.
-// Usage: node scripts/paper-parity.ts --dataset dataset.json --paper <dir> --out <dir>
-//   <dir> holds Paper's 1x PNG exports: kpi.png (KPI strip), line.png (line chart card),
-//   bar.png (bar list card) and table.png (table card).
 /// <reference lib="dom" />
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
@@ -187,8 +180,6 @@ const assets = {
 const pagePath = path.join(outDir, "paper-parity-page.html");
 await writeFile(pagePath, renderDashboardPage(data, { assets, sources: ["dataset.json"] }));
 
-// Out-of-scope geometry in T-0's 1x exports, read from the Paper frame. The line chart's plot
-// sits at (17, 68) in its card; table rows are 30 px under a 26 px header ending at y 90.
 const plot = (x: number, y: number, w: number, h: number): Rect => ({
   x: 17 + x,
   y: 68 + y,
@@ -240,7 +231,6 @@ const REGIONS: { name: string; selector: string; scope: Scope; outOfScope: strin
   },
 ];
 
-/** In the page: Paper's export brought to scope, then diffed against ours. Returns PNGs as base64. */
 async function compare([a, b, threshold, scope]: [string, string, number, Scope]) {
   const context = (c: OffscreenCanvas) => c.getContext("2d") as OffscreenCanvasRenderingContext2D;
   const load = async (b64: string) => {

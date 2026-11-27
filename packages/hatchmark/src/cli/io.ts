@@ -1,15 +1,12 @@
-/** Everything a command touches outside its arguments, so tests can run the CLI in-process. */
 export interface CliIO {
   stdout(text: string): void;
   stderr(text: string): void;
   cwd: string;
   env: Readonly<Record<string, string | undefined>>;
   stdoutIsTTY: boolean;
-  /** Whether an AI coding agent runs this process (Claude Code, Codex, Cursor, ...). */
   isAgent(): Promise<boolean>;
 }
 
-/** Exit codes, documented in docs/cli.md. */
 export const EXIT = {
   ok: 0,
   check: 1,
@@ -23,7 +20,6 @@ export type OutputMode = "json" | "human";
 
 export interface CommandContext {
   io: CliIO;
-  /** Absolute project directory: --cwd resolved against the process directory. */
   root: string;
   mode: OutputMode;
   color: boolean;
@@ -32,10 +28,7 @@ export interface CommandContext {
 
 export interface CommandResult {
   exitCode: ExitCode;
-  /** Printed as one line of JSON in json mode. */
   json: unknown;
-  /** Printed in human mode. */
   human: string;
-  /** The command already printed its result while it ran (hatchmark dev); print nothing more. */
   printed?: boolean;
 }

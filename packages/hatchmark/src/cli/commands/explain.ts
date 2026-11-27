@@ -46,16 +46,13 @@ export const explainHelp: CommandHelp = {
   example: { command: "hatchmark explain HM2003", description: 'Explains "unknown metric".' },
 };
 
-/** The executor explain uses; tests replace it. */
 export type CreateSqlExecutor = (options: {
   root: string;
   config: ProjectConfig;
 }) => Promise<SqlExecutor & { close(): Promise<void> }>;
 
-/** An explained query with its build-cache status, when explain looked it up. */
 export type ExplainedWithCache = ExplainedQuery & { cache?: CacheProbe };
 
-/** The queries as SQL to read: a comment naming each query, then its SQL with values inlined. */
 export function renderQueries(queries: ExplainedQuery[]): string {
   return queries
     .map(
@@ -65,7 +62,6 @@ export function renderQueries(queries: ExplainedQuery[]): string {
     .join("\n\n");
 }
 
-/** A query's build-cache status as one line, for the cache section after the SQL. */
 function cacheLine(id: string, cache: CacheProbe): string {
   switch (cache.status) {
     case "hit":
@@ -159,11 +155,7 @@ export async function explain(
   }
 }
 
-/**
- * The queries as a result. Errors print the report instead (exit 1 or 2). A block the planner
- * leaves out has no queries; its warnings are in diagnostics, and the exit code is 0 as for check.
- */
-async function printed(
+async function queriesResult(
   ctx: CommandContext,
   head: Record<string, unknown>,
   title: string,
@@ -203,7 +195,7 @@ async function metricSql(
 ): Promise<CommandResult> {
   const result = await explainMetric(project, metric, executor, new Date());
   const { asOf } = result;
-  return printed(
+  return queriesResult(
     ctx,
     { metric, ...(asOf !== undefined ? { as_of: asOf } : {}) },
     asOf !== undefined
@@ -228,7 +220,7 @@ async function blockSql(
     block,
     new Date(),
   );
-  return printed(
+  return queriesResult(
     ctx,
     { dashboard, block, ...(asOf !== undefined ? { as_of: asOf } : {}) },
     `block "${block}" of dashboard "${dashboard}"${asOf !== undefined ? ` as of ${asOf}` : ""}, with the filter defaults`,

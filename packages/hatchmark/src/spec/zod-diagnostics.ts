@@ -43,7 +43,6 @@ function literalValues(schema: z.ZodType): unknown[] {
   return [];
 }
 
-/** The schema that validates the value at path, following discriminated unions by the value. */
 function schemaAt(root: z.ZodType, value: unknown, path: Path): z.ZodType | undefined {
   let schema: z.ZodType | undefined = root;
   let current = value;
@@ -88,7 +87,6 @@ function objectKeys(root: z.ZodType, value: unknown, path: Path): string[] {
   return def.type === "object" ? Object.keys(def.shape) : [];
 }
 
-/** Properties an agent may try on a table for pagination, which tables leave out on purpose. */
 const PAGING_KEYS = new Set([
   "pagination",
   "paginate",
@@ -146,11 +144,9 @@ function closestFix(
 export interface IssueContext {
   root: z.ZodType;
   document: JsonDocument;
-  /** Values for missing required properties that are safe to add, keyed by property name. */
   defaults?: Readonly<Record<string, unknown>>;
 }
 
-/** Turns Zod issues into Hatchmark diagnostics with positions, expected values and fixes. */
 export function issuesToDiagnostics(
   issues: readonly z.core.$ZodIssue[],
   ctx: IssueContext,

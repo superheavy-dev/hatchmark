@@ -95,7 +95,6 @@ export async function explainDashboard(
   return { blocks: explained, asOf: context.asOf, diagnostics };
 }
 
-/** The dashboard explainMetric plans; it reads no file. */
 const CANONICAL = "explain";
 
 /**

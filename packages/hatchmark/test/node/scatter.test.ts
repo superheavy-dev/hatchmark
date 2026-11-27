@@ -4,13 +4,6 @@ import type { DashboardData, ScatterData, Value } from "../../src/compiler/index
 import { checkReferences, PROJECT_DEFAULTS } from "../../src/spec/index.js";
 import { metric, Oracle, removeProjects, run, writeProject } from "./fixture.js";
 
-/**
- * Scatter blocks against an independent SQL oracle: x, y and size per category equal a plain
- * GROUP BY, a ratio divides the group's sums (never averages row ratios), the null category is a
- * real point, categories without an x or y are counted and left out (HM4070), limit keeps the
- * largest points, a select filter's default applies, and past 500 points the cap warns (HM5022).
- */
-
 const NY = "America/New_York";
 const COUNTRIES = ["United States", "Germany", "Japan", "Brazil", "Canada", "Australia", ""];
 const CHANNELS = ["Online store", "Marketplace", "Retail partners"];
@@ -23,7 +16,6 @@ function random(seed: number): () => number {
   };
 }
 
-/** Orders over Jan to Jun 2026, with a null country, refunds, and Iceland only ever refunded. */
 function orders(): string {
   const rand = random(70);
   const lines = ["order_id,ordered_at,country,channel,status,amount,quantity,margin,customer_id"];
@@ -53,7 +45,6 @@ function orders(): string {
   }
   lines.push("9000,2026-03-02T15:00:00Z,Iceland,Marketplace,refunded,120.00,2,10,c1");
   lines.push("9001,2026-04-02T15:00:00Z,Iceland,Online store,refunded,80.00,1,5,c2");
-  // Dec 31 at 22:00 in New York: outside the year-to-date window.
   lines.push("9002,2026-01-01T03:00:00Z,Germany,Marketplace,paid,9999.00,1,0,c3");
   lines.push("9003,2026-06-30T23:00:00Z,Canada,Online store,paid,64.00,2,12,c4");
   return `${lines.join("\n")}\n`;
@@ -127,7 +118,6 @@ let project: Awaited<ReturnType<typeof writeProject>>;
 let result: Awaited<ReturnType<typeof run>>;
 let csv: string;
 const LOCAL = `(ordered_at AT TIME ZONE '${NY}')`;
-/** A scatter reads whole local days through the last complete one: the midnight at or before the data's horizon. */
 let WINDOW: string;
 let lastDay: string;
 
@@ -146,7 +136,6 @@ interface Row {
   rowRatio: number | null;
 }
 
-/** The oracle's numbers per category, from one plain GROUP BY. */
 async function perCountry(where = ""): Promise<Row[]> {
   const rows = await oracle.rows(
     `SELECT country AS key,
@@ -174,7 +163,6 @@ function close(actual: Value | undefined, expected: number | null | undefined): 
   );
 }
 
-/** The expected order: size descending (else y descending), then y descending, then key, nulls last. */
 function expectedOrder(
   rows: { key: string | null; y: number; size: number | null }[],
 ): (string | null)[] {
@@ -301,7 +289,6 @@ describe("scatter blocks against a SQL oracle", () => {
   it("caps a block at 500 points without a limit and says how many it left out (HM5022)", async () => {
     const customers = await run(project.root, project.project, "customers");
     const b = scatter(customers.data, "customers");
-    // A customer with only refunded orders has revenue and items 0 (sums of no rows), so a point.
     const rows = await oracle.rows(
       `SELECT customer_id,
          CAST(coalesce(sum(quantity) FILTER (WHERE status = 'paid'), 0) AS DOUBLE) AS items,

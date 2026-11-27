@@ -15,7 +15,6 @@ import type {
 } from "../../src/compiler/dashboard-data.js";
 import { FONT_FILES, renderDashboardPage } from "../../src/render/index.js";
 
-/** The browser runtime on the sample dashboard: tooltip, crosshair, readout and keyboard. */
 let browser: Browser;
 let dir: string;
 let url: string;

@@ -1,4 +1,3 @@
-// Adopted from the HAT-61 review of hatchmark#28 (scatter): oracle.test.ts, checked against plain SQL.
 import path from "node:path";
 import { afterAll, expect, it } from "vitest";
 import type { ScatterData, TableData } from "../../src/compiler/index.js";

@@ -18,7 +18,6 @@ function offsetOf(text: string, position: Position): number {
   return offset;
 }
 
-/** Applies one fix to the text it was produced from. */
 export function applyFix(text: string, fix: Fix | undefined): string {
   if (fix === undefined) throw new Error("no fix");
   return (
@@ -120,7 +119,6 @@ export const DASHBOARD = {
   ],
 };
 
-/** Builds a project from in-memory JSON values (or raw text) without touching the disk. */
 export function projectFrom(files: {
   config?: unknown;
   metrics?: Record<string, unknown>;

@@ -9,7 +9,6 @@ import { GALLERY } from "../../gallery/variants.js";
 import type { DashboardData, TableData } from "../../src/compiler/dashboard-data.js";
 import { FONT_FILES, renderDashboardPage } from "../../src/render/index.js";
 
-/** Table interactions in Chromium: sorting by mouse and keyboard, the CSV download, the sticky header. */
 let browser: Browser;
 let dir: string;
 const urls: Record<string, string> = {};
@@ -39,7 +38,6 @@ const TRICKY: TableData = {
   sort: { by: "revenue", order: "desc" },
 };
 
-/** A one-column table on numeric and multi-line keys, in a locale whose number format differs. */
 const keyed = (id: string, keys: (string | number)[]): DashboardData => ({
   ...dashboard(id, id, [
     {
@@ -216,7 +214,6 @@ async function open(name: string, width = 1280): Promise<Page> {
   return page;
 }
 
-/** Each body row as [kind, key text..., first value]. */
 const rows = (page: Page) =>
   page.$$eval(".hm-table tbody tr", (trs) =>
     trs.map((tr) => [
@@ -496,7 +493,6 @@ describe("tall tables", () => {
 });
 
 describe("in-cell bar and scrollbar layout", () => {
-  /** Each column's track left and right edges across the body rows that draw one. */
   const tracks = (page: Page) =>
     page.$$eval(".hm-table tbody tr", (trs) => {
       const columns: Record<number, { left: number; right: number }[]> = {};
@@ -566,7 +562,6 @@ describe("in-cell bar and scrollbar layout", () => {
 });
 
 describe("narrow layouts of grouped tables", () => {
-  /** Visible text of the narrow-only labels in each body row, with the row's outer key values. */
   const labels = (page: Page) =>
     page.$$eval(".hm-table tbody tr", (trs) =>
       trs
@@ -785,7 +780,6 @@ describe("narrow layouts of grouped tables", () => {
 });
 
 describe("overflow: page or scroll, by layout", () => {
-  /** After scrolling the page into the table: inner scroll, thin scrollbar, and where the header and total sit. */
   const probe = async (page: Page, height: number) => {
     const wrap = page.locator(".hm-table-wrap").first();
     const inner = await wrap.evaluate((n) => n.scrollHeight - n.clientHeight);

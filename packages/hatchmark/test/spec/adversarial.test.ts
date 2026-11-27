@@ -1,15 +1,7 @@
-// Adopted from the HAT-27 adversarial review of hatchmark#9 (RFC 0001 metric layer): each case adds one
-// metric or config change to the Larkspur fixture and pins the diagnostics it must produce. Cases named
-// "accepted today (not covered)" are the review's known gaps; a check that starts catching one updates its case.
 import { describe, expect, it } from "vitest";
 import { checkReferences, groupAdditive, parseDiagnostics } from "../../src/spec/index.js";
 import { CONFIG, projectFrom } from "./helpers.js";
 
-/**
- * The expressiveness test from RFC 0001: a synthetic US SaaS company (Larkspur) shaped like a
- * Stripe export, with every common ARR method written in the grammar. No keyword in the schema is
- * SaaS-specific; these files must validate with no errors.
- */
 const larkspurConfig = {
   ...CONFIG,
   name: "Larkspur",
@@ -296,7 +288,6 @@ type Attack = {
   cols?: Record<string, string[]>;
 };
 
-/** Loads Larkspur with one attack applied and returns its error and warning diagnostics. */
 const run = (o: Attack) => {
   const project = projectFrom({
     config: o.config ?? larkspurConfig,
@@ -312,7 +303,6 @@ const run = (o: Attack) => {
   return { diags, specs };
 };
 
-/** One case: the attack must produce exactly these diagnostics, and x must be group-additive or not. */
 function attack(name: string, o: Attack, expected: string[], groupAdditiveX?: boolean) {
   it(name, () => {
     const { diags, specs } = run(o);

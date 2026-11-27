@@ -241,10 +241,6 @@ export async function loadProject(
 /** The longest CSV header Hatchmark reads; a longer first record is an error, never a partial list. */
 export const CSV_HEADER_LIMIT = 16 * 1024 * 1024;
 
-/**
- * Reads the whole first record of a CSV file, however long, by reading more until the record ends
- * or the file does. Undefined when the file cannot be read or a quote never closes at the end.
- */
 async function readCsvHeader(
   host: ProjectHost,
   file: string,

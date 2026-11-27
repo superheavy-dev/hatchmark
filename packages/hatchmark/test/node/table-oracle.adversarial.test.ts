@@ -4,13 +4,6 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import type { TableData, TableRow, Value } from "../../src/compiler/index.js";
 import { buildProject, metric, Oracle, removeProjects, run, writeProject } from "./fixture.js";
 
-// Port of HAT-56's adversarial harness for hatchmark#24 (handoffs/HAT-56/harness.mjs). A seeded
-// two-source project with negative, zero and null amounts, ties at N, null groups, a numeric key
-// and groups missing on either side; every table is checked against SQL over the raw CSV rows on a
-// separate DuckDB database. Other rows aggregate the raw rows of the folded groups, never per-group
-// parts; subtotals and totals use WHERE over raw rows; ranking uses this file's own comparator.
-// The built HTML's data-v must equal the DashboardData it renders.
-
 type Key = string | number | boolean | null;
 type Values = Record<string, Value>;
 interface Expected {
@@ -88,7 +81,6 @@ const VISITS: (string | number)[][] = [
 ];
 const csv = (rows: (string | number)[][]) => `${rows.map((r) => r.join(",")).join("\n")}\n`;
 
-/** Leaf metrics: definition, oracle SQL over raw rows, oracle table. An empty sum is 0 (sql.ts). */
 const LEAF: Record<string, [Record<string, unknown>, string, "o" | "v"]> = {
   revenue: [
     { table: "orders", type: "aggregate", aggregate: "sum", column: "amount" },
@@ -415,7 +407,6 @@ const where = (src: "o" | "v", filter: Record<string, Key[]> | undefined) =>
     .filter(([c]) => columnsOf(src).includes(c))
     .map(([c, vals]) => `${c} IN (${vals.map(lit).join(", ")})`);
 
-/** Every metric over the raw rows whose leading keys are one of groups (null: all rows). */
 async function valuesOver(
   by: string[],
   groups: Key[][] | null,
@@ -601,7 +592,6 @@ function compare(
   return failures;
 }
 
-/** Each body row of a table's card: its kind and the data-v of its value cells. */
 function htmlRows(page: string, id: string, width: number) {
   const section = page.split(`data-hm-csv="${id}"`)[1]?.split("</section>")[0] ?? "";
   const body = (section.split("<tbody>")[1] ?? "").split("</tbody>")[0] ?? "";

@@ -4,14 +4,6 @@ import { selectValues } from "./params.js";
 import type { ExecutionContext, MeasureComponent, PlannedQuery } from "./plan.js";
 import { queryBounds } from "./windows.js";
 
-/**
- * The SQL of planned queries, as DuckDB runs it. Pure string generation, so it lives in the
- * portable core: the DuckDB executor runs exactly this text with these parameters, and
- * `hatchmark explain` prints the same text with the parameters inlined (printSql), so the printed
- * SQL cannot drift from what runs. The rules it follows (time zones, filters, numbers) are
- * described on createDuckDbExecutor.
- */
-
 /** A value bound to a $name parameter. */
 export type SqlValue = string | number | boolean;
 
@@ -74,7 +66,6 @@ export function column(source: SqlSource, name: string): { name: string; type: s
 
 export const isTimestamp = (type: string) => type.startsWith("TIMESTAMP");
 
-/** The column's value as local time in the time zone (see createDuckDbExecutor). */
 function localTime(source: SqlSource, name: string, timezone: string, sql: Sql): string {
   const { name: actual, type } = column(source, name);
   const q = quote(actual);
@@ -88,7 +79,6 @@ function localTime(source: SqlSource, name: string, timezone: string, sql: Sql):
   );
 }
 
-/** The column's value as an instant (TIMESTAMP WITH TIME ZONE), by the same rules as localTime. */
 function instant(source: SqlSource, name: string, timezone: string, sql: Sql): string {
   const { name: actual, type } = column(source, name);
   const q = quote(actual);
@@ -97,15 +87,10 @@ function instant(source: SqlSource, name: string, timezone: string, sql: Sql): s
   return `timezone(${naiveZone(source, sql)}, CAST(${q} AS TIMESTAMP))`;
 }
 
-/** The zone a timestamp without an offset is read in: the source's timezone, else UTC. */
 function naiveZone(source: SqlSource, sql: Sql): string {
   return source.timezone === undefined ? "'UTC'" : sql.bind(source.timezone);
 }
 
-/**
- * The two sides of comparing a column with one filter value. On a DATE or timestamp column the
- * value must be strict ISO 8601: a day compares the local date, a date-time compares instants.
- */
 function sides(
   source: SqlSource,
   name: string,
@@ -243,7 +228,7 @@ function dimensionSql(
   return `CAST(${q} AS VARCHAR)`;
 }
 
-/** The SQL of one planned query over its source (see the module comment). */
+/** The SQL of one planned query over its source. */
 export function querySql(
   source: SqlSource,
   query: PlannedQuery,
@@ -402,7 +387,6 @@ export function sqlType(
   throw new RangeError(`the whole number ${value} is outside the HUGEINT range, ±2^127`);
 }
 
-/** The value as a literal of its sqlType; a BIGINT or HUGEINT is written with every digit. */
 function literal(value: SqlValue): string {
   const type = sqlType(value);
   if (type === "VARCHAR") {

@@ -4,13 +4,8 @@ import { type Browser, chromium } from "playwright";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { FONT_FILES, type FontWeight, textWidth } from "../../src/render/index.js";
 
-/**
- * The text measurer against headless Chromium's own layout of the bundled fonts, as SVG text
- * (what charts draw) at the sizes and weights the theme uses. Tolerance: 0.5 px or 0.5% of the
- * width, whichever is larger, so a label never overflows its measured box by more than half a
- * pixel on short strings. Hinting is off, as on macOS and in most browsers people use: Linux
- * Chromium's default full hinting snaps every glyph advance to a whole pixel.
- */
+// Linux Chromium's default full hinting snaps every glyph advance to a whole pixel, unlike macOS
+// and most browsers, so these tests turn hinting off.
 const STRINGS = [
   "Revenue",
   "United States",

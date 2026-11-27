@@ -130,7 +130,6 @@ function regionQuery(regionDefault: unknown): PlannedQuery {
   };
 }
 
-/** A stand-in executor that reads only the query and the context, as QueryExecutor must. */
 function countRows(query: PlannedQuery, context: ExecutionContext): number {
   return ROWS.filter((row) =>
     query.params.every((param) => {

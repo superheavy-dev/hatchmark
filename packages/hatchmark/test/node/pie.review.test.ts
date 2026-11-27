@@ -1,5 +1,3 @@
-// Adopted from the HAT-59 review of hatchmark#25 (pie and donut): hat-59-review.test.ts. Each case is
-// checked against plain SQL on the oracle's own DuckDB, or against the rendered markup.
 import path from "node:path";
 import { afterAll, beforeAll, expect, it } from "vitest";
 import type { PieData } from "../../src/compiler/index.js";

@@ -1,6 +1,5 @@
 import { PROJECT_DEFAULTS, type ProjectConfig } from "../spec/index.js";
 
-/** US states with Census region and 2020 population in millions, rounded; the sample's weights. */
 const STATES: readonly [string, string, number][] = [
   ["AL", "South", 5.0],
   ["AK", "West", 0.7],
@@ -93,10 +92,6 @@ function pick<T>(random: () => number, items: readonly T[], weight: (item: T) =>
 const START = Date.UTC(2025, 10, 1);
 const DAYS = 365;
 
-/**
- * Orders for a fictional US online store, November 2025 to October 2026. Deterministic: the same
- * seed always gives the same bytes, so a fresh project's numbers are reproducible.
- */
 export function sampleOrdersCsv(rows = 1500, seed = 20261127): string {
   const random = lcg(seed);
   const out = ["order_id,ordered_at,customer_id,region,state,plan,industry,status,amount"];

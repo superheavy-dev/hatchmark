@@ -1,6 +1,3 @@
-// Writes data/orders.csv for the global-sales example: a fictional online store selling worldwide,
-// about 5,000 orders over the 24 months ending 2026-10-31. Deterministic: the same script always
-// writes the same bytes. Run: node examples/global-sales/generate.ts (from packages/hatchmark).
 import { writeFileSync } from "node:fs";
 
 let seed = 20261031;

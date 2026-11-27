@@ -29,10 +29,8 @@ export const devHelp: CommandHelp = {
   },
 };
 
-/** What dev needs from the platform; tests inject their own. */
 export interface DevDeps {
   start: typeof startDevServer;
-  /** Resolves when the server should stop. */
   stopped(): Promise<void>;
 }
 
@@ -45,11 +43,6 @@ const defaultDeps: DevDeps = {
     }),
 };
 
-/**
- * Runs the dev server until stopped. It prints its result as soon as the server is ready (in json
- * mode, one line with the URL), because it never returns while it runs; progress and diagnostics
- * go to stderr.
- */
 export async function dev(
   ctx: CommandContext,
   flags: { port?: string; host?: string; open: boolean },

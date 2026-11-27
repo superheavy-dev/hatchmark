@@ -39,7 +39,6 @@ export interface JsonSyntaxError {
 const FRAME_BEFORE = 80;
 const FRAME_AFTER = 160;
 
-/** Thrown internally to stop parsing at the first syntax error. */
 class StopParsing extends Error {}
 
 const NUMBER = /-?(?:0|[1-9][0-9]*)(?:\.[0-9]+)?(?:[eE][+-]?[0-9]+)?/y;
@@ -73,13 +72,6 @@ type Container =
     }
   | { kind: "array"; start: number; items: JsonNode[]; value: unknown[] };
 
-/**
- * A strict RFC 8259 JSON parser that keeps the source offset of every value and key, so a
- * diagnostic found on the parsed value (through a JSON Pointer) can point back to file:line:col.
- * It accepts exactly what JSON.parse accepts and builds the same value, at any nesting depth
- * (it keeps its own stack instead of recursing). It stops at the first syntax error, and also
- * reports duplicate object keys, which JSON.parse accepts by keeping the last one.
- */
 class Parser {
   private pos = 0;
   private lastComma = -1;
@@ -155,10 +147,6 @@ class Parser {
     }
   }
 
-  /**
-   * Comments are rejected with a repair that never joins the tokens around them: a block comment
-   * becomes one space, and a line comment is cut up to (not including) its line break.
-   */
   private failComment(): never {
     const start = this.pos;
     if (this.text[start + 1] === "/") {
@@ -249,7 +237,6 @@ class Parser {
         };
   }
 
-  /** Starts a container (pushing a frame and returning undefined) or parses a scalar value. */
   private openOrScalar(stack: Container[]): Built | undefined {
     const start = this.pos;
     const ch = this.text[start];
@@ -415,7 +402,6 @@ class Parser {
   }
 }
 
-/** Splits text into lines at \n, \r\n and \r, the line breaks JSON allows as whitespace. */
 export function splitLines(text: string): string[] {
   return text.split(/\r\n|\r|\n/);
 }
@@ -578,7 +564,6 @@ export class JsonDocument {
   }
 }
 
-/** First index whose value is greater than target. */
 function upperBound(sorted: readonly number[], target: number): number {
   let lo = 0;
   let hi = sorted.length;
@@ -590,7 +575,6 @@ function upperBound(sorted: readonly number[], target: number): number {
   return lo;
 }
 
-/** First index whose value is greater than or equal to target. */
 function lowerBound(sorted: readonly number[], target: number): number {
   let lo = 0;
   let hi = sorted.length;

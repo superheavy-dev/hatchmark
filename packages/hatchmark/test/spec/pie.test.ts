@@ -2,8 +2,6 @@ import { describe, expect, it } from "vitest";
 import { checkReferences, parseDiagnostics } from "../../src/spec/index.js";
 import { applyFix, DASHBOARD, projectFrom } from "./helpers.js";
 
-/** check's guards for pie and donut blocks. */
-
 const dashboard = (...blocks: unknown[]) => ({ sales: { ...DASHBOARD, filters: [], blocks } });
 const refs = (...blocks: unknown[]) =>
   checkReferences(projectFrom({ dashboards: dashboard(...blocks) }));
