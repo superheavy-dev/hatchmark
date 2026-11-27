@@ -1,0 +1,203 @@
+import path from "node:path";
+import { type ParseArgsConfig, parseArgs } from "node:util";
+import { VERSION } from "../version.js";
+import { check, checkHelp } from "./commands/check.js";
+import { doctor, doctorHelp } from "./commands/doctor.js";
+import { explain, explainHelp } from "./commands/explain.js";
+import { init, initHelp } from "./commands/init.js";
+import { schema, schemaHelp } from "./commands/schema.js";
+import { version, versionHelp } from "./commands/version.js";
+import { type CommandHelp, renderCommandHelp, renderTopHelp } from "./help.js";
+import {
+  type CliIO,
+  type CommandContext,
+  type CommandResult,
+  EXIT,
+  type OutputMode,
+} from "./io.js";
+import { usageError } from "./usage.js";
+
+type Options = NonNullable<ParseArgsConfig["options"]>;
+type Flags = Record<string, string | boolean | undefined>;
+
+interface Command {
+  help: CommandHelp;
+  options: Options;
+  run(
+    ctx: CommandContext,
+    positionals: string[],
+    flags: Flags,
+  ): CommandResult | Promise<CommandResult>;
+}
+
+const GLOBAL: Options = {
+  json: { type: "boolean" },
+  format: { type: "string" },
+  cwd: { type: "string" },
+  quiet: { type: "boolean" },
+  "no-color": { type: "boolean" },
+  yes: { type: "boolean", short: "y" },
+  help: { type: "boolean", short: "h" },
+};
+
+const COMMANDS: Record<string, Command> = {
+  init: {
+    help: initHelp,
+    options: { template: { type: "string" }, name: { type: "string" }, force: { type: "boolean" } },
+    run: (ctx, positionals, flags) =>
+      init(ctx, positionals, {
+        ...(typeof flags.template === "string" ? { template: flags.template } : {}),
+        ...(typeof flags.name === "string" ? { name: flags.name } : {}),
+        force: flags.force === true,
+      }),
+  },
+  check: {
+    help: checkHelp,
+    options: { strict: { type: "boolean" } },
+    run: (ctx, positionals, flags) => check(ctx, positionals, { strict: flags.strict === true }),
+  },
+  schema: { help: schemaHelp, options: {}, run: (ctx, positionals) => schema(ctx, positionals) },
+  explain: { help: explainHelp, options: {}, run: (ctx, positionals) => explain(ctx, positionals) },
+  version: { help: versionHelp, options: {}, run: (ctx) => version(ctx) },
+  doctor: { help: doctorHelp, options: {}, run: (ctx) => doctor(ctx) },
+};
+
+const COMMAND_NAMES = Object.keys(COMMANDS);
+
+async function outputMode(io: CliIO, flags: Flags): Promise<OutputMode | CommandResult> {
+  if (flags.format !== undefined) {
+    if (flags.format === "json" || flags.format === "human") return flags.format;
+    return usageError("HM0002", `unknown --format "${String(flags.format)}"`, {
+      expected: ["human", "json"],
+      input: String(flags.format),
+    });
+  }
+  if (flags.json === true) return "json";
+  if (!io.stdoutIsTTY) return "json";
+  return (await io.isAgent()) ? "json" : "human";
+}
+
+function print(io: CliIO, mode: OutputMode, result: CommandResult): number {
+  if (mode === "json") io.stdout(`${JSON.stringify(result.json)}\n`);
+  else if (result.human !== "") io.stdout(`${result.human}\n`);
+  return result.exitCode;
+}
+
+/**
+ * Runs the CLI and returns the exit code. Never prompts and never reads stdin. Results go to
+ * stdout (one line of JSON in json mode); nothing else is written there.
+ */
+export async function run(argv: readonly string[], io: CliIO): Promise<number> {
+  const everyOption: Options = Object.assign(
+    {},
+    GLOBAL,
+    ...Object.values(COMMANDS).map((c) => c.options),
+  );
+  const loose = parseArgs({
+    args: [...argv],
+    options: everyOption,
+    allowPositionals: true,
+    strict: false,
+  });
+  const name = loose.positionals[0];
+  const command = name === undefined ? undefined : COMMANDS[name];
+  const options: Options = { ...GLOBAL, ...(command?.options ?? {}) };
+  let parsed: ReturnType<typeof parseArgs>;
+  try {
+    parsed = parseArgs({ args: [...argv], options, allowPositionals: true, strict: true });
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    const flag = /'(-{1,2}[^' ]+)/.exec(message)?.[1];
+    const known = Object.keys(options).map((o) => `--${o}`);
+    const unknown = /^Unknown option/.test(message) && flag !== undefined;
+    const result = usageError(
+      "HM0002",
+      unknown ? `unknown option ${flag}` : (message.split(". ")[0] ?? message),
+      {
+        expected: known,
+        ...(flag ? { input: flag } : {}),
+        help: `run hatchmark ${name ?? ""} --help`.replace("  ", " "),
+      },
+    );
+    return print(io, io.stdoutIsTTY ? "human" : "json", result);
+  }
+  const flags = parsed.values as Flags;
+  const positionals = parsed.positionals.slice(1);
+
+  const mode = await outputMode(io, flags);
+  if (typeof mode !== "string") return print(io, io.stdoutIsTTY ? "human" : "json", mode);
+
+  if (name === undefined || name === "help") {
+    const topic = name === "help" ? positionals[0] : undefined;
+    const target = topic === undefined ? undefined : COMMANDS[topic];
+    if (topic !== undefined && target === undefined) {
+      return print(
+        io,
+        mode,
+        usageError("HM0001", `unknown command "${topic}"`, {
+          expected: COMMAND_NAMES,
+          input: topic,
+        }),
+      );
+    }
+    io.stdout(
+      `${
+        target
+          ? renderCommandHelp(target.help)
+          : renderTopHelp(
+              COMMAND_NAMES.map((n) => COMMANDS[n]?.help as CommandHelp),
+              VERSION,
+            )
+      }\n`,
+    );
+    return EXIT.ok;
+  }
+  if (command === undefined) {
+    return print(
+      io,
+      mode,
+      usageError("HM0001", `unknown command "${name}"`, { expected: COMMAND_NAMES, input: name }),
+    );
+  }
+  if (flags.help === true) {
+    io.stdout(`${renderCommandHelp(command.help)}\n`);
+    return EXIT.ok;
+  }
+
+  const ctx: CommandContext = {
+    io,
+    root: path.resolve(io.cwd, typeof flags.cwd === "string" ? flags.cwd : "."),
+    mode,
+    color:
+      mode === "human" &&
+      io.stdoutIsTTY &&
+      flags["no-color"] !== true &&
+      io.env.NO_COLOR === undefined,
+    quiet: flags.quiet === true,
+  };
+  try {
+    return print(io, mode, await command.run(ctx, positionals, flags));
+  } catch (error) {
+    const detail = error instanceof Error ? (error.stack ?? error.message) : String(error);
+    io.stderr(`hatchmark: internal error, please report it with this output\n${detail}\n`);
+    if (mode === "json") {
+      io.stdout(
+        `${JSON.stringify({
+          format_version: "1",
+          ok: false,
+          error_count: 1,
+          warning_count: 0,
+          diagnostics: [
+            {
+              code: "HM9001",
+              severity: "error",
+              message: `internal error: ${error instanceof Error ? error.message : String(error)}`,
+              docs: "hatchmark explain HM9001",
+            },
+          ],
+        })}\n`,
+      );
+    }
+    return EXIT.internal;
+  }
+}

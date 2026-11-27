@@ -2,10 +2,30 @@
  * Every diagnostic code Hatchmark can emit. Codes are stable across releases: a code is never
  * reused for a different problem, and a retired code stays listed with its last meaning.
  *
- * Ranges: HM1xxx files and JSON syntax, HM2xxx references between files and to data,
+ * Ranges: HM0xxx command line usage, HM1xxx files and JSON syntax, HM2xxx references between files and to data,
  * HM3xxx spec shape (schema), HM4xxx data rules, HM5xxx design rules, HM9xxx internal errors.
  */
 export const CODES = {
+  HM0001: {
+    title: "unknown command",
+    explanation:
+      "The first word after hatchmark is not a command. Run hatchmark --help for the list.",
+  },
+  HM0002: {
+    title: "invalid option or argument",
+    explanation:
+      "An option is unknown, takes a value that is not allowed, or an argument is not expected. Run hatchmark <command> --help for the options and an example.",
+  },
+  HM0003: {
+    title: "missing argument",
+    explanation:
+      "The command needs an argument that was not given. Run hatchmark <command> --help.",
+  },
+  HM0004: {
+    title: "would overwrite existing files",
+    explanation:
+      "hatchmark init found files it would write already in the target directory, and wrote nothing. The diagnostic lists them. Pass --force to overwrite them, or choose another directory. AGENTS.md and .gitignore are always merged, never overwritten.",
+  },
   HM1001: {
     title: "file cannot be read",
     explanation:
@@ -127,6 +147,11 @@ export const CODES = {
     title: "percent of total on a non-additive metric",
     explanation:
       "A share of the total only makes sense when the parts add up to the total. Averages, distinct counts, medians, ratios and SQL metrics declared additive: false do not. Remove the metric from percentOfTotal, or show the additive metric it is built from.",
+  },
+  HM9001: {
+    title: "internal error",
+    explanation:
+      "Hatchmark hit a bug, not a problem in your files. The details are on stderr; please open an issue at https://github.com/superheavy-dev/hatchmark/issues with them.",
   },
 } as const satisfies Record<string, { title: string; explanation: string }>;
 
