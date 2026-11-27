@@ -1,0 +1,28 @@
+{
+  "name": "hatchmark",
+  "version": "0.0.0",
+  "description": "Agent-first dashboard renderer: short JSON specs in, correct and consistent dashboards out.",
+  "license": "Apache-2.0",
+  "type": "module",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/superheavy-dev/hatchmark.git",
+    "directory": "packages/hatchmark"
+  },
+  "engines": {
+    "node": ">=22.12"
+  },
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit"
+  }
+}
