@@ -1,5 +1,14 @@
 import { execFileSync } from "node:child_process";
-import { copyFileSync, cpSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
+import {
+  copyFileSync,
+  cpSync,
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  rmSync,
+  writeFileSync,
+} from "node:fs";
+import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { entries, head } from "./entries.js";
@@ -71,6 +80,28 @@ function buildDashboards(cwd: string, out: string): void {
 }
 const example = join(HATCHMARK, "examples", "global-sales");
 buildDashboards(example, join(site, "dashboard"));
+for (const [locale, weekStart] of [
+  ["de-DE", "monday"],
+  ["ja-JP", "sunday"],
+]) {
+  const copy = mkdtempSync(join(tmpdir(), `hatchmark-preview-${locale}-`));
+  try {
+    cpSync(example, copy, {
+      recursive: true,
+      filter: (path) => !path.includes(join(example, "dist")),
+    });
+    const config = join(copy, "hatchmark.yaml");
+    writeFileSync(
+      config,
+      readFileSync(config, "utf8")
+        .replace(/^locale: .*$/m, `locale: ${locale}`)
+        .replace(/^weekStart: .*$/m, `weekStart: ${weekStart}`),
+    );
+    buildDashboards(copy, join(site, `dashboard-${locale}`));
+  } finally {
+    rmSync(copy, { recursive: true, force: true });
+  }
+}
 const periods = periodProject(example);
 try {
   buildDashboards(periods, join(site, "periods"));
@@ -78,5 +109,5 @@ try {
   rmSync(periods, { recursive: true, force: true });
 }
 console.log(
-  `Preview site written to ${site}: ${entries.length} gallery entries and the example dashboard.`,
+  `Preview site written to ${site}: ${entries.length} gallery entries and the example dashboard in en-US, de-DE and ja-JP.`,
 );

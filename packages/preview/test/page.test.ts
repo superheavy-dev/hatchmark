@@ -71,6 +71,8 @@ describe("preview site", () => {
     expect(shell).toContain('value="dark"');
     expect(shell).toContain('value="mobile"');
     expect(shell).toContain('value="dashboard"');
+    expect(shell).toContain('aria-label="Dashboard locale"');
+    expect(shell).toContain('value="ja-JP"');
   });
 
   it("puts the head markup into the gallery", () => {

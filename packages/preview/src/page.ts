@@ -129,30 +129,44 @@ const state = {
   view: "components",
   theme: matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light",
   width: "desktop",
+  locale: "en-US",
   section: "",
 };
+const LOCALES = ["en-US", "de-DE", "ja-JP"];
 function read() {
   state.section = "";
+  state.locale = "en-US";
   for (const [key, value] of new URLSearchParams(location.hash.slice(1))) {
+    if (key === "locale" && !LOCALES.includes(value)) continue;
     if (key in state) state[key] = value;
   }
 }
+function localize(base, locale) {
+  return locale !== "en-US" && base.startsWith("dashboard/")
+    ? "dashboard-" + locale + base.slice("dashboard".length)
+    : base;
+}
 function frameSrc() {
-  const page = (VIEWS[state.view] ?? VIEWS.components) + location.search;
+  const page = localize(VIEWS[state.view] ?? VIEWS.components, state.locale) + location.search;
   return state.view === "components" && state.section ? page + "#" + state.section : page;
 }
 function writeHash() {
   const params = new URLSearchParams(state);
   if (!state.section) params.delete("section");
+  if (state.locale === "en-US") params.delete("locale");
   history.replaceState(null, "", "#" + params);
 }
 function themeFrame() {
   const root = frame.contentDocument?.documentElement;
   if (root) root.dataset.theme = state.theme;
 }
-function apply() {
-  const src = frameSrc();
-  if (frame.getAttribute("src") !== src) frame.setAttribute("src", src);
+function shown() {
+  const page = frame.contentWindow?.location;
+  return page && page.href !== "about:blank"
+    ? page.pathname.slice(1) + page.search + page.hash
+    : frame.getAttribute("src");
+}
+function paint() {
   document.documentElement.dataset.theme = state.theme;
   document.body.dataset.width = state.width;
   for (const button of document.querySelectorAll("button[data-key]")) {
@@ -161,13 +175,28 @@ function apply() {
   themeFrame();
   writeHash();
 }
+function apply() {
+  const src = frameSrc();
+  if (shown() !== src) frame.setAttribute("src", src);
+  paint();
+}
+function follow(path) {
+  for (const [view, base] of Object.entries(VIEWS)) {
+    for (const locale of LOCALES) {
+      if (path !== localize(base, locale)) continue;
+      state.view = view;
+      if (base.startsWith("dashboard/")) state.locale = locale;
+      return;
+    }
+  }
+}
 frame.addEventListener("load", () => {
-  themeFrame();
   const inner = frame.contentWindow;
+  if (inner) follow(inner.location.pathname.slice(1));
+  paint();
   if (!inner || state.view !== "components") return;
   inner.addEventListener("hashchange", () => {
     state.section = inner.location.hash.slice(1);
-    frame.setAttribute("src", frameSrc());
     writeHash();
   });
 });
@@ -210,6 +239,11 @@ ${toggle("theme", "Theme", [
 ${toggle("width", "Width", [
   ["desktop", "Desktop"],
   ["mobile", "390 px"],
+])}
+${toggle("locale", "Dashboard locale", [
+  ["en-US", "en-US"],
+  ["de-DE", "de-DE"],
+  ["ja-JP", "ja-JP"],
 ])}
 </header>
 <main><iframe id="frame" title="Preview" src="components/"></iframe></main>
