@@ -240,7 +240,17 @@ importers:
         specifier: ~8.3.8
         version: 8.3.8(@types/node@22.20.7)(esbuild@0.28.2)
 
-  packages/preview: {}
+  packages/preview:
+    dependencies:
+      d3-scale:
+        specifier: ^4.0.3
+        version: 4.0.3
+      d3-shape:
+        specifier: ^3.2.1
+        version: 3.2.1
+      zod:
+        specifier: ^4.6.7
+        version: 4.6.7
 
 packages:
 

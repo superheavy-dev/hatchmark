@@ -4,7 +4,7 @@ Builds the component preview gallery that every pull request deploys. Private wo
 
 ## What it builds
 
-`pnpm --filter @hatchmark/preview run site` (after `pnpm build`) writes static files to `dist/site/`:
+`pnpm --filter @hatchmark/preview run site` (after `pnpm build`, which also builds the hatchmark CLI and runtime it uses) writes static files to `dist/site/`:
 
 - `dist/site/index.html`: the gallery shell. A toolbar switches between light and dark and between desktop and a 390 px frame. The gallery renders inside an iframe, so at 390 px its own viewport is 390 px wide and mobile media queries really apply. The state lives in the URL hash (`#theme=dark&width=mobile`), so a link reproduces what the reviewer saw.
 - `dist/site/components/index.html`: every registered entry, grouped by component, or "No components yet" with the build info.
@@ -21,9 +21,9 @@ The output is deterministic: the same entries give the same bytes. Only the buil
 
 The shell sets `data-theme="light"` or `data-theme="dark"` on the `<html>` element of the framed page, so rendered output should key its dark theme on `[data-theme="dark"]`.
 
-To import render functions, add `"hatchmark": "workspace:*"` to this package's `dependencies` and import from `hatchmark`. Type-checking then needs `packages/hatchmark` built first.
+`entries.ts` imports `packages/hatchmark/gallery/entries.ts` by relative path, and tsc compiles that gallery with the render sources it uses into `dist/lib/` (hence `rootDir: ".."` and the d3 and zod dependencies here). The fixtures therefore never enter the published `hatchmark` package. The builder copies the fonts and the runtime into `site/_hatchmark/`.
 
-The example dashboard is not part of the gallery yet. The renderer PR adds it: build it into `dist/site/dashboard/` from `src/build.ts` and add a view toggle to the shell.
+The example dashboard is built with `hatchmark build --cwd packages/hatchmark/examples/global-sales --out dist/site/dashboard`, run from `src/build.ts`. The shell's View toggle switches the frame between the components and the dashboard (`#view=dashboard`).
 
 ## Deploy
 

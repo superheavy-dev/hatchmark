@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { entries } from "../src/entries.js";
+import { entries, head } from "../src/entries.js";
 import { buildLabel, renderSite, type SiteInput } from "../src/page.js";
 
 const build = { pr: 12, sha: "1a5224b64c0ffee0000000000000000000000000" };
@@ -12,8 +12,13 @@ const kpi = (variant: string, title = variant) => ({
 });
 
 describe("preview site", () => {
-  it("ships no entries until the renderer registers some", () => {
-    expect(entries).toEqual([]);
+  it("registers the renderer's gallery entries", () => {
+    expect(new Set(entries.map((e) => e.component))).toEqual(
+      new Set(["kpi", "line", "bar", "table"]),
+    );
+    expect(renderSite({ entries, head, build }).get("components/index.html")).toContain(
+      'class="hm-root"',
+    );
   });
 
   it("shows an empty state with the build info", () => {
@@ -65,6 +70,7 @@ describe("preview site", () => {
     expect(shell).toContain('<iframe id="frame" title="Preview" src="components/">');
     expect(shell).toContain('value="dark"');
     expect(shell).toContain('value="mobile"');
+    expect(shell).toContain('value="dashboard"');
   });
 
   it("puts the head markup into the gallery", () => {
