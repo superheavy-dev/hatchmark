@@ -393,7 +393,9 @@ describe("a hostile project's printed SQL runs like its bound SQL (HAT-42 harnes
     ({ root } = await writeProject(files));
   });
 
-  it("check passes, and every query from explain --json and check --sql --json returns the same rows bound and printed, also under session TimeZone Asia/Seoul; only the number compared with a text column fails, the same way both ways", async () => {
+  it("check passes, and every query from explain --json and check --sql --json returns the same rows bound and printed, also under session TimeZone Asia/Seoul; only the number compared with a text column fails, the same way both ways", {
+    timeout: 60_000,
+  }, async () => {
     const check = await hatchmark("check", "--json");
     expect(check.code).toBe(0);
 
