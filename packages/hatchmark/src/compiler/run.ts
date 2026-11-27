@@ -10,6 +10,7 @@ import {
 } from "../spec/index.js";
 import { assembleWith } from "./assemble.js";
 import type { DashboardData } from "./dashboard-data.js";
+import { canonicalJson } from "./hash.js";
 import {
   type PlannedHorizon,
   planTimeColumns,
@@ -25,13 +26,16 @@ import {
   parseInstant,
   toLocal,
 } from "./instants.js";
-import type {
-  ExecutionContext,
-  MeasureExpression,
-  ParamBindings,
-  QueryExecutor,
-  QueryPlan,
-  QueryResult,
+import { selectValues } from "./params.js";
+import {
+  type ExecutionContext,
+  type MeasureExpression,
+  type ParamBindings,
+  type PlannedQuery,
+  type QueryExecutor,
+  type QueryPlan,
+  type QueryResult,
+  readsRawSql,
 } from "./plan.js";
 import { planDashboard } from "./planner.js";
 import {
@@ -397,35 +401,59 @@ export async function runDashboard(
   now?: Date,
   bindings: ParamBindings = {},
 ): Promise<{ data?: DashboardData; diagnostics: Diagnostic[] }> {
+  const [run] = await runDashboardBindings(project, dashboard, executor, [bindings], now);
+  return run ?? { diagnostics: [] };
+}
+
+/**
+ * runDashboard for several sets of bindings, such as a period filter's presets: one result per
+ * set, in order, each equal to runDashboard's for that set. The checks, the plan and the as-of date
+ * are worked out once; each query runs once for every set through the executor's executeMany when
+ * it has one, and sets that give a query the same window and select values share its run.
+ */
+export async function runDashboardBindings(
+  project: Project,
+  dashboard: string,
+  executor: DashboardExecutor,
+  bindingsList: ParamBindings[],
+  now?: Date,
+): Promise<{ data?: DashboardData; diagnostics: Diagnostic[] }[]> {
   const errors = blockingErrors(project, dashboard);
-  if (errors.length > 0) return { diagnostics: errors };
+  if (errors.length > 0) return bindingsList.map(() => ({ diagnostics: errors }));
   const { plan, diagnostics } = planDashboard(project, dashboard);
-  if (plan === undefined) return { diagnostics };
+  if (plan === undefined) return bindingsList.map(() => ({ diagnostics }));
 
   const resolved = await executionContext(project, plan, executor, now);
   diagnostics.push(...resolved.diagnostics);
-  if (resolved.context === undefined) return { diagnostics };
-  const context: ExecutionContext = { ...resolved.context, bindings };
-  const message = (error: unknown) => (error instanceof Error ? error.message : String(error));
-  const results = new Map<string, QueryResult>();
-  const imprecise = new Map<string, Diagnostic>();
+  const base = resolved.context;
+  if (base === undefined) return bindingsList.map(() => ({ diagnostics }));
+  const contexts: ExecutionContext[] = bindingsList.map((bindings) => ({ ...base, bindings }));
+  const outcomes: (QueryOutcome | undefined)[][] = [];
+  const failed = new Set<number>();
   for (const query of plan.queries) {
-    if (queryBounds(query, context) === undefined) continue;
-    try {
-      const result = await executor.execute(query, context);
-      query.dimensions.forEach((dimension, i) => {
-        if (dimension.kind !== "time") return;
-        const bad = result.rows.find(
-          (row) =>
-            row[i] !== null &&
-            !(/^\d{4}-\d{2}-\d{2}$/.test(String(row[i])) && String(row[i]) <= SUPPORTED_DATES.last),
-        );
-        if (bad !== undefined) {
-          throw new RangeError(
-            `column "${dimension.column}" has dates in a bucket (${String(bad[i])}) outside the supported dates ${SUPPORTED_DATES.first} to ${SUPPORTED_DATES.last}`,
-          );
-        }
-      });
+    const live = contexts.map((context, at) => (failed.has(at) ? undefined : context));
+    const outcome = await runQuery(executor, query, live);
+    outcome.forEach((o, at) => {
+      if (o !== undefined && "error" in o) failed.add(at);
+    });
+    outcomes.push(outcome);
+  }
+  const message = (error: unknown) => (error instanceof Error ? error.message : String(error));
+  return contexts.map((context, at) => {
+    const results = new Map<string, QueryResult>();
+    const imprecise = new Map<string, Diagnostic>();
+    for (const [q, query] of plan.queries.entries()) {
+      const outcome = outcomes[q]?.[at];
+      if (outcome === undefined) continue;
+      if ("error" in outcome) {
+        return {
+          diagnostics: [
+            ...diagnostics,
+            failure(`query on source "${query.source}" failed: ${message(outcome.error)}`),
+          ],
+        };
+      }
+      const { result } = outcome;
       results.set(query.id, result);
       for (const { column, maxAbs } of result.imprecise ?? []) {
         imprecise.set(JSON.stringify([query.source, column]), {
@@ -436,25 +464,90 @@ export async function runDashboard(
           docs: docsCommand("HM4004"),
         });
       }
-    } catch (error) {
-      return {
-        diagnostics: [
-          ...diagnostics,
-          failure(`query on source "${query.source}" failed: ${message(error)}`),
-        ],
-      };
     }
-  }
-  const assembled = assemble(project, plan, results, context);
-  return {
-    ...(assembled.data ? { data: assembled.data } : {}),
-    diagnostics: [
-      ...diagnostics,
-      ...imprecise.values(),
-      ...largeResults(project, dashboard, plan, results),
-      ...assembled.diagnostics,
-    ],
+    const assembled = assemble(project, plan, results, context);
+    return {
+      ...(assembled.data ? { data: assembled.data } : {}),
+      diagnostics: [
+        ...diagnostics,
+        ...imprecise.values(),
+        ...largeResults(project, dashboard, plan, results),
+        ...assembled.diagnostics,
+      ],
+    };
+  });
+}
+
+type QueryOutcome = { result: QueryResult } | { error: unknown };
+
+async function runQuery(
+  executor: DashboardExecutor,
+  query: PlannedQuery,
+  contexts: (ExecutionContext | undefined)[],
+): Promise<(QueryOutcome | undefined)[]> {
+  const raw = readsRawSql(query);
+  const keys = contexts.map((context, at) => {
+    if (context === undefined) return undefined;
+    const bounds = queryBounds(query, context);
+    if (bounds === undefined) return undefined;
+    if (raw) return `context ${at}`;
+    try {
+      const selects = query.params.flatMap((p) =>
+        p.kind === "select" ? [Array.from(selectValues(p, context.bindings))] : [],
+      );
+      return canonicalJson([bounds, selects]);
+    } catch {
+      return `context ${at}`;
+    }
+  });
+  const distinct = [...new Set(keys.filter((key) => key !== undefined))];
+  const runs = distinct.map((key) => contexts[keys.indexOf(key)] as ExecutionContext);
+  const settle = (result: QueryResult): QueryOutcome => {
+    try {
+      return { result: checkedDates(query, result) };
+    } catch (error) {
+      return { error };
+    }
   };
+  const oneByOne = async () => {
+    const out: QueryOutcome[] = [];
+    for (const context of runs) {
+      try {
+        out.push(settle(await executor.execute(query, context)));
+      } catch (error) {
+        out.push({ error });
+      }
+    }
+    return out;
+  };
+  let settled: QueryOutcome[];
+  if (runs.length > 1 && !raw && executor.executeMany !== undefined) {
+    try {
+      settled = (await executor.executeMany(query, runs)).map(settle);
+    } catch {
+      settled = await oneByOne();
+    }
+  } else {
+    settled = await oneByOne();
+  }
+  return keys.map((key) => (key === undefined ? undefined : settled[distinct.indexOf(key)]));
+}
+
+function checkedDates(query: PlannedQuery, result: QueryResult): QueryResult {
+  query.dimensions.forEach((dimension, i) => {
+    if (dimension.kind !== "time") return;
+    const bad = result.rows.find(
+      (row) =>
+        row[i] !== null &&
+        !(/^\d{4}-\d{2}-\d{2}$/.test(String(row[i])) && String(row[i]) <= SUPPORTED_DATES.last),
+    );
+    if (bad !== undefined) {
+      throw new RangeError(
+        `column "${dimension.column}" has dates in a bucket (${String(bad[i])}) outside the supported dates ${SUPPORTED_DATES.first} to ${SUPPORTED_DATES.last}`,
+      );
+    }
+  });
+  return result;
 }
 
 /** HM4004 for each metric a block shows whose float sum or avg reaches ±1e13 (QueryResult.large). */

@@ -20,6 +20,7 @@ import {
   type ExecutionContext,
   type PlannedQuery,
   type QueryResult,
+  readsRawSql,
   type SqlExecutor,
   type TimeColumn,
 } from "../compiler/index.js";
@@ -498,7 +499,7 @@ export async function createCachedExecutor(options: {
   return {
     async execute(query, context) {
       const parts =
-        plannedInput(query) && !rawSql(query)
+        plannedInput(query) && !readsRawSql(query)
           ? await keyParts("query", query.source, query, context)
           : undefined;
       if (parts === undefined || !stats.enabled) {
@@ -537,6 +538,86 @@ export async function createCachedExecutor(options: {
       });
       return result;
     },
+    async executeMany(query, contexts) {
+      const run = async (executor: InnerExecutor, batch: ExecutionContext[]) => {
+        if (executor.executeMany !== undefined) return executor.executeMany(query, batch);
+        const out: QueryResult[] = [];
+        for (const context of batch) out.push(await executor.execute(query, context));
+        return out;
+      };
+      const cacheable = plannedInput(query) && !readsRawSql(query);
+      const keys = await Promise.all(
+        contexts.map(async (context) => {
+          const parts = cacheable
+            ? await keyParts("query", query.source, query, context)
+            : undefined;
+          return parts === undefined || !stats.enabled
+            ? undefined
+            : { parts, key: sha256(canonicalJson(parts)) };
+        }),
+      );
+      const results: (QueryResult | undefined)[] = [];
+      const uncached: number[] = [];
+      const missed: number[] = [];
+      for (const [i, entry] of keys.entries()) {
+        if (entry === undefined) {
+          uncached.push(i);
+          continue;
+        }
+        const hit = await read("query", query.id, entry.key);
+        if (hit === undefined) {
+          missed.push(i);
+          continue;
+        }
+        stats.hits++;
+        const { columns, ...rest } = hit.header.meta as unknown as Omit<
+          QueryResult,
+          "rows" | "groupingSet"
+        >;
+        results[i] = {
+          columns,
+          rows: hit.rows,
+          ...(hit.grouping !== undefined ? { groupingSet: hit.grouping } : {}),
+          ...rest,
+        };
+      }
+      if (uncached.length > 0) {
+        stats.misses += uncached.length;
+        const copied = snapshotting && (await dataFiles(query.source)) !== undefined;
+        const executor = await (copied ? snapshotExecutor : projectExecutor).get();
+        const ran = await run(
+          executor,
+          uncached.map((i) => contexts[i] as ExecutionContext),
+        );
+        uncached.forEach((i, n) => {
+          results[i] = ran[n];
+        });
+      }
+      if (missed.length > 0) {
+        stats.misses += missed.length;
+        const executor = await (snapshotting ? snapshotExecutor : projectExecutor).get();
+        const ran = await run(
+          executor,
+          missed.map((i) => contexts[i] as ExecutionContext),
+        );
+        missed.forEach((i, n) => {
+          const result = ran[n] as QueryResult;
+          results[i] = result;
+          const entry = keys[i] as { parts: KeyParts; key: string };
+          const { rows, groupingSet, ...meta } = result;
+          pending.push({
+            kind: "query",
+            id: query.id,
+            key: entry.key,
+            parts: entry.parts,
+            meta,
+            rows,
+            ...(groupingSet !== undefined ? { grouping: groupingSet } : {}),
+          });
+        });
+      }
+      return results as QueryResult[];
+    },
     async horizon(column) {
       const source = config.sources[column.source];
       const parts = await keyParts("horizon", column.source, { column, source }, null);
@@ -567,7 +648,7 @@ export async function createCachedExecutor(options: {
       const { query, context } = seen;
       if (!stats.enabled)
         return { status: "off", ...(stats.reason ? { reason: stats.reason } : {}) };
-      if (rawSql(query)) {
+      if (readsRawSql(query)) {
         return {
           status: "off",
           reason: "raw SQL metrics are never cached; this query always runs",
@@ -641,13 +722,6 @@ export async function createCachedExecutor(options: {
       }
     },
   };
-}
-
-/** Whether a query computes a raw SQL metric, whose result no key can capture. */
-function rawSql(query: PlannedQuery): boolean {
-  return query.measures.some((m) =>
-    m.components.some((c) => c.aggregate === "sql" || c.sql !== undefined),
-  );
 }
 
 function decode(storage: Storage, value: unknown): unknown {

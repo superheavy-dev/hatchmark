@@ -301,4 +301,16 @@ export interface QueryResult {
  */
 export interface QueryExecutor {
   execute(query: PlannedQuery, context: ExecutionContext): Promise<QueryResult>;
+  /**
+   * The query in each context, in context order, each result equal to execute's for that context.
+   * Optional: an executor that has it can run the contexts as one statement.
+   */
+  executeMany?(query: PlannedQuery, contexts: ExecutionContext[]): Promise<QueryResult[]>;
+}
+
+/** True when a measure of the query runs raw SQL, which may read the statement it runs in. */
+export function readsRawSql(query: PlannedQuery): boolean {
+  return query.measures.some((m) =>
+    m.components.some((c) => c.aggregate === "sql" || c.sql !== undefined),
+  );
 }
