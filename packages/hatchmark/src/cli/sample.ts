@@ -1,4 +1,4 @@
-import { PROJECT_DEFAULTS, type ProjectConfig } from "../spec/index.js";
+import { PROJECT_DEFAULTS, type ProjectConfig, WEEKDAYS } from "../spec/index.js";
 
 const STATES: readonly [string, string, number][] = [
   ["AL", "South", 5.0],
@@ -125,11 +125,20 @@ export function sampleOrdersCsv(rows = 1500, seed = 20261127): string {
 const SCHEMA = (kind: string, depth: number): string =>
   `${depth === 0 ? "./" : "../".repeat(depth)}node_modules/hatchmark/schema/${kind}.schema.json`;
 
+interface WeekInfo {
+  firstDay: number;
+}
+
 export function sampleConfig(name: string, withData: boolean): ProjectConfig {
+  const locale: Intl.Locale & { getWeekInfo?: () => WeekInfo; weekInfo?: WeekInfo } =
+    new Intl.Locale(PROJECT_DEFAULTS.locale);
+  // Node 22 has only the older weekInfo accessor; newer runtimes replace it with getWeekInfo().
+  const { firstDay } = (locale.getWeekInfo?.() ?? locale.weekInfo) as WeekInfo;
   return {
     $schema: SCHEMA("project", 0),
     ...PROJECT_DEFAULTS,
     name,
+    anchors: { week: WEEKDAYS[firstDay - 1] as (typeof WEEKDAYS)[number] },
     sources: withData ? { orders: { type: "csv", path: "data/orders.csv" } } : {},
   };
 }

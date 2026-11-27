@@ -147,6 +147,22 @@ export const formatDay = (date: Date, locale: string, withYear = true): string =
       : { month: "short", day: "numeric" },
   ).format(date);
 
+// ICU puts thin spaces around the range dash and Chromium prints plain spaces there, so the text
+// built here and the text the browser redraws for another range use the plain space.
+export const formatRange = (
+  start: Date,
+  last: Date,
+  locale: string,
+  fields: { day: boolean; year: boolean },
+): string =>
+  dateFormat(locale, {
+    month: "short",
+    ...(fields.day ? { day: "numeric" } : {}),
+    ...(fields.year ? { year: "numeric" } : {}),
+  })
+    .formatRange(start, last)
+    .replaceAll("\u2009", " ");
+
 const quarter = (date: Date): string => `Q${Math.floor(date.getUTCMonth() / 3) + 1}`;
 
 const calendarStart = (date: Date, grain: "quarter" | "year") =>
@@ -195,21 +211,16 @@ const addDays = (date: Date, days: number): Date => new Date(date.getTime() + da
 export function formatSpan(span: DateSpan, locale: string): string {
   const start = parseDate(span.start);
   const end = parseDate(span.end);
-  const last = addDays(end, -1);
   const months =
     (end.getUTCFullYear() - start.getUTCFullYear()) * 12 + end.getUTCMonth() - start.getUTCMonth();
-  if (start.getUTCDate() === 1 && end.getUTCDate() === 1 && months > 0) {
-    if (months === 12 && start.getUTCMonth() === 0) return String(start.getUTCFullYear());
-    if (months === 3 && start.getUTCMonth() % 3 === 0) {
-      return `${quarter(start)} ${start.getUTCFullYear()}`;
-    }
-    if (months === 1) return formatMonth(start, locale, true);
-    const sameYear = start.getUTCFullYear() === last.getUTCFullYear();
-    return `${formatMonth(start, locale, !sameYear)} \u2013 ${formatMonth(last, locale, true)}`;
+  const wholeMonths = start.getUTCDate() === 1 && end.getUTCDate() === 1 && months > 0;
+  if (wholeMonths && months === 12 && start.getUTCMonth() === 0) {
+    return String(start.getUTCFullYear());
   }
-  if (span.start === formatIso(last)) return formatDay(start, locale);
-  const sameYear = start.getUTCFullYear() === last.getUTCFullYear();
-  return `${formatDay(start, locale, !sameYear)} \u2013 ${formatDay(last, locale)}`;
+  if (wholeMonths && months === 3 && start.getUTCMonth() % 3 === 0) {
+    return `${quarter(start)} ${start.getUTCFullYear()}`;
+  }
+  return formatRange(start, addDays(end, -1), locale, { day: !wholeMonths, year: true });
 }
 
 export function formatPreviousSpan(
@@ -234,10 +245,6 @@ export function formatPreviousSpan(
 
 export const formatDate = (date: string, locale: string): string =>
   formatDay(parseDate(date), locale);
-
-function formatIso(date: Date): string {
-  return date.toISOString().slice(0, 10);
-}
 
 export function formatKey(key: string | number | boolean | null, locale: string): string {
   if (key === null) return "(empty)";

@@ -186,6 +186,20 @@ describe("hatchmark init and check", () => {
     expect(refreshed.match(/hatchmark:start/g)).toHaveLength(1);
   });
 
+  it("writes the week anchor of the project locale, Sunday for en-US", async () => {
+    const cwd = await tempDir();
+    await cli(["init", "shop"], { cwd });
+    await cli(["init", "bare", "--template", "minimal"], { cwd });
+    for (const project of ["shop", "bare"]) {
+      const text = await readFile(path.join(cwd, project, "hatchmark.yaml"), "utf8");
+      expect(fromYaml(text), project).toMatchObject({
+        locale: "en-US",
+        anchors: { week: "sunday" },
+      });
+      expect(text, project).not.toContain("weekStart");
+    }
+  });
+
   it("creates a minimal project that checks clean", async () => {
     const cwd = await tempDir();
     expect((await cli(["init", "--template", "minimal"], { cwd })).code).toBe(0);

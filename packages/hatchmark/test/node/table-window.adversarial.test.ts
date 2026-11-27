@@ -227,9 +227,12 @@ const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "
 const day = (d: string) => `${MONTHS[Number(d.slice(5, 7)) - 1]} ${Number(d.slice(8, 10))}`;
 const words = (start: string, end: string) => {
   const last = addDays(end, -1);
-  return start === last
-    ? `${day(start)}, ${start.slice(0, 4)}`
-    : `${day(start)} – ${day(last)}, ${last.slice(0, 4)}`;
+  if (start === last) return `${day(start)}, ${start.slice(0, 4)}`;
+  if (start.slice(0, 4) !== last.slice(0, 4)) {
+    return `${day(start)}, ${start.slice(0, 4)} \u2013 ${day(last)}, ${last.slice(0, 4)}`;
+  }
+  const to = start.slice(0, 7) === last.slice(0, 7) ? String(Number(last.slice(8, 10))) : day(last);
+  return `${day(start)} \u2013 ${to}, ${last.slice(0, 4)}`;
 };
 type Horizon = { end: string; midday: boolean; micros: number; lastDate: string; wall: string };
 type Effective =
@@ -459,10 +462,10 @@ it("last 7 days: sources ending mid-day, at local midnight, and on the DST day",
     asOf: "2026-11-05",
   });
   expect([want.subtitle, want.notes]).toEqual([
-    "Oct 28 – Nov 3, 2026",
+    "Oct 28 \u2013 Nov 3, 2026",
     {
-      refunds: "Oct 27 – Nov 2, 2026 · 1 day behind",
-      returns: "Oct 25 – Oct 31, 2026 · 3 days behind",
+      refunds: "Oct 27 \u2013 Nov 2, 2026 · 1 day behind",
+      returns: "Oct 25 \u2013 31, 2026 · 3 days behind",
       units: "All time",
     },
   ]);
@@ -526,7 +529,7 @@ it("latest_data names the stale metric; latest_common_data keeps one window", as
     asOf: "latest_data",
   });
   expect([latest.want.subtitle, latest.want.notes]).toEqual([
-    "Nov 1 – Nov 4, 2026, through 6:03 PM",
+    "Nov 1 – 4, 2026, through 6:03 PM",
     { refunds: "Data through Nov 3, 2026, 12:00 AM · 1 day behind" },
   ]);
   const common = await attack({
@@ -535,7 +538,7 @@ it("latest_data names the stale metric; latest_common_data keeps one window", as
     asOf: "latest_common_data",
   });
   expect([common.want.subtitle, common.want.notes]).toEqual([
-    "Nov 1 – Nov 3, 2026, through 12:00 AM",
+    "Nov 1 – 3, 2026, through 12:00 AM",
     {},
   ]);
   expect(common.block.window?.endAt).toBe("2026-11-03T00:00:00.000001");
@@ -548,7 +551,7 @@ it("ratios across two sources read through the most stale operand, in either pos
     asOf: "2026-11-05",
   });
   expect([want.subtitle, want.notes]).toEqual([
-    "Nov 1 – Nov 3, 2026, through 12:00 AM",
+    "Nov 1 – 3, 2026, through 12:00 AM",
     {
       revenue: "Data through Nov 4, 2026, 6:03 PM",
       per_ticket: "Data through Nov 2, 2026 · 1 day behind",
@@ -563,8 +566,8 @@ it("a ratio first, then its fresher operand", async () => {
     asOf: "2026-11-05",
   });
   expect([want.subtitle, want.notes]).toEqual([
-    "Oct 27 – Nov 2, 2026",
-    { revenue: "Oct 28 – Nov 3, 2026" },
+    "Oct 27 \u2013 Nov 2, 2026",
+    { revenue: "Oct 28 \u2013 Nov 3, 2026" },
   ]);
 });
 
@@ -575,7 +578,7 @@ it("two time columns of one source, and a ratio between them", async () => {
     asOf: "2026-11-05",
   });
   expect([want.subtitle, want.notes]).toEqual([
-    "Nov 1 – Nov 2, 2026, through 3:00 PM",
+    "Nov 1 – 2, 2026, through 3:00 PM",
     { placed: "Data through Nov 4, 2026, 10:00 AM" },
   ]);
 });
@@ -587,7 +590,7 @@ it("a date column reads whole days next to a timestamp source's partial day, and
     asOf: "2026-11-05",
   });
   expect([want.subtitle, want.notes]).toEqual([
-    "Nov 1 – Nov 4, 2026, through 6:03 PM",
+    "Nov 1 – 4, 2026, through 6:03 PM",
     { daily: "Data through Nov 3, 2026 · 1 day behind" },
   ]);
   const common = await attack({
@@ -595,7 +598,7 @@ it("a date column reads whole days next to a timestamp source's partial day, and
     range: "month_to_date",
     asOf: "latest_common_data",
   });
-  expect([common.want.subtitle, common.want.notes]).toEqual(["Nov 1 – Nov 3, 2026", {}]);
+  expect([common.want.subtitle, common.want.notes]).toEqual(["Nov 1 – 3, 2026", {}]);
   expect(common.block.window).toEqual({ start: "2026-11-01", end: "2026-11-04" });
 });
 
@@ -606,7 +609,7 @@ it("a metric filter that drops the newest row keeps the source's horizon", async
     asOf: "2026-11-05",
   });
   expect([want.subtitle, want.notes]).toEqual([
-    "Nov 1 – Nov 4, 2026, through 6:03 PM",
+    "Nov 1 – 4, 2026, through 6:03 PM",
     { refunds: "Data through Nov 3, 2026, 12:00 AM · 1 day behind" },
   ]);
 });
@@ -619,7 +622,7 @@ it("a freshness lag moves only that source's window", async () => {
     lagDays: { sales: 2 },
   });
   expect([want.subtitle, want.notes]).toEqual([
-    "Nov 1 – Nov 3, 2026, through 12:00 AM",
+    "Nov 1 – 3, 2026, through 12:00 AM",
     { revenue: "Data through Nov 2, 2026, 6:03 PM · 1 day behind" },
   ]);
 });
@@ -630,7 +633,7 @@ it("an explicit range ending before every horizon keeps one window", async () =>
     range: { start: "2026-10-25", end: "2026-10-31" },
     asOf: "2026-11-05",
   });
-  expect([want.subtitle, want.notes]).toEqual(["Oct 25 – Oct 30, 2026", {}]);
+  expect([want.subtitle, want.notes]).toEqual(["Oct 25 \u2013 30, 2026", {}]);
 });
 
 it("a metric named constructor in a mixed table", async () => {
@@ -640,11 +643,11 @@ it("a metric named constructor in a mixed table", async () => {
     asOf: "2026-11-05",
   });
   expect([want.subtitle, want.notes]).toEqual([
-    "Oct 28 – Nov 3, 2026",
+    "Oct 28 \u2013 Nov 3, 2026",
     {
       units: "All time",
-      refunds: "Oct 27 – Nov 2, 2026 · 1 day behind",
-      returns: "Oct 25 – Oct 31, 2026 · 3 days behind",
+      refunds: "Oct 27 \u2013 Nov 2, 2026 · 1 day behind",
+      returns: "Oct 25 \u2013 31, 2026 · 3 days behind",
     },
   ]);
 });
@@ -685,8 +688,8 @@ it("subtotals, Other and the total read each metric's own window", async () => {
   const want = await oracleFor(engine.root, c);
   try {
     expect([want.subtitle, want.notes]).toEqual([
-      "Oct 28 – Nov 3, 2026",
-      { refunds: "Oct 27 – Nov 2, 2026 · 1 day behind", units: "All time" },
+      "Oct 28 \u2013 Nov 3, 2026",
+      { refunds: "Oct 27 \u2013 Nov 2, 2026 · 1 day behind", units: "All time" },
     ]);
     expect(engine.subtitle).toBe(want.subtitle);
     expect(engine.notes).toEqual(want.notes);

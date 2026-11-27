@@ -174,7 +174,7 @@ describe("browser runtime", () => {
     await page.locator(".hm-line svg").filter({ visible: true }).focus();
     await page.keyboard.press("End");
     const tip = page.locator(".hm-line .hm-tip");
-    expect(await tip.locator(".hm-tip-h").textContent()).toBe("Sep 21–23");
+    expect(await tip.locator(".hm-tip-h").textContent()).toBe("Sep 21 \u2013 23");
     expect(await tip.locator(".hm-tip-s").textContent()).toBe("In progress · 3 of 7 days");
     const fill = tokens.data.light.categoricalFill[0] as string;
     expect(
@@ -201,7 +201,7 @@ describe("browser runtime", () => {
         .first()
         .evaluate((n) => getComputedStyle(n).visibility);
     expect(await svg.locator(".hm-readout").count()).toBe(1);
-    expect(await svg.locator(".hm-rh").textContent()).toBe("Sep 21\u201323");
+    expect(await svg.locator(".hm-rh").textContent()).toBe("Sep 21 \u2013 23");
     expect(await svg.locator(".hm-rs").textContent()).toBe("In progress \u00B7 3 of 7 days");
     expect(await visible(".hm-rsw")).toBe("visible");
     expect(await visible(".hm-rq-0")).toBe("visible");

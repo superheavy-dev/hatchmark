@@ -81,7 +81,7 @@ describe("period control", () => {
     expect(focused).toBe("last_7_days");
     await page.keyboard.press("Enter");
     await settled(page);
-    expect(await caption(page)).toContain("Oct 25 – Oct 31, 2026");
+    expect(await caption(page)).toContain("Oct 25 \u2013 31, 2026");
     expect(new URL(page.url()).searchParams.get("period")).toBe("last_7_days");
     expect(await button.getAttribute("aria-expanded")).toBe("false");
     expect(await page.evaluate(() => document.activeElement?.className)).toBe("hm-period-button");
@@ -91,7 +91,7 @@ describe("period control", () => {
 
     await page.reload();
     await settled(page);
-    expect(await caption(page)).toContain("Oct 25 – Oct 31, 2026");
+    expect(await caption(page)).toContain("Oct 25 \u2013 31, 2026");
     expect(await page.locator("[data-hm-preset=last_7_days]").getAttribute("aria-checked")).toBe(
       "true",
     );
@@ -118,12 +118,12 @@ describe("period control", () => {
     await page.keyboard.press("End");
     await page.keyboard.press("Enter");
     expect(await page.locator(".hm-cal-status").textContent()).toContain(
-      "Sep 9, 2026 – Oct 10, 2026, 32 days",
+      "Sep 9 \u2013 Oct 10, 2026, 32 days",
     );
     await page.locator("[data-hm-cal=apply]").click();
     await settled(page);
     expect(new URL(page.url()).searchParams.get("period")).toBe("2026-09-09..2026-10-10");
-    expect(await caption(page)).toContain("Sep 9 – Oct 10, 2026");
+    expect(await caption(page)).toContain("Sep 9 \u2013 Oct 10, 2026");
     const data = await sql({ start: "2026-09-09", end: "2026-10-11" });
     for (const [label, metric] of [
       ["Revenue", "revenue"],
@@ -158,7 +158,7 @@ describe("period control", () => {
       const { page, errors } = await open(`?period=${encodeURIComponent(bad)}`);
       await page.waitForTimeout(300);
       await settled(page);
-      expect(await caption(page)).toContain("Nov 2025 – Oct 2026");
+      expect(await caption(page)).toContain("Nov 2025 \u2013 Oct 2026");
       expect(new URL(page.url()).searchParams.get("period")).toBeNull();
       expect(errors).toEqual([]);
       await page.close();

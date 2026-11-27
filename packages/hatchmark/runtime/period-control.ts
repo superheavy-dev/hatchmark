@@ -11,6 +11,8 @@
  * dialog and returns focus to the button; Tab stays inside the dialog while it is open.
  */
 
+import { formatRange } from "../src/render/format.js";
+
 export interface PeriodView {
   key: string;
   blocks: string;
@@ -189,7 +191,7 @@ export function mountPeriod(root: HTMLElement, redraw: (view: PeriodView) => voi
     if (status) {
       status.textContent =
         state.start && state.end
-          ? `${short.format(toDate(state.start))} \u2013 ${short.format(toDate(state.end))}, ${Math.round((toDate(state.end) - toDate(state.start)) / DAY) + 1} days`
+          ? `${formatRange(new Date(toDate(state.start)), new Date(toDate(state.end)), locale, { day: true, year: true })}, ${Math.round((toDate(state.end) - toDate(state.start)) / DAY) + 1} days`
           : state.start
             ? "Pick the last day"
             : "Pick the first day";
