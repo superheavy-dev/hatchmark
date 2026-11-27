@@ -237,7 +237,10 @@ export async function build(
 ): Promise<CommandResult> {
   const { project, diagnostics: loadDiagnostics } = await loadProject(nodeProjectHost(ctx.root));
   if (project === undefined || project.config.spec === undefined) {
-    const report = createReport(loadDiagnostics);
+    const report = createReport([
+      ...loadDiagnostics,
+      ...(project === undefined ? [] : parseDiagnostics(project)),
+    ]);
     return { exitCode: EXIT.usage, json: report, human: renderHuman(report, { color: ctx.color }) };
   }
   const config = project.config.spec;
