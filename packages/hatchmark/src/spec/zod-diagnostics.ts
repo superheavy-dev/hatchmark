@@ -1,4 +1,4 @@
-import type { core, z } from "zod";
+import type { z } from "zod";
 import {
   closestMatch,
   type Diagnostic,
@@ -11,61 +11,56 @@ import {
 import { addPropertyFix, replaceValueFix } from "./fixes.js";
 
 type Path = (string | number)[];
-type Schema = core.$ZodType;
+// biome-ignore lint/suspicious/noExplicitAny: walking Zod's internal definitions
+type AnyDef = any;
 
-const defOf = (schema: Schema) => (schema as core.$ZodTypes)._zod.def;
+function defOf(schema: z.ZodType): AnyDef {
+  return (schema as unknown as { _zod: { def: AnyDef } })._zod.def;
+}
 
-function unwrap(schema: Schema): Schema {
+function unwrap(schema: z.ZodType): z.ZodType {
   let current = schema;
   for (;;) {
     const def = defOf(current);
-    switch (def.type) {
-      case "optional":
-      case "nullable":
-      case "default":
-      case "prefault":
-      case "readonly":
-      case "catch":
-      case "nonoptional":
-        current = def.innerType;
-        break;
-      case "pipe":
-        current = def.in;
-        break;
-      default:
-        return current;
+    if (
+      ["optional", "nullable", "default", "prefault", "readonly", "catch", "nonoptional"].includes(
+        def.type,
+      )
+    ) {
+      current = def.innerType;
+    } else if (def.type === "pipe") {
+      current = def.in;
+    } else {
+      return current;
     }
   }
 }
 
-function literalValues(schema: Schema | undefined): unknown[] {
-  if (schema === undefined) return [];
+function literalValues(schema: z.ZodType): unknown[] {
   const def = defOf(unwrap(schema));
-  if (def.type === "literal") return [...def.values];
+  if (def.type === "literal") return def.values;
   if (def.type === "enum") return Object.values(def.entries);
   return [];
 }
 
-function schemaAt(root: Schema, value: unknown, path: Path): Schema | undefined {
-  let schema: Schema | undefined = root;
+function schemaAt(root: z.ZodType, value: unknown, path: Path): z.ZodType | undefined {
+  let schema: z.ZodType | undefined = root;
   let current = value;
   for (let i = 0; i <= path.length; i++) {
     if (schema === undefined) return undefined;
     schema = unwrap(schema);
     let def = defOf(schema);
     if (def.type === "union") {
-      const disc =
-        "discriminator" in def && typeof def.discriminator === "string"
-          ? def.discriminator
-          : undefined;
+      const disc: string | undefined = def.discriminator;
+      const options: z.ZodType[] = def.options;
       const tag =
         disc && current && typeof current === "object"
           ? (current as Record<string, unknown>)[disc]
           : undefined;
-      const picked = def.options.find((option) => {
-        const optionDef = defOf(unwrap(option));
-        if (!disc) return optionDef.type === "object";
-        return optionDef.type === "object" && literalValues(optionDef.shape[disc]).includes(tag);
+      const picked = options.find((option) => {
+        if (!disc) return defOf(unwrap(option)).type === "object";
+        const shape = defOf(unwrap(option)).shape;
+        return shape && literalValues(shape[disc]).includes(tag);
       });
       if (picked === undefined) return i === path.length ? schema : undefined;
       schema = unwrap(picked);
