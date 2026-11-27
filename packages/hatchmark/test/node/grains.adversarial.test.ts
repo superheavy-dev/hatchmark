@@ -438,7 +438,10 @@ describe("a select, a period and a grain filter combined (HAT-40 data.mjs)", () 
     expect(problems.slice(0, 5)).toEqual([]);
     expect(cells).toBeGreaterThan(1000);
     const k = data.blocks.find((b) => b.id === "k_rev") as KpiData;
-    expect(num(k.value)).toBeCloseTo(num(oracleTotal("revenue", window, where)), 6);
+    // The KPI reads whole days through the last complete day: the newest order is on Oct 31.
+    const days: [string, string] = ["2025-10-31", "2026-10-31"];
+    expect(k.current).toEqual({ start: days[0], end: days[1] });
+    expect(num(k.value)).toBeCloseTo(num(oracleTotal("revenue", days, where)), 6);
   });
 });
 
@@ -719,11 +722,11 @@ describe("plan hashes and query reuse for grain switches (HAT-40 data.mjs and ha
     expect(perBlock.a).toEqual(perBlock.b);
   });
 
-  it("the sales example plans to a pinned hash (the #16 value 036644c0…, then plan horizons)", async () => {
+  it("the sales example plans to a pinned hash (the #16 value 036644c0…, then plan and window horizons)", async () => {
     const { project } = await loadAt(EXAMPLE);
     const { plan } = planDashboard(project, "sales");
     expect(plan && planHash(plan)).toBe(
-      "41e1db7b9fb43fa16d5263c4a46390d19cdf15543c81dab0d328dcff3e75c520",
+      "34e14f763de8c6aed1506225468ef5ae79ea94aabe2b3f616aeef2bc2d449c9f",
     );
   });
 

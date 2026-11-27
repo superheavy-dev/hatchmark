@@ -10,7 +10,7 @@ import type {
   RangeSpec,
   ResolvedGrain,
 } from "../spec/index.js";
-import type { PlannedHorizon, SourceHorizon } from "./horizons.js";
+import type { PlannedHorizon, SourceHorizon, TimeColumn } from "./horizons.js";
 
 /**
  * The query plan: the one logical description of what a dashboard needs from its data, shared by
@@ -89,6 +89,12 @@ export interface PlannedWindow {
   shift: Comparison;
   /** The metric's time column that places rows in the window. Absent only for "all_time". */
   column?: string;
+  /**
+   * The time columns whose horizons bound this window (RFC 0001 section 6.1): those of every
+   * metric the measure reads, so a ratio is as complete as its laggiest operand. Sorted; present
+   * with column.
+   */
+  horizons?: TimeColumn[];
 }
 
 export interface PlannedQuery {
@@ -244,6 +250,8 @@ export interface ExecutionContext {
   anchors: Anchors;
   bindings: ParamBindings;
   materialization?: Materialization;
+  /** The as-of instant T as UTC ISO 8601; with horizons, windows end at each measure's horizon. */
+  asOfInstant?: string;
   /** The plan's measured horizons, in plan order; absent when the caller measured none. */
   horizons?: SourceHorizon[];
 }

@@ -18,10 +18,33 @@ export const DASHBOARD_DATA_VERSION = 2;
 
 export type Value = number | null;
 
-/** A calendar span in the project time zone: start inclusive, end exclusive, YYYY-MM-DD. */
+/**
+ * A calendar span in the project time zone: start inclusive, end exclusive, YYYY-MM-DD, covering
+ * every day the window touches. startAt and endAt give the exact local date-time
+ * (YYYY-MM-DDTHH:MM:SS.ffffff) of a bound that a horizon puts inside a day (RFC 0001 section 6.4).
+ */
 export interface DateSpan {
   start: string;
   end: string;
+  startAt?: string;
+  endAt?: string;
+}
+
+/**
+ * A bucket the horizon cuts: its index on the axis and the share of it elapsed in local wall-clock
+ * time, to six decimals rounded down.
+ */
+/**
+ * Why a KPI or table shows no value although its range has dates: its window, ended at the
+ * measure's horizon, is empty (RFC 0001 section 6.4). no_complete_day: the data has begun in the
+ * window but no day of it is complete yet (month-to-date on the 1st); no_data: the data ends before
+ * the window starts. An empty window is a gap, never 0.
+ */
+export type EmptyWindow = "no_complete_day" | "no_data";
+
+export interface PartialBucket {
+  index: number;
+  elapsed: number;
 }
 
 export interface MetricInfo {
@@ -44,6 +67,8 @@ export interface KpiData extends BlockCommon {
   type: "kpi";
   metric: string;
   value: Value;
+  /** Set when the current window is empty: value, change and changePct are then null. */
+  empty?: EmptyWindow;
   /** Resolved compare: the block's override or the dashboard period's compare. */
   compare: Comparison;
   /** The windows read; previous is absent when compare is "none" or the range is all_time. */
@@ -60,7 +85,7 @@ export interface KpiData extends BlockCommon {
   changePct?: Value;
   changeKind?: "relative" | "points";
   /** Present when the block asks for a sparkline: the metric by month over the current window. */
-  sparkline?: { grain: TimeGrain; buckets: string[]; values: Value[] };
+  sparkline?: { grain: TimeGrain; buckets: string[]; values: Value[]; partial?: PartialBucket[] };
 }
 
 /** One drawn series: a metric, or one value of the split column for a single metric. */
@@ -72,8 +97,13 @@ export interface Series {
   label: string;
   /** The split column's value when the block splits; absent otherwise. null is a real group. */
   splitValue?: string | number | boolean | null;
-  /** One value per x position (bucket or category), same order and length as the axis. */
+  /**
+   * One value per x position (bucket or category), same order and length as the axis. On a time
+   * axis, buckets at or after the series' horizon have no value (null).
+   */
   values: Value[];
+  /** On a time axis, the bucket the series' horizon falls inside, when one does. */
+  partial?: PartialBucket[];
 }
 
 export interface TimeAxis {
@@ -81,8 +111,9 @@ export interface TimeAxis {
   grain: TimeGrain;
   /**
    * Bucket start dates (YYYY-MM-DD, project time zone, from the anchors), a complete
-   * spine over the window: every bucket appears, empty ones included. The first and last buckets
-   * may be partial (the window clips them); phase 1 does not mark incomplete periods.
+   * spine over the window: every bucket appears, empty ones included. The window ends at the as-of
+   * instant; each series marks the bucket its own horizon cuts (Series.partial). The first bucket
+   * may begin before the window, which clips it.
    */
   buckets: string[];
   window: DateSpan;
@@ -158,6 +189,11 @@ export interface TableData extends BlockCommon {
    */
   total?: { values: Record<string, Value>; share?: Record<string, Value> };
   window?: DateSpan;
+  /**
+   * Set when every metric's window is empty: no rows, and every total is null. A metric whose own
+   * window is empty is null in every row and in the total, while the others fill the rows.
+   */
+  empty?: EmptyWindow;
 }
 
 export type BlockData = KpiData | LineData | BarData | TableData;

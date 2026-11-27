@@ -8,13 +8,18 @@ import {
   type TimeGrain,
   WEEKDAYS,
 } from "../spec/index.js";
+import { DAY_US, formatInstant, formatWall, fromLocal, parseInstant, toLocal } from "./instants.js";
 import type { ExecutionContext, PlannedParam, PlannedQuery } from "./plan.js";
 
 /**
- * A window as calendar dates in the project time zone: start inclusive, end exclusive, both
- * YYYY-MM-DD. The executor turns them into timestamps in hatchmark.json's timezone.
+ * A window in the project time zone: start inclusive, end exclusive. Each bound is a local date
+ * (YYYY-MM-DD, its midnight), or a UTC instant YYYY-MM-DDTHH:MM:SS.ffffffZ where a measure's
+ * horizon cuts a day (RFC 0001 section 6.4). An unbounded window (all_time) may still end at the
+ * horizon. The executor compares a row's local date with a date and its instant with an instant.
  */
-export type WindowBounds = { kind: "bounded"; start: string; end: string } | { kind: "unbounded" };
+export type WindowBounds =
+  | { kind: "bounded"; start: string; end: string }
+  | { kind: "unbounded"; end?: string };
 
 interface Ymd {
   y: number;
@@ -218,16 +223,74 @@ export function resolveRange(
   return move(start, addDays(day, 1), by ?? moved(unit, -count));
 }
 
+type BoundsContext = Pick<ExecutionContext, "asOf" | "bindings" | "anchors"> &
+  Partial<Pick<ExecutionContext, "timezone" | "asOfInstant" | "horizons">>;
+
 /**
- * The dates one execution of a planned query reads: its window's range, or the range a period
+ * The window one execution of a planned query reads: its window's range, or the range a period
  * filter binds (its default when nothing is bound) when that filter windows the query's time
- * column, shifted by the window's comparison. Undefined when the shift has no window (all_time
- * compared); unbounded for all_time and for queries without a time column. Executors and assembly
- * both call this, so the numbers and the spans shown next to them always agree.
+ * column, shifted by the window's comparison, and ended at the measure's horizon (measureHorizon).
+ * Undefined when the shift has no window (all_time compared); unbounded for all_time and for
+ * queries without a time column. Executors and assembly both call this, so the numbers and the
+ * spans shown next to them always agree.
  */
-export function queryBounds(
+export function queryBounds(query: PlannedQuery, context: BoundsContext): WindowBounds | undefined {
+  return windowAt(query, context, measureHorizon(query, context));
+}
+
+/**
+ * A measure's horizon as UTC microseconds (instants.ts): the earliest of the as-of instant T and
+ * the horizons of the time columns its window lists. Undefined when the context carries no
+ * horizons (a context built without measuring them).
+ */
+export function measureHorizon(query: PlannedQuery, context: BoundsContext): bigint | undefined {
+  const { asOfInstant, horizons, timezone } = context;
+  if (asOfInstant === undefined || horizons === undefined || timezone === undefined)
+    return undefined;
+  let horizon = parseInstant(asOfInstant);
+  for (const { source, column } of query.window.horizons ?? []) {
+    const h =
+      horizons.find((x) => x.source === source && x.column === column) ??
+      horizons.find((x) => x.source === source);
+    const through = h === undefined ? undefined : parseInstant(h.through);
+    if (through !== undefined && through < horizon) horizon = through;
+  }
+  return horizon;
+}
+
+/** A bound as UTC microseconds: a local date is its local midnight, a "...Z" bound its instant. */
+export function boundInstant(value: string, timezone: string): bigint {
+  return value.endsWith("Z") ? parseInstant(value) : fromLocal(parseInstant(value), timezone);
+}
+
+/** Whole local days from one date to another. */
+function daysBetween(from: string, to: string): number {
+  return Math.round(Number(parseInstant(to) - parseInstant(from)) / Number(DAY_US));
+}
+
+/**
+ * A query's window ended at a horizon (UTC microseconds; none keeps the window as written), when
+ * the horizon is before the end of the range as written (RFC 0001 section 6.4).
+ *
+ * KPIs and tables read whole local days ending at the last complete day: the window ends at the
+ * local midnight at or before the horizon (day D).
+ * - {last: N, unit} slides back by whole days to end at D, keeping the day count of the window
+ *   resolveRange gives it, and compares like an explicit {start, end} range of those dates:
+ *   previous_period is the same number of days just before, a shift moves its first and last day;
+ * - a to-date range is the range as of the day before D, with its comparison;
+ * - a complete unit or explicit range ends at D, and its comparison covers the same number of
+ *   days from its own start, never past its own end;
+ * - all_time ends at D.
+ *
+ * A time series keeps the dashboard's axis and reads through the horizon itself, so its partial
+ * bucket is marked (section 6.5): its window ends at the horizon instant, and its comparison is
+ * cut to the same elapsed local time. Such a bound is a UTC instant "YYYY-MM-DDTHH:MM:SS.ffffffZ",
+ * so a cutoff inside a repeated hour stays exact; every other bound is a local date.
+ */
+export function windowAt(
   query: PlannedQuery,
-  context: Pick<ExecutionContext, "asOf" | "bindings" | "anchors">,
+  context: BoundsContext,
+  horizon: bigint | undefined,
 ): WindowBounds | undefined {
   const { window } = query;
   if (window.column === undefined) return { kind: "unbounded" };
@@ -235,12 +298,48 @@ export function queryBounds(
     (p): p is PlannedParam & { kind: "period" } =>
       p.kind === "period" && p.column === window.column,
   );
-  return resolveRange(
-    effectiveRange(window.range, param, context.bindings),
-    window.shift,
-    context.asOf,
-    context.anchors,
-  );
+  const range = effectiveRange(window.range, param, context.bindings);
+  const { anchors } = context;
+  const target = resolveRange(range, window.shift, context.asOf, anchors);
+  const tz = context.timezone;
+  if (horizon === undefined || tz === undefined || target === undefined) return target;
+  const hw = toLocal(horizon, tz);
+  const day = formatWall(hw).slice(0, 10);
+  const timeAxis = query.dimensions.some((d) => d.kind === "time");
+  const exact = formatWall(hw).endsWith("T00:00:00.000000") ? day : formatInstant(horizon);
+  if (range === "all_time") return { kind: "unbounded", end: timeAxis ? exact : day };
+  const base = resolveRange(range, "none", context.asOf, anchors);
+  if (base?.kind !== "bounded" || target.kind !== "bounded") return target;
+  if (hw >= parseInstant(base.end)) return target;
+  const empty: WindowBounds = { kind: "bounded", start: base.start, end: base.start };
+  const spec = typeof range === "string" ? NAMED[range] : range;
+
+  if (timeAxis) {
+    const start = parseInstant(base.start);
+    if (hw <= start) return window.shift === "none" ? empty : { ...target, end: target.start };
+    if (window.shift === "none") return { kind: "bounded", start: base.start, end: exact };
+    const from = parseInstant(target.start);
+    const cut = from + (hw - start);
+    if (cut >= parseInstant(target.end)) return target;
+    const text = formatWall(cut);
+    const end = text.endsWith("T00:00:00.000000")
+      ? text.slice(0, 10)
+      : formatInstant(fromLocal(cut, tz));
+    return { kind: "bounded", start: target.start, end };
+  }
+
+  if ("last" in spec) {
+    const slid = {
+      start: format(addDays(parse(day), -daysBetween(base.start, base.end))),
+      end: day,
+    };
+    return resolveRange(slid, window.shift, context.asOf, anchors);
+  }
+  if (day <= base.start) return window.shift === "none" ? empty : { ...target, end: target.start };
+  if ("to_date" in spec) return resolveRange(range, window.shift, previousDay(day), anchors);
+  if (window.shift === "none") return { kind: "bounded", start: base.start, end: day };
+  const end = format(addDays(parse(target.start), daysBetween(base.start, day)));
+  return end < target.end ? { kind: "bounded", start: target.start, end } : target;
 }
 
 /**
@@ -284,6 +383,11 @@ export function timeBuckets(start: string, end: string, grain: ResolvedGrain): s
     bucket = addUnits(bucket, grain.unit, 1);
   }
   return out;
+}
+
+/** The exclusive end of the bucket that starts on a date: the next bucket's start. */
+export function bucketEnd(start: string, grain: ResolvedGrain): string {
+  return format(addUnits(parse(start), grain.unit, 1));
 }
 
 /** The day before a date. */

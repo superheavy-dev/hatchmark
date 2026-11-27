@@ -403,14 +403,11 @@ describe(
     const failed = { data: false, errors: ["HM2015"] };
     const ran = { data: true, errors: [] };
 
-    it("an all_time day chart over rows on 9999-12-30 and 9999-12-31", async () => {
-      expect(
-        await runWith("at\n2026-01-01\n9999-12-30\n9999-12-31\n", {
-          asOf: "2026-03-01",
-          range: "all_time",
-          compare: "none",
-        }),
-      ).toEqual(failed);
+    it("an all_time day chart over rows on 9999-12-30 and 9999-12-31: rejected as of latest_data, ignored after a fixed as-of", async () => {
+      const csv = "at\n2026-01-01\n9999-12-30\n9999-12-31\n";
+      const all = { range: "all_time", compare: "none" };
+      expect(await runWith(csv, { ...all, asOf: "latest_data" })).toEqual(failed);
+      expect(await runWith(csv, { ...all, asOf: "2026-03-01" })).toEqual(ran);
     });
 
     it("an all_time week chart over a row on 0000-01-01", async () => {

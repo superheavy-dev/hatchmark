@@ -3,7 +3,6 @@ import { checkReferences, type Project, parseDiagnostics } from "../spec/index.j
 import { assemble } from "./assemble.js";
 import type { DashboardData } from "./dashboard-data.js";
 import {
-  horizonFor,
   type PlannedHorizon,
   planTimeColumns,
   type SourceHorizon,
@@ -26,7 +25,7 @@ import type {
   QueryResult,
 } from "./plan.js";
 import { planDashboard } from "./planner.js";
-import { nextDay, queryBounds, resolveRange, SUPPORTED_DATES } from "./windows.js";
+import { measureHorizon, nextDay, queryBounds, resolveRange, SUPPORTED_DATES } from "./windows.js";
 
 /**
  * A QueryExecutor that can also measure source horizons (RFC 0001 section 6.1). horizon returns the
@@ -69,8 +68,9 @@ const startOf = (date: string, timezone: string) => fromLocal(parseInstant(date)
  * cannot be measured or a date is out of range. Warnings: HM4010 for a source more than a day
  * behind T, HM4012 for a column whose newest value is more than a day after the build machine's clock
  * (now; it never stops the build or changes the output), and HM4013 for a block whose every window
- * starts at or after its horizon. Note: HM4016 for timestamps without an offset that a source with
- * no timezone has, in a project whose time zone isn't UTC.
+ * starts at or after its horizon. Notes: HM4016 for timestamps without an offset that a source with
+ * no timezone has, in a project whose time zone isn't UTC, and HM4024 for a block whose window is
+ * empty because no day of it is complete yet (its data has begun after the window's start).
  */
 export async function executionContext(
   project: Project,
@@ -212,6 +212,7 @@ export async function executionContext(
     timezone: tz,
     anchors: plan.anchors,
     bindings: {},
+    asOfInstant: formatInstant(instant),
     horizons,
   };
   try {
@@ -269,23 +270,40 @@ export async function executionContext(
     const empty =
       current.length > 0 &&
       current.every((query) => {
-        const column = query?.window.column;
-        if (query === undefined || column === undefined) return false;
-        const bounds = queryBounds(query, context);
-        if (bounds?.kind !== "bounded") return false;
-        const h = horizonFor(plan.horizons, query.source, column);
-        const through = h === undefined ? undefined : horizonOf(h);
-        const horizon = through === undefined || through > instant ? instant : through;
-        return startOf(bounds.start, tz) >= horizon;
+        const bounds = query && queryBounds(query, context);
+        return bounds?.kind === "bounded" && parseInstant(bounds.start) >= parseInstant(bounds.end);
       });
     if (!empty) continue;
+    const location = file
+      ? { file: file.file, pointer: block.pointer, ...file.document.locationOf(block.pointer) }
+      : {};
+    const first = current[0] && queryBounds(current[0], context);
+    const start =
+      first?.kind === "bounded" && !first.start.endsWith("Z")
+        ? fromLocal(parseInstant(first.start), tz)
+        : undefined;
+    const horizon = current
+      .map((query) => query && measureHorizon(query, context))
+      .reduce<bigint | undefined>(
+        (a, h) => (h === undefined || (a !== undefined && a <= h) ? a : h),
+        undefined,
+      );
+    if (start !== undefined && horizon !== undefined && horizon > start) {
+      notes.push({
+        code: "HM4024",
+        severity: "note",
+        message: `block "${block.blockId}" has no complete day yet: its window starts ${describeInstant(start, tz)} and the data it reads runs through ${describeInstant(horizon, tz)}, so it shows no value`,
+        ...location,
+        help: "the block fills in once a day of its window is complete; set period.asOf to show an earlier, complete day",
+        docs: docsCommand("HM4024"),
+      });
+      continue;
+    }
     notes.push({
       code: "HM4013",
       severity: "warning",
-      message: `block "${block.blockId}" has no data in its window: every source it reads ends before the window starts`,
-      ...(file
-        ? { file: file.file, pointer: block.pointer, ...file.document.locationOf(block.pointer) }
-        : {}),
+      message: `block "${block.blockId}" has no data in its window: the data it reads ends before the window starts`,
+      ...location,
       help: "pick a range that ends after the data does, or set period.asOf",
       docs: docsCommand("HM4013"),
     });

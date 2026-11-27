@@ -17,16 +17,19 @@ import {
   DASHBOARD_DATA_VERSION,
   type DashboardData,
   type DateSpan,
+  type EmptyWindow,
   type GrainOption,
   type KpiData,
   type LineData,
   type MetricInfo,
+  type PartialBucket,
   type Series,
   type TableData,
   type TableRow,
   type TimeAxis,
   type Value,
 } from "./dashboard-data.js";
+import { formatWall, fromLocal, parseInstant, toLocal } from "./instants.js";
 import type {
   BlockPlan,
   ExecutionContext,
@@ -36,12 +39,15 @@ import type {
   QueryResult,
 } from "./plan.js";
 import {
+  bucketEnd,
   effectiveRange,
+  measureHorizon,
   nextDay,
   queryBounds,
   resolveRange,
   timeBuckets,
   type WindowBounds,
+  windowAt,
 } from "./windows.js";
 
 type Key = string | number | boolean | null;
@@ -119,8 +125,21 @@ function compareValues(a: Value, b: Value, order: "asc" | "desc"): number {
   return order === "asc" ? a - b : b - a;
 }
 
-function span(bounds: WindowBounds | undefined): DateSpan | undefined {
-  return bounds?.kind === "bounded" ? { start: bounds.start, end: bounds.end } : undefined;
+/** A bound's local wall-clock time, for a UTC instant bound (windows.ts). */
+const wallAt = (bound: string, timezone: string) =>
+  formatWall(toLocal(parseInstant(bound), timezone));
+
+function span(bounds: WindowBounds | undefined, timezone: string): DateSpan | undefined {
+  if (bounds?.kind !== "bounded") return undefined;
+  const { start, end } = bounds;
+  const startAt = start.endsWith("Z") ? wallAt(start, timezone) : undefined;
+  const endAt = end.endsWith("Z") ? wallAt(end, timezone) : undefined;
+  return {
+    start: startAt === undefined ? start : startAt.slice(0, 10),
+    end: endAt === undefined ? end : nextDay(endAt.slice(0, 10)),
+    ...(startAt !== undefined ? { startAt } : {}),
+    ...(endAt !== undefined ? { endAt } : {}),
+  };
 }
 
 function refs(expression: MeasureExpression): string[] {
@@ -190,6 +209,58 @@ class Assembler {
     return query && queryBounds(query, this.context);
   }
 
+  /**
+   * Why an expression's window is empty, or undefined when it isn't: no_complete_day when its
+   * horizon is after the window's start, else no_data.
+   */
+  empty(expression: MeasureExpression | undefined): EmptyWindow | undefined {
+    const bounds = this.bounds(expression);
+    if (bounds?.kind !== "bounded" || bounds.start !== bounds.end) return undefined;
+    const horizon = this.horizon(expression);
+    const start = fromLocal(parseInstant(bounds.start), this.context.timezone);
+    return horizon !== undefined && horizon > start ? "no_complete_day" : "no_data";
+  }
+
+  /** A measure's horizon (UTC microseconds): the earliest of its queries'. */
+  horizon(expression: MeasureExpression | undefined): bigint | undefined {
+    let earliest: bigint | undefined;
+    for (const id of expression ? refs(expression) : []) {
+      const query = this.queries.get(id)?.query;
+      const h = query && measureHorizon(query, this.context);
+      if (h !== undefined && (earliest === undefined || h < earliest)) earliest = h;
+    }
+    return earliest;
+  }
+
+  /**
+   * A time series cut at its measure's horizon (RFC 0001 section 6.5): buckets at or after it have
+   * no value, and the bucket it falls inside is partial, with the share of it elapsed.
+   */
+  cut<T extends { values: Value[] }>(
+    series: T,
+    expression: MeasureExpression | undefined,
+    buckets: string[],
+    grain: ResolvedGrain,
+  ): T & { partial?: PartialBucket[] } {
+    const at = this.horizon(expression);
+    if (at === undefined) return series;
+    const horizon = toLocal(at, this.context.timezone);
+    const partial: PartialBucket[] = [];
+    const values = series.values.map((value, index) => {
+      const start = parseInstant(buckets[index] ?? "");
+      const end = parseInstant(bucketEnd(buckets[index] ?? "", grain));
+      if (start >= horizon) return null;
+      if (horizon < end) {
+        partial.push({
+          index,
+          elapsed: Number(((horizon - start) * 1_000_000n) / (end - start)) / 1e6,
+        });
+      }
+      return value;
+    });
+    return { ...series, values, ...(partial.length > 0 ? { partial } : {}) };
+  }
+
   /** Distinct dimension values of a grouping set across queries, sorted by key. */
   keys(expressions: (MeasureExpression | undefined)[], set: number): Key[][] {
     const seen = new Map<string, Key[]>();
@@ -202,13 +273,21 @@ class Assembler {
   }
 
   timeAxis(expressions: (MeasureExpression | undefined)[], grain: ResolvedGrain): TimeAxis {
-    const bounds = this.bounds(expressions[0]);
-    if (bounds?.kind === "bounded") {
-      const window = { start: bounds.start, end: bounds.end };
+    const query = expressions[0] && this.queries.get(refs(expressions[0])[0] ?? "")?.query;
+    const { asOfInstant, timezone } = this.context;
+    const bounds =
+      query &&
+      windowAt(
+        query,
+        this.context,
+        asOfInstant === undefined ? undefined : parseInstant(asOfInstant),
+      );
+    const window = span(bounds, timezone);
+    if (window !== undefined) {
       return {
         kind: "time",
         grain: grain.unit,
-        buckets: timeBuckets(bounds.start, bounds.end, grain),
+        buckets: timeBuckets(window.start, window.end, grain),
         window,
       };
     }
@@ -216,14 +295,15 @@ class Assembler {
       .map((keys) => keys[0])
       .filter((k): k is string => typeof k === "string");
     const last = [this.context.asOf, ...observed].sort().at(-1) ?? this.context.asOf;
-    const end = nextDay(last);
+    const endAt = bounds?.end?.endsWith("Z") ? wallAt(bounds.end, timezone) : undefined;
+    const end = nextDay(endAt?.slice(0, 10) ?? last);
     const start = observed[0] ?? end;
     const buckets = timeBuckets(start, end, grain);
     return {
       kind: "time",
       grain: grain.unit,
       buckets,
-      window: { start: buckets[0] ?? start, end },
+      window: { start: buckets[0] ?? start, end, ...(endAt !== undefined ? { endAt } : {}) },
     };
   }
 
@@ -279,15 +359,25 @@ class Assembler {
   kpi(block: Block & { type: "kpi" }, plan: BlockPlan, common: Common): KpiData {
     const name = block.metric;
     const compare = block.compare ?? this.plan.period.compare;
-    const current = this.evaluate(plan.measures[name], 0, []);
-    const data: KpiData = { ...common, type: "kpi", metric: name, value: current, compare };
-    const currentSpan = span(this.bounds(plan.measures[name]));
+    const empty = this.empty(plan.measures[name]);
+    const current = empty ? null : this.evaluate(plan.measures[name], 0, []);
+    const data: KpiData = {
+      ...common,
+      type: "kpi",
+      metric: name,
+      value: current,
+      ...(empty ? { empty } : {}),
+      compare,
+    };
+    const currentSpan = span(this.bounds(plan.measures[name]), this.context.timezone);
     if (currentSpan) data.current = currentSpan;
     const previousExpression = plan.previous?.[name];
     if (previousExpression && this.bounds(previousExpression) !== undefined) {
-      const previousSpan = span(this.bounds(previousExpression));
+      const previousSpan = span(this.bounds(previousExpression), this.context.timezone);
       if (previousSpan) data.previous = previousSpan;
-      const previous = this.evaluate(previousExpression, 0, []);
+      const previous = this.empty(previousExpression)
+        ? null
+        : this.evaluate(previousExpression, 0, []);
       const change = current === null || previous === null ? null : current - previous;
       const points = this.metric(name)?.format.type === "percent";
       data.previousValue = previous;
@@ -302,11 +392,16 @@ class Assembler {
     const sparkline = plan.sparkline?.[name];
     if (sparkline) {
       const axis = this.timeAxis([sparkline], { unit: "month" });
-      data.sparkline = {
-        grain: "month",
-        buckets: axis.buckets,
-        values: axis.buckets.map((b) => this.evaluate(sparkline, 0, [b])),
-      };
+      data.sparkline = this.cut(
+        {
+          grain: "month",
+          buckets: axis.buckets,
+          values: axis.buckets.map((b) => this.evaluate(sparkline, 0, [b])),
+        },
+        sparkline,
+        axis.buckets,
+        { unit: "month" },
+      );
     }
     return data;
   }
@@ -318,10 +413,12 @@ class Assembler {
       plan.grain ?? resolveGrain(block.grain, this.plan.anchors),
     );
     const [first = ""] = block.metrics;
-    const series =
+    const grain = plan.grain ?? resolveGrain(block.grain, this.plan.anchors);
+    const series = (
       block.split === undefined
         ? this.metricSeries(block.metrics, plan.measures, axis.buckets)
-        : this.splitSeries(first, plan.measures[first], axis.buckets, 1, 2);
+        : this.splitSeries(first, plan.measures[first], axis.buckets, 1, 2)
+    ).map((one) => this.cut(one, plan.measures[one.metric], axis.buckets, grain));
     return {
       ...common,
       type: block.type,
@@ -346,9 +443,12 @@ class Assembler {
         expressions,
         plan.grain ?? resolveGrain(block.grain, this.plan.anchors),
       );
-      const series = split
-        ? this.splitSeries(first, plan.measures[first], axis.buckets, 2, 2)
-        : this.metricSeries(block.metrics, plan.measures, axis.buckets);
+      const grain = plan.grain ?? resolveGrain(block.grain, this.plan.anchors);
+      const series = (
+        split
+          ? this.splitSeries(first, plan.measures[first], axis.buckets, 2, 2)
+          : this.metricSeries(block.metrics, plan.measures, axis.buckets)
+      ).map((one) => this.cut(one, plan.measures[one.metric], axis.buckets, grain));
       return { ...base, axis, series };
     }
     const column = block.by ?? "";
@@ -433,14 +533,21 @@ class Assembler {
     const percent = block.percentOfTotal ?? [];
     const hasTotal = block.totals !== false || percent.length > 0;
     const blank: Key[] = block.by.map(() => null);
+    const emptyOf = new Map(block.metrics.map((m) => [m, this.empty(plan.measures[m])]));
+    const filled = block.metrics.filter((m) => emptyOf.get(m) === undefined);
+    const empty = filled.length === 0 ? emptyOf.get(block.metrics[0] ?? "") : undefined;
+    const value = (m: string, set: number, keys: Key[]) =>
+      emptyOf.get(m) === undefined ? this.evaluate(plan.measures[m], set, keys) : null;
     const totals: Record<string, Value> = {};
-    if (hasTotal)
-      for (const m of block.metrics) totals[m] = this.evaluate(plan.measures[m], 1, blank);
+    if (hasTotal) for (const m of block.metrics) totals[m] = value(m, 1, blank);
     const shares = (values: Record<string, Value>): Record<string, Value> =>
       Object.fromEntries(percent.map((m) => [m, divide(values[m] ?? null, totals[m] ?? null)]));
-    const rows: TableRow[] = this.keys(expressions, 0).map((keys) => {
+    const rows: TableRow[] = this.keys(
+      filled.map((m) => plan.measures[m]),
+      0,
+    ).map((keys) => {
       const values: Record<string, Value> = {};
-      for (const m of block.metrics) values[m] = this.evaluate(plan.measures[m], 0, keys);
+      for (const m of block.metrics) values[m] = value(m, 0, keys);
       return { keys, values, ...(percent.length > 0 ? { share: shares(values) } : {}) };
     });
     if (hasTotal) this.checkAdditive(block, common.id, rows, totals);
@@ -457,7 +564,7 @@ class Assembler {
         compareKeys(a.keys, b.keys)
       );
     });
-    const window = span(this.bounds(expressions[0]));
+    const window = span(this.bounds(expressions[0]), this.context.timezone);
     return {
       ...common,
       type: "table",
@@ -470,6 +577,7 @@ class Assembler {
         ? { total: { values: totals, ...(percent.length > 0 ? { share: shares(totals) } : {}) } }
         : {}),
       ...(window ? { window } : {}),
+      ...(empty ? { empty } : {}),
     };
   }
 
@@ -621,11 +729,17 @@ export function assemble(
     };
   }
 
-  const current = span(resolveRange(period.range, "none", context.asOf, plan.anchors));
+  const current = span(
+    resolveRange(period.range, "none", context.asOf, plan.anchors),
+    context.timezone,
+  );
   const previous =
     period.compare === "none"
       ? undefined
-      : span(resolveRange(period.range, period.compare, context.asOf, plan.anchors));
+      : span(
+          resolveRange(period.range, period.compare, context.asOf, plan.anchors),
+          context.timezone,
+        );
   const data: DashboardData = {
     version: DASHBOARD_DATA_VERSION,
     name: plan.dashboard,

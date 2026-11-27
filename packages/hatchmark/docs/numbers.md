@@ -27,13 +27,27 @@ ZONE` value is converted to it. A timestamp without an offset (`2026-01-31 18:30
   A source with `{"through": "as_of"}` doesn't vote; with no source left to vote, the build fails
   with HM4011. Data checks warn when a source is more than a day behind the as-of (HM4010), when a
   column's newest value is more than a day after the build machine's clock (HM4012; the clock never
-  changes the output), and when a block's window starts after every source it reads ends (HM4013). These data
+  changes the output), and when a block's window starts after the data it reads ends (HM4013). These data
   checks run wherever data is read: `hatchmark build`, `check --sql` and `explain`; a plain
   `hatchmark check` reads no data.
+- **Windows end at the last complete day.** A measure is complete through the earliest horizon
+  of the sources it reads (a ratio through its laggiest operand) and never past the as-of. When
+  that is before the end of its window, a KPI, table or category chart reads whole local days
+  ending at the last complete day, the local midnight at or before the horizon: data through
+  2:03 p.m. Nov 26 counts through Nov 25. `last N` days, weeks, months, quarters or years slides
+  back by whole days to end there, keeping the number of days it has when the data is complete, and compares with the same number of days before it (a
+  shift moves its first and last day); every other range ends there, and its comparison covers the
+  same days (Nov 1 to Nov 25 against Oct 1 to Oct 25). An `all_time` window ends there too, so
+  rows after a fixed as-of are ignored. With timestamp data the newest day is left out until it is
+  complete. A window with no complete day yet, such as month-to-date on the 1st, shows no value
+  rather than 0 (`empty: "no_complete_day"`, note HM4024).
 - **Buckets.** Time series bucket by local date; weeks start on the week anchor, and quarters and
   years on their `MM-DD` anchors (hatchmark.json `anchors`, or a block's `{"unit", "anchor"}`
   grain). The axis lists every
-  bucket of the window, empty ones included. The first and last buckets may be partial.
+  bucket of the window, empty ones included. Each series ends at its own horizon instant: buckets
+  after it have no value, and the bucket it cuts is listed in `partial` with the share elapsed in
+  local wall-clock time. The cutoff is compared as a UTC instant, so it stays exact inside a
+  repeated fall-back hour, and `axis.window.endAt` gives its local time. The first bucket may also begin before the window.
 
 ## Filters
 

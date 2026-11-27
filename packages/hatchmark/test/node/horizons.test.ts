@@ -82,7 +82,8 @@ describe("source horizons", () => {
     expect(data?.asOf).toBe("2026-04-29");
     expect(codes).toEqual([]);
     expect(value("sessions")).toBe(0);
-    expect(value("revenue")).toBe(30);
+    // Orders end at 3:30 p.m. Apr 29, so the KPI reads whole days through Apr 28.
+    expect(value("revenue")).toBe(10);
   });
 
   it("measures a date column as complete through the end of its latest date", async () => {
@@ -219,9 +220,9 @@ describe("source horizons", () => {
     expect(JSON.stringify(behind.data)).toBe(JSON.stringify(current.data));
   });
 
-  it("warns with HM4013 when a block's window starts after every source it reads ends", async () => {
-    const { codes, value } = await build(
-      await project({ asOf: "2026-05-31", range: { last: 7, unit: "day" } }),
+  it("warns with HM4013 when a block's window starts after the data it reads ends", async () => {
+    const { codes, value, data } = await build(
+      await project({ asOf: "2026-05-31", range: { start: "2026-05-10", end: "2026-05-20" } }),
     );
     expect(codes).toEqual([
       ["HM4010", "warning", "/sources/orders"],
@@ -229,7 +230,9 @@ describe("source horizons", () => {
       ["HM4013", "warning", "/blocks/0"],
       ["HM4013", "warning", "/blocks/1"],
     ]);
-    expect(value("revenue")).toBe(0);
+    // An empty window is a gap, not 0.
+    expect(value("revenue")).toBeNull();
+    expect(data?.blocks[0]).toMatchObject({ empty: "no_data" });
   });
 });
 
@@ -320,7 +323,8 @@ describe("horizon edges (HAT-44 and HAT-45 on #19)", () => {
       ),
     );
     expect(one.data?.asOf).toBe("2026-06-02");
-    expect(one.value("orders")).toBe(17);
+    // Jun 2 has begun but isn't complete, so last 1 day is Jun 1, the last complete day.
+    expect(one.value("orders")).toBe(5);
     const week = await build(
       await sources(
         {
@@ -332,7 +336,37 @@ describe("horizon edges (HAT-44 and HAT-45 on #19)", () => {
       ),
     );
     expect(week.data?.asOf).toBe("2026-04-30");
-    expect(week.value("orders")).toBe(7);
+    expect(week.value("orders")).toBe(3);
+  });
+
+  // HAT-45's two newest-day cases, moved to whole days (RFC 0001 section 6.4): the newest row is at
+  // midnight on Apr 30, so Apr 30 has begun but isn't complete and last 7 days ends with Apr 29.
+  it("leaves the newest, begun day out of last 7 days, with latest_data or a fixed as-of", async () => {
+    const text = "at,v\n2026-04-28T00:00:00Z,1\n2026-04-29T00:00:00Z,2\n2026-04-30T00:00:00Z,4\n";
+    for (const asOf of ["latest_data", "2026-04-30"]) {
+      const r = await build(
+        await sources({ orders: { text } }, { asOf, range: { last: 7, unit: "day" } }),
+      );
+      expect(r.data?.asOf).toBe("2026-04-30");
+      expect(r.value("orders")).toBe(3);
+    }
+  });
+
+  it("leaves the newest day out for naive midnight timestamps in a source time zone", async () => {
+    const r = await build(
+      await sources(
+        {
+          orders: {
+            text: "at,v\n2026-04-29 00:00:00,2\n2026-04-30 00:00:00,4\n",
+            options: { timezone: "America/Los_Angeles" },
+          },
+        },
+        { asOf: "latest_data", range: { last: 7, unit: "day" } },
+        { timezone: "America/Los_Angeles" },
+      ),
+    );
+    expect(r.data?.asOf).toBe("2026-04-30");
+    expect(r.value("orders")).toBe(2);
   });
 
   it("orders horizons by instant across a fall-back hour, not by wall-clock time", async () => {
@@ -399,28 +433,35 @@ describe("horizon edges (HAT-44 and HAT-45 on #19)", () => {
     ]);
   });
 
-  it("warns with HM4013 only when every query of a block starts after its horizon", async () => {
-    const fixture = await sources(
-      {
-        num: { text: "at,v\n2026-06-01,5\n" },
-        den: { text: "at,v\n2026-06-10,17\n" },
-      },
-      { asOf: "2026-06-10", range: { last: 1, unit: "day" } },
-      {
-        files: {
-          "metrics/share.json": metric({ type: "ratio", numerator: "num", denominator: "den" }),
+  it("ends a ratio at its laggiest operand's horizon: a last-N-days KPI slides, a fixed span is empty (HM4013)", async () => {
+    const at = (range: unknown) =>
+      sources(
+        {
+          num: { text: "at,v\n2026-06-01,5\n" },
+          den: { text: "at,v\n2026-06-01,10\n2026-06-10,17\n" },
         },
-        blocks: [
-          { type: "kpi", id: "share", metric: "share" },
-          { type: "kpi", id: "num", metric: "num" },
-        ],
-      },
-    );
-    const { codes } = await build(fixture);
-    expect(codes).toEqual([
+        { asOf: "2026-06-10", range },
+        {
+          files: {
+            "metrics/share.json": metric({ type: "ratio", numerator: "num", denominator: "den" }),
+          },
+          blocks: [
+            { type: "kpi", id: "share", metric: "share" },
+            { type: "kpi", id: "num", metric: "num" },
+            { type: "kpi", id: "den", metric: "den" },
+          ],
+        },
+      );
+    const slid = await build(await at({ last: 1, unit: "day" }));
+    expect(slid.codes).toEqual([["HM4010", "warning", "/sources/num"]]);
+    expect([slid.value("share"), slid.value("num"), slid.value("den")]).toEqual([0.5, 5, 17]);
+    const fixed = await build(await at({ start: "2026-06-10", end: "2026-06-11" }));
+    expect(fixed.codes).toEqual([
       ["HM4010", "warning", "/sources/num"],
+      ["HM4013", "warning", "/blocks/0"],
       ["HM4013", "warning", "/blocks/1"],
     ]);
+    expect(fixed.value("den")).toBe(17);
   });
 
   it("notes HM4016 for a naive time column even when freshness measures something else", async () => {
@@ -500,7 +541,8 @@ describe("horizon edges (HAT-44 and HAT-45 on #19)", () => {
       [],
       [],
     ]);
-    expect(runs[0]?.value("orders")).toBe(10);
+    // all_time reads whole days through May 31, 2099, the last complete day before 6 p.m. Jun 1.
+    expect(runs[0]?.value("orders")).toBe(3);
     const bytes = runs.map((r) => JSON.stringify(r.data));
     expect(new Set([...bytes, JSON.stringify((await build(fixture)).data)]).size).toBe(1);
   });
