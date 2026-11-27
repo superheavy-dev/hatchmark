@@ -650,6 +650,22 @@ describe("DuckDB executor queries", () => {
     expect(spine.diagnostics[0]?.message).toContain("outside the supported dates");
   });
 
+  it("rejects all_time rows past the last supported date instead of dropping them", async () => {
+    const late = await writeProject({
+      ...files(),
+      "data/orders.csv": `${ORDERS.trimEnd()}\n98,9999-12-30T12:00:00Z,West,web,paid,10,0,c98\n99,9999-12-31T12:00:00Z,West,web,paid,10,0,c99\n`,
+      "dashboards/late.json": {
+        title: "Late",
+        period: { asOf: "2026-11-21", range: "all_time", compare: "none" },
+        blocks: [{ type: "line", id: "daily", metrics: ["orders"], grain: "day" }],
+      },
+    });
+    const { data, diagnostics } = await run(late.root, late.project, "late");
+    expect(data).toBeUndefined();
+    expect(diagnostics.map((d) => d.code)).toEqual(["HM2015"]);
+    expect(diagnostics[0]?.message).toContain("outside the supported dates");
+  });
+
   it("reports a missing column as HM2015 with the cause", async () => {
     const broken = await writeProject({
       ...files(),

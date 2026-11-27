@@ -127,7 +127,9 @@ export async function runDashboard(
       query.dimensions.forEach((dimension, i) => {
         if (dimension.kind !== "time") return;
         const bad = result.rows.find(
-          (row) => row[i] !== null && !/^\d{4}-\d{2}-\d{2}$/.test(String(row[i])),
+          (row) =>
+            row[i] !== null &&
+            !(/^\d{4}-\d{2}-\d{2}$/.test(String(row[i])) && String(row[i]) <= SUPPORTED_DATES.last),
         );
         if (bad !== undefined) {
           throw new RangeError(
