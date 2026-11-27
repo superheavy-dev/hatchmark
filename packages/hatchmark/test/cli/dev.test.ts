@@ -1,4 +1,4 @@
-import { cp, mkdtemp, readdir, readFile, rm, writeFile } from "node:fs/promises";
+import { cp, mkdtemp, readdir, readFile, rename, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -81,7 +81,12 @@ describe("hatchmark dev", { timeout: 30_000 }, () => {
 
   beforeAll(async () => {
     dir = await copyExample();
-    const started = await startDevServer({ root: dir, port: 0, log: (t) => logs.push(t) });
+    const started = await startDevServer({
+      root: dir,
+      port: 0,
+      host: "127.0.0.1",
+      log: (t) => logs.push(t),
+    });
     if ("report" in started) throw new Error(JSON.stringify(started.report));
     server = started.server;
     hmr = await connect(server);
@@ -152,6 +157,24 @@ describe("hatchmark dev", { timeout: 30_000 }, () => {
     expect(custom()).toEqual(["hatchmark:update"]);
   });
 
+  it("picks up a second save that lands right after the first is rebuilt", async () => {
+    for (const [first, second] of [
+      ["Revenue by channel, draft", "Revenue by channel, final"],
+      ["Revenue by channel, draft two", "Revenue by sales channel"],
+    ]) {
+      hmr.clear();
+      await edit("dashboards/sales.json", (t) =>
+        t.replace(/"Revenue by (?:sales )?channel[^"]*"/, `"${first}"`),
+      );
+      await hmr.next("hatchmark:update");
+      hmr.clear();
+      await edit("dashboards/sales.json", (t) => t.replace(`"${first}"`, `"${second}"`));
+      const update = await hmr.next("hatchmark:update");
+      expect(update.data?.cards?.[0]?.html).toContain(second);
+      expect(await (await fetch(new URL("/sales/", server.url))).text()).toContain(second);
+    }
+  });
+
   it("pushes the KPIs and cards that show a metric whose label changed", async () => {
     hmr.clear();
     await edit("metrics/orders.json", (t) =>
@@ -184,6 +207,32 @@ describe("hatchmark dev", { timeout: 30_000 }, () => {
       (m) => m.event === "hatchmark:update" && m.data?.dashboard === "sales",
     );
     expect(update).toBeDefined();
+    expect(sales?.data?.cards?.some((c) => c.index === 1)).toBe(true);
+  });
+
+  it("re-runs every dashboard that reads a data file shared by several sources", async () => {
+    await edit("hatchmark.json", (t) =>
+      t.replace(
+        '"path": "data/orders.csv"\n    }',
+        '"path": "data/orders.csv"\n    },\n    "orders_alias": { "type": "csv", "path": "data/orders.csv" }',
+      ),
+    );
+    await new Promise((resolve) => setTimeout(resolve, 300));
+    await server.idle();
+    hmr.clear();
+    await edit("data/orders.csv", (t) => {
+      const lines = t.trimEnd().split("\n");
+      const at = lines.findLastIndex((l) => l.includes(",paid,"));
+      const cells = (lines[at] ?? "").split(",");
+      cells[cells.length - 1] = "350000.00";
+      lines[at] = cells.join(",");
+      return `${lines.join("\n")}\n`;
+    });
+    await hmr.next("hatchmark:update");
+    await server.idle();
+    const sales = hmr.messages.find(
+      (m) => m.event === "hatchmark:update" && m.data?.dashboard === "sales",
+    );
     expect(sales?.data?.cards?.some((c) => c.index === 1)).toBe(true);
   });
 
@@ -234,6 +283,39 @@ describe("hatchmark dev", { timeout: 30_000 }, () => {
     expect(custom()).toContain("hatchmark:reload");
     expect(custom()).not.toContain("hatchmark:update");
   });
+
+  it("reloads the open pages of a removed dashboard and the index", async () => {
+    hmr.clear();
+    await rename(
+      path.join(dir, "dashboards/trends.json"),
+      path.join(dir, "dashboards/renamed.json"),
+    );
+    await server.idle();
+    await expect
+      .poll(() =>
+        hmr.messages.filter((m) => m.event === "hatchmark:reload").map((m) => m.data?.dashboard),
+      )
+      .toEqual(expect.arrayContaining(["trends", "/"]));
+    expect((await fetch(new URL("/trends/", server.url))).status).toBe(404);
+    expect(await (await fetch(new URL("/", server.url))).text()).toContain('href="./renamed/"');
+  });
+
+  it("reloads an open index page when the project name changes", async () => {
+    hmr.clear();
+    await edit("hatchmark.json", (t) =>
+      t.replace('"name": "Global Sales"', '"name": "Global Sales EU"'),
+    );
+    await expect
+      .poll(
+        () =>
+          hmr.messages.filter((m) => m.event === "hatchmark:reload").map((m) => m.data?.dashboard),
+        {
+          timeout: 15_000,
+        },
+      )
+      .toContain("/");
+    expect(await (await fetch(new URL("/", server.url))).text()).toContain("Global Sales EU");
+  });
 });
 
 const quietIO = {
@@ -259,7 +341,7 @@ describe("hatchmark dev command", () => {
     let fetched = "";
     const result = await dev(
       ctx,
-      { port: "0", open: false },
+      { port: "0", host: "127.0.0.1", open: false },
       {
         start: startDevServer,
         stopped: async () => {
@@ -273,6 +355,33 @@ describe("hatchmark dev command", () => {
     expect(JSON.parse(stdout[0] ?? "")).toMatchObject({ format_version: "1", ok: true });
     expect(fetched).toContain("Dashboards");
     await rm(dir, { recursive: true, force: true });
+  }, 60_000);
+
+  it("gives HM0006 and exit 3 when an explicit --port is taken", async () => {
+    const dir = await copyExample();
+    const first = await startDevServer({ root: dir, port: 0, host: "127.0.0.1", log: () => {} });
+    if ("report" in first) throw new Error("no project");
+    try {
+      const port = new URL(first.server.url).port;
+      const out: string[] = [];
+      const err: string[] = [];
+      const io = {
+        ...quietIO,
+        stdout: (t: string) => out.push(t),
+        stderr: (t: string) => err.push(t),
+      };
+      const code = await run(
+        ["dev", "--cwd", dir, "--port", port, "--host", "127.0.0.1", "--json"],
+        io,
+      );
+      expect(code).toBe(3);
+      expect(out).toHaveLength(1);
+      expect(JSON.parse(out[0] ?? "").diagnostics[0]).toMatchObject({ code: "HM0006" });
+      expect(err.join("")).not.toContain("internal error");
+    } finally {
+      await first.server.close();
+      await rm(dir, { recursive: true, force: true });
+    }
   }, 60_000);
 
   it("rejects a bad port and a directory without hatchmark.json", async () => {

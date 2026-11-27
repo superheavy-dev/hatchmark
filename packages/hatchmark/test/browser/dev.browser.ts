@@ -22,7 +22,7 @@ beforeAll(async () => {
     recursive: true,
     filter: (src) => !src.split(path.sep).includes("dist"),
   });
-  const started = await startDevServer({ root: dir, port: 0, log: () => {} });
+  const started = await startDevServer({ root: dir, port: 0, host: "127.0.0.1", log: () => {} });
   if ("report" in started) throw new Error(JSON.stringify(started.report));
   server = started.server;
   browser = await chromium.launch();
@@ -40,9 +40,9 @@ const edit = async (file: string, change: (text: string) => string) => {
 };
 
 /** Opens the sales dashboard and waits until the Vite client is connected for HMR. */
-async function open(page: Page): Promise<void> {
+async function open(page: Page, dashboard = "sales"): Promise<void> {
   const connected = page.waitForEvent("console", (m) => m.text().includes("[vite] connected"));
-  await page.goto(new URL("/sales/", server.url).href);
+  await page.goto(new URL(`/${dashboard}/`, server.url).href);
   await connected;
 }
 
@@ -74,6 +74,33 @@ describe("hatchmark dev in the browser", () => {
     const tip = page.locator(".hm-bar .hm-tip");
     await expect.poll(() => tip.isVisible()).toBe(true);
     expect(await tip.textContent()).toMatch(/\$/);
+    await page.close();
+  });
+
+  it("keeps the reader's grain on a swapped card", async () => {
+    const page = await browser.newPage({ viewport: { width: 1440, height: 900 } });
+    await open(page, "trends");
+    await page.locator("[data-hm-grain-filter] button[data-hm-grain='quarter:01-01']").click();
+    const orders = page.locator(".hm-bar");
+    await orders.locator(".hm-seg button[data-hm-grain=month]").click();
+    await edit("dashboards/trends.json", (t) =>
+      t.replace('"Revenue by region"', '"Regional revenue"').replace('"Orders"', '"Paid orders"'),
+    );
+    const line = page.locator(".hm-line").first();
+    await expect
+      .poll(() => line.locator("h2 span:not([hidden])").textContent(), { timeout: 15_000 })
+      .toContain("Regional revenue");
+    await expect
+      .poll(() => orders.locator("h2 span:not([hidden])").textContent())
+      .toContain("Paid orders");
+    const selected = (card: typeof line) =>
+      card.locator(".hm-seg button[aria-checked=true]").getAttribute("data-hm-grain");
+    expect(await selected(line)).toBe("quarter:01-01");
+    expect(await selected(orders)).toBe("month");
+    expect(await line.locator(".hm-grain-panel:not([hidden])").getAttribute("data-hm-grain")).toBe(
+      "quarter:01-01",
+    );
+    expect(await selected(page.locator(".hm-area"))).toBe("month");
     await page.close();
   });
 

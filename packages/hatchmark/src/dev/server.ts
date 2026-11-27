@@ -1,4 +1,4 @@
-import { realpath } from "node:fs/promises";
+import { realpath, stat } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -44,6 +44,13 @@ const CLIENT_FILE = fileURLToPath(new URL("../../runtime/dev-client.ts", import.
 const CLIENT_ID = "virtual:hatchmark-dev-client";
 /** How long to wait for more file events before rebuilding, so one save rebuilds once. */
 const DEBOUNCE_MS = 20;
+/**
+ * The file watcher Vite bundles (chokidar) reports a file change and then ignores that file for
+ * 50 ms, so a second save inside that window (a formatter rewriting the file, or a quick undo) gets
+ * no event. Every file a rebuild read on an event is checked again this long after the rebuild,
+ * and rebuilt once more when it changed meanwhile.
+ */
+const RECHECK_MS = 100;
 const INDEX = "/";
 
 /** One card or KPI the dev client replaces: its position in the grid, and its new HTML. */
@@ -175,12 +182,16 @@ export async function startDevServer(
     vite?.ws.send({ type: "custom", event: message.event, data: message.data });
   };
 
-  const sourcePaths = (spec: ProjectConfig | undefined) =>
-    new Map(
-      Object.entries(spec?.sources ?? {}).flatMap(([name, s]) =>
-        s.type === "lookup" ? [] : [[path.resolve(root, s.path), name] as const],
-      ),
-    );
+  /** Every data file the config names, with every source that reads it. */
+  const sourcePaths = (spec: ProjectConfig | undefined) => {
+    const files = new Map<string, string[]>();
+    for (const [name, s] of Object.entries(spec?.sources ?? {})) {
+      if (s.type === "lookup") continue;
+      const file = path.resolve(root, s.path);
+      files.set(file, [...(files.get(file) ?? []), name]);
+    }
+    return files;
+  };
 
   const render = (data: DashboardData): Rendered => {
     const html = renderDashboardPage(data, {
@@ -196,6 +207,7 @@ export async function startDevServer(
 
   const rebuild = async (changed: ReadonlySet<string> | "all"): Promise<void> => {
     const started = performance.now();
+    for (const file of changed === "all" ? [] : changed) stamps.set(file, await stamp(file));
     const loaded = await loadProject(host);
     const next = loaded.project;
     const spec = next?.config.spec;
@@ -235,8 +247,9 @@ export async function startDevServer(
       const previous = project;
       project = next;
       config = spec;
-      for (const name of [...pages.keys(), ...runDiagnostics.keys()]) {
+      for (const name of new Set([...pages.keys(), ...runDiagnostics.keys()])) {
         if (next.dashboards.has(name)) continue;
+        if (pages.has(name)) updates.push({ event: "hatchmark:reload", data: { dashboard: name } });
         pages.delete(name);
         plans.delete(name);
         runDiagnostics.delete(name);
@@ -278,9 +291,11 @@ export async function startDevServer(
           updates.push({ event: "hatchmark:update", data: { dashboard: name, cards } });
         }
       }
-      const key = JSON.stringify(
+      const key = JSON.stringify([
+        spec.name,
+        [...next.dashboards.keys()].sort(),
         [...pages.values()].map((p) => [p.data.name, p.data.title, p.data.description]),
-      );
+      ]);
       if (key !== indexKey && indexKey !== "") {
         updates.push({ event: "hatchmark:reload", data: { dashboard: INDEX } });
       }
@@ -320,6 +335,25 @@ export async function startDevServer(
     options.log(`${what.join(", ")} (${Math.round(ms)} ms)\n`);
   };
 
+  const stamps = new Map<string, string>();
+  const stamp = (file: string) =>
+    stat(file).then(
+      (s) => `${s.ino}:${s.size}:${s.mtimeMs}:${s.ctimeMs}`,
+      () => "missing",
+    );
+  const rechecks = new Set<ReturnType<typeof setTimeout>>();
+  const recheck = (changed: ReadonlySet<string>) => {
+    const timeout = setTimeout(() => {
+      rechecks.delete(timeout);
+      for (const file of changed) {
+        void stamp(file).then((now) => {
+          if (now !== stamps.get(file)) onFile(file);
+        });
+      }
+    }, RECHECK_MS);
+    rechecks.add(timeout);
+  };
+  let closed = false;
   let pending = new Set<string>();
   let timer: ReturnType<typeof setTimeout> | undefined;
   let chain: Promise<void> = Promise.resolve();
@@ -346,14 +380,14 @@ export async function startDevServer(
     return dirs.some((dir) => rel.startsWith(`${path.normalize(dir)}${path.sep}`));
   };
   const onFile = (file: string) => {
-    if (!relevant(file)) return;
+    if (closed || !relevant(file)) return;
     pending.add(file);
     clearTimeout(timer);
     timer = setTimeout(() => {
       const changed = pending;
       pending = new Set();
       timer = undefined;
-      void enqueue(changed);
+      void enqueue(changed).then(() => recheck(changed));
     }, DEBOUNCE_MS);
   };
 
@@ -461,6 +495,9 @@ export async function startDevServer(
   } catch (error) {
     await vite.close();
     await executor?.close();
+    if (error instanceof Error && /^Port \d+ is already in use/.test(error.message)) {
+      throw Object.assign(error, { code: "EADDRINUSE" });
+    }
     throw error;
   }
   const urls = [...(vite.resolvedUrls?.local ?? []), ...(vite.resolvedUrls?.network ?? [])];
@@ -481,7 +518,9 @@ export async function startDevServer(
         await chain;
       },
       close: async () => {
+        closed = true;
         clearTimeout(timer);
+        for (const timeout of rechecks) clearTimeout(timeout);
         await chain;
         await server.close();
         await executor?.close();

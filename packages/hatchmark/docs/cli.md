@@ -139,9 +139,16 @@ and the dashboards whose queries read an edited data file. Everything re-runs wh
 
 - Changed cards, or single KPIs in the KPI strip, are pushed over Vite's HMR connection and swapped
   in place, and the browser runtime is attached to them again, so tooltips and grain switches work.
-  The rest of the page, scroll position included, is left alone.
+  A swapped card keeps the grain the reader picked on it, or else the header grain filter's. The
+  rest of the page, scroll position included, is left alone.
 - A structural change reloads the page: a block added, removed or moved, a changed span or block
   type, or anything outside the grid (title, description, filters, period, footer, theme).
+- An open page of a dashboard that was removed or renamed reloads, and gets a 404. The index
+  reloads when a dashboard is added, removed or retitled, or the project name changes.
+
+A data file that several sources read re-runs every dashboard that reads any of them. The file
+watcher ignores a second change to a file within 50 ms of the first, so dev checks each file again
+100 ms after rebuilding it and rebuilds once more if it changed in between.
 
 When check or a dashboard's queries report errors, dev prints them in the terminal and lays them
 over the page in the same format as `hatchmark check`, in the Default theme's colours, light or
