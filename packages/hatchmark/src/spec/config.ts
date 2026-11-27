@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { currencyCode, identifier, schemaRef } from "./common.js";
+import { columnName, currencyCode, identifier, schemaRef } from "./common.js";
 
 const relativePath = z
   .string()
@@ -11,9 +11,51 @@ const relativePath = z
     },
   );
 
+const supported = (key: "timeZone"): Set<string> => new Set(Intl.supportedValuesOf(key));
+const timeZones = supported("timeZone");
+
+export const timeZone = z.string().refine((t) => t === "UTC" || timeZones.has(t), {
+  error: "must be an IANA time zone, such as UTC or America/New_York",
+});
+
+const freshnessSchema = z
+  .union([
+    z.strictObject({
+      column: columnName.meta({ description: "Use the latest value of this column instead." }),
+    }),
+    z.strictObject({
+      lag: z.union([
+        z.strictObject({ days: z.number().int().min(1).max(366) }),
+        z.strictObject({ hours: z.number().int().min(1).max(8784) }),
+      ]),
+    }),
+    z.strictObject({
+      through: z.union([z.literal("as_of"), z.iso.date()]).meta({
+        description: '"as_of": complete whenever the build runs; a date: complete through it.',
+      }),
+    }),
+  ])
+  .meta({
+    description:
+      "How complete the source is. Default: through its latest timestamp, or through the whole latest date of a date column.",
+  });
+
+/** Options every file source shares: how its rows relate to time. */
+const fileSourceOptions = {
+  snapshot: columnName.optional().meta({
+    description:
+      "The source is a full snapshot per value of this date column; metrics on it must not sum over time.",
+  }),
+  freshness: freshnessSchema.optional(),
+  timezone: timeZone.optional().meta({
+    description: "Time zone of timestamps without an offset. Default UTC.",
+  }),
+};
+
 const csvSource = z.strictObject({
   type: z.literal("csv"),
   path: relativePath,
+  ...fileSourceOptions,
   delimiter: z.string().length(1).optional().meta({ description: 'Field delimiter. Default ",".' }),
   header: z
     .boolean()
@@ -21,24 +63,69 @@ const csvSource = z.strictObject({
     .meta({ description: "Whether the first row holds column names. Default true." }),
 });
 
-const parquetSource = z.strictObject({ type: z.literal("parquet"), path: relativePath });
+const parquetSource = z.strictObject({
+  type: z.literal("parquet"),
+  path: relativePath,
+  ...fileSourceOptions,
+});
 
 const jsonSource = z.strictObject({
   type: z.literal("json"),
   path: relativePath,
+  ...fileSourceOptions,
   format: z
     .enum(["array", "ndjson"])
     .optional()
     .meta({ description: 'An array of objects, or one object per line. Default "array".' }),
 });
 
-export const sourceSchema = z
-  .discriminatedUnion("type", [csvSource, parquetSource, jsonSource])
-  .meta({ id: "Source", description: "A table read from a file in the project." });
-export type Source = z.infer<typeof sourceSchema>;
+const lookupSchema = z
+  .strictObject({
+    table: identifier.meta({ description: "A file source to join onto the base table." }),
+    key: z
+      .record(columnName, columnName)
+      .refine((k) => Object.keys(k).length > 0, { error: "needs at least one column pair" })
+      .meta({ description: 'Base column to lookup column, such as {"subscription": "id"}.' }),
+    asof: z
+      .strictObject({
+        column: columnName.meta({ description: "The lookup table's date or timestamp column." }),
+        at: z.string().min(1).meta({
+          description:
+            'A base time column, or "$evaluation" for the instant a point-in-time metric is read at.',
+        }),
+      })
+      .optional()
+      .meta({
+        description:
+          "Pick the latest lookup row on or before an instant among rows with an equal key.",
+      }),
+  })
+  .meta({
+    description:
+      "A many-to-one join: each base row gets at most one lookup row, so sums never multiply.",
+  });
 
-const supported = (key: "timeZone"): Set<string> => new Set(Intl.supportedValuesOf(key));
-const timeZones = supported("timeZone");
+const lookupSource = z
+  .strictObject({
+    type: z.literal("lookup"),
+    from: identifier.meta({ description: "The base file source." }),
+    lookups: z.array(lookupSchema).min(1),
+    freshness: freshnessSchema.optional(),
+  })
+  .meta({
+    description:
+      "The base source with other sources joined on; their columns read as <table>.<column>.",
+  });
+
+export const sourceSchema = z
+  .discriminatedUnion("type", [csvSource, parquetSource, jsonSource, lookupSource])
+  .meta({
+    id: "Source",
+    description: "A table read from a file in the project, or a lookup over others.",
+  });
+export type Source = z.infer<typeof sourceSchema>;
+export type FileSource = Exclude<Source, { type: "lookup" }>;
+export type LookupSource = Extract<Source, { type: "lookup" }>;
 
 function isLocale(tag: string): boolean {
   try {
@@ -81,6 +168,10 @@ export const projectConfigSchema = z
     dashboardsDir: relativePath.meta({
       description: "Directory holding dashboards/<name>.json files.",
     }),
+    segmentsDir: relativePath.optional().meta({
+      description:
+        'Directory holding segments/<name>.json files. Optional until a project has segments; default "segments".',
+    }),
     outDir: relativePath.meta({ description: "Build output directory." }),
     locale: z
       .string()
@@ -91,12 +182,7 @@ export const projectConfigSchema = z
     currency: currencyCode.meta({
       description: "Default currency for currency-formatted metrics.",
     }),
-    timezone: z
-      .string()
-      .refine((t) => t === "UTC" || timeZones.has(t), {
-        error: "must be an IANA time zone, such as UTC or America/New_York",
-      })
-      .meta({ description: "Time zone that dates are bucketed in." }),
+    timezone: timeZone.meta({ description: "Time zone that dates are bucketed in." }),
     weekStart: z.enum(["monday", "sunday"]).meta({ description: "First day of a week bucket." }),
     theme: identifier.meta({ description: "Theme id." }),
     telemetry: z.boolean().meta({ description: "Send anonymous usage data. Off unless set true." }),

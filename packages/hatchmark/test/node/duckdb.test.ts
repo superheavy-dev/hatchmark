@@ -552,6 +552,7 @@ describe("DuckDB executor queries", () => {
       ...files(),
       "metrics/revenue.json": orders({ aggregate: "sum", column: "price", filters: paid }),
     });
+    broken.project.columns.delete("orders");
     const { data, diagnostics } = await run(broken.root, broken.project, "weeks");
     expect(data).toBeUndefined();
     expect(diagnostics.map((d) => [d.code, d.message])).toEqual([

@@ -60,7 +60,7 @@ function component(
 
 /** An aggregate or SQL metric as components plus how to combine them (see PlannedMeasure). */
 export function plannedMeasure(name: string, metric: Metric): PlannedMeasure | undefined {
-  if (metric.type === "ratio") return undefined;
+  if (metric.type !== "aggregate" && metric.type !== "sql") return undefined;
   if (metric.type === "sql") {
     const id = `${name}__sql`;
     const c = component(id, "sql", metric, { sql: metric.sql }, metric.additive ? "sum" : "none");
@@ -87,11 +87,52 @@ export function plannedMeasure(name: string, metric: Metric): PlannedMeasure | u
   return { metric: name, components: [c], combine: { op: "identity", component: id } };
 }
 
+/**
+ * The first metric-layer primitive of RFC 0001 that a metric uses, directly or through a ratio,
+ * and the planner does not evaluate yet; undefined when the planner builds the metric. A block that
+ * shows such a metric is left out with an HM4023 warning, never planned as a plain sum.
+ */
+export function notBuiltYet(
+  name: string,
+  metrics: ReadonlyMap<string, Metric>,
+  sources: Readonly<Record<string, Source>>,
+  seen: ReadonlySet<string> = new Set(),
+): string | undefined {
+  const metric = metrics.get(name);
+  if (metric === undefined || seen.has(name)) return undefined;
+  if (metric.type === "formula" || metric.type === "per_entity") return `${metric.type} metrics`;
+  if (metric.type === "ratio") {
+    const next = new Set(seen).add(name);
+    return (
+      notBuiltYet(metric.numerator, metrics, sources, next) ??
+      notBuiltYet(metric.denominator, metrics, sources, next)
+    );
+  }
+  const source = sources[metric.table];
+  if (source?.type === "lookup") return "lookup sources";
+  for (const option of ["snapshot", "freshness", "timezone"] as const) {
+    if (source !== undefined && source[option] !== undefined)
+      return `the source option "${option}"`;
+  }
+  if ((metric.segments ?? []).length > 0) return "segments";
+  if ((metric.filters ?? []).some((f) => f.op === "in_table" || f.op === "not_in_table")) {
+    return "in_table and not_in_table filters";
+  }
+  if (metric.type === "sql") return undefined;
+  if (metric.over_time !== undefined && metric.over_time !== "sum")
+    return `"over_time": "${metric.over_time}"`;
+  for (const key of ["value", "entity", "active", "trailing", "scale"] as const) {
+    if (metric[key] !== undefined) return `"${key}"`;
+  }
+  return undefined;
+}
+
 /** The aggregate and SQL metrics a metric reads, through ratios. */
 function leaves(name: string, metrics: Map<string, Metric>, seen = new Set<string>()): string[] {
   const metric = metrics.get(name);
   if (metric === undefined || seen.has(name)) return [];
-  if (metric.type !== "ratio") return [name];
+  if (metric.type === "aggregate" || metric.type === "sql") return [name];
+  if (metric.type !== "ratio") return [];
   seen.add(name);
   return [
     ...leaves(metric.numerator, metrics, new Set(seen)),
@@ -121,7 +162,7 @@ function planReading(
   const queryOf = new Map<string, string>();
   for (const leaf of [...new Set(names.flatMap((n) => leaves(n, ctx.metrics)))].sort()) {
     const metric = ctx.metrics.get(leaf);
-    if (metric === undefined || metric.type === "ratio") continue;
+    if (metric === undefined || (metric.type !== "aggregate" && metric.type !== "sql")) continue;
     const isolated = metric.type === "sql" && (metric.filters ?? []).length > 0;
     const key = canonicalJson([metric.table, metric.time ?? null, isolated ? leaf : null]);
     const group = groups.get(key) ?? {
@@ -138,7 +179,7 @@ function planReading(
   const queries: PlannedQuery[] = [];
   for (const [key, group] of groups) {
     const input = ctx.sources[group.source];
-    if (input === undefined) continue;
+    if (input === undefined || input.type === "lookup") continue;
     const dimensions: PlannedDimension[] = axes.map((axis) =>
       axis.kind === "column" ? axis : { kind: "time", column: group.time ?? "", grain: axis.grain },
     );
@@ -199,6 +240,27 @@ function planBlockAt(
           ...ctx.file.document.locationOf(pointer),
           help: `use a ${block.type === "bar_list" ? "bar block with by and a limit" : "kpi block"} for now, or keep it and build without it`,
           docs: docsCommand("HM4002"),
+        },
+      ],
+    };
+  }
+
+  const shown = "metric" in block ? [block.metric] : "metrics" in block ? block.metrics : [];
+  for (const name of shown) {
+    const feature = notBuiltYet(name, ctx.metrics, ctx.sources);
+    if (feature === undefined) continue;
+    return {
+      queries: [],
+      diagnostics: [
+        {
+          code: "HM4023",
+          severity: "warning",
+          message: `metric "${name}" uses ${feature}, which the planner does not evaluate yet; block "${id}" is left out`,
+          file: ctx.file.file,
+          pointer,
+          ...ctx.file.document.locationOf(pointer),
+          help: "check validates the metric; the block appears once the planner evaluates it",
+          docs: docsCommand("HM4023"),
         },
       ],
     };
@@ -281,7 +343,7 @@ function hasTime(ctx: Context, name: string): boolean {
     found.length > 0 &&
     found.every((leaf) => {
       const metric = ctx.metrics.get(leaf);
-      return metric !== undefined && metric.type !== "ratio" && metric.time !== undefined;
+      return (metric?.type === "aggregate" || metric?.type === "sql") && metric.time !== undefined;
     })
   );
 }

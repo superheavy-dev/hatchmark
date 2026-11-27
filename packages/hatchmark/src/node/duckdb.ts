@@ -18,11 +18,11 @@ import {
   type TimeColumn,
 } from "../compiler/index.js";
 import {
+  type FileSource,
   type Filter,
   normalizePath,
   type ProjectConfig,
   parseTemporal,
-  type Source,
   sameColumn,
 } from "../spec/index.js";
 
@@ -98,6 +98,9 @@ export async function createDuckDbExecutor(options: {
     if (existing) return existing;
     const source = options.config.sources[name];
     if (source === undefined) return Promise.reject(new Error(`unknown source "${name}"`));
+    if (source.type === "lookup") {
+      return Promise.reject(new Error(`lookup source "${name}" is not evaluated yet`));
+    }
     const file = path.join(options.root, ...normalizePath(source.path).split("/"));
     const loading = loadSource(connection, name, source, file);
     sources.set(name, loading);
@@ -141,7 +144,10 @@ export async function createDuckDbExecutor(options: {
  * The column names of a Parquet or JSON file as DuckDB reads it, for ProjectHost.columns. Opens a
  * short-lived in-memory database; undefined when the file cannot be read.
  */
-export async function describeColumns(file: string, source: Source): Promise<string[] | undefined> {
+export async function describeColumns(
+  file: string,
+  source: FileSource,
+): Promise<string[] | undefined> {
   const instance = await DuckDBInstance.create(":memory:");
   const connection = await instance.connect();
   try {
@@ -174,7 +180,7 @@ function quote(identifier: string): string {
 
 /** A reader over the files in the given order; withFile adds each row's path as __hm_file. */
 function readerSql(
-  source: Source,
+  source: FileSource,
   files: string[],
   withFile: boolean,
 ): { sql: string; values: Record<string, DuckDBValue> } {
@@ -214,7 +220,7 @@ const utf8Order = (a: string, b: string) => Buffer.compare(Buffer.from(a), Buffe
 async function loadSource(
   connection: DuckDBConnection,
   name: string,
-  source: Source,
+  source: FileSource,
   file: string,
 ): Promise<LoadedSource> {
   const listed = await connection.runAndReadAll("SELECT file FROM glob($hm_path)", {
@@ -375,6 +381,9 @@ function filterSql(
       const [leftTo, to] = sides(source, filter.column, filter.to, context, sql);
       return `(${left} >= ${from} AND ${leftTo} <= ${to})`;
     }
+    case "in_table":
+    case "not_in_table":
+      throw new Error(`${filter.op} filters are not evaluated yet`);
     case "neq": {
       const [left, right] = sides(source, filter.column, filter.value, context, sql);
       return `${left} IS DISTINCT FROM ${right}`;

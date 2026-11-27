@@ -6,27 +6,30 @@ import {
   parseJsonFile,
 } from "../diagnostics/index.js";
 import { GLOB_CHARACTERS, IDENTIFIER_PATTERN, normalizePath } from "./common.js";
-import type { Source } from "./config.js";
+import type { FileSource } from "./config.js";
 import { PROJECT_DEFAULTS, type ProjectConfig, projectConfigSchema } from "./config.js";
 import { type Dashboard, dashboardSchema } from "./dashboard.js";
 import { type Metric, metricSchema } from "./metric.js";
+import { type Segment, segmentSchema } from "./segment.js";
 import { issuesToDiagnostics } from "./zod-diagnostics.js";
 
 export const CONFIG_FILE = "hatchmark.json";
 const DASHBOARD_NAME_PATTERN = /^[a-z0-9][a-z0-9_-]*$/;
 
-export type SpecKind = "project" | "metric" | "dashboard";
+export type SpecKind = "project" | "metric" | "dashboard" | "segment";
 
 interface SpecTypes {
   project: ProjectConfig;
   metric: Metric;
   dashboard: Dashboard;
+  segment: Segment;
 }
 
 const schemas: { [K in SpecKind]: z.ZodType<SpecTypes[K]> } = {
   project: projectConfigSchema,
   metric: metricSchema,
   dashboard: dashboardSchema,
+  segment: segmentSchema,
 };
 
 export const SPEC_SCHEMAS = schemas;
@@ -47,6 +50,7 @@ export interface Project {
   config: SpecFile<"project">;
   metrics: Map<string, SpecFile<"metric">>;
   dashboards: Map<string, SpecFile<"dashboard">>;
+  segments: Map<string, SpecFile<"segment">>;
   /** Source names whose data file is missing; filled by loadProject. */
   missingData: Set<string>;
   /**
@@ -70,7 +74,7 @@ export function parseSpecFile<K extends SpecKind>(
   const { document, diagnostics } = parseJsonFile(file, text);
   const result: SpecFile<K> = { kind, name, file, document, diagnostics };
   if (kind !== "project") {
-    const pattern = kind === "metric" ? IDENTIFIER_PATTERN : DASHBOARD_NAME_PATTERN;
+    const pattern = kind === "dashboard" ? DASHBOARD_NAME_PATTERN : IDENTIFIER_PATTERN;
     if (!pattern.test(name)) {
       diagnostics.push({
         code: "HM1004",
@@ -78,8 +82,8 @@ export function parseSpecFile<K extends SpecKind>(
         message: `invalid ${kind} file name "${base}"`,
         file,
         help:
-          kind === "metric"
-            ? "metric names are lowercase snake_case, such as net_revenue.json"
+          kind !== "dashboard"
+            ? `${kind} names are lowercase snake_case, such as ${kind === "metric" ? "net_revenue" : "external_customers"}.json`
             : "dashboard names are lowercase letters, digits, _ and -, such as sales-overview.json",
         docs: docsCommand("HM1004"),
       });
@@ -125,13 +129,17 @@ export interface ProjectHost {
    * file; undefined when it cannot tell. Hosts without a query engine leave it out, and those
    * sources keep unknown columns.
    */
-  columns?(file: string, source: Source): Promise<string[] | undefined>;
+  columns?(file: string, source: FileSource): Promise<string[] | undefined>;
 }
 
-function dirSetting(config: SpecFile<"project">, key: "metricsDir" | "dashboardsDir"): string {
-  if (config.spec) return config.spec[key];
+function dirSetting(
+  config: SpecFile<"project">,
+  key: "metricsDir" | "dashboardsDir" | "segmentsDir",
+): string {
+  const fallback = key === "segmentsDir" ? "segments" : PROJECT_DEFAULTS[key];
+  if (config.spec) return config.spec[key] ?? fallback;
   const raw = (config.document.value as Record<string, unknown> | undefined)?.[key];
-  return typeof raw === "string" ? raw : PROJECT_DEFAULTS[key];
+  return typeof raw === "string" ? raw : fallback;
 }
 
 /**
@@ -160,6 +168,7 @@ export async function loadProject(
     config,
     metrics: new Map(),
     dashboards: new Map(),
+    segments: new Map(),
     missingData: new Set(),
     columns: new Map(),
   };
@@ -167,6 +176,7 @@ export async function loadProject(
   for (const [kind, key, target] of [
     ["metric", "metricsDir", project.metrics],
     ["dashboard", "dashboardsDir", project.dashboards],
+    ["segment", "segmentsDir", project.segments],
   ] as const) {
     const dir = normalizePath(dirSetting(config, key));
     const names = (await host.listFiles(dir)).filter((n) => n.endsWith(".json")).sort();
@@ -181,6 +191,7 @@ export async function loadProject(
 
   const diagnostics: Diagnostic[] = [];
   for (const [name, source] of Object.entries(config.spec?.sources ?? {})) {
+    if (source.type === "lookup") continue;
     if (GLOB_CHARACTERS.test(source.path)) continue;
     const file = normalizePath(source.path);
     if (await host.isFile(file)) {
@@ -283,13 +294,18 @@ export function parseDiagnostics(project: Project): Diagnostic[] {
     ...project.config.diagnostics,
     ...[...project.metrics.values()].flatMap((m) => m.diagnostics),
     ...[...project.dashboards.values()].flatMap((d) => d.diagnostics),
+    ...[...project.segments.values()].flatMap((s) => s.diagnostics),
   ];
 }
 
 /** Source text by file, for rendering diagnostics with their source lines. */
 export function projectSources(project: Project): Map<string, string> {
   const sources = new Map<string, string>([[project.config.file, project.config.document.text]]);
-  for (const spec of [...project.metrics.values(), ...project.dashboards.values()]) {
+  for (const spec of [
+    ...project.metrics.values(),
+    ...project.dashboards.values(),
+    ...project.segments.values(),
+  ]) {
     sources.set(spec.file, spec.document.text);
   }
   return sources;

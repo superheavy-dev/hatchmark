@@ -9,6 +9,7 @@ import { jsonSchema, SCHEMA_FILES, type SpecKind } from "../../src/spec/index.js
 const DEFINITIONS: Record<SpecKind, string[]> = {
   project: ["Source"],
   metric: ["AggregateMetric", "Filter", "Format", "RatioMetric", "SqlMetric"],
+  segment: ["Filter"],
   dashboard: [
     "AreaBlock",
     "BarBlock",

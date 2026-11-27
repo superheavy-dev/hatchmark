@@ -2,10 +2,10 @@ import type { Diagnostic } from "../diagnostics/index.js";
 import type {
   Aggregate,
   Comparison,
+  FileSource,
   Filter,
   PeriodRange,
   Project,
-  Source,
   TimeGrain,
 } from "../spec/index.js";
 
@@ -96,7 +96,7 @@ export interface PlannedQuery {
    * The source's file and reader options as hatchmark.json declares them. They decide what rows
    * the query reads, so they are part of its id and of the plan hash.
    */
-  input: Source;
+  input: FileSource;
   /** Aggregate and SQL metrics on this source; ratios combine measures in BlockPlan.measures. */
   measures: PlannedMeasure[];
   dimensions: PlannedDimension[];

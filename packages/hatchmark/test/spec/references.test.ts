@@ -97,7 +97,10 @@ describe("checkReferences", () => {
       metrics: ["revenue", "orders", "avg_order_value", "merchants", "net_revenue"],
       percentOfTotal,
     });
-    const columns = { orders: ["region", "country"], merchants: ["region", "country"] };
+    const columns = {
+      orders: ["region", "country", "amount", "status", "ordered_at"],
+      merchants: ["region", "country", "merchant_id"],
+    };
     expect(
       refs({ columns, dashboards: withBlocks(table(["revenue", "orders", "net_revenue"])) }),
     ).toEqual([]);

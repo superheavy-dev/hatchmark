@@ -18,7 +18,8 @@ export function resolveParams(project: Project, dashboard: string): PlanParam[] 
   const timeColumns: Record<string, string[]> = {};
   for (const name of [...deps.metrics].sort()) {
     const metric: Metric | undefined = project.metrics.get(name)?.spec;
-    if (metric === undefined || metric.type === "ratio" || metric.time === undefined) continue;
+    if (metric === undefined || (metric.type !== "aggregate" && metric.type !== "sql")) continue;
+    if (metric.time === undefined) continue;
     const list = timeColumns[metric.table] ?? [];
     if (!list.includes(metric.time)) list.push(metric.time);
     timeColumns[metric.table] = list.sort();

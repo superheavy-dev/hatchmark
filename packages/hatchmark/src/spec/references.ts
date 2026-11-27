@@ -8,12 +8,14 @@ import {
   type JsonNode,
   type Severity,
 } from "../diagnostics/index.js";
-import { GLOB_CHARACTERS, hasColumn, sameColumn } from "./common.js";
+import { foldColumn, GLOB_CHARACTERS, sameColumn } from "./common.js";
 import { type Block, blockId, type Dashboard, DEFAULT_PERIOD } from "./dashboard.js";
+import { ENTITY_NAMES, type Expr, exprRefs, parseExpr, shapeError } from "./expr.js";
 import { addPropertyFix, removeItemFix, replaceValueFix } from "./fixes.js";
-import { metricSources } from "./graph.js";
-import { isAdditive, type Metric } from "./metric.js";
+import { metricSources, sourceTables } from "./graph.js";
+import type { Filter, Metric, TableMetric } from "./metric.js";
 import type { Project, SpecFile } from "./project.js";
+import { currencyUnit, groupAdditive, metricDeps, timeNature } from "./semantics.js";
 import { parseTemporal, temporalRepair } from "./temporal.js";
 
 export const TEXT_REFERENCE_FIELDS = ["value", "previous", "change", "change_pct"] as const;
@@ -76,19 +78,9 @@ function metricMap(project: Project): Map<string, Metric> {
 }
 
 /** Whether every row of a metric can be placed in time; ratios need both sides to be. */
-export function metricHasTime(
-  name: string,
-  metrics: ReadonlyMap<string, Metric>,
-  seen = new Set<string>(),
-): boolean {
-  const metric = metrics.get(name);
-  if (metric === undefined || seen.has(name)) return false;
-  if (metric.type !== "ratio") return metric.time !== undefined;
-  seen.add(name);
-  return (
-    metricHasTime(metric.numerator, metrics, new Set(seen)) &&
-    metricHasTime(metric.denominator, metrics, new Set(seen))
-  );
+export function metricHasTime(name: string, metrics: ReadonlyMap<string, Metric>): boolean {
+  const nature = timeNature(name, metrics);
+  return nature === "flow" || nature === "point";
 }
 
 /** Maps an index in a decoded JSON string to its offset in the source text. */
@@ -104,55 +96,487 @@ function stringSourceOffset(document: JsonDocument, node: JsonNode, index: numbe
   return pos;
 }
 
+/** Column names of a source, lowercased (DuckDB matches case-insensitively); undefined when unknown. */
+function columnsOf(project: Project, source: string): Set<string> | undefined {
+  const sources = project.config.spec?.sources ?? {};
+  const spec = sources[source];
+  if (spec === undefined) return undefined;
+  if (spec.type !== "lookup") {
+    const list = project.columns.get(source);
+    return list ? new Set(list.map(foldColumn)) : undefined;
+  }
+  const base = project.columns.get(spec.from);
+  if (base === undefined) return undefined;
+  const out = new Set(base.map(foldColumn));
+  for (const lookup of spec.lookups) {
+    const cols = project.columns.get(lookup.table);
+    if (cols === undefined) return undefined;
+    for (const c of cols) out.add(foldColumn(`${lookup.table}.${c}`));
+  }
+  return out;
+}
+
+/** Reports problems inside an expression string at the exact characters, not the whole value. */
+function expressionRange(
+  file: SpecFile,
+  pointer: string,
+  start: number,
+  end: number,
+): Partial<Diagnostic> {
+  const node = file.document.locate(pointer)?.node;
+  if (node?.kind !== "string") return {};
+  return {
+    range: file.document.rangeAt(
+      stringSourceOffset(file.document, node, start),
+      stringSourceOffset(file.document, node, Math.max(end, start + 1)),
+    ),
+  };
+}
+
+/** Parses an expression field, reporting HM3010 at the offending token. */
+function parsedField(
+  r: Reporter,
+  file: SpecFile,
+  pointer: string,
+  text: string,
+  mode: "formula" | "row" | "entity",
+  want: "value" | "condition" | "any",
+): Expr | undefined {
+  const parsed = parseExpr(text, mode);
+  const error = parsed.ok
+    ? want === "any"
+      ? undefined
+      : shapeError(parsed.expr, want)
+    : parsed.error;
+  if (error) {
+    r.report(
+      "HM3010",
+      pointer,
+      error.message,
+      expressionRange(file, pointer, error.start, error.end),
+    );
+    return undefined;
+  }
+  return parsed.ok ? parsed.expr : undefined;
+}
+
+function sourceSuggestion(
+  r: Reporter,
+  file: SpecFile,
+  pointer: string,
+  name: string,
+  sources: string[],
+): boolean {
+  if (sources.includes(name)) return true;
+  r.report("HM2001", pointer, `unknown source "${name}"`, {
+    label: "not a key of sources in hatchmark.json",
+    expected: sources,
+    ...suggestion(file.document, name, sources, pointer),
+  });
+  return false;
+}
+
+/** Checks that each named column exists when the source's columns are known (HM2018). */
+function checkColumns(
+  r: Reporter,
+  project: Project,
+  source: string,
+  refs: { pointer: string; column: string; range?: Partial<Diagnostic> }[],
+): void {
+  const columns = columnsOf(project, source);
+  if (columns === undefined) return;
+  for (const ref of refs) {
+    if (columns.has(foldColumn(ref.column))) continue;
+    const list = [...(project.columns.get(source) ?? columnsOfList(project, source))];
+    const close = closestMatch(ref.column, list);
+    r.report("HM2018", ref.pointer, `source "${source}" has no column "${ref.column}"`, {
+      ...(ref.range ?? {}),
+      expected: list,
+      ...(close ? { help: `did you mean "${close}"?` } : {}),
+    });
+  }
+}
+
+function columnsOfList(project: Project, source: string): string[] {
+  const spec = project.config.spec?.sources?.[source];
+  if (spec?.type !== "lookup") return project.columns.get(source) ?? [];
+  return [
+    ...(project.columns.get(spec.from) ?? []),
+    ...spec.lookups.flatMap((l) =>
+      (project.columns.get(l.table) ?? []).map((c) => `${l.table}.${c}`),
+    ),
+  ];
+}
+
+function filterColumnRefs(filters: readonly Filter[], base: string) {
+  return filters.map((f, i) => ({ pointer: `${base}/${i}/column`, column: f.column }));
+}
+
+function checkFilterTables(
+  r: Reporter,
+  project: Project,
+  file: SpecFile,
+  filters: readonly Filter[],
+  base: string,
+  sources: string[],
+): void {
+  filters.forEach((f, i) => {
+    if (f.op !== "in_table" && f.op !== "not_in_table") return;
+    if (sourceSuggestion(r, file, `${base}/${i}/table`, f.table, sources)) {
+      checkColumns(r, project, f.table, [{ pointer: `${base}/${i}/key`, column: f.key }]);
+    }
+  });
+}
+
+function checkSegmentRefs(
+  r: Reporter,
+  project: Project,
+  file: SpecFile,
+  list: readonly string[] | undefined,
+  base: string,
+): void {
+  const names = [...project.segments.keys()];
+  (list ?? []).forEach((name, i) => {
+    if (project.segments.has(name)) return;
+    const pointer = `${base}/${i}`;
+    r.report("HM2021", pointer, `unknown segment "${name}"`, {
+      label: `no file segments/${name}.json`,
+      expected: names,
+      ...suggestion(file.document, name, names, pointer),
+    });
+  });
+}
+
+function checkSources(project: Project, out: Diagnostic[]): void {
+  const config = project.config;
+  const sources = config.spec?.sources;
+  if (sources === undefined) return;
+  const r = reporter(config, out);
+  const names = Object.keys(sources);
+  for (const [name, source] of Object.entries(sources)) {
+    if (source.type !== "lookup") continue;
+    const base = `/sources/${name}`;
+    const tables = [
+      { pointer: `${base}/from`, table: source.from },
+      ...source.lookups.map((l, i) => ({ pointer: `${base}/lookups/${i}/table`, table: l.table })),
+    ];
+    for (const { pointer, table } of tables) {
+      if (!sourceSuggestion(r, config, pointer, table, names)) continue;
+      if (sources[table]?.type === "lookup") {
+        r.report(
+          "HM2019",
+          pointer,
+          `"${table}" is a lookup source; lookups join file sources only`,
+          {
+            help: `point at "${(sources[table] as { from: string }).from}" and add its lookups here`,
+          },
+        );
+      }
+    }
+    source.lookups.forEach((lookup, i) => {
+      const at = `${base}/lookups/${i}`;
+      const keys = Object.entries(lookup.key);
+      checkColumns(
+        r,
+        project,
+        source.from,
+        keys.map(([col]) => ({ pointer: `${at}/key`, column: col })),
+      );
+      checkColumns(
+        r,
+        project,
+        lookup.table,
+        keys.map(([, col]) => ({ pointer: `${at}/key`, column: col })),
+      );
+      if (lookup.asof) {
+        checkColumns(r, project, lookup.table, [
+          { pointer: `${at}/asof/column`, column: lookup.asof.column },
+        ]);
+        if (lookup.asof.at !== "$evaluation") {
+          checkColumns(r, project, source.from, [
+            { pointer: `${at}/asof/at`, column: lookup.asof.at },
+          ]);
+        }
+      }
+    });
+  }
+}
+
+function checkSegments(project: Project, out: Diagnostic[]): void {
+  const sources = Object.keys(project.config.spec?.sources ?? {});
+  for (const file of project.segments.values()) {
+    if (file.spec === undefined) continue;
+    checkFilterTables(reporter(file, out), project, file, file.spec.filters, "/filters", sources);
+  }
+}
+
+/** Every column a table metric names, for HM2018, with exact ranges inside expressions. */
+function tableMetricColumns(
+  r: Reporter,
+  file: SpecFile,
+  metric: TableMetric,
+  project: Project,
+): { pointer: string; column: string; range?: Partial<Diagnostic> }[] {
+  const refs: { pointer: string; column: string; range?: Partial<Diagnostic> }[] = [];
+  if (metric.time !== undefined) refs.push({ pointer: "/time", column: metric.time });
+  refs.push(...filterColumnRefs(metric.filters ?? [], "/filters"));
+  for (const id of metric.segments ?? []) {
+    const segment = project.segments.get(id)?.spec;
+    if (segment) {
+      const i = (metric.segments ?? []).indexOf(id);
+      refs.push(...segment.filters.map((f) => ({ pointer: `/segments/${i}`, column: f.column })));
+    }
+  }
+  if (metric.type !== "aggregate") return refs;
+  if (metric.column !== undefined) refs.push({ pointer: "/column", column: metric.column });
+  if (metric.entity !== undefined) refs.push({ pointer: "/entity", column: metric.entity });
+  const expressions: [string, string | undefined, "value" | "any"][] = [
+    ["/value", metric.value, "value"],
+    ["/active/from", metric.active?.from, "value"],
+    ["/active/to", metric.active?.to, "value"],
+  ];
+  for (const [pointer, text, want] of expressions) {
+    if (text === undefined) continue;
+    const expr = parsedField(r, file, pointer, text, "row", want);
+    if (expr === undefined) continue;
+    for (const ref of exprRefs(expr)) {
+      refs.push({
+        pointer,
+        column: ref.name,
+        range: expressionRange(file, pointer, ref.start, ref.end),
+      });
+    }
+  }
+  return refs;
+}
+
 function checkMetrics(project: Project, out: Diagnostic[]): void {
   const sources = Object.keys(project.config.spec?.sources ?? {});
+  const configured = project.config.spec?.sources ?? {};
+  const projectCurrency = project.config.spec?.currency ?? "USD";
   const metrics = metricMap(project);
   const names = [...project.metrics.keys()];
   for (const [name, file] of project.metrics) {
     const metric = file.spec;
     if (metric === undefined) continue;
     const r = reporter(file, out);
-    if (metric.type !== "ratio") checkTimeFilters(file, metric, r);
-    if (metric.type !== "ratio") {
-      if (project.config.spec && !sources.includes(metric.table)) {
-        r.report("HM2001", "/table", `unknown source "${metric.table}"`, {
-          label: "not a key of sources in hatchmark.json",
-          expected: sources,
-          ...suggestion(file.document, metric.table, sources, "/table"),
-        });
+    checkTargetsAndTests(r, project, file, metric, metrics, sources);
+
+    if (metric.type === "aggregate" || metric.type === "sql") {
+      checkTimeFilters(file, metric, r);
+      checkSegmentRefs(r, project, file, metric.segments, "/segments");
+      checkFilterTables(r, project, file, metric.filters ?? [], "/filters", sources);
+      if (project.config.spec && !sourceSuggestion(r, file, "/table", metric.table, sources))
+        continue;
+      checkColumns(r, project, metric.table, tableMetricColumns(r, file, metric, project));
+      const snapshot = sourceTables(configured, metric.table)
+        .map((s) => configured[s])
+        .find((s) => s !== undefined && s.type !== "lookup" && s.snapshot !== undefined);
+      if (snapshot !== undefined && timeNature(name, metrics) === "flow") {
+        r.report(
+          "HM4007",
+          metric.type === "aggregate" && metric.over_time ? "/over_time" : "/table",
+          `source "${metric.table}" is a snapshot table, so summing it over time counts each snapshot again`,
+          {
+            label: "would add every snapshot in the period",
+            help: `add "over_time": "last" (the value at the end of each period), or "avg", "min", "max"`,
+          },
+        );
+      }
+      if (
+        metric.type === "aggregate" &&
+        metric.active !== undefined &&
+        metric.active.ends === undefined
+      ) {
+        r.report(
+          "HM4040",
+          "/active",
+          "uses the default: an interval that ends exactly at a bucket end still counts in that bucket",
+          {
+            severity: "note",
+            help: `set "ends": "exclusive" to drop it from that bucket; set "ends": "inclusive" to keep the default and silence this note`,
+          },
+        );
       }
       continue;
     }
-    let cyclic = false;
-    for (const side of ["numerator", "denominator"] as const) {
-      const ref = metric[side];
-      if (!project.metrics.has(ref)) {
-        r.report("HM2003", `/${side}`, `unknown metric "${ref}"`, {
-          label: `no file metrics/${ref}.json`,
-          expected: names,
-          ...suggestion(file.document, ref, names, `/${side}`),
-        });
-      } else if (reaches(ref, name, metrics)) {
-        r.report("HM2004", `/${side}`, `metric "${name}" refers back to itself through "${ref}"`);
-        cyclic = true;
+
+    if (metric.type === "ratio") {
+      let cyclic = false;
+      for (const side of ["numerator", "denominator"] as const) {
+        const ref = metric[side];
+        if (!project.metrics.has(ref)) {
+          r.report("HM2003", `/${side}`, `unknown metric "${ref}"`, {
+            label: `no file metrics/${ref}.json`,
+            expected: names,
+            ...suggestion(file.document, ref, names, `/${side}`),
+          });
+        } else if (reaches(ref, name, metrics)) {
+          r.report("HM2004", `/${side}`, `metric "${name}" refers back to itself through "${ref}"`);
+          cyclic = true;
+        }
+      }
+      if (cyclic) continue;
+      const { numerator, denominator } = metric;
+      if (!metrics.has(numerator) || !metrics.has(denominator)) continue;
+      const timed = {
+        numerator: metricHasTime(numerator, metrics),
+        denominator: metricHasTime(denominator, metrics),
+      };
+      if (timed.numerator !== timed.denominator) {
+        const side = timed.numerator ? "denominator" : "numerator";
+        r.report(
+          "HM2012",
+          `/${side}`,
+          `"${metric[side]}" has no time column, but the other side of the ratio does`,
+          {
+            label: "a dashboard period would window only one side",
+            help: `add "time" to metrics/${metric[side]}.json, or remove it from the other side`,
+          },
+        );
+      } else {
+        checkNatureMix(
+          r,
+          "/" + "numerator",
+          [
+            { name: numerator, at: {} },
+            { name: denominator, at: {} },
+          ],
+          metrics,
+        );
+      }
+      continue;
+    }
+
+    if (metric.type === "formula") {
+      const expr = parsedField(r, file, "/expr", metric.expr, "formula", "value");
+      if (expr === undefined) continue;
+      const refs = exprRefs(expr);
+      let ok = true;
+      for (const ref of refs) {
+        const at = expressionRange(file, "/expr", ref.start, ref.end);
+        if (!project.metrics.has(ref.name)) {
+          const close = closestMatch(ref.name, names);
+          const fix =
+            close && at.range
+              ? {
+                  fix: {
+                    range: at.range,
+                    text: close,
+                    applicability: "unsafe" as const,
+                    description: `replace with "${close}"`,
+                  },
+                }
+              : {};
+          r.report("HM2020", "/expr", `unknown metric "${ref.name}" in formula`, {
+            ...at,
+            label: `no file metrics/${ref.name}.json`,
+            expected: names,
+            ...(close ? { help: `did you mean "${close}"?` } : {}),
+            ...fix,
+          });
+          ok = false;
+        } else if (reaches(ref.name, name, metrics)) {
+          r.report(
+            "HM2004",
+            "/expr",
+            `metric "${name}" refers back to itself through "${ref.name}"`,
+            at,
+          );
+          ok = false;
+        }
+      }
+      if (!ok) continue;
+      const operands = refs.map((ref) => ({
+        name: ref.name,
+        at: expressionRange(file, "/expr", ref.start, ref.end),
+      }));
+      const timed = operands.filter((o) => metricHasTime(o.name, metrics));
+      if (timed.length > 0 && timed.length < operands.length) {
+        const untimed = operands.find((o) => !metricHasTime(o.name, metrics));
+        if (untimed) {
+          r.report(
+            "HM2012",
+            "/expr",
+            `"${untimed.name}" has no time column, but other metrics in the formula do`,
+            {
+              ...untimed.at,
+              label: "a dashboard period would window only some operands",
+              help: `add "time" to metrics/${untimed.name}.json, or keep timed and untimed metrics apart`,
+            },
+          );
+        }
+      } else {
+        checkNatureMix(r, "/expr", operands, metrics);
+      }
+      checkUnits(r, file, expr, metrics, projectCurrency);
+      continue;
+    }
+
+    // per_entity
+    if (!project.metrics.has(metric.of)) {
+      r.report("HM2003", "/of", `unknown metric "${metric.of}"`, {
+        label: `no file metrics/${metric.of}.json`,
+        expected: names,
+        ...suggestion(file.document, metric.of, names, "/of"),
+      });
+    } else if (reaches(metric.of, name, metrics)) {
+      r.report("HM2004", "/of", `metric "${name}" refers back to itself through "${metric.of}"`);
+    } else {
+      const of = metrics.get(metric.of);
+      if (of !== undefined) {
+        if (
+          of.type !== "aggregate" ||
+          (of.aggregate !== "sum" && of.aggregate !== "count") ||
+          timeNature(metric.of, metrics) !== "point"
+        ) {
+          r.report(
+            "HM4008",
+            "/of",
+            `"${metric.of}" must be a point-in-time sum or count to be read per entity`,
+            {
+              label:
+                of.type === "aggregate"
+                  ? `${of.aggregate}, ${timeNature(metric.of, metrics) ?? "unknown"}`
+                  : of.type,
+              help: "point at an aggregate metric with sum or count and over_time last/first, active or trailing",
+            },
+          );
+        } else {
+          checkColumns(r, project, of.table, [{ pointer: "/key", column: metric.key }]);
+        }
       }
     }
-    if (cyclic) continue;
-    const { numerator, denominator } = metric;
-    if (!metrics.has(numerator) || !metrics.has(denominator)) continue;
-    const timed = {
-      numerator: metricHasTime(numerator, metrics),
-      denominator: metricHasTime(denominator, metrics),
-    };
-    if (timed.numerator !== timed.denominator) {
-      const side = timed.numerator ? "denominator" : "numerator";
+    for (const [pointer, text, want] of [
+      ["/where", metric.where, "condition"],
+      ["/expr", metric.expr, "value"],
+    ] as const) {
+      if (text === undefined) continue;
+      const expr = parsedField(r, file, pointer, text, "entity", want);
+      if (expr === undefined) continue;
+      for (const ref of exprRefs(expr)) {
+        if ((ENTITY_NAMES as readonly string[]).includes(ref.name)) continue;
+        const close = closestMatch(ref.name, [...ENTITY_NAMES]);
+        r.report(
+          "HM2020",
+          pointer,
+          `unknown name "${ref.name}"; per_entity expressions use current and prior`,
+          {
+            ...expressionRange(file, pointer, ref.start, ref.end),
+            expected: [...ENTITY_NAMES],
+            ...(close ? { help: `did you mean "${close}"?` } : {}),
+          },
+        );
+      }
+    }
+    if (metric.group_at === undefined) {
       r.report(
-        "HM2012",
-        `/${side}`,
-        `"${metric[side]}" has no time column, but the other side of the ratio does`,
+        "HM4040",
+        "/type",
+        "uses the default: when a block splits by a column, an entity takes its group from the current instant, else from the prior one",
         {
-          label: "a dashboard period would window only one side",
-          help: `add "time" to metrics/${metric[side]}.json, or remove it from the other side`,
+          severity: "note",
+          help: `set "group_at": "prior" to group by the reference instant (a cohort view); set "group_at": "current" to keep the default and silence this note`,
         },
       );
     }
@@ -207,6 +631,132 @@ function checkTimeFilters(
   });
 }
 
+/** HM4009: a flow and a point-in-time value can't be combined; they measure different things. */
+function checkNatureMix(
+  r: Reporter,
+  pointer: string,
+  operands: { name: string; at: Partial<Diagnostic> }[],
+  metrics: ReadonlyMap<string, Metric>,
+): void {
+  const flow = operands.find((o) => timeNature(o.name, metrics) === "flow");
+  const point = operands.find((o) => timeNature(o.name, metrics) === "point");
+  if (flow === undefined || point === undefined) return;
+  r.report(
+    "HM4009",
+    pointer,
+    `"${flow.name}" is summed over each period but "${point.name}" is read at an instant, so they can't be combined`,
+    {
+      ...flow.at,
+      label: "flow combined with point-in-time",
+      help: `give "${flow.name}" a "trailing" window (such as {"days": 30}) so it is read at an instant too`,
+    },
+  );
+}
+
+/** HM4005: adding or subtracting values in different currencies. */
+function checkUnits(
+  r: Reporter,
+  file: SpecFile,
+  expr: Expr,
+  metrics: ReadonlyMap<string, Metric>,
+  projectCurrency: string,
+): void {
+  const unit = (e: Expr): string | null | undefined => {
+    switch (e.kind) {
+      case "ref": {
+        const m = metrics.get(e.name);
+        return m ? (currencyUnit(m, projectCurrency) ?? null) : undefined;
+      }
+      case "unary":
+        return unit(e.arg);
+      case "binary": {
+        const a = unit(e.left);
+        const b = unit(e.right);
+        if (e.op === "*" && (e.left.kind === "number" || e.right.kind === "number")) {
+          return e.left.kind === "number" ? b : a;
+        }
+        if (e.op === "/" && e.right.kind === "number") return a;
+        if (e.op !== "+" && e.op !== "-") return undefined;
+        if (typeof a === "string" && typeof b === "string" && a !== b) {
+          r.report("HM4005", "/expr", `adds ${a} to ${b}`, {
+            ...expressionRange(file, "/expr", e.start, e.end),
+            label: "different currencies",
+            help: "convert one side with an as-of lookup on a rates table, so both metrics are in one currency",
+          });
+          return undefined;
+        }
+        return typeof a === "string" ? a : b;
+      }
+      default:
+        return undefined;
+    }
+  };
+  unit(expr);
+}
+
+function checkTargetsAndTests(
+  r: Reporter,
+  project: Project,
+  file: SpecFile,
+  metric: Metric,
+  metrics: ReadonlyMap<string, Metric>,
+  sources: string[],
+): void {
+  const nature = timeNature(file.name, metrics);
+  const ids = new Set<string>();
+  (metric.targets ?? []).forEach((target, i) => {
+    const base = `/targets/${i}`;
+    if (ids.has(target.id)) r.report("HM2008", `${base}/id`, `duplicate target id "${target.id}"`);
+    ids.add(target.id);
+    if (
+      target.table !== undefined &&
+      sourceSuggestion(r, file, `${base}/table`, target.table, sources)
+    ) {
+      checkColumns(r, project, target.table, [
+        ...(target.date ? [{ pointer: `${base}/date`, column: target.date }] : []),
+        ...(target.value ? [{ pointer: `${base}/value`, column: target.value }] : []),
+      ]);
+    }
+    checkSegmentRefs(r, project, file, target.segments, `${base}/segments`);
+    if (nature === "flow" && target.path !== undefined) {
+      r.report(
+        "HM3007",
+        `${base}/path`,
+        "path applies to point-in-time metrics; this metric is summed over each period",
+        { help: "remove path" },
+      );
+    }
+    if (nature === "point" && target.prorate !== undefined) {
+      r.report(
+        "HM3007",
+        `${base}/prorate`,
+        "prorate applies to flow metrics; this metric is read at an instant",
+        { help: "remove prorate" },
+      );
+    }
+  });
+  (metric.tests ?? []).forEach((test, i) => {
+    const base = `/tests/${i}`;
+    if (nature === "point" && test.window !== undefined) {
+      r.report("HM3007", `${base}/window`, 'this metric is read at an instant; test it with "at"', {
+        help: 'replace "window" with "at": "<date>"',
+      });
+    }
+    if (nature === "flow" && test.at !== undefined) {
+      r.report(
+        "HM3007",
+        `${base}/at`,
+        'this metric is summed over a period; test it with "window"',
+        { help: 'replace "at" with "window": ["<start>", "<end>"]' },
+      );
+    }
+    checkSegmentRefs(r, project, file, test.segments, `${base}/segments`);
+    checkFilterTables(r, project, file, test.where ?? [], `${base}/where`, sources);
+    for (const key of Object.keys(test.data ?? {}))
+      sourceSuggestion(r, file, `${base}/data/${key}`, key, sources);
+  });
+}
+
 function reaches(
   from: string,
   target: string,
@@ -217,11 +767,8 @@ function reaches(
   if (seen.has(from)) return false;
   seen.add(from);
   const metric = metrics.get(from);
-  if (metric?.type !== "ratio") return false;
-  return (
-    reaches(metric.numerator, target, metrics, seen) ||
-    reaches(metric.denominator, target, metrics, seen)
-  );
+  if (metric === undefined) return false;
+  return metricDeps(metric).some((dep) => reaches(dep, target, metrics, seen));
 }
 
 function blockMetricRefs(block: Block): { pointer: string; name: string }[] {
@@ -315,9 +862,9 @@ function checkDashboard(project: Project, file: SpecFile<"dashboard">, out: Diag
           return;
         }
         const metric = metrics.get(name);
-        if (metric && !isAdditive(metric)) {
+        if (metric && !groupAdditive(name, metrics)) {
           r.report("HM4001", pointer, `percent of total is not meaningful for "${name}"`, {
-            label: `${metric.type === "aggregate" ? metric.aggregate : metric.type} does not add up across rows`,
+            label: `${metric.type === "aggregate" ? metric.aggregate : metric.type === "formula" ? "a non-linear formula" : metric.type} does not add up across rows`,
             ...optional(
               "fix",
               removeItemFix(
@@ -428,9 +975,9 @@ function checkDashboard(project: Project, file: SpecFile<"dashboard">, out: Diag
     for (const filter of dashboard.filters ?? []) {
       if (filter.type !== "select") continue;
       const list = [...sources].sort();
-      const unknown = list.filter((s) => !project.columns.has(s));
+      const unknown = list.filter((s) => columnsOf(project, s) === undefined);
       const lacking = list.filter(
-        (s) => hasColumn(project.columns.get(s), filter.column) === false,
+        (s) => columnsOf(project, s)?.has(foldColumn(filter.column)) === false,
       );
       if (unknown.length === 0 && (lacking.length === 0 || lacking.length === list.length))
         continue;
@@ -523,7 +1070,7 @@ function checkDashboard(project: Project, file: SpecFile<"dashboard">, out: Diag
 function checkSourcePaths(project: Project, out: Diagnostic[]): void {
   const config = project.config;
   for (const [name, source] of Object.entries(config.spec?.sources ?? {})) {
-    if (!GLOB_CHARACTERS.test(source.path)) continue;
+    if (source.type === "lookup" || !GLOB_CHARACTERS.test(source.path)) continue;
     const pointer = `/sources/${name}/path`;
     const renamed = source.path.replace(/[*?[\]]/g, "_");
     const fix = replaceValueFix(
@@ -571,6 +1118,8 @@ export function checkReferences(project: Project): Diagnostic[] {
   const out: Diagnostic[] = [];
   checkSourcePaths(project, out);
   checkReservedColumns(project, out);
+  checkSources(project, out);
+  checkSegments(project, out);
   checkMetrics(project, out);
   for (const file of project.dashboards.values()) checkDashboard(project, file, out);
   return out;
