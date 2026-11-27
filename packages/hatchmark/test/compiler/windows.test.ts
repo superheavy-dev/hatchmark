@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { bucketStart, resolveRange, timeBuckets } from "../../src/compiler/index.js";
-import { DEFAULT_ANCHORS } from "../../src/spec/index.js";
+import { comparison, DEFAULT_ANCHORS } from "../../src/spec/index.js";
 
 const days = (start: string, end: string) => (Date.parse(end) - Date.parse(start)) / 86_400_000;
 
@@ -209,7 +209,24 @@ describe("resolveRange (review of #14)", () => {
     ).toEqual(b("2026-01-25", "2026-02-22"));
     expect(
       resolveRange({ last: 2, unit: "month" }, shift("month", -1), "2026-03-30", DEFAULT_ANCHORS),
-    ).toEqual(b("2026-01-01", "2026-02-28"));
+    ).toEqual(b("2026-01-01", "2026-03-01"));
+    expect(resolveRange("last_7_days", shift("month", -1), "2026-03-28", DEFAULT_ANCHORS)).toEqual(
+      b("2026-02-22", "2026-03-01"),
+    );
+    expect(
+      resolveRange({ last_complete: "day" }, shift("month", -1), "2026-03-30", DEFAULT_ANCHORS),
+    ).toEqual(b("2026-02-28", "2026-03-01"));
+    expect(
+      resolveRange(
+        { start: "2026-01-30", end: "2026-01-31" },
+        shift("month", 1),
+        "2026-03-30",
+        DEFAULT_ANCHORS,
+      ),
+    ).toEqual(b("2026-02-28", "2026-03-01"));
+    expect(resolveRange("last_7_days", "previous_year", "2029-02-28", DEFAULT_ANCHORS)).toEqual(
+      b("2028-02-22", "2028-02-29"),
+    );
     expect(
       resolveRange({ last_complete: "quarter" }, "previous_year", "2026-11-15", DEFAULT_ANCHORS),
     ).toEqual(b("2025-07-01", "2025-10-01"));
@@ -234,21 +251,108 @@ describe("resolveRange (review of #14)", () => {
     expect(bucketStart("0004-02-29", { unit: "week", anchor: "monday" })).toBe("0004-02-23");
   });
 
-  it("clamps windows to years 0000 to 9999, and has none beyond them", () => {
+  it("rejects windows outside the supported dates instead of truncating them", () => {
     const range = { start: "2026-02-01", end: "2026-03-01" };
-    expect(resolveRange(range, shift("year", -3000), "2026-03-15", DEFAULT_ANCHORS)).toBe(
-      undefined,
+    expect(() => resolveRange(range, shift("year", -3000), "2026-03-15", DEFAULT_ANCHORS)).toThrow(
+      "outside the supported dates 0001-01-01 to 9998-12-31",
     );
+    expect(() =>
+      resolveRange({ last: 2, unit: "day" }, "none", "9998-12-31", DEFAULT_ANCHORS),
+    ).not.toThrow();
+    expect(() =>
+      resolveRange({ last: 2, unit: "day" }, "none", "9999-12-31", DEFAULT_ANCHORS),
+    ).toThrow(RangeError);
+    expect(() =>
+      resolveRange({ last: 7, unit: "day" }, "none", "0001-01-06", DEFAULT_ANCHORS),
+    ).toThrow(RangeError);
+    expect(resolveRange({ last: 7, unit: "day" }, "none", "0001-01-07", DEFAULT_ANCHORS)).toEqual(
+      b("0001-01-01", "0001-01-08"),
+    );
+    expect(() =>
+      resolveRange({ last: 1, unit: "day" }, shift("day", 1e15), "2026-03-15", DEFAULT_ANCHORS),
+    ).toThrow(RangeError);
+    expect(bucketStart("0000-01-01", { unit: "quarter", anchor: "02-01" })).toBe("-0001-11-01");
+    expect(bucketStart("0001-01-01", { unit: "week", anchor: "monday" })).toBe("0001-01-01");
+    expect(bucketStart("0001-01-01", { unit: "year", anchor: "02-01" })).toBe("0000-02-01");
+  });
+
+  it("accepts any shift that stays inside the supported dates (no fixed cap)", () => {
+    const parsed = comparison.parse({ shift: { unit: "day", by: -3661 } });
     expect(
       resolveRange(
-        { start: "9000-01-01", end: "9000-02-01" },
-        shift("year", 1000),
-        "9000-03-15",
+        { start: "2026-02-01", end: "2026-03-01" },
+        parsed,
+        "2026-03-15",
         DEFAULT_ANCHORS,
       ),
-    ).toBe(undefined);
-    expect(
-      resolveRange({ last: 3000, unit: "year" }, "none", "2026-03-15", DEFAULT_ANCHORS),
-    ).toEqual(b("0000-01-01", "2026-03-16"));
+    ).toEqual(b("2016-01-24", "2016-02-21"));
+    expect(comparison.safeParse({ shift: { unit: "year", by: -2025 } }).success).toBe(true);
+    expect(comparison.safeParse({ shift: { unit: "year", by: 0.5 } }).success).toBe(false);
+  });
+
+  it("moves the first and last day of any range by whole months (property, 2023-2028)", () => {
+    const iso = (t: number) => new Date(t).toISOString().slice(0, 10);
+    const DAY = 86_400_000;
+    const oracle = (date: string, months: number) => {
+      const [y = 0, m = 1, d = 1] = date.split("-").map(Number);
+      const index = y * 12 + m - 1 + months;
+      const ty = Math.floor(index / 12);
+      const tm = index - ty * 12;
+      const last = new Date(Date.UTC(ty, tm + 1, 0)).getUTCDate();
+      return iso(Date.UTC(ty, tm, Math.min(d, last)));
+    };
+    const length = (w: { start: string; end: string }) =>
+      (Date.parse(w.end) - Date.parse(w.start)) / DAY;
+    let checked = 0;
+    for (let t = Date.UTC(2023, 0, 1); t < Date.UTC(2029, 0, 1); t += 3 * DAY) {
+      for (const days of [1, 2, 7, 28, 29, 30, 31, 45, 90, 365]) {
+        const window = { start: iso(t), end: iso(t + days * DAY) };
+        const lastDay = iso(t + (days - 1) * DAY);
+        for (const by of [-25, -13, -12, -1, 1, 3, 12, 24]) {
+          const moved = resolveRange(window, shift("month", by), "2026-01-01", DEFAULT_ANCHORS);
+          if (moved?.kind !== "bounded") throw new Error("unbounded");
+          const expected = {
+            start: oracle(window.start, by),
+            end: iso(Date.parse(oracle(lastDay, by)) + DAY),
+          };
+          expect(moved, `${window.start} +${days}d by ${by}`).toMatchObject(expected);
+          const delta = length(moved) - days;
+          expect(length(moved)).toBeGreaterThan(0);
+          if (by % 12 === 0) expect(Math.abs(delta)).toBeLessThanOrEqual(1);
+          if (window.start.slice(0, 7) === lastDay.slice(0, 7)) {
+            expect(delta).toBeLessThanOrEqual(0);
+            expect(delta).toBeGreaterThanOrEqual(-3);
+          }
+          checked++;
+        }
+      }
+    }
+    expect(checked).toBeGreaterThan(50_000);
+  });
+
+  it("shifts every range kind exactly like its resolved window", () => {
+    const kinds = [
+      { last: 7, unit: "day" },
+      { last: 2, unit: "month" },
+      { last: 3, unit: "week" },
+      { to_date: "month" },
+      { to_date: "quarter" },
+      { last_complete: "month" },
+      { last_complete: "day" },
+    ] as const;
+    for (let t = Date.UTC(2023, 0, 1); t < Date.UTC(2029, 0, 1); t += 5 * 86_400_000) {
+      const asOf = new Date(t).toISOString().slice(0, 10);
+      for (const range of kinds) {
+        const current = resolveRange(range, "none", asOf, DEFAULT_ANCHORS);
+        if (current?.kind !== "bounded") throw new Error("unbounded");
+        const window = { start: current.start, end: current.end };
+        for (const s of [shift("month", -1), shift("year", -1), shift("week", -1)]) {
+          expect(
+            resolveRange(range, s, asOf, DEFAULT_ANCHORS),
+            `${JSON.stringify(range)} ${asOf}`,
+          ).toEqual(resolveRange(window, s, asOf, DEFAULT_ANCHORS));
+        }
+      }
+    }
   });
 });

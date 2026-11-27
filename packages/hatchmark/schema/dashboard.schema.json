@@ -188,9 +188,9 @@
                 },
                 "by": {
                   "type": "integer",
-                  "minimum": -3660,
-                  "maximum": 3660,
-                  "description": "Units to move both ends by; negative is earlier.",
+                  "minimum": -9007199254740991,
+                  "maximum": 9007199254740991,
+                  "description": "Units to move the first and last day by; negative is earlier. The moved window must stay within 0001-01-01 to 9998-12-31.",
                   "not": {
                     "const": 0
                   }

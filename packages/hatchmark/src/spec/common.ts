@@ -187,11 +187,10 @@ export const comparison = z
         by: z
           .number()
           .int()
-          .min(-3660)
-          .max(3660)
           .refine((n) => n !== 0, { error: "must not be 0" })
           .meta({
-            description: "Units to move both ends by; negative is earlier.",
+            description:
+              "Units to move the first and last day by; negative is earlier. The moved window must stay within 0001-01-01 to 9998-12-31.",
             not: { const: 0 },
           }),
       }),

@@ -617,9 +617,10 @@ describe("DuckDB executor queries", () => {
     }
   });
 
-  it("runs a comparison shifted before year 0000 without a previous value", async () => {
+  it("rejects windows and buckets outside the supported dates with HM2015", async () => {
     const ancient = await writeProject({
       ...files(),
+      "data/orders.csv": `${ORDERS.trimEnd()}\n99,0000-01-01T12:00:00Z,West,web,paid,10,0,c99\n`,
       "dashboards/ancient.json": {
         title: "Ancient",
         period: {
@@ -629,12 +630,24 @@ describe("DuckDB executor queries", () => {
         },
         blocks: [{ type: "kpi", id: "orders", metric: "orders" }],
       },
+      "dashboards/spine.json": {
+        title: "Spine",
+        period: { asOf: "2026-04-30", range: "all_time", compare: "none" },
+        blocks: [{ type: "line", id: "weekly", metrics: ["orders"], grain: "week" }],
+      },
     });
-    const { data, diagnostics } = await run(ancient.root, ancient.project, "ancient");
-    expect(diagnostics).toEqual([]);
-    const kpi = block<KpiData>(data, "orders");
-    expect(kpi.value).toBeTypeOf("number");
-    expect(kpi.previousValue).toBeUndefined();
+    const shifted = await run(ancient.root, ancient.project, "ancient");
+    expect(shifted.data).toBeUndefined();
+    expect(shifted.diagnostics.map((d) => [d.code, d.message])).toEqual([
+      [
+        "HM2015",
+        "the window -0974-01-01 to -0974-05-01 (exclusive) reaches outside the supported dates 0001-01-01 to 9998-12-31",
+      ],
+    ]);
+    const spine = await run(ancient.root, ancient.project, "spine");
+    expect(spine.data).toBeUndefined();
+    expect(spine.diagnostics.map((d) => d.code)).toEqual(["HM2015"]);
+    expect(spine.diagnostics[0]?.message).toContain("outside the supported dates");
   });
 
   it("reports a missing column as HM2015 with the cause", async () => {

@@ -28,7 +28,7 @@ function parse(date: string): Ymd {
 }
 
 function format({ y, m, d }: Ymd): string {
-  return `${String(y).padStart(4, "0")}-${String(m).padStart(2, "0")}-${String(d).padStart(2, "0")}`;
+  return `${y < 0 ? "-" : ""}${String(Math.abs(y)).padStart(4, "0")}-${String(m).padStart(2, "0")}-${String(d).padStart(2, "0")}`;
 }
 
 /** A UTC instant for a date; unlike Date.UTC, years 0 to 99 stay themselves instead of 1900 to 1999. */
@@ -51,11 +51,12 @@ function addDays(date: Ymd, days: number): Ymd {
 function addMonths(date: Ymd, months: number): Ymd {
   const index = date.y * 12 + (date.m - 1) + months;
   const y = Math.floor(index / 12);
-  const m = (index % 12) + 1;
+  const m = index - y * 12 + 1;
   return { y, m, d: Math.min(date.d, daysInMonth(y, m)) };
 }
 
-const before = (a: Ymd, b: Ymd) => format(a) < format(b);
+const key = ({ y, m, d }: Ymd) => y * 10000 + m * 100 + d;
+const before = (a: Ymd, b: Ymd) => key(a) < key(b);
 
 /** Moves a date by whole grain units: days and weeks by days, the others by clamped months. */
 function addUnits(date: Ymd, unit: TimeGrain, n: number): Ymd {
@@ -95,9 +96,13 @@ function startOf(date: Ymd, grain: ResolvedGrain): Ymd {
   }
 }
 
-/** Dates outside years 0000 to 9999 have no YYYY-MM-DD form: windows are clamped to them, or have none. */
-const FIRST_DAY: Ymd = { y: 0, m: 1, d: 1 };
-const PAST_LAST_DAY: Ymd = { y: 10000, m: 1, d: 1 };
+/**
+ * The dates a window may cover. Every bucket holding one of them starts and ends in years 0000 to
+ * 9999, so its YYYY-MM-DD key sorts and formats the same in the core and in executors.
+ */
+export const SUPPORTED_DATES = { first: "0001-01-01", last: "9998-12-31" } as const;
+const FIRST_DAY: Ymd = { y: 1, m: 1, d: 1 };
+const PAST_LAST_DAY: Ymd = { y: 9999, m: 1, d: 1 };
 
 const NAMED: Record<Exclude<PeriodRange, "all_time">, Exclude<RangeSpec, PeriodRange>> = {
   last_7_days: { last: 7, unit: "day" },
@@ -133,13 +138,11 @@ function anchored(unit: TimeGrain, anchors: Anchors): ResolvedGrain {
  *   previous bucket through the same elapsed day, clamped to its length.
  * - {last_complete: unit} is the last bucket that has ended by the end of asOf. previous_period is
  *   the bucket before it.
- * - {shift: {unit, by}} moves both ends of the range by whole units, clamping days to the target
- *   month. A to-date range moves its start and asOf instead, so both spans cover the same elapsed
- *   days. previous_year is a shift by -1 year, except that coarser "last" ranges keep their v1 rule
- *   and move their start and asOf.
+ * - previous_year and {shift: {unit, by}} move the range's first and last day by whole units,
+ *   clamping each to the target month (Mar 31 minus a month is Feb 28/29), so a shifted window is
+ *   never empty and a to-date range covers the same elapsed days.
  * - all_time is unbounded and has no comparison: undefined for any shift but "none".
- * - Windows are clamped to start no earlier than 0000-01-01. A window ending outside years 0000 to
- *   9999 is undefined, like a comparison that doesn't exist.
+ * - Throws a RangeError for a window that reaches outside SUPPORTED_DATES, current or shifted.
  */
 export function resolveRange(
   range: RangeSpec,
@@ -150,11 +153,13 @@ export function resolveRange(
   if (range === "all_time") return shift === "none" ? { kind: "unbounded" } : undefined;
   const spec = typeof range === "string" ? NAMED[range] : range;
   const day = parse(asOf);
-  const key = ({ y, m, d }: Ymd) => y * 10000 + m * 100 + d;
-  const result = (start: Ymd, end: Ymd): WindowBounds | undefined => {
-    if (key(end) <= key(FIRST_DAY) || key(end) > key(PAST_LAST_DAY)) return undefined;
-    const from = key(start) < key(FIRST_DAY) ? FIRST_DAY : start;
-    return { kind: "bounded", start: format(from), end: format(end) };
+  const result = (start: Ymd, end: Ymd): WindowBounds => {
+    if (!(key(start) >= key(FIRST_DAY) && key(end) <= key(PAST_LAST_DAY))) {
+      throw new RangeError(
+        `the window ${format(start)} to ${format(end)} (exclusive) reaches outside the supported dates ${SUPPORTED_DATES.first} to ${SUPPORTED_DATES.last}`,
+      );
+    }
+    return { kind: "bounded", start: format(start), end: format(end) };
   };
   const moved = (unit: TimeGrain, n: number) => ({ unit, n });
   const by =
@@ -165,6 +170,8 @@ export function resolveRange(
         : typeof shift === "object"
           ? moved(shift.shift.unit, shift.shift.by)
           : undefined;
+  const move = (start: Ymd, end: Ymd, s: { unit: TimeGrain; n: number }) =>
+    result(addUnits(start, s.unit, s.n), addDays(addUnits(addDays(end, -1), s.unit, s.n), 1));
 
   if ("start" in spec) {
     const start = parse(spec.start);
@@ -177,7 +184,7 @@ export function resolveRange(
       );
       return result(addDays(start, -days), start);
     }
-    return result(addUnits(start, by.unit, by.n), addUnits(end, by.unit, by.n));
+    return move(start, end, by);
   }
 
   if ("last_complete" in spec) {
@@ -188,10 +195,7 @@ export function resolveRange(
     const current = format(addUnits(own, unit, 1)) === format(next) ? own : addUnits(own, unit, -1);
     if (shift === "none") return result(current, addUnits(current, unit, 1));
     if (by === undefined) return result(addUnits(current, unit, -1), current);
-    return result(
-      addUnits(current, by.unit, by.n),
-      addUnits(addUnits(current, unit, 1), by.unit, by.n),
-    );
+    return move(current, addUnits(current, unit, 1), by);
   }
 
   if ("last" in spec && spec.unit === "day") {
@@ -199,18 +203,14 @@ export function resolveRange(
     const start = addDays(end, -spec.last);
     if (shift === "none") return result(start, end);
     if (by === undefined) return result(addDays(start, -spec.last), start);
-    return result(addUnits(start, by.unit, by.n), addUnits(end, by.unit, by.n));
+    return move(start, end, by);
   }
 
   const unit = "last" in spec ? spec.unit : spec.to_date;
   const count = "last" in spec ? spec.last : 1;
   const start = addUnits(startOf(day, anchored(unit, anchors)), unit, -(count - 1));
   if (shift === "none") return result(start, addDays(day, 1));
-  if (typeof shift === "object" && by !== undefined && "last" in spec) {
-    return result(addUnits(start, by.unit, by.n), addUnits(addDays(day, 1), by.unit, by.n));
-  }
-  const step = by ?? moved(unit, -count);
-  return result(addUnits(start, step.unit, step.n), addDays(addUnits(day, step.unit, step.n), 1));
+  return move(start, addDays(day, 1), by ?? moved(unit, -count));
 }
 
 /**
