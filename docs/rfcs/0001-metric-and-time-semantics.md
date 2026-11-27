@@ -696,27 +696,27 @@ Sliding a rolling window is the default. `period.rollingLag: "trim"` keeps the w
 ### 6.5 Time series
 
 - **Flows**: the partial bucket is drawn and marked. Complete buckets with no rows are 0 (zero-filled on a date spine); buckets after the horizon don't exist.
-- **Point-in-time**: the partial bucket's value is the state at the horizon. It isn't biased low, so it isn't dashed; it gets the "as of" label instead.
+- **Point-in-time**: the partial bucket's value is the state at the horizon. It isn't biased low, so it isn't hatched; it gets the "as of" label instead.
 - **Snapshots**: buckets with no snapshot are null (gaps), never 0.
 - **Leading edge.** For a time-series block, the window start snaps back to the start of its bucket by default, so the first week of "last 30 days at weekly grain" is a full week instead of a misleading short bar. KPIs keep the exact window. Block option `"edges": "clip"` keeps the exact window and marks the clipped first bucket partial, like the last one.
 - Block option `"incomplete": "mark" | "hide" | "show"`, default `mark`. `hide` drops partial buckets; `show` draws them plainly, and check warns (HM4014) for a flow with a partial last bucket.
 
 ### 6.6 How each component shows it
 
-The look comes from the Default theme in Paper first (new tokens for the partial treatment); this RFC fixes the behaviour, not the pixels.
+The look comes from the Default theme in Paper first (new tokens for the partial treatment); this RFC fixes the behaviour, not the pixels. **Gunwoo, 2026-11-27 (option B):** a partial flow bucket gets a hairline hatch across its slot; the line stays solid into a hollow end point; the area slice and partial bars are hatched in the series colour. This replaces the dashed last segment. The previous-period comparison line keeps its dash.
 
 | Component            | Flow metric, partial bucket                                                                                              | Point-in-time metric, partial bucket                                      |
 | -------------------- | ------------------------------------------------------------------------------------------------------------------------ | ------------------------------------------------------------------------- |
-| Line, area           | last segment dashed, hollow end point; area fill lighter                                                                 | solid line, hollow end point                                              |
-| Bar (incl. stacked)  | the whole bar (all stack parts) in the partial treatment                                                                 | normal bar, hollow outline marker                                         |
-| Tooltip (all charts) | "Nov 1–26 · in progress (26 of 30 days)"                                                                                 | "As of Nov 26, 2:03 PM"                                                   |
+| Line, area           | hairline hatch on the bucket's slot; line solid into a hollow end point; area slice hatched in the series colour         | solid line, hollow end point                                              |
+| Bar (incl. stacked)  | every part (all stack parts): series tint, series hatch (dropped under 6 px), 1 px series outline                        | normal bar, hollow outline marker                                         |
+| Tooltip (all charts) | two lines: "Nov 1–26", then "In progress · 26 of 30 days" (a clipped first bucket: "Partial month · …")                  | two lines: "Nov 2026", then "As of Nov 26, 2:03 PM"                       |
 | KPI                  | value labelled "Nov 1–26" or "through Oct 28" when trimmed; delta vs the same elapsed span, with the span in its tooltip | "as of Nov 26"; delta vs the same point last period                       |
 | KPI sparkline        | last point hollow                                                                                                        | same                                                                      |
 | Table with time rows | partial row muted with "(in progress)"; total row labelled "through Nov 26"                                              | partial row labelled "as of"; total = last row's value, labelled "Ending" |
 | Text block           | `{{metric.through}}` inserts the horizon date                                                                            | same                                                                      |
 | Dashboard header     | "Data through Nov 26, 2026, 2:03 PM ET"; when sources differ by a day or more, "Usage through Nov 25" beneath            |                                                                           |
 
-Accessibility: the dash or hollow point is never the only signal; the tooltip, the table and the SVG's accessible description say "in progress" or "as of".
+Accessibility: the hatch or hollow point is never the only signal; the tooltip, the table and the SVG's accessible description say "in progress" or "as of".
 
 ### 6.7 What check says
 
@@ -794,7 +794,7 @@ Selected segments combine with AND.
 | Point-in-time |                                          | mixes in formulas         | allowed, same nature       | value at horizon, "as of"     | read at bucket end via path | rows filtered first; points unchanged | re-sampled at bucket ends |
 | Trailing      |                                          |                           | allowed with point-in-time | full-length window at horizon | as point-in-time            | yes                                   | length fixed              |
 | Formula       |                                          |                           | nested, no cycles          | min horizon of operands       | allowed                     | must bind to every operand source     | per grain                 |
-| Flow          | not with point-in-time (HM4009)          | use trailing to annualise | allowed with flows         | dashed, elapsed               | sum / prorate, pace         | yes                                   | re-bucketed               |
+| Flow          | not with point-in-time (HM4009)          | use trailing to annualise | allowed with flows         | hatched, elapsed              | sum / prorate, pace         | yes                                   | re-bucketed               |
 
 Every row also composes with the two time primitives: ranges decide which instants are sampled or summed, anchored grains decide where buckets begin, and shifts decide the comparison.
 
@@ -1064,7 +1064,7 @@ The script is scratch, not committed; the implementation PRs turn it into tests.
 ## 14. Decisions (2026-11-27)
 
 1. `latest_data` uses the newest source and marks lagging ones: approved. `latest_common_data` is the option.
-2. A partial point-in-time value is a solid line with an "as of" label; partial flows are dashed: approved.
+2. A partial point-in-time value is a solid line with an "as of" label; partial flows are dashed: approved. Gunwoo changed the look to a hatch on 2026-11-27 (option B, section 6.6).
 3. Partial buckets are marked by default: approved.
 4. Time series snap to whole buckets by default: approved. `edges: "clip"` is the option.
 5. Grammar, not business metrics: the RFC adds generic primitives only; ARR and friends are the expressiveness test (section 4). Any business definition is an option with a default that check explains (section 3.11).

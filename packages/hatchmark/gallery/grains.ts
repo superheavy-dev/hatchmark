@@ -224,13 +224,19 @@ function incompleteSeries(
   };
 }
 
-/** Weekly revenue lines over the partial third quarter: marked (default), clipped, or hidden. */
+/** Weekly revenue lines (or an area) over the partial third quarter: marked (default), clipped, or hidden. */
 export function incompleteLine(
   id: string,
   title: string,
-  options: { clip?: boolean; hide?: boolean },
+  options: { clip?: boolean; hide?: boolean; area?: boolean },
 ): LineData {
-  return { type: "line", id, title, span: 6, ...incompleteSeries(WEEK, options) };
+  return {
+    type: options.area ? "area" : "line",
+    id,
+    title,
+    span: 6,
+    ...incompleteSeries(WEEK, options),
+  };
 }
 
 /** Monthly revenue bars over the partial third quarter, September marked or hidden. */
@@ -243,6 +249,40 @@ export function incompleteBars(id: string, title: string, options: { hide?: bool
     orientation: "vertical",
     stack: false,
     ...incompleteSeries(MONTH, options),
+  };
+}
+
+/** The same months split by channel, each part carrying the partial September. */
+export function incompleteChannelBars(id: string, title: string): BarData {
+  const {
+    axis,
+    series: [total],
+  } = incompleteSeries(MONTH, {}) as {
+    axis: LineData["axis"];
+    series: [Series];
+  };
+  const channels: [string, number][] = [
+    ["Online store", 0.58],
+    ["Marketplaces", 0.3],
+    ["Retail partners", 0.12],
+  ];
+  return {
+    type: "bar",
+    id,
+    title,
+    span: 6,
+    orientation: "vertical",
+    stack: true,
+    axis,
+    series: channels.map(([name, share]) => ({
+      ...series(
+        "revenue",
+        name,
+        total.values.map((v) => (v === null ? null : Math.round(v * share))),
+        name,
+      ),
+      ...(total.partial ? { partial: total.partial } : {}),
+    })),
   };
 }
 

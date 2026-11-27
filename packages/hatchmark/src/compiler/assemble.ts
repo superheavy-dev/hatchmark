@@ -10,6 +10,7 @@ import {
   type RangeSpec,
   type ResolvedGrain,
   resolveGrain,
+  timeNature,
 } from "../spec/index.js";
 import {
   type BarData,
@@ -1256,6 +1257,8 @@ export function assemble(
   }
 
   const metrics: Record<string, MetricInfo> = {};
+  const specs = new Map<string, Metric>();
+  for (const [name, file] of project.metrics) if (file.spec) specs.set(name, file.spec);
   for (const name of [...shown].sort()) {
     const metric = assembler.metric(name);
     if (metric === undefined) continue;
@@ -1268,6 +1271,7 @@ export function assemble(
           ? { ...metric.format, currency: metric.format.currency ?? config.currency }
           : metric.format,
       better: metric.better,
+      ...(timeNature(name, specs) === "point" ? { nature: "point" as const } : {}),
     };
   }
 

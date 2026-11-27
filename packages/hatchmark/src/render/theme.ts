@@ -47,6 +47,19 @@ export interface Theme {
   categorical: Record<Mode, string[]>;
   density: Density;
   radius: { card: number; control: number; tooltip: number; bar: number };
+  /** The partial-bucket treatment (RFC 0001 section 6.6, option B): hatch, hollow point, partial bars. */
+  partial: {
+    /** Hatch tile in px: 45° lines this far apart along x + y. */
+    spacing: number;
+    regionOpacity: Record<Mode, number>;
+    areaHatchOpacity: number;
+    barTint: number;
+    barHatchOpacity: number;
+    /** Stack parts shorter than this keep tint and outline and drop the hatch. */
+    barHatchMin: number;
+    pointRadius: number;
+    pointRing: number;
+  };
 }
 
 /** The Default theme (tokens v1.0.0 from HAT-8, exported from Paper). */
@@ -61,6 +74,16 @@ export const DEFAULT_THEME: Theme = {
   },
   density: defaultTokens.density.compact,
   radius: defaultTokens.radius,
+  partial: {
+    spacing: defaultTokens.chart.partial.region.pattern.spacing,
+    regionOpacity: defaultTokens.chart.partial.region.opacity,
+    areaHatchOpacity: defaultTokens.chart.partial.area.patternOpacity.light,
+    barTint: defaultTokens.chart.partial.bar.tint.opacity,
+    barHatchOpacity: defaultTokens.chart.partial.bar.patternOpacity.light,
+    barHatchMin: 6,
+    pointRadius: defaultTokens.chart.partial.point.radius,
+    pointRing: defaultTokens.chart.partial.point.ring,
+  },
 };
 
 /** The colour a key resolves to in one mode. Series slots wrap after c8. */
@@ -96,6 +119,8 @@ export const COLOR_KEYS: ColorKey[] = [
 export interface Paint {
   /** Attribute text for an element: fill and stroke keys, "none", or nothing. */
   attrs(fill?: ColorKey | "none", stroke?: ColorKey, className?: string): string;
+  /** The mode a standalone SVG is baked for; a page leaves it to CSS. */
+  mode?: Mode;
 }
 
 export const cssPaint: Paint = {
@@ -111,6 +136,7 @@ export const cssPaint: Paint = {
 
 export function hexPaint(theme: Theme, mode: Mode): Paint {
   return {
+    mode,
     attrs(fill, stroke, className) {
       return [
         className ? ` class="${className}"` : "",

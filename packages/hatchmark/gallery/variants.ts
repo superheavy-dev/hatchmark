@@ -34,6 +34,7 @@ import {
 import {
   FISCAL_BARS,
   incompleteBars,
+  incompleteChannelBars,
   incompleteLine,
   MONTH,
   QUARTER_BARS,
@@ -718,6 +719,12 @@ const INCOMPLETE_LINES: GalleryVariant[] = [
     "The first week clipped at Jul 1 (edges: clip) instead of starting on Jun 29",
     incompleteLine("weeks_clip", "Weekly revenue, third quarter", { clip: true }),
   ),
+  one(
+    "line",
+    "area-incomplete-mark",
+    "An area whose last week is partial: the slice is hatched, not filled",
+    incompleteLine("weeks_area", "Weekly revenue, third quarter", { area: true }),
+  ),
 ];
 
 const INCOMPLETE_BARS: GalleryVariant[] = [
@@ -732,6 +739,12 @@ const INCOMPLETE_BARS: GalleryVariant[] = [
     "bar-incomplete-hide",
     "The partial month left out (incomplete: hide)",
     incompleteBars("months_hide", "Monthly revenue, third quarter", { hide: true }),
+  ),
+  one(
+    "bar",
+    "bar-incomplete-stacked",
+    "Stacked by channel: every part of the partial September is tinted, hatched and outlined",
+    stacked(incompleteChannelBars("months_stacked", "Monthly revenue by channel, third quarter")),
   ),
 ];
 

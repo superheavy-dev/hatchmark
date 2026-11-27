@@ -19,6 +19,7 @@ import {
 import { formatBucket, formatKey, formatValue } from "./format.js";
 import { thinTicks } from "./labels.js";
 import { textWidth, truncateEnd, wrapLines } from "./measure.js";
+import { hatchDefs, partialBar, partialId } from "./partial.js";
 import { r, svgLine, svgText } from "./svg.js";
 import { type Paint, seriesColor } from "./theme.js";
 
@@ -198,6 +199,24 @@ export function renderBar(
   );
   const parts: string[] = [key.svg];
   const label = block.title ?? series.map((s) => s.label).join(", ");
+  const partial = series.map((s) =>
+    ctx.data.metrics[s.metric]?.nature === "point"
+      ? new Set<number>()
+      : new Set((s.partial ?? []).map((p) => p.index)),
+  );
+  const hatch = partialId(block, size.width);
+  const anyPartial = !empty && partial.some((p) => p.size > 0);
+  const defs = (x: number, y: number) =>
+    anyPartial
+      ? hatchDefs(
+          paint,
+          hatch,
+          series.map((_, k) => seriesColor(k)),
+          ctx.theme.partial.spacing,
+          x,
+          y,
+        )
+      : "";
 
   if (block.orientation === "horizontal") {
     const top = key.height;
@@ -223,6 +242,7 @@ export function renderBar(
     const scale = (v: number) =>
       hi === lo ? barLeft : barLeft + fraction(v, lo, hi) * (barRight - barLeft);
     const zero = scale(0);
+    parts.push(defs(barLeft, top));
     shares?.ticks.forEach((t, k) => {
       const x = scale(t);
       parts.push(
@@ -254,7 +274,9 @@ export function renderBar(
         const x0 = Math.min(scale(a), scale(b));
         const w = Math.max(1, Math.abs(scale(b) - scale(a)));
         parts.push(
-          `<rect x="${r(x0)}" y="${r(cy + offset - thick / 2)}" width="${r(w)}" height="${thick}" rx="${ctx.theme.radius.bar}"${paint.attrs(seriesColor(k))}/>`,
+          partial[k]?.has(i)
+            ? partialBar(ctx, hatch, seriesColor(k), x0, cy + offset - thick / 2, w, thick, w)
+            : `<rect x="${r(x0)}" y="${r(cy + offset - thick / 2)}" width="${r(w)}" height="${thick}" rx="${ctx.theme.radius.bar}"${paint.attrs(seriesColor(k))}/>`,
         );
         if (grouped) {
           const text = (valueTexts[k] as string[])[i] as string;
@@ -281,7 +303,11 @@ export function renderBar(
               scale(neg ? total : end) + (neg ? -VALUE_GAP : VALUE_GAP),
               cy,
               (totalText as string[])[i] as string,
-              { ...valueStyle, anchor: neg ? "end" : "start", color: "text" },
+              {
+                ...valueStyle,
+                anchor: neg ? "end" : "start",
+                color: partial.some((p) => p.has(i)) ? "textMuted" : "text",
+              },
             ),
           );
         }
@@ -328,6 +354,7 @@ export function renderBar(
   const axis = valueAxis(plotBottom - top);
   const [d0, d1] = axis.domain;
   const y = (v: number) => plotBottom - fraction(v, d0, d1) * (plotBottom - top);
+  parts.push(defs(plotLeft, top));
   parts.push(
     empty
       ? svgLine(paint, plotLeft, plotBottom, plotRight, plotBottom, "baseline")
@@ -345,8 +372,11 @@ export function renderBar(
       const x = stacked || !multi ? x0 : x0 + (inner(k) as number);
       const w = stacked || !multi ? bw : inner.bandwidth();
       const top1 = Math.min(y(a), y(b));
+      const h = Math.max(1, Math.abs(y(b) - y(a)));
       parts.push(
-        `<rect x="${r(x)}" y="${r(top1)}" width="${r(w)}" height="${r(Math.max(1, Math.abs(y(b) - y(a))))}" rx="${ctx.theme.radius.bar}"${paint.attrs(seriesColor(k))}/>`,
+        partial[k]?.has(i)
+          ? partialBar(ctx, hatch, seriesColor(k), x, top1, w, h, h)
+          : `<rect x="${r(x)}" y="${r(top1)}" width="${r(w)}" height="${r(h)}" rx="${ctx.theme.radius.bar}"${paint.attrs(seriesColor(k))}/>`,
       );
     });
     if (showValues) {

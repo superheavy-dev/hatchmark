@@ -17,9 +17,17 @@ import {
   svgRoot,
   yAxis,
 } from "./chart.js";
-import { formatBucket, formatValue } from "./format.js";
+import { formatValue } from "./format.js";
 import { stackLabels } from "./labels.js";
 import { textWidth, truncateEnd } from "./measure.js";
+import {
+  bucketName,
+  hatchDefs,
+  hollowPoint,
+  partialId,
+  partialPositions,
+  partialRegion,
+} from "./partial.js";
 import { r, svgLine, svgText } from "./svg.js";
 import { seriesColor } from "./theme.js";
 
@@ -83,7 +91,7 @@ export function readoutValue(block: LineData, k: number, i: number, ctx: RenderC
 export function readoutHead(block: LineData, i: number, ctx: RenderContext): string {
   const bucket = block.axis.buckets[i];
   if (bucket === undefined) return "";
-  const period = formatBucket(bucket, block.axis.grain, ctx.data.locale);
+  const period = bucketName(block, i, ctx);
   if (!block.stack || block.totals === undefined) return period;
   const metric = metricOf(ctx, block.series[0]?.metric ?? "");
   return `${period} · Total ${formatValue(block.totals[i] ?? null, metric, ctx.data.locale, "compact")}`;
@@ -212,6 +220,34 @@ export function renderLine(
   const x = (i: number) => (n > 1 ? plotLeft + i * step : plotLeft + plotWidth / 2);
 
   const parts: string[] = [readout];
+  const partial = partialPositions(block, ctx);
+  const slices = [...partial]
+    .filter(([, p]) => !p.point)
+    .map(([i, p]): [number, number] =>
+      p.edge === "start"
+        ? [plotLeft, n > 1 ? (x(0) + x(1)) / 2 : plotRight]
+        : [i > 0 ? (x(i - 1) + x(i)) / 2 : plotLeft, plotRight],
+    );
+  const hatch = partialId(block, size.width);
+  if (slices.length > 0 && !empty) {
+    const edges = [plotLeft - 2, ...slices.flat().sort((a, b) => a - b), plotRight + 2];
+    const whole: [number, number, number, number][] = [];
+    for (let j = 0; j + 1 < edges.length; j += 2) {
+      whole.push([edges[j] as number, 0, (edges[j + 1] as number) - (edges[j] as number), height]);
+    }
+    parts.push(
+      hatchDefs(
+        paint,
+        hatch,
+        ["textSubtle", ...series.map((_, k) => seriesColor(k))],
+        ctx.theme.partial.spacing,
+        plotLeft,
+        top,
+        { whole, part: slices.map(([a, b]) => [a, 0, b - a, height]) },
+      ),
+      ...slices.map(([a, b]) => partialRegion(ctx, hatch, a, b, top, plotBottom)),
+    );
+  }
   parts.push(
     empty
       ? svgLine(paint, plotLeft, plotBottom, plotRight, plotBottom, "baseline")
@@ -229,8 +265,13 @@ export function renderLine(
         .y0((_, i) => y(stacked ? (lower[i] as number) : Math.max(d0, Math.min(0, d1))))
         .y1((v) => y(v as number))
         .digits(1)(plotted[k] as Value[]);
-      if (area) {
+      if (area && slices.length === 0) {
         parts.push(`<path d="${area}"${paint.attrs(seriesColor(k))} fill-opacity="0.14"/>`);
+      } else if (area) {
+        parts.push(
+          `<path d="${area}"${paint.attrs(seriesColor(k))} fill-opacity="0.14" clip-path="url(#${hatch}-whole)"/>`,
+          `<path d="${area}" fill="url(#${hatch}-${seriesColor(k)})" opacity="${ctx.theme.partial.areaHatchOpacity}" clip-path="url(#${hatch}-part)"/>`,
+        );
       }
     }
   }
@@ -251,6 +292,11 @@ export function renderLine(
         parts.push(`<circle cx="${r(x(i))}" cy="${r(y(v))}" r="2"${paint.attrs(seriesColor(k))}/>`);
       }
     });
+    const flow = ctx.data.metrics[series[k]?.metric ?? ""]?.nature !== "point";
+    for (const { index } of flow ? (series[k]?.partial ?? []) : []) {
+      const v = vals[index];
+      if (isNumber(v)) parts.push(hollowPoint(ctx, seriesColor(k), x(index), y(v)));
+    }
   }
 
   parts.push(

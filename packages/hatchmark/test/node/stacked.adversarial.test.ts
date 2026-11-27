@@ -518,7 +518,7 @@ const matches = (text: string | undefined, v: Value | undefined, scale = 1) => {
 function runtimeOf(
   html: string,
   id: string,
-): { series: { pct?: string[] }[]; total?: string[] } | undefined {
+): { series: { pct?: string[] }[]; total?: string[]; totalStatus?: string[] } | undefined {
   const m = html.match(
     new RegExp(`data-hm-chart="${id}"><script type="application/json">(.*?)</script>`),
   );
@@ -560,7 +560,7 @@ function table(html: string, id: string, series: StackSeries[], totals: Value[])
   if (rows.length !== totals.length) return [`${id}: ${rows.length} rows vs ${totals.length}`];
   const bad: string[] = [];
   rows.forEach((tr, i) => {
-    const cells = [...tr.matchAll(/<td>(.*?)<\/td>/g)].map((m) => m[1]);
+    const cells = [...tr.matchAll(/<td>(.*?)<\/td>/g)].map((m) => m[1]?.split(" \u00B7 ")[0]);
     if (cells.length !== series.length + 1) bad.push(`${id} row ${i}: ${cells.length} cells`);
     if (!matches(cells.at(-1), totals[i]))
       bad.push(`${id} row ${i}: Total ${cells.at(-1)} vs ${totals[i]}`);
@@ -872,6 +872,64 @@ describe("stacked charts against a SQL oracle (HAT-58 harness)", () => {
         expect(b.totals?.[i], `${id} ${m}: no total without Returns`).toBeNull();
         expect(revenue?.share?.[i] ?? null, `${id} ${m}: no share without Returns`).toBeNull();
       });
+    }
+  });
+
+  it("a stacked Total is partial exactly where a summed part is: April, with Returns ending Apr 15 and Revenue complete", async () => {
+    const result = await run(project.root, project.project, "horizons");
+    const data = result.data as DashboardData;
+    const html = renderFragment(data);
+    const horizon = async (table: string) =>
+      String(
+        (
+          await oracle.rows(
+            `SELECT strftime(max(${LOCAL}), '%Y-%m-%d %H:%M:%S') AS h FROM ${table}`,
+          )
+        )[0]?.h,
+      );
+    const horizons: Record<string, string> = {
+      revenue: await horizon("o"),
+      returns_amt: await horizon("r"),
+    };
+    const next = (m: string) => {
+      const d = new Date(`${m}T00:00:00Z`);
+      d.setUTCMonth(d.getUTCMonth() + 1);
+      return d.toISOString().slice(0, 10);
+    };
+    const cut = (metric: string, m: string) => {
+      const h = horizons[metric] as string;
+      return h >= m && h < next(m);
+    };
+    expect(cut("returns_amt", "2026-04-01"), "Returns end inside April").toBe(true);
+    expect(cut("revenue", "2026-04-01"), "Revenue is complete for April").toBe(false);
+    for (const id of ["h_multi", "h_multi_pct"]) {
+      const b = block(data, id);
+      const rt = runtimeOf(html, id);
+      const buckets = b.axis.buckets ?? [];
+      const april = buckets.indexOf("2026-04-01");
+      expect(april, `${id} has April`).toBeGreaterThanOrEqual(0);
+      buckets.forEach((m, i) => {
+        const summed = b.series.filter((s) => s.values[i] !== null);
+        const want = b.totals?.[i] !== null && summed.some((s) => cut(s.metric as string, m));
+        expect(
+          Boolean(rt?.totalStatus?.[i]),
+          `${id} ${m}: Total partial ${rt?.totalStatus?.[i]}`,
+        ).toBe(want);
+        b.series.forEach((s) => {
+          expect(
+            (s.partial ?? []).some((p) => p.index === i),
+            `${id} ${s.label} ${m} partial`,
+          ).toBe(s.values[i] !== null && cut(s.metric as string, m));
+        });
+      });
+      expect(rt?.totalStatus?.[april]).toMatch(/^In progress \u00B7 15 of 30 days$/);
+      const row = table(html, id, b.series, b.totals ?? []);
+      expect(row, `${id} table totals`).toEqual([]);
+      const fig = html.split(`data-hm-chart="${id}"`)[1]?.split("</figure>")[0] ?? "";
+      const tr = (fig.split("<tbody>")[1] ?? "").split("</tr>")[april] ?? "";
+      expect([...tr.matchAll(/<td>(.*?)<\/td>/g)].at(-1)?.[1]).toMatch(
+        /\u00B7 in progress \(15 of 30 days\)$/,
+      );
     }
   });
 });

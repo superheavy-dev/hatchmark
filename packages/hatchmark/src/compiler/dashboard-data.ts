@@ -59,6 +59,11 @@ export interface MetricInfo {
   /** The metric's format with the currency resolved (project currency when the metric sets none). */
   format: Format;
   better: "up" | "down" | "neutral";
+  /**
+   * "point" when the metric is point-in-time (RFC 0001 section 6.5): a partial bucket's value is the
+   * state at the horizon, not biased low, so it is labelled "as of" rather than "in progress".
+   */
+  nature?: "point";
 }
 
 export interface BlockCommon {

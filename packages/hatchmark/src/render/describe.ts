@@ -3,6 +3,7 @@ import { barCategories } from "./bar.js";
 import { isNumber, lowerFirst, metricOf, type RenderContext, SHARE } from "./chart.js";
 import { formatBucket, formatSpan, formatValue } from "./format.js";
 import { plottedValues, readoutHead, readoutValue } from "./line.js";
+import { bucketLines, bucketName, partialPositions } from "./partial.js";
 import { isPie, pieCuts, pieEmptyText, pieItems, pieNote } from "./pie.js";
 import { scatterOrder, scatterPoints } from "./scatter.js";
 import { esc } from "./svg.js";
@@ -72,9 +73,9 @@ function scatterRuntimeData(block: ScatterData, ctx: RenderContext): ChartRuntim
 }
 
 function positions(block: ChartBlock, ctx: RenderContext): string[] {
-  return block.type === "bar"
-    ? barCategories(block, ctx.data.locale)
-    : block.axis.buckets.map((b) => formatBucket(b, block.axis.grain, ctx.data.locale));
+  if (block.axis.kind !== "time") return barCategories(block as BarData, ctx.data.locale);
+  const partial = partialPositions(block, ctx);
+  return block.axis.buckets.map((_, i) => bucketName(block, i, ctx, partial));
 }
 
 const full = (ctx: RenderContext, metric: string, v: Value | undefined) =>
@@ -91,7 +92,11 @@ export function describeChart(
   if (isPie(input)) return describePie(input, ctx);
   if (input.type === "scatter") return describeScatter(input, ctx);
   const block = input;
-  const names = positions(block, ctx);
+  const axis = block.axis;
+  const names =
+    axis.kind === "time"
+      ? axis.buckets.map((b) => formatBucket(b, axis.grain, ctx.data.locale))
+      : positions(block, ctx);
   const series = block.series;
   const kind =
     block.type === "bar"
@@ -123,6 +128,15 @@ export function describeChart(
     );
   }
   if (series.length > 3) parts.push(`${series.length - 3} more series in the data table.`);
+  const partial = partialPositions(block, ctx);
+  for (const [i, p] of partial) {
+    const { status = "" } = bucketLines(block, i, ctx, partial);
+    parts.push(
+      p.point && p.edge === undefined
+        ? `${names[i]}: ${status.charAt(0).toLowerCase()}${status.slice(1)}.`
+        : `${names[i]} is ${p.edge === "start" ? "partial" : "in progress"}: ${p.days} of ${p.of} ${p.of === 1 ? "day" : "days"}.`,
+    );
+  }
   return parts.join(" ");
 }
 
@@ -144,6 +158,12 @@ export function chartTable(
   const names = positions(block, ctx);
   const totals = block.totals;
   const metric = block.series[0]?.metric ?? "";
+  const partial = partialPositions(block, ctx);
+  const total = (i: number) => {
+    const text = full(ctx, metric, totals?.[i] ?? null);
+    const { note } = isNumber(totals?.[i]) ? bucketLines(block, i, ctx, partial) : {};
+    return note ? `${text} \u00B7 ${note}` : text;
+  };
   const cell = (s: ChartBlock["series"][number], i: number) =>
     s.share
       ? `${full(ctx, s.metric, s.values[i])} (${share(ctx, s.share[i])})`
@@ -152,7 +172,7 @@ export function chartTable(
   const rows = names
     .map(
       (name, i) =>
-        `<tr><th scope="row">${esc(name)}</th>${block.series.map((s) => `<td>${esc(cell(s, i))}</td>`).join("")}${totals ? `<td>${esc(full(ctx, metric, totals[i]))}</td>` : ""}</tr>`,
+        `<tr><th scope="row">${esc(name)}</th>${block.series.map((s) => `<td>${esc(cell(s, i))}</td>`).join("")}${totals ? `<td>${esc(total(i))}</td>` : ""}</tr>`,
     )
     .join("");
   return `<div class="hm-sr"><table><caption>${esc(caption)}</caption><thead>${head}</thead><tbody>${rows}</tbody></table></div>`;
@@ -188,6 +208,10 @@ export interface ChartRuntimeData {
   total?: string[];
   /** The pinned readout's first line per position, when it differs from headers. */
   heads?: string[];
+  /** The tooltip's second line per position: a partial bucket's status, else "". */
+  status?: string[];
+  /** A partial Total's status per position (any summed part is partial), else "". */
+  totalStatus?: string[];
 }
 
 export function chartRuntimeData(
@@ -203,10 +227,19 @@ export function chartRuntimeData(
     (block.stack === true && (block.series.length > 1 || block.totals !== undefined));
   const plotted = block.type === "bar" ? undefined : plottedValues(block);
   const metric = metricOf(ctx, block.series[0]?.metric ?? "");
+  const partial = partialPositions(block, ctx);
+  const lines =
+    block.axis.kind === "time"
+      ? block.axis.buckets.map((_, i) => bucketLines(block, i, ctx, partial))
+      : undefined;
   return {
     kind: block.type === "bar" ? "bar" : "line",
     swatch: block.type === "line" ? "line" : "square",
-    headers: positions(block, ctx),
+    headers: lines ? lines.map((l) => l.date) : positions(block, ctx),
+    ...(lines && partial.size > 0 ? { status: lines.map((l) => l.status ?? "") } : {}),
+    ...(lines && partial.size > 0 && !(block.type !== "bar" && block.stack && block.totals)
+      ? { heads: positions(block, ctx) }
+      : {}),
     series: block.series.map((s, k) => ({
       label: s.label,
       color: (k % 8) + 1,
@@ -238,6 +271,16 @@ export function chartRuntimeData(
         : {}),
     ...(block.type !== "bar" && block.stack && block.totals
       ? { heads: block.axis.buckets.map((_, i) => readoutHead(block, i, ctx)) }
+      : {}),
+    ...(lines && stacked && partial.size > 0
+      ? {
+          totalStatus: lines.map((l, i) =>
+            block.series.some((s) => isNumber(s.values[i])) &&
+            (block.totals === undefined || isNumber(block.totals[i]))
+              ? (l.status ?? "")
+              : "",
+          ),
+        }
       : {}),
   };
 }

@@ -325,6 +325,112 @@
       "zero": "a real 0 in the normal format",
       "noData": "keep axes and baseline, no series, note in the plot centre: No <measure> in this period",
       "never": "NaN, Infinity, skeleton shimmer, fake placeholder data"
+    },
+    "partial": {
+      "region": {
+        "use": "line and area charts only: the partial bucket's slot, behind grid-level content and in front of the card",
+        "extent": "last bucket: from the midpoint between the previous point and the partial point to the plot's right edge; clipped first bucket: from the plot's left edge to the midpoint after the first point",
+        "background": {
+          "light": "cardAlt",
+          "dark": "cardAlt"
+        },
+        "pattern": {
+          "kind": "hatch",
+          "angle": 45,
+          "spacing": 4,
+          "strokeWidth": 1
+        },
+        "color": {
+          "light": "textSubtle",
+          "dark": "textSubtle"
+        },
+        "opacity": {
+          "light": 0.28,
+          "dark": 0.4
+        }
+      },
+      "line": {
+        "stroke": "series",
+        "width": 1.75,
+        "dash": null,
+        "opacity": 1,
+        "note": "the segment into the partial bucket stays solid; the region and the point carry the signal"
+      },
+      "point": {
+        "style": "hollow",
+        "radius": 3.5,
+        "ring": 1.75,
+        "fill": "card",
+        "stroke": "series",
+        "always": true,
+        "note": "drawn on every partial point (last, and first under clip), not only on hover"
+      },
+      "area": {
+        "base": {
+          "fill": "series",
+          "opacity": 0.14
+        },
+        "fill": {
+          "opacity": 0
+        },
+        "pattern": {
+          "kind": "hatch",
+          "angle": 45,
+          "spacing": 4,
+          "strokeWidth": 1,
+          "color": "series"
+        },
+        "patternOpacity": {
+          "light": 0.55,
+          "dark": 0.55
+        },
+        "stacked": "each band's partial slice is hatched in its own colour, no flat fill"
+      },
+      "bar": {
+        "tint": {
+          "fill": "series",
+          "opacity": 0.1
+        },
+        "pattern": {
+          "kind": "hatch",
+          "angle": 45,
+          "spacing": 4,
+          "strokeWidth": 1,
+          "color": "series"
+        },
+        "patternOpacity": {
+          "light": 0.75,
+          "dark": 0.75
+        },
+        "outline": {
+          "stroke": "series",
+          "width": 1,
+          "inset": 0.5
+        },
+        "radius": 0,
+        "stacked": "every stack part gets tint, hatch and outline in its own colour; parts under 6 px keep tint and outline and drop the hatch",
+        "valueLabel": "if a value label is shown on the partial bar, use textMuted"
+      },
+      "swatch": {
+        "use": "tooltip status line, tooltip series rows and the mobile readout when the bucket is partial",
+        "size": 10,
+        "tint": 0.1,
+        "pattern": {
+          "kind": "hatch",
+          "angle": 45,
+          "spacing": 3,
+          "strokeWidth": 1,
+          "opacity": 0.75
+        },
+        "outline": 1,
+        "status": "textSubtle",
+        "series": "series"
+      },
+      "tooltip": {
+        "layout": "two lines above the series rows: (1) period label, caption 500, text; (2) hatched swatch (textSubtle) + status, caption 400, textMuted. Series rows use the hatched series swatch instead of the 10x2 line swatch. Total row as usual.",
+        "mobile": "the pinned readout row uses the same two lines, then the series values",
+        "strings": "see wording below"
+      }
     }
   },
   "map": {

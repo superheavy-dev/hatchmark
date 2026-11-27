@@ -34,6 +34,8 @@ interface RuntimeChart {
   series: RuntimeSeries[];
   total?: string[];
   heads?: string[];
+  status?: string[];
+  totalStatus?: string[];
 }
 
 const SVG_NS = "http://www.w3.org/2000/svg";
@@ -124,6 +126,8 @@ function attach(figure: HTMLElement, chart: RuntimeChart): void {
     }
     tip.replaceChildren(element("div", "hm-tip-h", chart.headers[index] ?? ""));
     const scatter = chart.kind === "scatter";
+    const status = chart.status?.[index];
+    if (status) tip.append(element("div", "hm-tip-s", status));
     const rows = chart.series.map((s, k) => ({ s, k, v: s.v[index] ?? null }));
     if (rows.length > 1 && !scatter) {
       rows.sort(
@@ -147,8 +151,12 @@ function attach(figure: HTMLElement, chart: RuntimeChart): void {
       const row = element("div", "hm-tip-r hm-tip-t");
       const value = element("span", "hm-tip-v", chart.total[index] ?? "");
       if (chart.series.some((s) => s.pct)) value.append(element("span", "hm-tip-p"));
-      row.append(element("span", "", "Total"), value);
+      const status = chart.totalStatus?.[index];
+      const name = element("span", status ? "hm-tip-n" : "", status ? "" : "Total");
+      if (status) name.append(element("i", "hm-tip-hatch"), "Total");
+      row.append(name, value);
       tip.append(row);
+      if (status) tip.append(element("div", "hm-tip-s hm-tip-ts", status));
     }
     tip.style.display = "flex";
     return tip;
@@ -385,8 +393,13 @@ function attach(figure: HTMLElement, chart: RuntimeChart): void {
     show(svg, index);
     live.textContent = [
       chart.headers[index],
+      ...(chart.status?.[index] ? [chart.status[index]] : []),
       ...chart.series.map((s) => `${s.label} ${s.text[index]}${s.pct ? `, ${s.pct[index]}` : ""}`),
-      ...(chart.total ? [`Total ${chart.total[index]}`] : []),
+      ...(chart.total
+        ? [
+            `Total ${chart.total[index]}${chart.totalStatus?.[index] ? `, ${chart.totalStatus[index]}` : ""}`,
+          ]
+        : []),
     ].join(", ");
   });
   figure.addEventListener("focusout", hide);
