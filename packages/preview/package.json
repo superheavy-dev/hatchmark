@@ -1,0 +1,20 @@
+{
+  "name": "@hatchmark/preview",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Builds and deploys the per-pull-request component preview gallery. Not published.",
+  "license": "Apache-2.0",
+  "type": "module",
+  "engines": {
+    "node": ">=22.12"
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "site": "node dist/lib/build.js",
+    "deploy": "node dist/lib/deploy.js"
+  },
+  "devDependencies": {
+    "wrangler": "4.168.0"
+  }
+}

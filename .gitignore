@@ -10,3 +10,6 @@ coverage/
 # Copied from the repository root at pack time
 packages/hatchmark/LICENSE
 packages/hatchmark/NOTICE
+
+# Wrangler local state
+.wrangler/

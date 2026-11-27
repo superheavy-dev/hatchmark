@@ -1,0 +1,263 @@
+import type { GalleryEntry } from "./entries.js";
+
+/** What the preview was built from. Both fields are absent for a local build. */
+export interface BuildInfo {
+  /** Pull request number; absent for a build of main. */
+  pr?: number;
+  /** Full commit sha the site was built from. */
+  sha?: string;
+}
+
+/** Everything the static site depends on. */
+export interface SiteInput {
+  entries: readonly GalleryEntry[];
+  head: string;
+  build: BuildInfo;
+  /** Whether `dashboard/index.html` was built next to the gallery. */
+  dashboard: boolean;
+}
+
+const ID = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
+
+const STYLE = `:root {
+  --bg: #ffffff;
+  --fg: #141414;
+  --muted: #6b6b6b;
+  --line: #e4e4e4;
+  --surface: #f7f7f7;
+  color-scheme: light;
+  font-family: "IBM Plex Sans", system-ui, sans-serif;
+  font-size: 14px;
+  line-height: 1.5;
+}
+[data-theme="dark"] {
+  --bg: #111111;
+  --fg: #ececec;
+  --muted: #9b9b9b;
+  --line: #2b2b2b;
+  --surface: #181818;
+  color-scheme: dark;
+}
+* { box-sizing: border-box; }
+body { margin: 0; background: var(--bg); color: var(--fg); }
+a { color: inherit; }
+code { font-family: "IBM Plex Mono", ui-monospace, monospace; font-size: 12px; color: var(--muted); }`;
+
+/** Escapes text for HTML element content and double-quoted attributes. */
+export function escapeHtml(text: string): string {
+  return text
+    .replaceAll("&", "&amp;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;")
+    .replaceAll('"', "&quot;");
+}
+
+/** One line naming the build, such as `PR #12 · 1a5224b`. */
+export function buildLabel(build: BuildInfo): string {
+  const source = build.pr !== undefined ? `PR #${build.pr}` : build.sha ? "main" : "local build";
+  return build.sha ? `${source} · ${build.sha.slice(0, 7)}` : source;
+}
+
+function groupByComponent(entries: readonly GalleryEntry[]): Map<string, GalleryEntry[]> {
+  const groups = new Map<string, GalleryEntry[]>();
+  const seen = new Set<string>();
+  for (const entry of entries) {
+    for (const id of [entry.component, entry.variant]) {
+      if (!ID.test(id))
+        throw new Error(`gallery id "${id}" must be lowercase letters, digits and dashes`);
+    }
+    const key = `${entry.component}--${entry.variant}`;
+    if (seen.has(key))
+      throw new Error(`gallery entry ${entry.component}/${entry.variant} is registered twice`);
+    seen.add(key);
+    const group = groups.get(entry.component);
+    if (group) group.push(entry);
+    else groups.set(entry.component, [entry]);
+  }
+  return groups;
+}
+
+function htmlDocument(title: string, style: string, body: string, head = ""): string {
+  return `<!doctype html>
+<html lang="en" data-theme="light">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex">
+<title>${escapeHtml(title)}</title>
+<style>
+${STYLE}
+${style}
+</style>${head ? `\n${head}` : ""}
+</head>
+<body>
+${body}
+</body>
+</html>
+`;
+}
+
+const SHELL_STYLE = `html, body { height: 100%; }
+body { display: flex; flex-direction: column; }
+header { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 16px; padding: 8px 16px; border-bottom: 1px solid var(--line); }
+header strong { font-weight: 600; }
+header .info { color: var(--muted); margin-right: auto; }
+[role="group"] { display: inline-flex; border: 1px solid var(--line); border-radius: 6px; overflow: hidden; }
+button { font: inherit; color: var(--muted); background: none; border: 0; padding: 3px 10px; cursor: pointer; }
+button + button { border-left: 1px solid var(--line); }
+button[aria-pressed="true"] { color: var(--fg); background: var(--surface); }
+button:disabled { cursor: not-allowed; opacity: 0.5; }
+main { flex: 1; display: flex; justify-content: center; background: var(--surface); min-height: 0; }
+iframe { width: 100%; height: 100%; border: 0; background: var(--bg); }
+body[data-width="mobile"] iframe { width: 390px; border-inline: 1px solid var(--line); }`;
+
+const SHELL_SCRIPT = `const frame = document.getElementById("frame");
+const pages = JSON.parse(frame.dataset.pages);
+const state = {
+  view: "components",
+  theme: matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light",
+  width: "desktop",
+};
+for (const [key, value] of new URLSearchParams(location.hash.slice(1))) {
+  if (key in state) state[key] = value;
+}
+function themeFrame() {
+  const root = frame.contentDocument?.documentElement;
+  if (root) root.dataset.theme = state.theme;
+}
+function apply() {
+  if (!(state.view in pages)) state.view = "components";
+  document.documentElement.dataset.theme = state.theme;
+  document.body.dataset.width = state.width;
+  for (const button of document.querySelectorAll("button[data-key]")) {
+    button.setAttribute("aria-pressed", String(state[button.dataset.key] === button.value));
+  }
+  if (frame.getAttribute("src") !== pages[state.view]) frame.setAttribute("src", pages[state.view]);
+  themeFrame();
+  history.replaceState(null, "", "#" + new URLSearchParams(state));
+}
+frame.addEventListener("load", themeFrame);
+document.addEventListener("click", (event) => {
+  const button = event.target.closest("button[data-key]");
+  if (!button || button.disabled) return;
+  state[button.dataset.key] = button.value;
+  apply();
+});
+apply();`;
+
+function toggle(key: string, label: string, options: [string, string, boolean?][]): string {
+  const buttons = options.map(
+    ([value, text, disabled]) =>
+      `<button type="button" data-key="${key}" value="${value}" aria-pressed="false"${disabled ? ' disabled title="Not built yet"' : ""}>${text}</button>`,
+  );
+  return `<div role="group" aria-label="${label}">${buttons.join("")}</div>`;
+}
+
+function shell(input: SiteInput): string {
+  const label = buildLabel(input.build);
+  const pages: Record<string, string> = { components: "gallery.html" };
+  if (input.dashboard) pages.dashboard = "dashboard/";
+  const dashboardLink = input.dashboard
+    ? '<a href="dashboard/">Open the example dashboard</a>'
+    : '<span class="info">Example dashboard not built yet</span>';
+  const body = `<header>
+<strong>Hatchmark preview</strong>
+<span class="info" title="${escapeHtml(input.build.sha ?? "")}">${escapeHtml(label)}</span>
+${dashboardLink}
+${toggle("view", "View", [
+  ["components", "Components"],
+  ["dashboard", "Example dashboard", !input.dashboard],
+])}
+${toggle("theme", "Theme", [
+  ["light", "Light"],
+  ["dark", "Dark"],
+])}
+${toggle("width", "Width", [
+  ["desktop", "Desktop"],
+  ["mobile", "390 px"],
+])}
+</header>
+<main><iframe id="frame" title="Preview" data-pages="${escapeHtml(JSON.stringify(pages))}"></iframe></main>
+<script>
+${SHELL_SCRIPT}
+</script>`;
+  return htmlDocument(`Hatchmark preview · ${label}`, SHELL_STYLE, body);
+}
+
+const GALLERY_STYLE = `main { max-width: 1120px; margin: 0 auto; padding: 24px 16px 48px; }
+h1 { font-size: 20px; font-weight: 600; margin: 0 0 4px; }
+h2 { font-size: 16px; font-weight: 600; margin: 0 0 12px; padding-bottom: 6px; border-bottom: 1px solid var(--line); }
+p { margin: 0 0 8px; color: var(--muted); }
+nav ul { list-style: none; display: flex; flex-wrap: wrap; gap: 4px 16px; padding: 0; margin: 16px 0 32px; }
+section { margin-bottom: 40px; }
+figure { margin: 0 0 24px; }
+figcaption { display: flex; gap: 8px; align-items: baseline; margin-bottom: 8px; }
+.tile { border: 1px solid var(--line); border-radius: 8px; padding: 16px; overflow-x: auto; }
+footer { color: var(--muted); border-top: 1px solid var(--line); padding-top: 12px; }`;
+
+function gallery(input: SiteInput): string {
+  const groups = groupByComponent(input.entries);
+  const label = escapeHtml(buildLabel(input.build));
+  const sha = escapeHtml(input.build.sha ?? "local");
+  if (groups.size === 0) {
+    const body = `<main>
+<h1>No components yet</h1>
+<p>The renderer registers gallery entries in <code>packages/preview/src/entries.ts</code>.</p>
+<p>Build: ${label} (<code>${sha}</code>)</p>
+</main>`;
+    return htmlDocument("Hatchmark components", GALLERY_STYLE, body, input.head);
+  }
+  const nav = [...groups].map(
+    ([component, variants]) =>
+      `<li><a href="#${component}">${component}</a> <code>${variants.length}</code></li>`,
+  );
+  const sections = [...groups].map(([component, variants]) => {
+    const figures = variants.map(
+      (entry) => `<figure id="${component}--${entry.variant}">
+<figcaption>${escapeHtml(entry.title)} <code>${entry.variant}</code></figcaption>
+<div class="tile">${entry.html}</div>
+</figure>`,
+    );
+    return `<section id="${component}">
+<h2>${component}</h2>
+${figures.join("\n")}
+</section>`;
+  });
+  const body = `<main>
+<h1>Components</h1>
+<nav aria-label="Components"><ul>${nav.join("")}</ul></nav>
+${sections.join("\n")}
+<footer>Build: ${label} (<code>${sha}</code>)</footer>
+</main>`;
+  return htmlDocument("Hatchmark components", GALLERY_STYLE, body, input.head);
+}
+
+function notice(title: string, text: string): string {
+  return htmlDocument(
+    title,
+    GALLERY_STYLE,
+    `<main>
+<h1>${escapeHtml(title)}</h1>
+<p>${text}</p>
+</main>`,
+  );
+}
+
+/** Renders the static site as a map from path (relative to the site root) to file content. */
+export function renderSite(input: SiteInput): Map<string, string> {
+  return new Map([
+    ["index.html", shell(input)],
+    ["gallery.html", gallery(input)],
+    ["404.html", notice("Not found", '<a href="/">Back to the preview</a>')],
+  ]);
+}
+
+/** The page production serves until main's first deploy replaces it. */
+export function renderPlaceholder(): Map<string, string> {
+  return new Map([
+    [
+      "index.html",
+      notice("Hatchmark preview", "The gallery of main deploys here on the next push to main."),
+    ],
+  ]);
+}
