@@ -56,7 +56,8 @@ export async function check(
     );
     diagnostics = diagnostics.filter(
       (d) =>
-        d.file !== undefined &&
+        d.file === undefined ||
+        d.file === CONFIG_FILE ||
         prefixes.some((p) => p === "" || d.file === p || d.file?.startsWith(`${p}/`)),
     );
   }

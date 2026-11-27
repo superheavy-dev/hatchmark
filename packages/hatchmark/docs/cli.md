@@ -4,20 +4,20 @@
 run it the same way a person does. `hatchmark <command> --help` shows a command's options and one
 example.
 
-| Command                               | What it does                                                                                                                                                |
-| ------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `init [dir]`                          | Creates a project: `hatchmark.json` with every setting written out, sample US orders data, four metrics, a dashboard, and a Hatchmark block in `AGENTS.md`. |
-| `check [paths...]`                    | Checks JSON syntax, spec shape, and references between files and to data columns. Paths are relative to `--cwd`.                                            |
-| `schema [project\|metric\|dashboard]` | Prints the JSON Schema for a file kind, or all three keyed by kind.                                                                                         |
-| `explain <code>`                      | Explains a diagnostic code such as `HM2003` and how to fix it.                                                                                              |
-| `version`                             | Prints the Hatchmark and Node.js versions.                                                                                                                  |
-| `doctor`                              | Checks that this machine can run Hatchmark: Node.js, bundled docs and schemas, project config.                                                              |
+| Command                               | What it does                                                                                                                                                                   |
+| ------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `init [dir]`                          | Creates a project: `hatchmark.json` with every setting written out, sample US orders data, four metrics, a dashboard, and a Hatchmark block in `AGENTS.md`.                    |
+| `check [paths...]`                    | Checks JSON syntax, spec shape, and references between files and to data columns. Paths are relative to `--cwd`. `hatchmark.json` is always checked first, whatever the paths. |
+| `schema [project\|metric\|dashboard]` | Prints the JSON Schema for a file kind, or all three keyed by kind.                                                                                                            |
+| `explain <code>`                      | Explains a diagnostic code such as `HM2003` and how to fix it.                                                                                                                 |
+| `version`                             | Prints the Hatchmark and Node.js versions.                                                                                                                                     |
+| `doctor`                              | Checks that this machine can run Hatchmark: Node.js, bundled docs and schemas, project config.                                                                                 |
 
 ## Output
 
 A command prints human text when stdout is a terminal. It prints one line of JSON on stdout when
 stdout is not a terminal, when an AI coding agent runs it (detected with `@vercel/detect-agent`),
-or when you pass `--json`. `--format human|json` picks the format explicitly and wins over both.
+or when you pass `--json`. `--format human|json` picks the format explicitly and wins over both. Any other `--format` value is a usage error (exit 2), even with `--json`.
 Logs go to stderr, so stdout always holds exactly one result.
 
 The mode applies to every result, help and command-line errors included: `--help` in JSON mode
@@ -50,18 +50,20 @@ Colour is on in a terminal unless you pass `--no-color` or set `NO_COLOR`.
 
 ## Usage diagnostics
 
-| Code     | Meaning                                                                                                                                                                                                                                                                |
-| -------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `HM0001` | Unknown command. The diagnostic suggests the closest one.                                                                                                                                                                                                              |
-| `HM0002` | Unknown option, a value that is not allowed, or an unexpected argument.                                                                                                                                                                                                |
-| `HM0003` | Missing argument.                                                                                                                                                                                                                                                      |
-| `HM0004` | `init` would overwrite existing files, or found a directory or dangling symlink where it writes a file, and wrote nothing. The diagnostic lists the paths; `--force` overwrites regular files only. `AGENTS.md` and `.gitignore` are always merged, never overwritten. |
+| Code     | Meaning                                                                                                                                                                                                                                                                                                  |
+| -------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `HM0001` | Unknown command. The diagnostic suggests the closest one.                                                                                                                                                                                                                                                |
+| `HM0002` | Unknown option, a value that is not allowed, or an unexpected argument.                                                                                                                                                                                                                                  |
+| `HM0003` | Missing argument.                                                                                                                                                                                                                                                                                        |
+| `HM0005` | `AGENTS.md` markers are not exactly one start line before one end line. Init wrote nothing. Fix the markers, or delete every marker line.                                                                                                                                                                |
+| `HM0004` | `init` would overwrite existing files, or found a directory or a symlink where it writes a file, and wrote nothing. The diagnostic lists the paths. `--force` overwrites regular files only, and init never writes through a symlink. `AGENTS.md` and `.gitignore` are always merged, never overwritten. |
 
 ## init
 
 `hatchmark init` writes the same bytes every time for the same name and template. It never runs
 git or installs packages. With `--force`, it overwrites only the files it writes and reports them as
-`created`, `updated` or `unchanged`. It never writes to an existing `CLAUDE.md`, including a
-symlink; when that file does not include `@AGENTS.md`, it adds a note to the result. In `AGENTS.md` it
-replaces only a complete `<!-- hatchmark:start -->` … `<!-- hatchmark:end -->` block, so text after
-an unmatched start marker is kept.
+`created`, `updated` or `unchanged`. It never writes through a symlink, and never writes to an
+existing `CLAUDE.md`. When that file does not include `@AGENTS.md`, it adds a note to the result.
+In `AGENTS.md` it replaces the block between exactly one `<!-- hatchmark:start -->` line and one
+later `<!-- hatchmark:end -->` line, or appends a block when there are no marker lines. With any
+other combination of markers it changes nothing and reports `HM0005` with the marker lines.

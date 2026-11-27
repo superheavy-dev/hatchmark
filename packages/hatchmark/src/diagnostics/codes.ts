@@ -26,6 +26,11 @@ export const CODES = {
     explanation:
       "hatchmark init found files it would write already in the target directory, and wrote nothing. The diagnostic lists them. Pass --force to overwrite them, or choose another directory. AGENTS.md and .gitignore are always merged, never overwritten.",
   },
+  HM0005: {
+    title: "unbalanced AGENTS.md markers",
+    explanation:
+      "hatchmark init manages one block in AGENTS.md between a <!-- hatchmark:start --> line and a <!-- hatchmark:end --> line. It found a different number of markers, or the end before the start, and left AGENTS.md alone rather than guess. The diagnostic lists the marker lines. Keep exactly one start line before one end line, or delete every marker line so init appends a fresh block.",
+  },
   HM1001: {
     title: "file cannot be read",
     explanation:

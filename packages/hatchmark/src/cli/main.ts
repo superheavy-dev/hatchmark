@@ -137,7 +137,9 @@ export async function run(argv: readonly string[], io: CliIO): Promise<number> {
   const command = lookup(name);
   const looseMode = await outputMode(io, loose.values as Flags);
   const fallbackMode: OutputMode =
-    typeof looseMode === "string" ? looseMode : ((await outputMode(io, {})) as OutputMode);
+    typeof looseMode === "string"
+      ? looseMode
+      : ((await outputMode(io, { ...(loose.values as Flags), format: undefined })) as OutputMode);
   const options: Options = { ...GLOBAL, ...(command?.options ?? {}) };
   let parsed: ReturnType<typeof parseArgs>;
   try {

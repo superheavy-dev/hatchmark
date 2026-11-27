@@ -267,7 +267,7 @@ describe("review regressions (HAT-16)", () => {
     expect(out.json().diagnostics.map((d: { code: string }) => d.code)).toEqual(["HM2003"]);
   });
 
-  it("writes nothing when a path init owns is a directory, and never follows a dangling CLAUDE.md link", async () => {
+  it("writes nothing when a path init owns is a directory or a symlink", async () => {
     const cwd = await tempDir();
     await mkdir(path.join(cwd, "data/orders.csv"), { recursive: true });
     for (const force of [[], ["--force"]]) {
@@ -279,23 +279,79 @@ describe("review regressions (HAT-16)", () => {
       });
       await expect(readFile(path.join(cwd, "hatchmark.json"))).rejects.toThrow();
     }
-    const other = await tempDir();
-    await symlink("notes", path.join(other, "CLAUDE.md"));
-    const out = await cli(["init", "--template", "minimal"], { cwd: other });
-    expect(out.code).toBe(0);
-    expect(out.json().notes[0]).toContain("CLAUDE.md");
-    await expect(readFile(path.join(other, "notes"))).rejects.toThrow();
+    const dangling = await tempDir();
+    await symlink("notes", path.join(dangling, "CLAUDE.md"));
+    const out = await cli(["init", "--template", "minimal"], { cwd: dangling });
+    expect(out.code).toBe(2);
+    expect(out.json().diagnostics[0]).toMatchObject({ code: "HM0004", expected: ["CLAUDE.md"] });
+    await expect(readFile(path.join(dangling, "notes"))).rejects.toThrow();
+    await expect(readFile(path.join(dangling, "hatchmark.json"))).rejects.toThrow();
+    const linked = await tempDir();
+    await writeFile(path.join(linked, "CLAUDE.md"), "My Claude notes\n");
+    await symlink("CLAUDE.md", path.join(linked, "AGENTS.md"));
+    for (const force of [[], ["--force"]]) {
+      const refused = await cli(["init", "--template", "minimal", ...force], { cwd: linked });
+      expect(refused.code).toBe(2);
+      expect(refused.json().diagnostics[0]).toMatchObject({
+        code: "HM0004",
+        expected: ["AGENTS.md"],
+      });
+    }
+    expect(await readFile(path.join(linked, "CLAUDE.md"), "utf8")).toBe("My Claude notes\n");
   });
 
-  it("keeps text after an unmatched start marker in AGENTS.md", async () => {
+  it("refuses to edit AGENTS.md unless its markers are one balanced pair", async () => {
+    const cases: [string, string[]][] = [
+      ["<!-- hatchmark:start -->\nKeep me\n", ["AGENTS.md:1: <!-- hatchmark:start -->"]],
+      ["<!-- hatchmark:end -->\nKeep me\n", ["AGENTS.md:1: <!-- hatchmark:end -->"]],
+      [
+        "Intro\n<!-- hatchmark:end -->\n<!-- hatchmark:start -->\n",
+        ["AGENTS.md:2: <!-- hatchmark:end -->", "AGENTS.md:3: <!-- hatchmark:start -->"],
+      ],
+      [
+        "<!-- hatchmark:start -->\na\n<!-- hatchmark:end -->\n<!-- hatchmark:start -->\nb\n<!-- hatchmark:end -->\n",
+        [
+          "AGENTS.md:1: <!-- hatchmark:start -->",
+          "AGENTS.md:3: <!-- hatchmark:end -->",
+          "AGENTS.md:4: <!-- hatchmark:start -->",
+          "AGENTS.md:6: <!-- hatchmark:end -->",
+        ],
+      ],
+    ];
+    for (const [text, lines] of cases) {
+      const cwd = await tempDir();
+      await writeFile(path.join(cwd, "AGENTS.md"), text);
+      for (const force of [[], ["--force"]]) {
+        const out = await cli(["init", "--template", "minimal", ...force], { cwd });
+        expect(out.code, text).toBe(2);
+        expect(out.json().diagnostics[0], text).toMatchObject({ code: "HM0005", expected: lines });
+      }
+      expect(await readFile(path.join(cwd, "AGENTS.md"), "utf8")).toBe(text);
+      await expect(readFile(path.join(cwd, "hatchmark.json"))).rejects.toThrow();
+    }
+  });
+
+  it("checks hatchmark.json first, whatever the path scope", async () => {
     const cwd = await tempDir();
-    await writeFile(path.join(cwd, "AGENTS.md"), "<!-- hatchmark:start -->\nKeep me\n");
-    await cli(["init", "--template", "minimal"], { cwd });
-    const once = await readFile(path.join(cwd, "AGENTS.md"), "utf8");
-    await cli(["init", "--template", "minimal", "--force"], { cwd });
-    const twice = await readFile(path.join(cwd, "AGENTS.md"), "utf8");
-    expect(twice).toContain("Keep me");
-    expect(twice).toBe(once);
+    await cli(["init"], { cwd });
+    await writeFile(path.join(cwd, "hatchmark.json"), "{");
+    for (const scope of [["dashboards/sales.json"], ["metrics"], ["data/orders.csv"]]) {
+      const out = await cli(["check", ...scope], { cwd });
+      expect(out.code, scope.join(" ")).toBe(2);
+      expect(out.json().diagnostics[0].code).toBe("HM1002");
+    }
+  });
+
+  it("makes an invalid --format value a usage error whatever the other flags", async () => {
+    const cwd = await tempDir();
+    for (const argv of [
+      ["check", "--json", "--format=invalid"],
+      ["version", "--format", "xml", "--json"],
+    ]) {
+      const out = await cli(argv, { cwd, tty: true });
+      expect(out.code, argv.join(" ")).toBe(2);
+      expect(out.json().diagnostics[0].code, argv.join(" ")).toBe("HM0002");
+    }
   });
 
   it("exits 2 for a malformed hatchmark.json and for inherited property names as commands", async () => {

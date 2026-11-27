@@ -1,4 +1,4 @@
-import { lstat, mkdir, readFile, stat, writeFile } from "node:fs/promises";
+import { lstat, mkdir, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { CONFIG_FILE } from "../../spec/index.js";
 import { VERSION } from "../../version.js";
@@ -50,13 +50,16 @@ async function readOptional(file: string): Promise<string | undefined> {
 
 type Entry = "missing" | "file" | "directory" | "other";
 
-/** What is at a path, following a symlink only when it resolves; a dangling link is "other". */
+/** What is at a path, without following symlinks: init never writes through a link. */
 async function entry(file: string): Promise<Entry> {
-  const link = await lstat(file).catch(() => undefined);
-  if (link === undefined) return "missing";
-  const target = await stat(file).catch(() => undefined);
-  if (target === undefined) return "other";
-  return target.isFile() ? "file" : target.isDirectory() ? "directory" : "other";
+  const info = await lstat(file).catch(() => undefined);
+  if (info === undefined) return "missing";
+  return info.isFile() ? "file" : info.isDirectory() ? "directory" : "other";
+}
+
+/** 1-based line numbers of every line containing marker. */
+function markerLines(text: string, marker: string): number[] {
+  return text.split("\n").flatMap((line, i) => (line.includes(marker) ? [i + 1] : []));
 }
 
 export async function init(
@@ -90,13 +93,13 @@ export async function init(
 
   const blocked: string[] = [];
   const existing: string[] = [];
-  const dirs = new Set([".", "data", "metrics", "dashboards"]);
+  const dirs = new Set(["data", "metrics", "dashboards"]);
   for (const file of owned.keys()) dirs.add(path.posix.dirname(file));
   for (const dir of dirs) {
     const kind = await entry(path.join(target, dir));
     if (kind !== "missing" && kind !== "directory") blocked.push(dir);
   }
-  for (const file of [...owned.keys(), "AGENTS.md", ".gitignore"]) {
+  for (const file of [...owned.keys(), "AGENTS.md", "CLAUDE.md", ".gitignore"]) {
     const kind = await entry(path.join(target, file));
     if (kind === "file" && owned.has(file)) existing.push(file);
     else if (kind !== "missing" && kind !== "file") blocked.push(file);
@@ -104,10 +107,10 @@ export async function init(
   if (blocked.length > 0) {
     return usageError(
       "HM0004",
-      `init cannot write ${blocked.length} path${blocked.length === 1 ? "" : "s"} in ${target}: something other than a regular file or directory is there`,
+      `init cannot write ${blocked.length} path${blocked.length === 1 ? "" : "s"} in ${target}: something other than a regular file or directory, such as a symlink, is there`,
       {
         expected: blocked,
-        help: "move or remove these paths (directories, dangling symlinks), or choose another directory",
+        help: "init never writes through symlinks; move or remove these paths, or choose another directory",
       },
     );
   }
@@ -120,6 +123,33 @@ export async function init(
         help: "pass --force to overwrite them, or choose another directory",
       },
     );
+  }
+
+  const block = agentsBlock(VERSION);
+  const agents = await readOptional(path.join(target, "AGENTS.md"));
+  let nextAgents = `${block}\n`;
+  if (agents !== undefined) {
+    const starts = markerLines(agents, AGENTS_START);
+    const ends = markerLines(agents, AGENTS_END);
+    const start = agents.indexOf(AGENTS_START);
+    const end = agents.indexOf(AGENTS_END);
+    if (starts.length === 0 && ends.length === 0) {
+      nextAgents = `${agents.replace(/\n*$/, "")}\n\n${block}\n`;
+    } else if (starts.length === 1 && ends.length === 1 && start < end) {
+      nextAgents = agents.slice(0, start) + block + agents.slice(end + AGENTS_END.length);
+    } else {
+      return usageError(
+        "HM0005",
+        `AGENTS.md does not have exactly one ${AGENTS_START} line followed by one ${AGENTS_END} line`,
+        {
+          expected: [
+            ...starts.map((line) => `AGENTS.md:${line}: ${AGENTS_START}`),
+            ...ends.map((line) => `AGENTS.md:${line}: ${AGENTS_END}`),
+          ].sort((x, y) => Number(x.split(":")[1]) - Number(y.split(":")[1])),
+          help: "keep one start line before one end line around the Hatchmark block, or delete every marker line so init appends a fresh block",
+        },
+      );
+    }
   }
 
   const created: string[] = [];
@@ -142,26 +172,11 @@ export async function init(
   for (const [file, text] of owned) await write(file, text);
   for (const sub of ["data", "metrics", "dashboards"])
     await mkdir(path.join(target, sub), { recursive: true });
+  await write("AGENTS.md", nextAgents);
 
-  const block = agentsBlock(VERSION);
-  const agents = await readOptional(path.join(target, "AGENTS.md"));
-  if (agents === undefined) {
-    await write("AGENTS.md", `${block}\n`);
-  } else {
-    const end = agents.indexOf(AGENTS_END);
-    const start = end === -1 ? -1 : agents.lastIndexOf(AGENTS_START, end);
-    const next =
-      start !== -1 && end !== -1
-        ? agents.slice(0, start) + block + agents.slice(end + AGENTS_END.length)
-        : `${agents.replace(/\n*$/, "")}\n\n${block}\n`;
-    await write("AGENTS.md", next);
-  }
-
-  const claudeKind = await entry(path.join(target, "CLAUDE.md"));
-  const claude =
-    claudeKind === "file" ? await readOptional(path.join(target, "CLAUDE.md")) : undefined;
-  if (claudeKind === "missing") await write("CLAUDE.md", "@AGENTS.md\n");
-  else if (claude === undefined || !claude.includes("@AGENTS.md")) {
+  const claude = await readOptional(path.join(target, "CLAUDE.md"));
+  if (claude === undefined) await write("CLAUDE.md", "@AGENTS.md\n");
+  else if (!claude.includes("@AGENTS.md")) {
     notes.push(
       "CLAUDE.md exists and does not include @AGENTS.md; add that line so Claude Code reads the Hatchmark block",
     );
