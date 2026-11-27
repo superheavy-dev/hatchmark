@@ -82,12 +82,12 @@ describe("the edges note names the window the engine compiles (HM4040)", () => {
         const message = notes[i]?.message;
         if (first < start) {
           expect(message, `block s${i}`).toBe(
-            `uses edges "snap": the first ${unit} starts on ${day(first, unit === "week")}, before the range starts on ${day(start, false)}`,
+            `uses edges: snap: the first ${unit} starts on ${day(first, unit === "week")}, before the range starts on ${day(start, false)}`,
           );
         } else {
           expect(first, `block s${i}`).toBe(start);
           expect(message, `block s${i}`).toBe(
-            `uses edges "snap": the first ${unit} starts at the start of the ${unit} that holds the range start`,
+            `uses edges: snap: the first ${unit} starts at the start of the ${unit} that holds the range start`,
           );
         }
       });

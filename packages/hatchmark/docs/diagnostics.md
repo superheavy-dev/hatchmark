@@ -37,15 +37,20 @@ note. Notes don't change `ok`, the counts or the exit code, `--strict` included,
 them out while the project has errors. Setting an option explicitly, even to its default value,
 silences its note.
 
-| Default                                               | Reported on                                       | Option                                          |
-| ----------------------------------------------------- | ------------------------------------------------- | ----------------------------------------------- |
-| A time series starts at the start of its first bucket | each `line`, `area` or time `bar` above day grain | block `"edges": "clip"`                         |
-| Buckets the data doesn't fully cover are marked       | each `line`, `area` or time `bar`                 | block `"incomplete": "hide"` or `"show"`        |
-| Charts end at the newest source's horizon             | each dashboard without `period`                   | `period.asOf`: `"latest_common_data"` or a date |
-| Weeks start on Monday                                 | `hatchmark.yaml`, when a week block relies on it  | `anchors.week`, or a block's grain anchor       |
-| Quarters and years start on Jan 1                     | `hatchmark.yaml`, when such a block relies on it  | `anchors.year`, or a block's grain anchor       |
-| An interval ending at a bucket end counts in it       | metrics with `active`                             | `active.ends`                                   |
-| A split entity takes its current group                | `per_entity` metrics                              | `group_at`                                      |
+| Default                                               | Reported on                                                                                                 | Option                                                                                                     |
+| ----------------------------------------------------- | ----------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------- |
+| A time series starts at the start of its first bucket | each `line`, `area` or time `bar` that can show a grain above day, unless the range is `all_time`           | block `edges: clip`                                                                                        |
+| Buckets the data doesn't fully cover are marked       | each `line`, `area` or time `bar`                                                                           | block `incomplete: hide` or `show`                                                                         |
+| Charts end at the newest source's horizon             | each dashboard without `period`                                                                             | `period: {asOf: latest_common_data, range: last_12_months, compare: previous_period}`, or a date as `asOf` |
+| Weeks start on Monday                                 | `hatchmark.yaml`, when a week block relies on it                                                            | `anchors.week`, or a block's grain anchor                                                                  |
+| Quarters start on Jan 1, Apr 1, Jul 1 and Oct 1       | `hatchmark.yaml`, when a quarter block relies on it and neither `anchors.quarter` nor `anchors.year` is set | `anchors.quarter`, or a block's grain anchor                                                               |
+| Years start on Jan 1                                  | `hatchmark.yaml`, when a year block relies on it                                                            | `anchors.year` (a quarter start when `anchors.quarter` is set), or a block's grain anchor                  |
+| An interval ending at a bucket end counts in it       | metrics with `active`                                                                                       | `active.ends`                                                                                              |
+| A split entity takes its current group                | `per_entity` metrics                                                                                        | `group_at`                                                                                                 |
+
+The edges note names the first bucket's start and the range start when the page's first period is
+fixed (a date as `asOf`), using the period filter's and grain filter's defaults when the dashboard
+has them.
 
 ## JSON form, format_version "1"
 

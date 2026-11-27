@@ -14,10 +14,29 @@ const dashboard = (blocks: unknown[], period?: unknown) => ({
 
 const PERIOD = { asOf: "latest_data", range: "last_12_months", compare: "none" };
 
-function notes(blocks: unknown[], options: { period?: unknown; config?: unknown } = {}) {
+function notes(
+  blocks: unknown[],
+  options: { period?: unknown; config?: unknown; filters?: boolean } = {},
+) {
+  const d = dashboard(blocks, "period" in options ? options.period : PERIOD);
   const project = projectFrom({
     config: options.config ?? CONFIG,
-    dashboards: { d: dashboard(blocks, "period" in options ? options.period : PERIOD) },
+    dashboards: {
+      d: options.filters
+        ? {
+            ...d,
+            filters: [
+              {
+                type: "period",
+                id: "period",
+                options: ["last_30_days", "last_90_days"],
+                default: "last_90_days",
+              },
+              { type: "grain", id: "grain", options: ["day", "week", "month"], default: "month" },
+            ],
+          }
+        : d,
+    },
   });
   expect(checkReferences(project).filter((d) => d.severity !== "note")).toEqual([]);
   return explainDefaults(project);
@@ -32,18 +51,18 @@ describe("check explains the defaults it applies (HM4040)", () => {
         "note",
         "dashboards/d.yaml",
         "/blocks/0/grain",
-        'uses edges "snap": the first month starts at the start of the month that holds the range start',
+        "uses edges: snap: the first month starts at the start of the month that holds the range start",
       ],
       [
         "HM4040",
         "note",
         "dashboards/d.yaml",
         "/blocks/0/grain",
-        'uses incomplete "mark": a month the data doesn\'t fully cover is marked in progress',
+        "uses incomplete: mark: a month the data doesn't fully cover is marked in progress",
       ],
     ]);
-    expect(ds[0]?.help).toMatch(/"edges": "clip"/);
-    expect(ds[1]?.help).toMatch(/"incomplete": "hide"/);
+    expect(ds[0]?.help).toMatch(/edges: clip/);
+    expect(ds[1]?.help).toMatch(/incomplete: hide/);
     expect(
       notes([
         { type: "line", metrics: ["revenue"], grain: "month", edges: "snap", incomplete: "mark" },
@@ -58,8 +77,8 @@ describe("check explains the defaults it applies (HM4040)", () => {
       { type: "bar", metrics: ["orders"], by: "plan" },
       { type: "bar", metrics: ["orders"], grain: "day" },
     ]);
-    expect(ds.map((d) => [d.pointer, d.message.split(":")[0]])).toEqual([
-      ["/blocks/2/grain", 'uses incomplete "mark"'],
+    expect(ds.map((d) => [d.pointer, d.message.slice(0, 22)])).toEqual([
+      ["/blocks/2/grain", "uses incomplete: mark:"],
     ]);
   });
 
@@ -71,7 +90,7 @@ describe("check explains the defaults it applies (HM4040)", () => {
       },
     );
     expect(ds[0]?.message).toBe(
-      'uses edges "snap": the first week starts on Sun Oct 25, before the range starts on Oct 29',
+      "uses edges: snap: the first week starts on Sun Oct 25, before the range starts on Oct 29",
     );
   });
 
@@ -81,7 +100,7 @@ describe("check explains the defaults it applies (HM4040)", () => {
       [
         "dashboards/d.yaml",
         "/title",
-        'uses the default period, "asOf": "latest_data": charts end at the newest source\'s horizon, and sources that end earlier are marked partial',
+        "uses the default period, asOf: latest_data: charts end at the newest source's horizon, and sources that end earlier are marked partial",
       ],
     ]);
   });
@@ -105,8 +124,9 @@ describe("check explains the defaults it applies (HM4040)", () => {
         [
           "hatchmark.yaml",
           "/name",
-          "uses the default year anchor: quarters and years start on Jan 1",
+          "uses the default quarter anchor: quarters start on Jan 1, Apr 1, Jul 1 and Oct 1",
         ],
+        ["hatchmark.yaml", "/name", "uses the default year anchor: years start on Jan 1"],
       ],
     );
     expect(
@@ -141,6 +161,46 @@ describe("check explains the defaults it applies (HM4040)", () => {
     ]);
     const all = renderHuman(report, { explainDefaults: true });
     expect(all.match(/^note\[HM4040\]: /gm)).toHaveLength(3);
-    expect(all).toMatch(/= help: set "edges": "clip"/);
+    expect(all).toMatch(/= help: set edges: clip/);
+  });
+
+  it("uses the period and grain a page shows first, from its filters", () => {
+    const ds = notes(
+      [
+        { type: "line", metrics: ["revenue"], grain: "day", grains: ["day", "month"] },
+        { type: "line", metrics: ["revenue"], grain: "week", grains: ["week", "month"] },
+      ],
+      { period: { asOf: "2026-10-20", range: "last_30_days", compare: "none" }, filters: true },
+    ).filter((d) => d.message.startsWith("uses edges"));
+    expect(ds.map((d) => [d.pointer, d.message])).toEqual([
+      [
+        "/blocks/0/grain",
+        "uses edges: snap: the first month starts on Jul 1, before the range starts on Jul 23",
+      ],
+      [
+        "/blocks/1/grain",
+        "uses edges: snap: the first month starts on Jul 1, before the range starts on Jul 23",
+      ],
+    ]);
+  });
+
+  it("names no edges for all_time, which has no start to snap", () => {
+    const ds = notes([{ type: "line", metrics: ["revenue"], grain: "month" }], {
+      period: { asOf: "latest_data", range: "all_time", compare: "none" },
+    });
+    expect(ds.map((d) => d.message.slice(0, 22))).toEqual(["uses incomplete: mark:"]);
+  });
+
+  it("names the year anchor alone when quarters are anchored, and suggests a quarter start", () => {
+    const ds = notes(
+      [{ type: "line", metrics: ["revenue"], grain: "year", edges: "snap", incomplete: "mark" }],
+      { config: { ...noAnchors, anchors: { quarter: "02-01" } } },
+    );
+    expect(ds.map((d) => [d.message, d.help])).toEqual([
+      [
+        "uses the default year anchor: years start on Jan 1",
+        "set anchors: {year: 02-01} for a year from Feb 1, or another quarter start, or a block's grain: {unit: year, anchor: 02-01}; anchors: {year: 01-01} keeps the default and silences this note",
+      ],
+    ]);
   });
 });

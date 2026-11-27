@@ -105,6 +105,12 @@ describe("hatchmark init and check", () => {
     );
     expect(explained.code).toBe(0);
     expect(explained.stdout.match(/^note\[HM4040\]: uses /gm)).toHaveLength(3);
+    const csv = await readFile(path.join(cwd, "shop/data/orders.csv"), "utf8");
+    await writeFile(path.join(cwd, "shop/data/orders.csv"), `${csv.split("\n")[0]}\n`);
+    const failed = await cli(["check", "--cwd", "shop", "--sql", "--json"], { cwd });
+    const codes = failed.json().diagnostics.map((d: { code: string }) => d.code);
+    expect(codes).toContain("HM4011");
+    expect(codes).not.toContain("HM4040");
   });
 
   it("writes the same bytes every time", async () => {
