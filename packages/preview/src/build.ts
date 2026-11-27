@@ -42,8 +42,8 @@ for (const icon of [
 }
 mkdirSync(join(site, "_brand"));
 for (const scheme of ["light", "dark"]) {
-  const lockup = `hatchmark-lockup-horizontal-${scheme}.svg`;
-  copyFileSync(join(BRAND, lockup), join(site, "_brand", lockup));
+  const mark = `hatchmark-mark-${scheme}.svg`;
+  copyFileSync(join(BRAND, mark), join(site, "_brand", mark));
 }
 copyFileSync(
   join(HATCHMARK, "assets", "runtime", "hatchmark.js"),

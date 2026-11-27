@@ -106,8 +106,8 @@ ${body}
 const SHELL_STYLE = `html, body { height: 100%; }
 body { display: flex; flex-direction: column; }
 header { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 16px; padding: 8px 16px; border-bottom: 1px solid var(--line); }
-header .brand { display: flex; align-items: center; gap: 14px; padding-block: 6px; font-weight: 600; }
-header .brand img { display: block; height: 16px; width: auto; }
+header .brand { display: flex; align-items: center; gap: 10px; padding-block: 2px; font-weight: 600; }
+header .brand img { display: block; height: 24px; width: auto; }
 [data-theme="dark"] .brand .light, :root:not([data-theme="dark"]) .brand .dark { display: none; }
 header .info { color: var(--muted); margin-right: auto; }
 [role="group"] { display: inline-flex; border: 1px solid var(--line); border-radius: 6px; overflow: hidden; }
@@ -163,7 +163,7 @@ function toggle(key: string, label: string, options: [string, string][]): string
 function shell(input: SiteInput): string {
   const label = buildLabel(input.build);
   const body = `<header>
-<strong class="brand"><img class="light" src="/_brand/hatchmark-lockup-horizontal-light.svg" alt="Hatchmark" width="112" height="16"><img class="dark" src="/_brand/hatchmark-lockup-horizontal-dark.svg" alt="Hatchmark" width="112" height="16"><span>preview</span></strong>
+<strong class="brand"><img class="light" src="/_brand/hatchmark-mark-light.svg" alt="Hatchmark" width="19" height="24"><img class="dark" src="/_brand/hatchmark-mark-dark.svg" alt="Hatchmark" width="19" height="24"><span>preview</span></strong>
 <span class="info" title="${escapeHtml(input.build.sha ?? "")}">${escapeHtml(label)}</span>
 ${toggle("view", "View", [
   ["components", "Components"],
