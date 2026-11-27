@@ -16,6 +16,7 @@ import {
   type CommandResult,
   EXIT,
   type OutputMode,
+  type PrintedResult,
 } from "./io.js";
 import { usageError } from "./usage.js";
 
@@ -29,7 +30,7 @@ interface Command {
     ctx: CommandContext,
     positionals: string[],
     flags: Flags,
-  ): CommandResult | Promise<CommandResult>;
+  ): CommandResult | PrintedResult | Promise<CommandResult | PrintedResult>;
 }
 
 const GLOBAL: Options = {
@@ -149,8 +150,8 @@ async function outputMode(io: CliIO, flags: Flags): Promise<OutputMode | Command
   return (await io.isAgent()) ? "json" : "human";
 }
 
-function print(io: CliIO, mode: OutputMode, result: CommandResult): number {
-  if (result.printed) return result.exitCode;
+function print(io: CliIO, mode: OutputMode, result: CommandResult | PrintedResult): number {
+  if ("printed" in result) return result.exitCode;
   if (mode === "json") io.stdout(`${JSON.stringify(result.json)}\n`);
   else if (result.human !== "") io.stdout(`${result.human}\n`);
   return result.exitCode;

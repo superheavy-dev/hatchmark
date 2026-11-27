@@ -18,7 +18,16 @@ export const doctorHelp: CommandHelp = {
   },
 };
 
-const PACKAGE_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../../..");
+export async function packageRoot(from: string): Promise<string> {
+  for (let dir = from; ; dir = path.dirname(dir)) {
+    const manifest = await readFile(path.join(dir, "package.json"), "utf8").then(
+      (text) => JSON.parse(text) as { name?: unknown },
+      () => undefined,
+    );
+    if (manifest?.name === "hatchmark") return dir;
+    if (path.dirname(dir) === dir) throw new Error(`no hatchmark package.json above ${from}`);
+  }
+}
 
 type Status = "ok" | "warn" | "fail";
 interface Check {
@@ -35,6 +44,7 @@ async function exists(file: string): Promise<boolean> {
 }
 
 export async function doctor(ctx: CommandContext): Promise<CommandResult> {
+  const root = await packageRoot(path.dirname(fileURLToPath(import.meta.url)));
   const checks: Check[] = [];
   const [major = 0, minor = 0] = process.versions.node.split(".").map(Number);
   const nodeOk = major >= 24 || (major === 23 && minor >= 6) || (major === 22 && minor >= 18);
@@ -46,7 +56,7 @@ export async function doctor(ctx: CommandContext): Promise<CommandResult> {
       : `Node.js ${process.versions.node} is not supported; install 22.18 or later on the 22 line, or 23.6 or later`,
   });
 
-  const docs = path.join(PACKAGE_ROOT, "docs", "diagnostics.md");
+  const docs = path.join(root, "docs", "diagnostics.md");
   checks.push({
     name: "docs",
     status: (await exists(docs)) ? "ok" : "fail",
@@ -57,7 +67,7 @@ export async function doctor(ctx: CommandContext): Promise<CommandResult> {
 
   const missing: string[] = [];
   for (const file of Object.values(SCHEMA_FILES)) {
-    if (!(await exists(path.join(PACKAGE_ROOT, "schema", file)))) missing.push(file);
+    if (!(await exists(path.join(root, "schema", file)))) missing.push(file);
   }
   checks.push({
     name: "schemas",
