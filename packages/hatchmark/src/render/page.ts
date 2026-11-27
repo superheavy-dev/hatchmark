@@ -10,7 +10,7 @@ import type {
   ScatterData,
   TableData,
 } from "../compiler/dashboard-data.js";
-import { MIN_CHART_SPAN } from "../spec/layout.js";
+import { aloneInRow, MIN_CHART_SPAN } from "../spec/layout.js";
 import { barCategories, barHeight, renderBar } from "./bar.js";
 import type { RenderContext } from "./chart.js";
 import { chartRuntimeData, chartTable, describeChart } from "./describe.js";
@@ -308,13 +308,15 @@ function grainCard(
 function card(
   block: LineData | BarData | PieData | TableData | ScatterData,
   ctx: RenderContext,
+  alone: boolean,
 ): string {
   if ((block.type === "line" || block.type === "area" || block.type === "bar") && block.grains) {
     return grainCard(block as (LineData | BarData) & { grains: GrainSwitch }, ctx);
   }
   const { title, subtitle } = blockHeading(block, ctx);
   const id = `hm-${block.id}-t`;
-  const body = block.type === "table" ? renderTable(block, ctx) : chartBody(block, ctx, title);
+  const body =
+    block.type === "table" ? renderTable(block, ctx, alone) : chartBody(block, ctx, title);
   if (block.type === "table") {
     const download = `<button type="button" class="hm-csv" data-hm-csv="${esc(block.id)}" aria-label="Download ${esc(title)} as CSV" hidden>Download CSV</button>`;
     return `<section class="hm-card hm-table" style="--span:${block.span}" aria-labelledby="${esc(id)}"><header class="hm-card-head hm-switch"><div class="hm-card-titles"><h2 id="${esc(id)}">${esc(title)}</h2>${subtitle ? `<p>${esc(subtitle)}</p>` : ""}</div>${download}</header>${body}</section>`;
@@ -355,19 +357,13 @@ export function renderBlocks(blocks: readonly BlockData[], ctx: RenderContext): 
  * and replace only the cards that changed.
  */
 export function gridItems(blocks: readonly BlockData[], ctx: RenderContext): GridItem[] {
-  const out: GridItem[] = [];
-  let kpis: KpiData[] = [];
-  const flush = () => {
-    if (kpis.length > 0) out.push(strip(kpis, ctx));
-    kpis = [];
-  };
+  const items: (KpiData[] | LineData | BarData | TableData)[] = [];
   for (const block of blocks) {
+    const last = items.at(-1);
     if (block.type === "kpi") {
-      kpis.push(block);
-      continue;
-    }
-    flush();
-    if (
+      if (Array.isArray(last)) last.push(block);
+      else items.push([block]);
+    } else if (
       block.type === "line" ||
       block.type === "area" ||
       block.type === "bar" ||
@@ -376,11 +372,23 @@ export function gridItems(blocks: readonly BlockData[], ctx: RenderContext): Gri
       block.type === "table" ||
       block.type === "scatter"
     ) {
-      out.push({ blocks: [block.id], html: card(block, ctx) });
+      items.push(block);
     }
   }
-  flush();
-  return out;
+  const alone = aloneInRow(
+    items.map((item) =>
+      Array.isArray(item)
+        ? item.reduce((sum, k) => sum + k.span, 0)
+        : item.type === "table"
+          ? item.span
+          : chartSpan(item),
+    ),
+  );
+  return items.map((item, i) =>
+    Array.isArray(item)
+      ? strip(item, ctx)
+      : { blocks: [item.id], html: card(item, ctx, alone[i] ?? false) },
+  );
 }
 
 function themeVariables(theme: Theme, mode: Mode): string {
@@ -453,7 +461,7 @@ export function pageStyles(assets: PageAssets, theme: Theme = DEFAULT_THEME): st
     `.hm-table-note{font-size:12px;line-height:16px;color:var(--hm-text-subtle)}`,
     `.hm-table thead th{position:sticky;top:0;z-index:2;background:var(--hm-card)}.hm-table thead tr>:first-child{z-index:3}.hm-tall{max-height:${d.tableRow - 4 + Math.round(15.5 * d.tableRow) + d.tableRow}px;overflow:auto;margin-right:-16px;padding-right:16px}.hm-tall thead th{border-bottom:0;box-shadow:inset 0 -1px 0 var(--hm-border-strong)}.hm-tall tfoot th,.hm-tall tfoot td{position:sticky;bottom:0;z-index:2;background:var(--hm-card);border-top:0;box-shadow:inset 0 1px 0 var(--hm-border-strong)}.hm-tall tfoot tr>:first-child{z-index:3}`,
     `.hm-sort{font:inherit;color:inherit;background:none;border:0;padding:0;margin:0;cursor:pointer;display:inline-flex;align-items:center;gap:4px;text-align:inherit;white-space:nowrap}.hm-sort:hover,.hm-table th[aria-sort=ascending],.hm-table th[aria-sort=descending]{color:var(--hm-text)}.hm-sort:focus-visible{outline:2px solid var(--hm-focus);outline-offset:2px;border-radius:2px}.hm-caret{flex:none;visibility:hidden}.hm-sort:hover .hm-caret{visibility:visible;opacity:.5}[aria-sort=ascending] .hm-caret,[aria-sort=descending] .hm-caret{visibility:visible;opacity:1}[aria-sort=ascending] .hm-caret{transform:rotate(180deg)}`,
-    `:root[data-hm-scroll=thin] .hm-table-wrap{scrollbar-width:thin;scrollbar-color:var(--hm-border-strong) transparent}:root[data-hm-scroll=page] .hm-tall{max-height:none;margin-right:0;padding-right:0}.hm-table .hm-key span.hm-m{display:none}.hm-table tr[data-hm-solo]{display:none}.hm-table .hm-subtotal>*,.hm-table tr[data-hm-lead]>*{border-top:1px solid var(--hm-border)}.hm-table .hm-subtotal>*{font-weight:500}.hm-table .hm-other{color:var(--hm-text-muted)}.hm-track{position:relative}.hm-zero{position:absolute;top:-2px;bottom:-2px;width:1px;background:var(--hm-baseline)}`,
+    `.hm-table-wrap{scrollbar-width:thin;scrollbar-color:var(--hm-border-strong) transparent}.hm-tall.hm-grow{max-height:none;margin-right:0;padding-right:0}.hm-table .hm-key span.hm-m{display:none}.hm-table tr[data-hm-solo]{display:none}.hm-table .hm-subtotal>*,.hm-table tr[data-hm-lead]>*{border-top:1px solid var(--hm-border)}.hm-table .hm-subtotal>*{font-weight:500}.hm-table .hm-other{color:var(--hm-text-muted)}.hm-track{position:relative}.hm-zero{position:absolute;top:-2px;bottom:-2px;width:1px;background:var(--hm-baseline)}`,
     `.hm-csv{flex:none;font:inherit;font-size:12px;line-height:16px;font-weight:500;padding:3px 10px;border:1px solid var(--hm-border);border-radius:${theme.radius.control}px;background:var(--hm-card-alt);color:var(--hm-text-muted);cursor:pointer}.hm-csv:hover{color:var(--hm-text)}.hm-csv:focus-visible{outline:2px solid var(--hm-focus);outline-offset:1px}.hm-csv[hidden]{display:none}`,
     `@media print{.hm-tall{max-height:none;overflow:visible}.hm-csv{display:none}}`,
     `.hm-footer{display:flex;justify-content:space-between;gap:2px 12px;flex-wrap:wrap;padding-top:4px}`,
@@ -469,7 +477,7 @@ export function pageStyles(assets: PageAssets, theme: Theme = DEFAULT_THEME): st
 }
 
 const THEME_SCRIPT =
-  'var q=new URLSearchParams(location.search),t=q.get("theme"),s=q.get("scroll");if(t==="dark"||t==="light")document.documentElement.dataset.theme=t;if(s==="thin"||s==="page")document.documentElement.dataset.hmScroll=s';
+  'var t=new URLSearchParams(location.search).get("theme");if(t==="dark"||t==="light")document.documentElement.dataset.theme=t';
 
 /** Everything a page's head needs: fonts preload, styles, the theme switch and the runtime. */
 export function pageHead(assets: PageAssets, theme: Theme = DEFAULT_THEME): string {

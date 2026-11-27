@@ -3,7 +3,10 @@ import { isNumber, metricOf, type RenderContext } from "./chart.js";
 import { formatKey, formatValue } from "./format.js";
 import { esc, r } from "./svg.js";
 
-/** Rows past which the table scrolls inside its card under a sticky header and total row. */
+/**
+ * Rows past which a table keeps its header and total row in view: scrolling inside its card, or in
+ * page mode growing with the page with both rows pinned to the screen edges.
+ */
 export const TALL_TABLE_ROWS = 15;
 
 /** An attribute value that keeps carriage returns and line feeds, which HTML parsing would fold. */
@@ -39,7 +42,7 @@ function track(geometry: { left: number; width: number }, zero: number | undefin
  * and keep their full text in a title. An outer key that repeats the row above, or that a subtotal
  * row already names, is left to screen readers, so groups read as groups.
  */
-export function renderTable(block: TableData, ctx: RenderContext): string {
+export function renderTable(block: TableData, ctx: RenderContext, alone = true): string {
   const locale = ctx.data.locale;
   const width = block.by.length;
   const metrics = block.metrics.map((m) => metricOf(ctx, m));
@@ -50,18 +53,25 @@ export function renderTable(block: TableData, ctx: RenderContext): string {
   const keyClass = (i: number) =>
     `hm-key${i === 0 ? "" : " hm-key2"}${i === width - 1 ? " hm-fill" : grouped ? " hm-outer" : ""}`;
   const levelOf = (row: TableRow) => row.level ?? 1;
+  /** Every row of the data is shown or folded into an Other row, so a group's rows are all its rows. */
+  const complete =
+    block.rows.reduce(
+      (n, row) => n + (row.kind === undefined ? 1 : row.kind === "other" ? (row.count ?? 0) : 0),
+      0,
+    ) === block.rowCount;
   const solo = new Set<number>();
   block.rows.forEach((row, index) => {
     if (row.kind !== "subtotal") return;
     const level = levelOf(row);
-    let children = 0;
+    const children: TableRow[] = [];
     for (let j = index + 1; j < block.rows.length; j++) {
       const next = block.rows[j] as TableRow;
       const nested = next.kind === "subtotal";
       if (nested && levelOf(next) <= level) break;
-      if (level === width - 1 ? !nested : nested && levelOf(next) === level + 1) children++;
+      if (level === width - 1 ? !nested : nested && levelOf(next) === level + 1)
+        children.push(next);
     }
-    if (children === 1) solo.add(index);
+    if (complete && children.length === 1) solo.add(index);
   });
   const revealed: Set<number>[] = [];
   const stack: { level: number; solo: boolean }[] = [];
@@ -101,7 +111,7 @@ export function renderTable(block: TableData, ctx: RenderContext): string {
   ) => {
     const text = esc(label);
     const content = numeric ? `${CARET}${text}` : `${text}${CARET}`;
-    const csvAttr = csv === label ? "" : ` data-csv="${esc(csv)}"`;
+    const csvAttr = csv === label && extra === "" ? "" : ` data-csv="${esc(csv)}"`;
     return `<th scope="col"${cls ? ` class="${cls}"` : ""} aria-sort="${sortState(by)}" data-hm-num="${numeric ? 1 : 0}"${csvAttr}><button type="button" class="hm-sort">${content}</button>${extra}</th>`;
   };
   const outerLabels = block.by
@@ -255,6 +265,8 @@ export function renderTable(block: TableData, ctx: RenderContext): string {
       : "";
   const empty =
     block.rows.length === 0 ? `<p class="hm-table-note">No rows in this period.</p>` : "";
-  const tall = block.rows.length > TALL_TABLE_ROWS ? " hm-tall" : "";
+  const overflow = block.overflow ?? (alone ? "page" : "scroll");
+  const tall =
+    block.rows.length > TALL_TABLE_ROWS ? ` hm-tall${overflow === "page" ? " hm-grow" : ""}` : "";
   return `<div class="hm-table-wrap${tall}" tabindex="0" role="region" aria-labelledby="hm-${esc(block.id)}-t"><table class="hm-table${grouped ? (block.subtotals ? " hm-ma" : " hm-mb") : ""}${grouped && block.subtotals && width > 2 ? " hm-deep" : ""}"><thead><tr>${head}</tr></thead><tbody>${rows}</tbody>${total}</table></div>${empty}${note}`;
 }

@@ -620,7 +620,32 @@ const TABLES: GalleryVariant[] = [
   ),
   one("table", "table-bars", "In-cell bars on two metrics", TABLE_BARS),
   one("table", "table-bars-negative", "In-cell bars across zero", TABLE_BARS_NEGATIVE),
-  one("table", "table-tall", "50 rows: sticky header and total row", TABLE_TALL),
+  one(
+    "table",
+    "table-tall",
+    "50 rows alone in their row: the table grows with the page, header and total pinned to the screen",
+    TABLE_TALL,
+  ),
+  one(
+    "table",
+    "table-tall-scroll",
+    'Alone in its row with "overflow": "scroll": scrolls inside its card',
+    { ...TABLE_TALL, id: "tall_scroll", overflow: "scroll" },
+  ),
+  one(
+    "table",
+    "table-tall-shared",
+    "Sharing a row with a chart: scrolls inside its card",
+    { ...TABLE_TALL, id: "tall_shared", span: 8 },
+    { ...COUNTRY_BAR, id: "beside_shared", span: 4 },
+  ),
+  one(
+    "table",
+    "table-tall-shared-page",
+    'Sharing a row with "overflow": "page": grows, and the chart beside it stretches (check warns HM2025)',
+    { ...TABLE_TALL, id: "tall_shared_page", span: 8, overflow: "page" },
+    { ...COUNTRY_BAR, id: "beside_page", span: 4 },
+  ),
   one(
     "table",
     "table-group-products",

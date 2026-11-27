@@ -924,6 +924,14 @@
             "pattern": "^[a-z][a-z0-9_]*$",
             "description": "A metric name, the file name under metrics/."
           }
+        },
+        "overflow": {
+          "description": "How a table past 15 rows fits: \"page\" grows with the page, its header and total pinned to the screen edges; \"scroll\" scrolls inside its card. Default: \"page\" when the table is alone in its grid row, else \"scroll\".",
+          "type": "string",
+          "enum": [
+            "page",
+            "scroll"
+          ]
         }
       },
       "required": [

@@ -36,3 +36,55 @@ describe("HM2024", () => {
     expect(checkReferences(withSpans(3, 12, 1)).filter((d) => d.code === "HM2024")).toEqual([]);
   });
 });
+
+describe("HM2025", () => {
+  const withTables = (blocks: Record<string, unknown>[]) =>
+    projectFrom({ dashboards: { sales: { ...DASHBOARD, blocks } } });
+  const table = (extra: Record<string, unknown>) => ({
+    type: "table",
+    by: ["region"],
+    metrics: ["revenue"],
+    ...extra,
+  });
+  const codes = (blocks: Record<string, unknown>[]) =>
+    checkReferences(withTables(blocks))
+      .filter((d) => d.code === "HM2025")
+      .map((d) => [d.pointer, d.severity]);
+
+  it('warns on "overflow": "page" for a table that shares its grid row', () => {
+    expect(
+      codes([
+        table({ span: 8, overflow: "page" }),
+        { type: "bar", metrics: ["orders"], by: "plan", span: 4 },
+      ]),
+    ).toEqual([["/blocks/0/overflow", "warning"]]);
+  });
+
+  it("counts a strip of KPIs as one card and a narrow chart at its drawn width", () => {
+    expect(
+      codes([
+        { type: "kpi", metric: "revenue" },
+        { type: "kpi", metric: "orders" },
+        table({ span: 6, overflow: "page" }),
+        { type: "line", metrics: ["revenue"], grain: "month", span: 1 },
+        table({ span: 9, overflow: "page" }),
+      ]),
+    ).toEqual([
+      ["/blocks/2/overflow", "warning"],
+      ["/blocks/4/overflow", "warning"],
+    ]);
+  });
+
+  it("is quiet for a table alone in its row, for scroll, and for the default", () => {
+    expect(
+      codes([
+        table({ overflow: "page" }),
+        table({ span: 6, overflow: "page" }),
+        table({ span: 12 }),
+        table({ span: 6, overflow: "scroll" }),
+        { type: "bar", metrics: ["orders"], by: "plan", span: 6 },
+        table({ span: 4 }),
+      ]),
+    ).toEqual([]);
+  });
+});

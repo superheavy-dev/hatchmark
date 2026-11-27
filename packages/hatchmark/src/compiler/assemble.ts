@@ -857,6 +857,7 @@ class Assembler {
       percentOfTotal: percent,
       sort,
       ...(block.bars !== undefined && block.bars.length > 0 ? { bars: block.bars } : {}),
+      ...(block.overflow !== undefined ? { overflow: block.overflow } : {}),
       rows,
       rowCount: leaves.length,
       ...(subtotals ? { subtotals: true } : {}),

@@ -28,6 +28,7 @@ rows as CSV.
 | `other`          | With `limit`: fold the rows past the limit into one "Other" row.                                          |
 | `subtotals`      | A subtotal row for every group of each outer `by` column. Needs two or more `by` columns.                 |
 | `bars`           | Metrics that draw a bar in their cells, scaled across the rows shown. Must also be in `metrics` (HM2006). |
+| `overflow`       | How a table past 15 rows fits: `"page"` or `"scroll"`. Default from the layout; see Long tables.          |
 
 What it draws:
 
@@ -102,8 +103,24 @@ a share bar; `bars` is for metrics that are not shares, such as orders or a marg
 
 ## Long tables
 
-A table with more than 15 rows scrolls inside its card, with the header row and the total row kept
-in view. Printing shows every row.
+A table with more than 15 rows keeps its header row and total row in view, in one of two ways:
+
+- **Page** (the default for a table alone in its grid row): the card grows as tall as its rows and
+  the page scrolls. While the table is on screen, its header row stays at the top of the window
+  and its total row at the bottom.
+- **Scroll** (the default for a table that shares its row with other blocks): the card keeps the
+  height of about 16 rows and the rows scroll inside it under a pinned header and total, with a
+  thin scrollbar in the theme's colours. The row's cards stay the same height.
+
+`"overflow": "page"` or `"scroll"` overrides the default. `"page"` in a shared row makes the
+other cards in the row stretch to the table's height, so check warns with HM2025. "Alone in its row"
+follows the 12-column grid as the spec lays it out: a run of KPIs counts as one card, a chart is
+counted at its drawn width (at least 3 columns), and a block that does not fit in what is left of
+a row starts the next one. Below 1024 px every block takes the full width, but the mode stays the
+one the spec's layout gives. When card height presets arrive (GUN-1822), the scroll height will
+follow the preset instead of the fixed 16 rows.
+
+Printing shows every row.
 
 Tables do not paginate. A dashboard is read at a glance, and rows on a later page are easy to miss
 and break the "these N rows plus the rest" reading. Use `limit` with `other`, or subtotals; check

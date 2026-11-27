@@ -81,6 +81,10 @@ Line, area and bar charts need at least 3 of the 12 grid columns for their axis 
 and plot. A smaller `span` is a warning, HM2024: the chart is drawn 3 columns wide anyway, and
 the grid row reflows around it. The safe fix sets `"span": 3`. `check` and `build` both report it.
 
+A table with `"overflow": "page"` grows with its rows. In a grid row shared with other blocks,
+that stretches the other cards to the table's height, so it is a warning, HM2025. Remove `overflow`
+(a table in a shared row scrolls inside its card by default), or give the table `"span": 12`.
+
 ## JSON syntax
 
 Spec files are strict JSON (RFC 8259): exactly what `JSON.parse` accepts, with the same value. Two

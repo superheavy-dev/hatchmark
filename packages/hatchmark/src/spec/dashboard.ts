@@ -242,6 +242,10 @@ const tableBlock = z
     bars: z.array(metricName).optional().meta({
       description: "Metrics that draw a bar in their cells, scaled across the rows shown.",
     }),
+    overflow: z.enum(["page", "scroll"]).optional().meta({
+      description:
+        'How a table past 15 rows fits: "page" grows with the page, its header and total pinned to the screen edges; "scroll" scrolls inside its card. Default: "page" when the table is alone in its grid row, else "scroll".',
+    }),
   })
   .superRefine((b, ctx) => {
     if (b.other === true && b.limit === undefined) {

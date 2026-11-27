@@ -159,17 +159,18 @@ function revealFocus(wrap: HTMLElement, table: HTMLTableElement): void {
 }
 
 /**
- * Preview-only (?scroll=page): a tall table grows with the page instead of scrolling inside its
- * card, so its header row follows the viewport top and its total row the viewport bottom while the
- * table is on screen. CSS sticky cannot do this because the card scrolls sideways on a phone.
+ * A tall table in page mode (overflow "page", the default alone in its grid row) grows with the page
+ * instead of scrolling inside its card, so its header row follows the viewport top and its total row
+ * the viewport bottom while the table is on screen. CSS sticky cannot do this, because the card
+ * scrolls sideways on a phone and so becomes the sticky container.
  */
-function pinToViewport(wrap: HTMLElement, table: HTMLTableElement): void {
+function pinToViewport(table: HTMLTableElement): void {
   const head = [...(table.tHead?.rows[0]?.cells ?? [])];
   const foot = [...(table.tFoot?.rows[0]?.cells ?? [])];
   let queued = false;
   const update = () => {
     queued = false;
-    const box = wrap.getBoundingClientRect();
+    const box = table.getBoundingClientRect();
     const room = Math.max(
       0,
       box.height -
@@ -197,8 +198,7 @@ export function wireTable(card: HTMLElement): void {
   if (!table) return;
   const wrap = table.closest<HTMLElement>(".hm-table-wrap");
   if (wrap) revealFocus(wrap, table);
-  if (wrap?.classList.contains("hm-tall") && document.documentElement.dataset.hmScroll === "page")
-    pinToViewport(wrap, table);
+  if (wrap?.classList.contains("hm-grow")) pinToViewport(table);
   const live = document.createElement("div");
   live.className = "hm-sr";
   live.setAttribute("aria-live", "polite");
