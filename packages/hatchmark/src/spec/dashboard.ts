@@ -3,11 +3,12 @@ import {
   columnName,
   comparison,
   customIssue,
+  grainSchema,
   identifier,
   periodRange,
+  rangeSchema,
   scalar,
   schemaRef,
-  timeGrain,
 } from "./common.js";
 
 const blockCommon = {
@@ -49,7 +50,7 @@ const kpiBlock = z
 const timeSeriesFields = {
   ...blockCommon,
   metrics: metricList,
-  grain: timeGrain,
+  grain: grainSchema,
   split: columnName.optional().meta({ description: "Column that splits one metric into series." }),
 };
 
@@ -86,7 +87,7 @@ const barBlock = z
     by: columnName
       .optional()
       .meta({ description: "Category column on the axis. Use either by or grain." }),
-    grain: timeGrain
+    grain: grainSchema
       .optional()
       .meta({ description: "Time buckets on the axis. Use either by or grain." }),
     split: columnName.optional(),
@@ -219,7 +220,7 @@ export const periodSchema = z
       description:
         '"latest_data" (the last date in the data) or a fixed YYYY-MM-DD, so builds are reproducible.',
     }),
-    range: periodRange,
+    range: rangeSchema,
     compare: comparison,
   })
   .meta({

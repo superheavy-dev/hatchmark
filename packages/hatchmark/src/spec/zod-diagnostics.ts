@@ -266,6 +266,15 @@ export function issuesToDiagnostics(
           });
           break;
         }
+        const typed = issue.errors.filter(
+          (branch) => !branch.some((e) => e.path.length === 0 && e.code === "invalid_type"),
+        );
+        if (typed.length > 0) {
+          const best = typed.reduce((a, b) => (b.length < a.length ? b : a));
+          const nested = best.map((e) => ({ ...e, path: [...issue.path, ...e.path] }));
+          out.push(...issuesToDiagnostics(nested as z.core.$ZodIssue[], ctx));
+          break;
+        }
         const branches = issue.errors.map((branch) => branch.find((e) => e.path.length === 0));
         const types = branches.flatMap((b) =>
           b?.code === "invalid_type"

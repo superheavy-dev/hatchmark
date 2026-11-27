@@ -1,5 +1,15 @@
 import { z } from "zod";
-import { columnName, currencyCode, identifier, schemaRef } from "./common.js";
+import {
+  type Anchors,
+  columnName,
+  currencyCode,
+  customIssue,
+  DEFAULT_ANCHORS,
+  identifier,
+  monthDay,
+  schemaRef,
+  weekday,
+} from "./common.js";
 
 const relativePath = z
   .string()
@@ -155,7 +165,6 @@ export const PROJECT_DEFAULTS = {
   locale: "en-US",
   currency: "USD",
   timezone: "UTC",
-  weekStart: "monday",
   theme: "default",
   telemetry: false,
   sources: {},
@@ -186,13 +195,67 @@ export const projectConfigSchema = z
       description: "Default currency for currency-formatted metrics.",
     }),
     timezone: timeZone.meta({ description: "Time zone that dates are bucketed in." }),
-    weekStart: z.enum(["monday", "sunday"]).meta({ description: "First day of a week bucket." }),
+    weekStart: z.enum(["monday", "sunday"]).optional().meta({
+      description: 'Older spelling of anchors.week ("monday" or "sunday"); use anchors instead.',
+    }),
+    anchors: z
+      .strictObject({
+        week: weekday
+          .optional()
+          .meta({ description: "First day of a week bucket. Default monday." }),
+        quarter: monthDay.optional().meta({
+          description: "Where quarters begin, such as 02-01. Default: the year anchor.",
+        }),
+        year: monthDay.optional().meta({
+          description:
+            "Where years begin, such as 02-01 for a year from February 1. Default 01-01.",
+        }),
+      })
+      .optional()
+      .meta({
+        description:
+          "Where week, quarter and year buckets begin. A fiscal year is a year anchor; a week start is the week anchor.",
+      }),
     theme: identifier.meta({ description: "Theme id." }),
     telemetry: z.boolean().meta({ description: "Send anonymous usage data. Off unless set true." }),
     sources: z
       .record(identifier, sourceSchema)
       .meta({ description: "Tables by name. Metrics refer to these names in their table field." }),
   })
+  .superRefine((c, ctx) => {
+    if (c.weekStart !== undefined && c.anchors?.week !== undefined) {
+      ctx.addIssue(
+        customIssue("HM3007", ["weekStart"], 'use either "weekStart" or "anchors.week", not both'),
+      );
+    }
+    const { quarter, year } = c.anchors ?? {};
+    if (quarter !== undefined && year !== undefined) {
+      const months = (m: string) => Number(m.slice(0, 2));
+      const aligned =
+        quarter.slice(3) === year.slice(3) && (months(quarter) - months(year) + 12) % 3 === 0;
+      if (!aligned) {
+        ctx.addIssue(
+          customIssue(
+            "HM3007",
+            ["anchors", "quarter"],
+            `quarters starting ${quarter} don't divide years starting ${year}; use a date 0, 3, 6 or 9 months after it`,
+          ),
+        );
+      }
+    }
+  })
   .meta({ title: "Hatchmark project config (hatchmark.json)" });
 
 export type ProjectConfig = z.infer<typeof projectConfigSchema>;
+
+/** The project's bucket anchors: anchors, else weekStart for weeks; quarters follow the year. */
+export function projectAnchors(
+  config: Pick<ProjectConfig, "anchors" | "weekStart"> | undefined,
+): Anchors {
+  const year = config?.anchors?.year ?? DEFAULT_ANCHORS.year;
+  return {
+    week: config?.anchors?.week ?? config?.weekStart ?? DEFAULT_ANCHORS.week,
+    quarter: config?.anchors?.quarter ?? year,
+    year,
+  };
+}

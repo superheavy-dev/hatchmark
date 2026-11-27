@@ -1,5 +1,5 @@
 {
-  "version": 1,
+  "version": 2,
   "name": "sales",
   "title": "Global sales",
   "description": "Orders from every market, last 12 months against the 12 before.",
@@ -20,7 +20,11 @@
   "locale": "en-US",
   "currency": "USD",
   "timezone": "America/New_York",
-  "weekStart": "sunday",
+  "anchors": {
+    "week": "sunday",
+    "quarter": "01-01",
+    "year": "01-01"
+  },
   "metrics": {
     "avg_order_value": {
       "name": "avg_order_value",

@@ -58,7 +58,7 @@ try {
   assert.deepEqual(body.window, { kind: "bounded", start: "2026-09-01", end: "2026-10-01" });
   assert.equal(body.kpi.value, 10);
   assert.deepEqual(body.kpi.current, { start: "2026-10-01", end: "2026-11-01" });
-  assert.equal(body.planHash, "b677a470c9588ffe57c77a8397b6c26fe280e46a11c07ef3220140b947f8c3b1");
+  assert.equal(body.planHash, "16eef3ef02f5f012d7a5a6154c470ae18c3de048a762c23c1d3486bd731d9b99");
   assert.match(body.page, /^<!doctype html>/);
   assert.match(body.page, /<h1>Sales overview<\/h1>/);
   assert.match(body.page, /Data through Oct 31, 2026/);

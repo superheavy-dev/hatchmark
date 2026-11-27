@@ -648,7 +648,7 @@ The existing names (`last_7_days`, `month_to_date`, `last_complete_year`, …) s
 
 Project defaults live in hatchmark.json (`anchors`, replacing `weekStart`; the default is week `monday`, quarter and year `01-01`). A block can override one: `"grain": { "unit": "year", "anchor": "07-01" }`; a bare `"grain": "month"` uses the defaults. A "fiscal year" is year grain with an anchor; a week start is the week anchor. A quarter anchor must start a 3-month cycle consistent with the year anchor when both are set, or check says so (HM3007). Anchors `MM-29` to `MM-31` are rejected (HM3005), since they don't exist every month.
 
-**Comparisons are range shifts by grain units.** `{ "shift": { "unit": "year", "by": -1 } }` moves both ends of the resolved range back one year (same period last year); `previous_period` is a shift by the range's own length in its own unit (a to-date or complete range of one quarter shifts by −1 quarter; `last 30 days` by −30 days). Shifting clamps the day to the target month's length (Mar 31 − 1 month = Feb 28/29), which is today's `windowBounds()` rule. To-date ranges shift their start and keep the same elapsed span (section 6.4).
+**Comparisons are range shifts by grain units.** `{ "shift": { "unit": "year", "by": -1 } }` moves both ends of the resolved range back one year (same period last year); `previous_period` is a shift by the range's own length in its own unit (a to-date or complete range of one quarter shifts by −1 quarter; `last 30 days` by −30 days). Shifting clamps the day to the target month's length (Mar 31 − 1 month = Feb 28/29), the `resolveRange()` rule. To-date ranges shift their start and keep the same elapsed span (section 6.4).
 
 Labels: a year or quarter bucket is labelled by its span ("Feb 2026 – Jan 2027", "Feb – Apr 2026") unless the anchor is `01-01`, where it's "2026" and "Q1 2026". `"label": "end"` on the grain names a year by the calendar year it ends in ("2027"); that is the business convention for fiscal years and stays an option (section 3.11).
 
@@ -671,7 +671,7 @@ Settled edge cases:
 
 ### 6.4 Windows and comparisons
 
-The existing `windowBounds()` stays the definition of each range in whole local dates. The horizon trims it:
+`resolveRange()` stays the definition of each range in whole local dates. The horizon trims it:
 
 | Range kind         | When the measure horizon is before the window end                                               | Comparison                                                                                                                         |
 | ------------------ | ----------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------- |

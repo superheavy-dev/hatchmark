@@ -5,6 +5,7 @@ import type {
   PlannedQuery,
   PlannedWindow,
 } from "../../src/compiler/index.js";
+import { DEFAULT_ANCHORS } from "../../src/spec/index.js";
 
 describe("query plan types", () => {
   it("give 7-day and 30-day KPIs different windows, and comparisons their own", () => {
@@ -29,10 +30,10 @@ describe("query plan types", () => {
     const context: ExecutionContext = {
       asOf: "2026-04-30",
       timezone: "UTC",
-      weekStart: "monday",
+      anchors: { ...DEFAULT_ANCHORS, week: "monday" },
       bindings: {},
     };
-    expect(Object.keys(context)).toEqual(["asOf", "timezone", "weekStart", "bindings"]);
+    expect(Object.keys(context)).toEqual(["asOf", "timezone", "anchors", "bindings"]);
   });
 
   it("carry each filter's column, so the same filter id on another column is another query", () => {

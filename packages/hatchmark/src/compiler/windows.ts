@@ -1,4 +1,13 @@
-import { type Comparison, PERIOD_RANGES, type PeriodRange, type TimeGrain } from "../spec/index.js";
+import {
+  type Anchors,
+  type Comparison,
+  PERIOD_RANGES,
+  type PeriodRange,
+  type RangeSpec,
+  type ResolvedGrain,
+  type TimeGrain,
+  WEEKDAYS,
+} from "../spec/index.js";
 import type { ExecutionContext, PlannedParam, PlannedQuery } from "./plan.js";
 
 /**
@@ -39,105 +48,147 @@ function addMonths(date: Ymd, months: number): Ymd {
   return { y, m, d: Math.min(date.d, daysInMonth(y, m)) };
 }
 
-const UNIT_MONTHS = { month: 1, quarter: 3, year: 12 } as const;
-type Unit = keyof typeof UNIT_MONTHS;
+const before = (a: Ymd, b: Ymd) => format(a) < format(b);
 
-function unitStart(date: Ymd, unit: Unit): Ymd {
-  const months = UNIT_MONTHS[unit];
-  const m = Math.floor((date.m - 1) / months) * months + 1;
-  return { y: date.y, m, d: 1 };
+/** Moves a date by whole grain units: days and weeks by days, the others by clamped months. */
+function addUnits(date: Ymd, unit: TimeGrain, n: number): Ymd {
+  switch (unit) {
+    case "day":
+      return addDays(date, n);
+    case "week":
+      return addDays(date, 7 * n);
+    case "month":
+      return addMonths(date, n);
+    case "quarter":
+      return addMonths(date, 3 * n);
+    case "year":
+      return addMonths(date, 12 * n);
+  }
 }
 
-function isUnitEnd(date: Ymd, unit: Unit): boolean {
-  const next = addDays(date, 1);
-  return next.d === 1 && (next.m - 1) % UNIT_MONTHS[unit] === 0;
+/** The start of the bucket holding a date: weeks from their anchor weekday, quarters and years from their MM-DD. */
+function startOf(date: Ymd, grain: ResolvedGrain): Ymd {
+  switch (grain.unit) {
+    case "day":
+      return date;
+    case "month":
+      return { y: date.y, m: date.m, d: 1 };
+    case "week": {
+      const weekday = (new Date(Date.UTC(date.y, date.m - 1, date.d)).getUTCDay() + 6) % 7;
+      return addDays(date, -((weekday - WEEKDAYS.indexOf(grain.anchor) + 7) % 7));
+    }
+    default: {
+      const anchor = parse(`2000-${grain.anchor}`);
+      const step = grain.unit === "quarter" ? 3 : 12;
+      let start: Ymd = { y: date.y, m: anchor.m, d: anchor.d };
+      while (before(date, start)) start = addMonths(start, -12);
+      while (!before(date, addMonths(start, step))) start = addMonths(start, step);
+      return start;
+    }
+  }
 }
 
-const ROLLING_DAYS: Partial<Record<PeriodRange, number>> = {
-  last_7_days: 7,
-  last_30_days: 30,
-  last_90_days: 90,
+const NAMED: Record<Exclude<PeriodRange, "all_time">, Exclude<RangeSpec, PeriodRange>> = {
+  last_7_days: { last: 7, unit: "day" },
+  last_30_days: { last: 30, unit: "day" },
+  last_90_days: { last: 90, unit: "day" },
+  last_12_months: { last: 12, unit: "month" },
+  month_to_date: { to_date: "month" },
+  quarter_to_date: { to_date: "quarter" },
+  year_to_date: { to_date: "year" },
+  last_complete_month: { last_complete: "month" },
+  last_complete_quarter: { last_complete: "quarter" },
+  last_complete_year: { last_complete: "year" },
 };
-const TO_DATE: Partial<Record<PeriodRange, Unit>> = {
-  month_to_date: "month",
-  quarter_to_date: "quarter",
-  year_to_date: "year",
-};
-const COMPLETE: Partial<Record<PeriodRange, Unit>> = {
-  last_complete_month: "month",
-  last_complete_quarter: "quarter",
-  last_complete_year: "year",
-};
+
+/** A grain at the project anchors, for ranges and comparisons written with a bare unit. */
+function anchored(unit: TimeGrain, anchors: Anchors): ResolvedGrain {
+  if (unit === "day" || unit === "month") return { unit };
+  if (unit === "week") return { unit, anchor: anchors.week };
+  return { unit, anchor: anchors[unit] };
+}
 
 /**
- * The dates a range covers as of a date, and the dates its comparison covers. This is the one
- * definition of every range; executors call it rather than deriving their own.
+ * The dates a range covers as of a date, and the dates its comparison covers: the one definition of
+ * every range, which executors and assembly call rather than deriving their own. Named ranges are
+ * aliases of the shorthands (last_30_days is {"last": 30, "unit": "day"}). Quarters and years start
+ * at the project anchors.
  *
- * - Rolling day ranges (last_7_days, last_30_days, last_90_days) end with asOf. previous_period is
- *   the same number of days just before; previous_year is the same dates one year earlier.
- * - last_12_months is the 12 calendar months ending with asOf's month, up to asOf. As a rolling
- *   range, previous_period shifts back by its own length (12 months), which here equals
- *   previous_year.
- * - To-date ranges (month, quarter, year) run from the start of asOf's unit through asOf.
- *   previous_period is the previous unit up to the same elapsed day (clamped to its length);
- *   previous_year is the same span one year earlier.
- * - last_complete_* is the last unit that has fully ended by asOf: asOf's own unit when asOf is
- *   its last day, else the one before. previous_period is the unit before that; previous_year
- *   the same unit one year earlier.
+ * - {start, end} is those dates. previous_period is the same number of days just before.
+ * - {last: N, unit: "day"} is the N days ending with asOf. previous_period is the N days before it.
+ * - {last: N, unit} for coarser units is the N buckets ending with asOf's, cut after asOf.
+ *   previous_period moves it back N units, ending at the same elapsed point (asOf moved back).
+ * - {to_date: unit} runs from the start of asOf's bucket through asOf. previous_period is the
+ *   previous bucket through the same elapsed day, clamped to its length.
+ * - {last_complete: unit} is the last bucket that has ended by the end of asOf. previous_period is
+ *   the bucket before it.
+ * - previous_year and {shift: {unit, by}} move the range by whole units. Ranges that end inside a
+ *   bucket (to-date and coarser "last") move their start and asOf, so both spans have the same
+ *   elapsed length; a whole bucket moves its start and keeps its length.
  * - all_time is unbounded and has no comparison: undefined for any shift but "none".
  */
-export function windowBounds(
-  range: PeriodRange,
+export function resolveRange(
+  range: RangeSpec,
   shift: Comparison,
   asOf: string,
+  anchors: Anchors,
 ): WindowBounds | undefined {
+  if (range === "all_time") return shift === "none" ? { kind: "unbounded" } : undefined;
+  const spec = typeof range === "string" ? NAMED[range] : range;
   const day = parse(asOf);
-  const result = (start: Ymd, endExclusive: Ymd): WindowBounds => ({
+  const result = (start: Ymd, end: Ymd): WindowBounds => ({
     kind: "bounded",
     start: format(start),
-    end: format(endExclusive),
+    end: format(end),
   });
+  const moved = (unit: TimeGrain, n: number) => ({ unit, n });
+  const by =
+    shift === "none"
+      ? undefined
+      : shift === "previous_year"
+        ? moved("year", -1)
+        : typeof shift === "object"
+          ? moved(shift.shift.unit, shift.shift.by)
+          : undefined;
 
-  if (range === "all_time") return shift === "none" ? { kind: "unbounded" } : undefined;
-
-  const days = ROLLING_DAYS[range];
-  if (days !== undefined) {
-    const end = addDays(day, 1);
-    const start = addDays(end, -days);
+  if ("start" in spec) {
+    const start = parse(spec.start);
+    const end = parse(spec.end);
     if (shift === "none") return result(start, end);
-    if (shift === "previous_period") return result(addDays(start, -days), start);
-    return result(addMonths(start, -12), addMonths(end, -12));
+    if (by === undefined) {
+      const days = Math.round(
+        (Date.UTC(end.y, end.m - 1, end.d) - Date.UTC(start.y, start.m - 1, start.d)) / 86400000,
+      );
+      return result(addDays(start, -days), start);
+    }
+    return result(addUnits(start, by.unit, by.n), addUnits(end, by.unit, by.n));
   }
 
-  if (range === "last_12_months") {
+  if ("last_complete" in spec) {
+    const grain = anchored(spec.last_complete, anchors);
+    const unit = spec.last_complete;
+    const next = addDays(day, 1);
+    const own = startOf(day, grain);
+    const current = format(addUnits(own, unit, 1)) === format(next) ? own : addUnits(own, unit, -1);
+    if (shift === "none") return result(current, addUnits(current, unit, 1));
+    const start = by === undefined ? addUnits(current, unit, -1) : addUnits(current, by.unit, by.n);
+    return result(start, addUnits(start, unit, 1));
+  }
+
+  if ("last" in spec && spec.unit === "day") {
     const end = addDays(day, 1);
-    const start = addMonths(unitStart(day, "month"), -11);
+    const start = addDays(end, -spec.last);
     if (shift === "none") return result(start, end);
-    return result(addMonths(start, -12), addDays(addMonths(day, -12), 1));
+    if (by === undefined) return result(addDays(start, -spec.last), start);
+    return result(addUnits(start, by.unit, by.n), addUnits(end, by.unit, by.n));
   }
 
-  const toDate = TO_DATE[range];
-  if (toDate !== undefined) {
-    const start = unitStart(day, toDate);
-    if (shift === "none") return result(start, addDays(day, 1));
-    const previousStart = addMonths(
-      start,
-      shift === "previous_period" ? -UNIT_MONTHS[toDate] : -12,
-    );
-    const sameMonth = addMonths(previousStart, day.m - start.m);
-    const lastDay = { ...sameMonth, d: Math.min(day.d, daysInMonth(sameMonth.y, sameMonth.m)) };
-    return result(previousStart, addDays(lastDay, 1));
-  }
-
-  const unit = COMPLETE[range];
-  if (unit === undefined) return undefined;
-  const months = UNIT_MONTHS[unit];
-  const current = isUnitEnd(day, unit)
-    ? unitStart(day, unit)
-    : addMonths(unitStart(day, unit), -months);
-  const start =
-    shift === "none" ? current : addMonths(current, shift === "previous_period" ? -months : -12);
-  return result(start, addMonths(start, months));
+  const unit = "last" in spec ? spec.unit : spec.to_date;
+  const count = "last" in spec ? spec.last : 1;
+  const start = addUnits(startOf(day, anchored(unit, anchors)), unit, -(count - 1));
+  if (shift === "none") return result(start, addDays(day, 1));
+  const step = by ?? moved(unit, -count);
+  return result(addUnits(start, step.unit, step.n), addDays(addUnits(day, step.unit, step.n), 1));
 }
 
 /**
@@ -149,7 +200,7 @@ export function windowBounds(
  */
 export function queryBounds(
   query: PlannedQuery,
-  context: Pick<ExecutionContext, "asOf" | "bindings">,
+  context: Pick<ExecutionContext, "asOf" | "bindings" | "anchors">,
 ): WindowBounds | undefined {
   const { window } = query;
   if (window.column === undefined) return { kind: "unbounded" };
@@ -157,10 +208,11 @@ export function queryBounds(
     (p): p is PlannedParam & { kind: "period" } =>
       p.kind === "period" && p.column === window.column,
   );
-  return windowBounds(
+  return resolveRange(
     effectiveRange(window.range, param, context.bindings),
     window.shift,
     context.asOf,
+    context.anchors,
   );
 }
 
@@ -171,10 +223,10 @@ export function queryBounds(
  * that is not a period range.
  */
 export function effectiveRange(
-  base: PeriodRange,
+  base: RangeSpec,
   param: { id: string; default: PeriodRange } | undefined,
   bindings: ExecutionContext["bindings"],
-): PeriodRange {
+): RangeSpec {
   if (param === undefined) return base;
   const bound = bindings[param.id];
   if (bound === undefined) return param.default;
@@ -186,52 +238,23 @@ export function effectiveRange(
   );
 }
 
-/** The first day of the time bucket a date falls in; weeks start on weekStart. */
-export function bucketStart(
-  date: string,
-  grain: TimeGrain,
-  weekStart: "monday" | "sunday",
-): string {
-  const day = parse(date);
-  switch (grain) {
-    case "day":
-      return format(day);
-    case "week": {
-      const weekday = new Date(Date.UTC(day.y, day.m - 1, day.d)).getUTCDay();
-      return format(addDays(day, -(weekStart === "monday" ? (weekday + 6) % 7 : weekday)));
-    }
-    default:
-      return format(unitStart(day, grain));
-  }
+/** The first day of the time bucket a date falls in. */
+export function bucketStart(date: string, grain: ResolvedGrain): string {
+  return format(startOf(parse(date), grain));
 }
-
-const GRAIN_STEP: Record<TimeGrain, { days: number } | { months: number }> = {
-  day: { days: 1 },
-  week: { days: 7 },
-  month: { months: 1 },
-  quarter: { months: 3 },
-  year: { months: 12 },
-};
 
 /**
  * Every bucket start of a span (start inclusive, end exclusive): a complete spine from the bucket
  * holding start through the bucket holding the last day, so empty buckets are listed too. The
  * first and last buckets may begin before or end after the span. Empty when the span is empty.
  */
-export function timeBuckets(
-  start: string,
-  end: string,
-  grain: TimeGrain,
-  weekStart: "monday" | "sunday",
-): string[] {
+export function timeBuckets(start: string, end: string, grain: ResolvedGrain): string[] {
   if (start >= end) return [];
-  const last = bucketStart(format(addDays(parse(end), -1)), grain, weekStart);
-  const step = GRAIN_STEP[grain];
+  const last = bucketStart(format(addDays(parse(end), -1)), grain);
   const out: string[] = [];
-  for (let bucket = bucketStart(start, grain, weekStart); bucket <= last; ) {
-    out.push(bucket);
-    const day = parse(bucket);
-    bucket = format("days" in step ? addDays(day, step.days) : addMonths(day, step.months));
+  for (let bucket = startOf(parse(start), grain); format(bucket) <= last; ) {
+    out.push(format(bucket));
+    bucket = addUnits(bucket, grain.unit, 1);
   }
   return out;
 }

@@ -9,7 +9,12 @@ import {
   type TableData,
 } from "../../src/compiler/index.js";
 import { createDuckDbExecutor } from "../../src/node/index.js";
-import { checkReferences, PROJECT_DEFAULTS, parseDiagnostics } from "../../src/spec/index.js";
+import {
+  checkReferences,
+  DEFAULT_ANCHORS,
+  PROJECT_DEFAULTS,
+  parseDiagnostics,
+} from "../../src/spec/index.js";
 import { applyFix } from "../spec/helpers.js";
 import { loadAt, metric, Oracle, removeProjects, run, writeProject } from "./fixture.js";
 
@@ -200,7 +205,7 @@ describe("HAT-22 probes", () => {
       const context = {
         asOf: "2026-02-28",
         timezone: "UTC",
-        weekStart: "monday" as const,
+        anchors: { ...DEFAULT_ANCHORS, week: "monday" } as const,
         bindings: {},
       };
       await expect(executor.execute(query, context)).rejects.toThrow("differs from hatchmark.json");
@@ -400,7 +405,7 @@ describe("HAT-22 probes", () => {
       const context = {
         asOf: "2026-02-28",
         timezone: "UTC",
-        weekStart: "monday" as const,
+        anchors: { ...DEFAULT_ANCHORS, week: "monday" } as const,
         bindings: {},
       };
       const outputs = new Set<string>();
@@ -547,7 +552,7 @@ describe("HAT-22 capped round", () => {
       const context = {
         asOf: "2026-02-28",
         timezone: "UTC",
-        weekStart: "monday" as const,
+        anchors: { ...DEFAULT_ANCHORS, week: "monday" } as const,
         bindings: {},
       };
       const result = await executor.execute(query, context);

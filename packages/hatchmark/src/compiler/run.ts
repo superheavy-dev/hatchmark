@@ -106,7 +106,7 @@ export async function runDashboard(
   const context: ExecutionContext = {
     asOf,
     timezone: plan.timezone,
-    weekStart: plan.weekStart,
+    anchors: plan.anchors,
     bindings: {},
   };
   const results = new Map<string, QueryResult>();

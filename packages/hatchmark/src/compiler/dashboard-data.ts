@@ -1,4 +1,4 @@
-import type { Comparison, Format, PeriodRange, TimeGrain } from "../spec/index.js";
+import type { Anchors, Comparison, Format, RangeSpec, TimeGrain } from "../spec/index.js";
 
 /**
  * DashboardData: everything the renderer needs to draw one dashboard, produced by the engine from a
@@ -13,7 +13,7 @@ import type { Comparison, Format, PeriodRange, TimeGrain } from "../spec/index.j
  * shows null as "—" and a real 0 as 0. Empty time buckets of additive metrics (sum, count) are
  * zero-filled by the engine; other metrics leave them null.
  */
-export const DASHBOARD_DATA_VERSION = 1;
+export const DASHBOARD_DATA_VERSION = 2;
 
 export type Value = number | null;
 
@@ -79,7 +79,7 @@ export interface TimeAxis {
   kind: "time";
   grain: TimeGrain;
   /**
-   * Bucket start dates (YYYY-MM-DD, project time zone, weeks starting on weekStart), a complete
+   * Bucket start dates (YYYY-MM-DD, project time zone, from the anchors), a complete
    * spine over the window: every bucket appears, empty ones included. The first and last buckets
    * may be partial (the window clips them); phase 1 does not mark incomplete periods.
    */
@@ -151,11 +151,12 @@ export interface DashboardData {
   project: string;
   /** The resolved end date of every window (latest_data resolved once per plan). */
   asOf: string;
-  period: { range: PeriodRange; compare: Comparison; current?: DateSpan; previous?: DateSpan };
+  period: { range: RangeSpec; compare: Comparison; current?: DateSpan; previous?: DateSpan };
   locale: string;
   currency: string;
   timezone: string;
-  weekStart: "monday" | "sunday";
+  /** Where week, quarter and year buckets begin (hatchmark.json anchors). */
+  anchors: Anchors;
   /** Every metric any block shows, by name. */
   metrics: Record<string, MetricInfo>;
   /** Blocks in spec order. Block types the engine cannot produce yet are omitted with a warning. */

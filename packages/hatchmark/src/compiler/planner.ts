@@ -1,5 +1,6 @@
 import { type Diagnostic, docsCommand } from "../diagnostics/index.js";
 import {
+  type Anchors,
   type Block,
   blockId,
   type Comparison,
@@ -7,9 +8,11 @@ import {
   DEFAULT_PERIOD,
   type Metric,
   type Project,
+  projectAnchors,
+  type ResolvedGrain,
+  resolveGrain,
   type Source,
   type SpecFile,
-  type TimeGrain,
 } from "../spec/index.js";
 import { canonicalJson, sha256Hex } from "./hash.js";
 import { paramsForQuery, resolveParams } from "./params.js";
@@ -30,7 +33,7 @@ import {
 /** Block types the planner builds in phase 1; the others get an HM4002 warning and no plan. */
 export const PLANNED_BLOCK_TYPES = ["kpi", "line", "area", "bar", "table"] as const;
 
-type AxisDimension = { kind: "column"; column: string } | { kind: "time"; grain: TimeGrain };
+type AxisDimension = { kind: "column"; column: string } | { kind: "time"; grain: ResolvedGrain };
 
 interface Context {
   file: SpecFile<"dashboard">;
@@ -40,6 +43,7 @@ interface Context {
   params: PlanParam[];
   range: QueryPlan["period"]["range"];
   compare: Comparison;
+  anchors: Anchors;
 }
 
 /** One reading of some metrics: the same axes, grouping sets and window shift for all of them. */
@@ -282,7 +286,7 @@ function planBlockAt(
                 sparkline: planReading(
                   ctx,
                   names,
-                  [{ kind: "time", grain: "month" }],
+                  [{ kind: "time", grain: { unit: "month" } }],
                   [[0]],
                   "none",
                 ),
@@ -292,7 +296,9 @@ function planBlockAt(
       }
       case "line":
       case "area": {
-        const axes: AxisDimension[] = [{ kind: "time", grain: block.grain }];
+        const axes: AxisDimension[] = [
+          { kind: "time", grain: resolveGrain(block.grain, ctx.anchors) },
+        ];
         if (block.split !== undefined) axes.push({ kind: "column", column: block.split });
         const sets = block.split === undefined ? [[0]] : [[0, 1], [1]];
         return { measures: planReading(ctx, block.metrics, axes, sets, "none") };
@@ -300,7 +306,7 @@ function planBlockAt(
       case "bar": {
         const axes: AxisDimension[] =
           block.grain !== undefined
-            ? [{ kind: "time", grain: block.grain }]
+            ? [{ kind: "time", grain: resolveGrain(block.grain, ctx.anchors) }]
             : [{ kind: "column", column: block.by ?? "" }];
         if (block.split !== undefined) axes.push({ kind: "column", column: block.split });
         const sets = block.split === undefined ? [[0]] : [[0, 1], [0], [1]];
@@ -382,6 +388,7 @@ function context(
       params: resolveParams(project, dashboard),
       range: period.range,
       compare: period.compare,
+      anchors: projectAnchors(project.config.spec),
     },
     diagnostics: [],
   };
@@ -410,7 +417,7 @@ export function planDashboard(project: Project, dashboard: string): PlanResult<Q
       dashboard,
       period: { asOf: period.asOf, range: period.range, compare: period.compare },
       timezone: config?.timezone ?? "UTC",
-      weekStart: config?.weekStart ?? "monday",
+      anchors: ctx.anchors,
       params: ctx.params,
       blocks,
       queries: [...queries.values()],

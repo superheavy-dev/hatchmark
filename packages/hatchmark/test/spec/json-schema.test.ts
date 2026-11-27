@@ -7,7 +7,7 @@ import { jsonSchema, SCHEMA_FILES, type SpecKind } from "../../src/spec/index.js
  * renaming one is a deliberate change made here; a new named schema is added here too.
  */
 const DEFINITIONS: Record<SpecKind, string[]> = {
-  project: ["Source"],
+  project: ["Source", "Weekday"],
   metric: [
     "AggregateMetric",
     "Duration",
@@ -28,14 +28,17 @@ const DEFINITIONS: Record<SpecKind, string[]> = {
     "Block",
     "Comparison",
     "DashboardFilter",
+    "Grain",
     "KpiBlock",
     "LineBlock",
     "Period",
     "PeriodRange",
+    "Range",
     "Sort",
     "TableBlock",
     "TextBlock",
     "TimeGrain",
+    "Weekday",
   ],
 };
 

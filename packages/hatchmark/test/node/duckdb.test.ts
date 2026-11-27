@@ -3,6 +3,7 @@ import path from "node:path";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import {
   type BarData,
+  bucketStart,
   type DashboardData,
   type KpiData,
   type LineData,
@@ -12,7 +13,13 @@ import {
   type TableData,
 } from "../../src/compiler/index.js";
 import { createDuckDbExecutor } from "../../src/node/index.js";
-import { checkReferences, PROJECT_DEFAULTS } from "../../src/spec/index.js";
+import {
+  checkReferences,
+  DEFAULT_ANCHORS,
+  PROJECT_DEFAULTS,
+  type ResolvedGrain,
+  WEEKDAYS,
+} from "../../src/spec/index.js";
 import { loadAt, metric, Oracle, removeProjects, run, writeProject } from "./fixture.js";
 
 const NY = "America/New_York";
@@ -460,7 +467,7 @@ describe("DuckDB executor against a SQL ROLLUP oracle", () => {
 });
 
 describe("DuckDB executor queries", () => {
-  const weekQuery = (column: string): PlannedQuery => ({
+  const weekQuery = (column: string, anchor: "monday" | "sunday"): PlannedQuery => ({
     id: "q_week",
     source: "events",
     input: { type: "csv", path: "events.csv" },
@@ -471,7 +478,7 @@ describe("DuckDB executor queries", () => {
         combine: { op: "identity", component: "n__count" },
       },
     ],
-    dimensions: [{ kind: "time", column, grain: "week" }],
+    dimensions: [{ kind: "time", column, grain: { unit: "week", anchor } }],
     groupingSets: [[0]],
     window: { range: "all_time", shift: "none", column },
     params: [],
@@ -486,12 +493,12 @@ describe("DuckDB executor queries", () => {
     if (config === undefined) throw new Error("config");
     const executor = await createDuckDbExecutor({ root, config });
     try {
-      const week = async (column: string, timezone: string, weekStart: "monday" | "sunday") =>
+      const week = async (column: string, timezone: string, anchor: "monday" | "sunday") =>
         (
-          await executor.execute(weekQuery(column), {
+          await executor.execute(weekQuery(column, anchor), {
             asOf: "2026-11-30",
             timezone,
-            weekStart,
+            anchors: DEFAULT_ANCHORS,
             bindings: {},
           })
         ).rows[0]?.[0];
@@ -499,6 +506,65 @@ describe("DuckDB executor queries", () => {
       expect(await week("at", NY, "sunday")).toBe("2026-11-22");
       expect(await week("naive", NY, "sunday")).toBe("2026-11-22");
       expect(await week("naive", "UTC", "sunday")).toBe("2026-11-29");
+    } finally {
+      await executor.close();
+    }
+  });
+
+  it("buckets anchored grains on the same days as the core's bucketStart", async () => {
+    const days: string[] = [];
+    for (let t = Date.UTC(2023, 11, 1); t < Date.UTC(2027, 1, 1); t += 86400000) {
+      days.push(new Date(t).toISOString().slice(0, 10));
+    }
+    const { root, project } = await writeProject({
+      "hatchmark.json": { ...CONFIG, sources: { events: { type: "csv", path: "events.csv" } } },
+      "events.csv": `at,label\n${days.map((d) => `${d} 12:00:00,d${d}`).join("\n")}\n`,
+    });
+    const config = project.config.spec;
+    if (config === undefined) throw new Error("config");
+    const grains: ResolvedGrain[] = [
+      { unit: "day" },
+      { unit: "month" },
+      ...WEEKDAYS.map((anchor) => ({ unit: "week", anchor }) as const),
+      ...["01-01", "02-01", "02-15", "07-01", "12-28"].map(
+        (anchor) => ({ unit: "quarter", anchor }) as const,
+      ),
+      ...["01-01", "02-15", "07-01", "10-28"].map((anchor) => ({ unit: "year", anchor }) as const),
+    ];
+    const executor = await createDuckDbExecutor({ root, config });
+    try {
+      for (const grain of grains) {
+        const query: PlannedQuery = {
+          id: "q_buckets",
+          source: "events",
+          input: { type: "csv", path: "events.csv" },
+          measures: [
+            {
+              metric: "n",
+              components: [{ id: "n__count", aggregate: "count", filters: [], reaggregate: "sum" }],
+              combine: { op: "identity", component: "n__count" },
+            },
+          ],
+          dimensions: [
+            { kind: "time", column: "at", grain },
+            { kind: "column", column: "label" },
+          ],
+          groupingSets: [[0, 1]],
+          window: { range: "all_time", shift: "none", column: "at" },
+          params: [],
+        };
+        const { rows } = await executor.execute(query, {
+          asOf: "2027-01-31",
+          timezone: "UTC",
+          anchors: DEFAULT_ANCHORS,
+          bindings: {},
+        });
+        expect(rows).toHaveLength(days.length);
+        const wrong = rows.filter(
+          ([bucket, label]) => bucket !== bucketStart(String(label).slice(1), grain),
+        );
+        expect({ grain, wrong: wrong.slice(0, 3) }).toEqual({ grain, wrong: [] });
+      }
     } finally {
       await executor.close();
     }
@@ -517,7 +583,7 @@ describe("DuckDB executor queries", () => {
       const result = await executor.execute(query, {
         asOf: "2026-04-30",
         timezone: NY,
-        weekStart: "sunday",
+        anchors: { ...DEFAULT_ANCHORS, week: "sunday" },
         bindings: {},
       });
       expect(result.columns[0]).toEqual({ name: "region", type: "string" });
@@ -536,7 +602,11 @@ describe("DuckDB executor queries", () => {
     if (query === undefined) throw new Error("no query");
     const executor = await createDuckDbExecutor({ root: edge.root, config });
     try {
-      const context = { asOf: "2026-04-30", timezone: NY, weekStart: "sunday" as const };
+      const context = {
+        asOf: "2026-04-30",
+        timezone: NY,
+        anchors: { ...DEFAULT_ANCHORS, week: "sunday" } as const,
+      };
       await expect(
         executor.execute(query, { ...context, bindings: { region: ["West", "East"] } }),
       ).rejects.toThrow("takes one value");

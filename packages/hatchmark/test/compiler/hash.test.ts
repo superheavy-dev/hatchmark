@@ -1,13 +1,14 @@
 import { createHash } from "node:crypto";
 import { describe, expect, it } from "vitest";
 import { canonicalJson, planHash, type QueryPlan, sha256Hex } from "../../src/compiler/index.js";
+import { DEFAULT_ANCHORS } from "../../src/spec/index.js";
 
 const PLAN: QueryPlan = {
-  version: 1,
+  version: 2,
   dashboard: "sales",
   period: { asOf: "latest_data", range: "last_complete_month", compare: "previous_period" },
   timezone: "America/New_York",
-  weekStart: "monday",
+  anchors: { ...DEFAULT_ANCHORS, week: "monday" },
   params: [
     {
       id: "region",
@@ -112,7 +113,7 @@ describe("planHash", () => {
       planHash(PLAN),
       planHash(retarget),
       planHash(regionDefault),
-      planHash({ ...PLAN, version: 2 } as unknown as QueryPlan),
+      planHash({ ...PLAN, version: 1 } as unknown as QueryPlan),
       planHash({ ...PLAN, timezone: "UTC" }),
     ];
     expect(new Set(hashes).size).toBe(hashes.length);
@@ -128,4 +129,4 @@ describe("planHash", () => {
   });
 });
 
-const GOLDEN = "df14afc7737256ad6a5604a923186328d5dfef3bc9d439456cb20a3b5a951ee4";
+const GOLDEN = "aca2eb6445581fedd641d731894529430d52610ca3b9690f49f00b4ca98b4714";

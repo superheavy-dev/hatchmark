@@ -1,12 +1,14 @@
 import type { Diagnostic } from "../diagnostics/index.js";
 import type {
   Aggregate,
+  Anchors,
   Comparison,
   FileSource,
   Filter,
   PeriodRange,
   Project,
-  TimeGrain,
+  RangeSpec,
+  ResolvedGrain,
 } from "../spec/index.js";
 
 /**
@@ -23,7 +25,7 @@ import type {
  * A plan is plain JSON-serializable data and is deterministic: the same project gives the same
  * plan, byte for byte, so plans can be cached and diffed. planHash() in hash.ts keys caches by it.
  */
-export const PLAN_VERSION = 1;
+export const PLAN_VERSION = 2;
 
 /** One aggregate over rows, the unit the executor computes and the browser may re-aggregate. */
 export interface MeasureComponent {
@@ -67,20 +69,20 @@ export type MeasureExpression =
 
 export type PlannedDimension =
   | { kind: "column"; column: string }
-  | { kind: "time"; column: string; grain: TimeGrain };
+  | { kind: "time"; column: string; grain: ResolvedGrain };
 
 /**
  * The time window a query reads, explicit enough that the executor needs nothing else from the
  * spec: two queries that read different spans always differ here, and so do their ids.
  */
 export interface PlannedWindow {
-  /** The span, ending at the plan's asOf: the block's or filter's range, or "all_time". */
-  range: PeriodRange;
+  /** The span as written (dates or a shorthand resolved at the plan's asOf), or "all_time". */
+  range: RangeSpec;
   /**
    * "none" reads the range itself. "previous_period" reads the previous calendar unit for calendar
    * ranges (October vs September, Q3 vs Q2; to-date ranges compare the same elapsed span of the
    * previous unit) and shifts rolling ranges (last N days, last 12 months) back by their own
-   * length. "previous_year" reads the same span one year earlier. windowBounds() in windows.ts is
+   * length. "previous_year" and {shift} move the span by whole units. resolveRange() in windows.ts is
    * the executable definition; KPI and text comparisons use it with each block's compare override.
    */
   shift: Comparison;
@@ -187,11 +189,11 @@ export interface BlockPlan {
 export interface QueryPlan {
   version: typeof PLAN_VERSION;
   dashboard: string;
-  period: { asOf: string; range: PeriodRange; compare: Comparison };
+  period: { asOf: string; range: RangeSpec; compare: Comparison };
   /** IANA time zone that dates are bucketed and windowed in, from hatchmark.json. */
   timezone: string;
-  /** First day of a week bucket, from hatchmark.json. */
-  weekStart: "monday" | "sunday";
+  /** Where week, quarter and year buckets begin, from hatchmark.json (projectAnchors). */
+  anchors: Anchors;
   params: PlanParam[];
   blocks: BlockPlan[];
   queries: PlannedQuery[];
@@ -220,12 +222,12 @@ export interface Compiler {
 /**
  * What an execution needs besides the query. asOf is resolved once per plan before execution
  * ("latest_data" becomes the last date in the data), so every query of one build or request reads
- * the same end date; timezone and weekStart are copied from the QueryPlan.
+ * the same end date; timezone and anchors are copied from the QueryPlan.
  */
 export interface ExecutionContext {
   asOf: string;
   timezone: string;
-  weekStart: "monday" | "sunday";
+  anchors: Anchors;
   bindings: ParamBindings;
   materialization?: Materialization;
 }

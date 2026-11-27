@@ -3,9 +3,10 @@ import {
   type Block,
   blockId,
   type Metric,
-  type PeriodRange,
   type Project,
-  type TimeGrain,
+  type RangeSpec,
+  type ResolvedGrain,
+  resolveGrain,
 } from "../spec/index.js";
 import {
   type BarData,
@@ -35,9 +36,9 @@ import {
   effectiveRange,
   nextDay,
   queryBounds,
+  resolveRange,
   timeBuckets,
   type WindowBounds,
-  windowBounds,
 } from "./windows.js";
 
 type Key = string | number | boolean | null;
@@ -197,15 +198,14 @@ class Assembler {
     return [...seen.values()].sort(compareKeys);
   }
 
-  timeAxis(expressions: (MeasureExpression | undefined)[], grain: TimeGrain): TimeAxis {
+  timeAxis(expressions: (MeasureExpression | undefined)[], grain: ResolvedGrain): TimeAxis {
     const bounds = this.bounds(expressions[0]);
-    const { weekStart } = this.plan;
     if (bounds?.kind === "bounded") {
       const window = { start: bounds.start, end: bounds.end };
       return {
         kind: "time",
-        grain,
-        buckets: timeBuckets(bounds.start, bounds.end, grain, weekStart),
+        grain: grain.unit,
+        buckets: timeBuckets(bounds.start, bounds.end, grain),
         window,
       };
     }
@@ -215,8 +215,13 @@ class Assembler {
     const last = [this.context.asOf, ...observed].sort().at(-1) ?? this.context.asOf;
     const end = nextDay(last);
     const start = observed[0] ?? end;
-    const buckets = timeBuckets(start, end, grain, weekStart);
-    return { kind: "time", grain, buckets, window: { start: buckets[0] ?? start, end } };
+    const buckets = timeBuckets(start, end, grain);
+    return {
+      kind: "time",
+      grain: grain.unit,
+      buckets,
+      window: { start: buckets[0] ?? start, end },
+    };
   }
 
   splitSeries(
@@ -293,7 +298,7 @@ class Assembler {
     }
     const sparkline = plan.sparkline?.[name];
     if (sparkline) {
-      const axis = this.timeAxis([sparkline], "month");
+      const axis = this.timeAxis([sparkline], { unit: "month" });
       data.sparkline = {
         grain: "month",
         buckets: axis.buckets,
@@ -305,7 +310,7 @@ class Assembler {
 
   line(block: Block & { type: "line" | "area" }, plan: BlockPlan, common: Common): LineData {
     const expressions = block.metrics.map((m) => plan.measures[m]);
-    const axis = this.timeAxis(expressions, block.grain);
+    const axis = this.timeAxis(expressions, resolveGrain(block.grain, this.plan.anchors));
     const [first = ""] = block.metrics;
     const series =
       block.split === undefined
@@ -331,7 +336,7 @@ class Assembler {
       stack: block.stack ?? false,
     };
     if (block.grain !== undefined) {
-      const axis = this.timeAxis(expressions, block.grain);
+      const axis = this.timeAxis(expressions, resolveGrain(block.grain, this.plan.anchors));
       const series = split
         ? this.splitSeries(first, plan.measures[first], axis.buckets, 2, 2)
         : this.metricSeries(block.metrics, plan.measures, axis.buckets);
@@ -433,7 +438,7 @@ class Assembler {
     }
   }
 
-  dashboardPeriod(): { range: PeriodRange; compare: QueryPlan["period"]["compare"] } {
+  dashboardPeriod(): { range: RangeSpec; compare: QueryPlan["period"]["compare"] } {
     const param = this.plan.params.find((p) => p.kind === "period");
     const range = effectiveRange(
       this.plan.period.range,
@@ -511,11 +516,11 @@ export function assemble(
     };
   }
 
-  const current = span(windowBounds(period.range, "none", context.asOf));
+  const current = span(resolveRange(period.range, "none", context.asOf, plan.anchors));
   const previous =
     period.compare === "none"
       ? undefined
-      : span(windowBounds(period.range, period.compare, context.asOf));
+      : span(resolveRange(period.range, period.compare, context.asOf, plan.anchors));
   const data: DashboardData = {
     version: DASHBOARD_DATA_VERSION,
     name: plan.dashboard,
@@ -532,7 +537,7 @@ export function assemble(
     locale: config.locale,
     currency: config.currency,
     timezone: plan.timezone,
-    weekStart: plan.weekStart,
+    anchors: plan.anchors,
     metrics,
     blocks,
   };
