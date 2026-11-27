@@ -30,34 +30,70 @@ export interface JsonSyntaxError {
   message: string;
   start: number;
   end: number;
-  /** Offset of the earlier occurrence, for duplicate keys. */
+  /** Offset of the first occurrence, for duplicate keys. */
   related?: number;
-  /** A text edit that repairs the error, when the repair is unambiguous. */
+  /** A text edit that repairs the error without changing any other token. */
   repair?: { start: number; end: number; text: string };
 }
 
 /** Thrown internally to stop parsing at the first syntax error. */
 class StopParsing extends Error {}
 
+const NUMBER = /-?(?:0|[1-9][0-9]*)(?:\.[0-9]+)?(?:[eE][+-]?[0-9]+)?/y;
+const NUMBER_TAIL = /[0-9A-Za-z.+-]*/y;
+const WORD = /[A-Za-z_][A-Za-z0-9_]*/y;
+// biome-ignore lint/suspicious/noControlCharactersInRegex: JSON forbids raw control characters in strings
+const STRING_RUN = /[^"\\\u0000-\u001f]*/y;
+const ESCAPES: Readonly<Record<string, string>> = {
+  '"': '"',
+  "\\": "\\",
+  "/": "/",
+  b: "\b",
+  f: "\f",
+  n: "\n",
+  r: "\r",
+  t: "\t",
+};
+
+type Built = { node: JsonNode; value: unknown };
+
+type Frame =
+  | {
+      kind: "object";
+      start: number;
+      members: JsonMember[];
+      value: Record<string, unknown>;
+      firstSeen: Map<string, number>;
+      key: string;
+      keyStart: number;
+      keyEnd: number;
+    }
+  | { kind: "array"; start: number; items: JsonNode[]; value: unknown[] };
+
 /**
  * A strict RFC 8259 JSON parser that keeps the source offset of every value and key, so a
  * diagnostic found on the parsed value (through a JSON Pointer) can point back to file:line:col.
- * It stops at the first syntax error, and also reports duplicate object keys, which JSON.parse
- * accepts silently by keeping the last one.
+ * It accepts exactly what JSON.parse accepts and builds the same value, at any nesting depth
+ * (it keeps its own stack instead of recursing). It stops at the first syntax error, and also
+ * reports duplicate object keys, which JSON.parse accepts by keeping the last one.
  */
 class Parser {
   private pos = 0;
+  private lastComma = -1;
   readonly errors: JsonSyntaxError[] = [];
 
-  constructor(private readonly text: string) {
-    if (text.charCodeAt(0) === 0xfeff) this.pos = 1;
-  }
+  constructor(private readonly text: string) {}
 
-  parseDocument(): JsonNode | undefined {
+  parseDocument(): Built | undefined {
     try {
-      this.skipWhitespace();
-      if (this.pos >= this.text.length) this.fail("expected a JSON value, found end of file");
-      const root = this.parseValue();
+      if (this.text.charCodeAt(0) === 0xfeff) {
+        this.fail("a byte order mark is not allowed at the start of a JSON file", 0, 1, {
+          start: 0,
+          end: 1,
+          text: "",
+        });
+      }
+      const root = this.parseRoot();
       this.skipWhitespace();
       if (this.pos < this.text.length) {
         this.fail("unexpected content after the end of the JSON value", this.pos, this.text.length);
@@ -82,7 +118,7 @@ class Parser {
   private describeHere(): string {
     if (this.pos >= this.text.length) return "end of file";
     const ch = this.text[this.pos];
-    return ch === "\n" ? "a line break" : JSON.stringify(ch);
+    return ch === "\n" || ch === "\r" ? "a line break" : JSON.stringify(ch);
   }
 
   private skipWhitespace(): void {
@@ -93,116 +129,206 @@ class Parser {
         continue;
       }
       if (ch === "/" && (this.text[this.pos + 1] === "/" || this.text[this.pos + 1] === "*")) {
-        const start = this.pos;
-        const close = this.text[this.pos + 1] === "/" ? "\n" : "*/";
-        const found = this.text.indexOf(close, start + 2);
-        const end = found === -1 ? this.text.length : found + (close === "*/" ? 2 : 0);
-        this.fail("comments are not allowed in JSON", start, end, { start, end, text: "" });
+        this.failComment();
       }
       return;
     }
   }
 
-  private parseValue(): JsonNode {
-    const ch = this.text[this.pos];
-    if (ch === "{") return this.parseObject();
-    if (ch === "[") return this.parseArray();
+  /**
+   * Comments are rejected with a repair that never joins the tokens around them: a block comment
+   * becomes one space, and a line comment is cut up to (not including) its line break.
+   */
+  private failComment(): never {
+    const start = this.pos;
+    if (this.text[start + 1] === "/") {
+      let end = start + 2;
+      while (end < this.text.length && this.text[end] !== "\n" && this.text[end] !== "\r") end++;
+      return this.fail("comments are not allowed in JSON", start, end, { start, end, text: "" });
+    }
+    const close = this.text.indexOf("*/", start + 2);
+    if (close === -1)
+      return this.fail(
+        "unterminated comment (and comments are not allowed in JSON)",
+        start,
+        this.text.length,
+      );
+    const end = close + 2;
+    return this.fail("comments are not allowed in JSON", start, end, { start, end, text: " " });
+  }
+
+  private parseRoot(): Built {
+    const stack: Frame[] = [];
+    for (;;) {
+      this.skipWhitespace();
+      let built: Built | undefined = this.openOrScalar(stack);
+      if (built === undefined) continue;
+      for (;;) {
+        const top = stack.at(-1);
+        if (top === undefined) return built;
+        if (top.kind === "object") {
+          top.members.push({
+            key: top.key,
+            keyStart: top.keyStart,
+            keyEnd: top.keyEnd,
+            value: built.node,
+          });
+          Object.defineProperty(top.value, top.key, {
+            value: built.value,
+            enumerable: true,
+            writable: true,
+            configurable: true,
+          });
+        } else {
+          top.items.push(built.node);
+          top.value.push(built.value);
+        }
+        this.skipWhitespace();
+        const next = this.text[this.pos];
+        const close = top.kind === "object" ? "}" : "]";
+        if (next === ",") {
+          this.lastComma = this.pos;
+          this.pos++;
+          this.skipWhitespace();
+          if (this.text[this.pos] === close) this.failTrailingComma();
+          if (top.kind === "object") this.readKey(top);
+          break;
+        }
+        if (next === close) {
+          this.pos++;
+          stack.pop();
+          built = this.close(top);
+          continue;
+        }
+        if (top.kind === "object" && next === '"') {
+          this.fail('expected "," between properties', this.pos, this.pos + 1, {
+            start: built.node.end,
+            end: built.node.end,
+            text: ",",
+          });
+        }
+        this.fail(
+          top.kind === "object"
+            ? `expected "," or "}" after property value, found ${this.describeHere()}`
+            : `expected "," or "]" after array item, found ${this.describeHere()}`,
+        );
+      }
+    }
+  }
+
+  private close(frame: Frame): Built {
+    const end = this.pos;
+    return frame.kind === "object"
+      ? {
+          node: { kind: "object", members: frame.members, start: frame.start, end },
+          value: frame.value,
+        }
+      : {
+          node: { kind: "array", items: frame.items, start: frame.start, end },
+          value: frame.value,
+        };
+  }
+
+  /** Starts a container (pushing a frame and returning undefined) or parses a scalar value. */
+  private openOrScalar(stack: Frame[]): Built | undefined {
+    const start = this.pos;
+    const ch = this.text[start];
+    if (ch === "{") {
+      this.pos++;
+      const frame: Frame = {
+        kind: "object",
+        start,
+        members: [],
+        value: {},
+        firstSeen: new Map(),
+        key: "",
+        keyStart: 0,
+        keyEnd: 0,
+      };
+      this.skipWhitespace();
+      if (this.text[this.pos] === "}") {
+        this.pos++;
+        return this.close(frame);
+      }
+      this.readKey(frame);
+      stack.push(frame);
+      return undefined;
+    }
+    if (ch === "[") {
+      this.pos++;
+      const frame: Frame = { kind: "array", start, items: [], value: [] };
+      this.skipWhitespace();
+      if (this.text[this.pos] === "]") {
+        this.pos++;
+        return this.close(frame);
+      }
+      stack.push(frame);
+      return undefined;
+    }
     if (ch === '"') {
-      const start = this.pos;
       const value = this.parseString();
-      return { kind: "string", value, start, end: this.pos };
+      return { node: { kind: "string", value, start, end: this.pos }, value };
     }
     if (ch === "-" || (ch !== undefined && ch >= "0" && ch <= "9")) return this.parseNumber();
-    for (const [word, node] of [
-      ["true", { kind: "boolean", value: true }],
-      ["false", { kind: "boolean", value: false }],
-      ["null", { kind: "null", value: null }],
+    for (const [word, value] of [
+      ["true", true],
+      ["false", false],
+      ["null", null],
     ] as const) {
-      if (this.text.startsWith(word, this.pos)) {
-        const start = this.pos;
+      if (this.text.startsWith(word, start)) {
         this.pos += word.length;
-        return { ...node, start, end: this.pos };
+        const end = this.pos;
+        const node: JsonNode =
+          value === null
+            ? { kind: "null", value, start, end }
+            : { kind: "boolean", value, start, end };
+        return { node, value };
       }
     }
     if (ch === "'") this.fail("strings must use double quotes");
-    if (ch !== undefined && /[A-Za-z_]/.test(ch)) {
-      const word = /^[A-Za-z_][A-Za-z0-9_]*/.exec(this.text.slice(this.pos))?.[0] ?? ch;
+    WORD.lastIndex = start;
+    const word = WORD.exec(this.text)?.[0];
+    if (word !== undefined) {
       this.fail(
         `unexpected word ${JSON.stringify(word)}: strings must be in double quotes`,
-        this.pos,
-        this.pos + word.length,
+        start,
+        start + word.length,
       );
     }
     return this.fail(`expected a JSON value, found ${this.describeHere()}`);
   }
 
-  private parseObject(): JsonNode {
-    const start = this.pos;
-    this.pos++;
-    const members: JsonMember[] = [];
-    const seen = new Map<string, number>();
+  private readKey(frame: Extract<Frame, { kind: "object" }>): void {
     this.skipWhitespace();
-    if (this.text[this.pos] === "}") {
-      this.pos++;
-      return { kind: "object", members, start, end: this.pos };
+    if (this.text[this.pos] !== '"') {
+      const ch = this.text[this.pos];
+      if (ch !== undefined && /[A-Za-z_]/.test(ch))
+        this.fail("object keys must be strings in double quotes");
+      this.fail(`expected a property name in double quotes, found ${this.describeHere()}`);
     }
-    for (;;) {
-      this.skipWhitespace();
-      if (this.text[this.pos] !== '"') {
-        if (this.text[this.pos] === "}" && members.length > 0) {
-          this.failTrailingComma();
-        }
-        const ch = this.text[this.pos];
-        if (ch !== undefined && /[A-Za-z_]/.test(ch)) {
-          this.fail("object keys must be strings in double quotes");
-        }
-        this.fail(`expected a property name in double quotes, found ${this.describeHere()}`);
-      }
-      const keyStart = this.pos;
-      const key = this.parseString();
-      const keyEnd = this.pos;
-      const previous = seen.get(key);
-      if (previous !== undefined) {
-        this.errors.push({
-          kind: "duplicate-key",
-          message: `duplicate key ${JSON.stringify(key)}`,
-          start: keyStart,
-          end: keyEnd,
-          related: previous,
-        });
-      }
-      seen.set(key, keyStart);
-      this.skipWhitespace();
-      if (this.text[this.pos] !== ":") {
-        this.fail(`expected ":" after property name, found ${this.describeHere()}`);
-      }
-      this.pos++;
-      this.skipWhitespace();
-      const value = this.parseValue();
-      members.push({ key, keyStart, keyEnd, value });
-      this.skipWhitespace();
-      const next = this.text[this.pos];
-      if (next === ",") {
-        this.lastComma = this.pos;
-        this.pos++;
-        continue;
-      }
-      if (next === "}") {
-        this.pos++;
-        return { kind: "object", members, start, end: this.pos };
-      }
-      if (next === '"') {
-        this.fail('expected "," between properties', this.pos, this.pos + 1, {
-          start: value.end,
-          end: value.end,
-          text: ",",
-        });
-      }
-      this.fail(`expected "," or "}" after property value, found ${this.describeHere()}`);
+    const keyStart = this.pos;
+    const key = this.parseString();
+    const keyEnd = this.pos;
+    const first = frame.firstSeen.get(key);
+    if (first === undefined) {
+      frame.firstSeen.set(key, keyStart);
+    } else {
+      this.errors.push({
+        kind: "duplicate-key",
+        message: `duplicate key ${JSON.stringify(key)}`,
+        start: keyStart,
+        end: keyEnd,
+        related: first,
+      });
     }
+    this.skipWhitespace();
+    if (this.text[this.pos] !== ":")
+      this.fail(`expected ":" after property name, found ${this.describeHere()}`);
+    this.pos++;
+    frame.key = key;
+    frame.keyStart = keyStart;
+    frame.keyEnd = keyEnd;
   }
-
-  private lastComma = -1;
 
   private failTrailingComma(): never {
     const comma = this.lastComma;
@@ -213,62 +339,27 @@ class Parser {
     });
   }
 
-  private parseArray(): JsonNode {
-    const start = this.pos;
-    this.pos++;
-    const items: JsonNode[] = [];
-    this.skipWhitespace();
-    if (this.text[this.pos] === "]") {
-      this.pos++;
-      return { kind: "array", items, start, end: this.pos };
-    }
-    for (;;) {
-      this.skipWhitespace();
-      if (this.text[this.pos] === "]" && items.length > 0) this.failTrailingComma();
-      const item = this.parseValue();
-      items.push(item);
-      this.skipWhitespace();
-      const next = this.text[this.pos];
-      if (next === ",") {
-        this.lastComma = this.pos;
-        this.pos++;
-        continue;
-      }
-      if (next === "]") {
-        this.pos++;
-        return { kind: "array", items, start, end: this.pos };
-      }
-      this.fail(`expected "," or "]" after array item, found ${this.describeHere()}`);
-    }
-  }
-
   private parseString(): string {
     const start = this.pos;
     this.pos++;
-    let out = "";
+    const parts: string[] = [];
     for (;;) {
+      STRING_RUN.lastIndex = this.pos;
+      const run = STRING_RUN.exec(this.text)?.[0] ?? "";
+      parts.push(run);
+      this.pos += run.length;
       const ch = this.text[this.pos];
-      if (ch === undefined || ch === "\n") {
-        this.fail("unterminated string", start, this.pos);
-      }
       if (ch === '"') {
         this.pos++;
-        return out;
+        return parts.join("");
       }
+      if (ch === undefined || ch === "\n" || ch === "\r")
+        this.fail("unterminated string", start, this.pos);
       if (ch === "\\") {
         const esc = this.text[this.pos + 1];
-        const simple: Record<string, string> = {
-          '"': '"',
-          "\\": "\\",
-          "/": "/",
-          b: "\b",
-          f: "\f",
-          n: "\n",
-          r: "\r",
-          t: "\t",
-        };
-        if (esc !== undefined && esc in simple) {
-          out += simple[esc];
+        const simple = esc === undefined ? undefined : ESCAPES[esc];
+        if (simple !== undefined) {
+          parts.push(simple);
           this.pos += 2;
           continue;
         }
@@ -277,67 +368,76 @@ class Parser {
           if (!/^[0-9a-fA-F]{4}$/.test(hex)) {
             this.fail("invalid \\u escape: expected four hex digits", this.pos, this.pos + 2);
           }
-          out += String.fromCharCode(Number.parseInt(hex, 16));
+          parts.push(String.fromCharCode(Number.parseInt(hex, 16)));
           this.pos += 6;
           continue;
         }
         this.fail("invalid escape sequence in string", this.pos, this.pos + 2);
       }
-      if (ch < " ") this.fail("control characters must be escaped in strings");
-      out += ch;
-      this.pos++;
+      this.fail("control characters must be escaped in strings");
     }
   }
 
-  private parseNumber(): JsonNode {
+  private parseNumber(): Built {
     const start = this.pos;
-    const match = /^-?(0|[1-9][0-9]*)(\.[0-9]+)?([eE][+-]?[0-9]+)?/.exec(this.text.slice(start));
-    if (!match) this.fail("invalid number", start);
-    this.pos += match[0].length;
+    NUMBER.lastIndex = start;
+    const match = NUMBER.exec(this.text)?.[0];
+    if (match === undefined) this.fail("invalid number", start);
+    this.pos += match.length;
     const next = this.text[this.pos];
     if (next !== undefined && /[0-9.eExX]/.test(next)) {
-      const tail = /^[0-9A-Za-z.+-]*/.exec(this.text.slice(this.pos))?.[0] ?? "";
+      NUMBER_TAIL.lastIndex = this.pos;
+      const tail = NUMBER_TAIL.exec(this.text)?.[0] ?? "";
       this.fail("invalid number", start, this.pos + tail.length);
     }
-    return { kind: "number", value: Number(match[0]), start, end: this.pos };
+    const value = Number(match);
+    return { node: { kind: "number", value, start, end: this.pos }, value };
   }
+}
+
+/** Splits text into lines at \n, \r\n and \r, the line breaks JSON allows as whitespace. */
+export function splitLines(text: string): string[] {
+  return text.split(/\r\n|\r|\n/);
 }
 
 /** A parsed JSON file that can map offsets and JSON Pointers back to line and column. */
 export class JsonDocument {
   readonly root: JsonNode | undefined;
+  /** The parsed value, identical to JSON.parse; undefined when the file did not parse. */
+  readonly value: unknown;
   readonly errors: readonly JsonSyntaxError[];
-  private readonly lineStarts: number[];
+  private readonly lineStarts: number[] = [0];
+  /** Offsets of the high surrogate of every surrogate pair, ascending. */
+  private readonly astral: number[] = [];
 
   constructor(
     readonly file: string,
     readonly text: string,
   ) {
     const parser = new Parser(text);
-    this.root = parser.parseDocument();
+    const built = parser.parseDocument();
+    this.root = built?.node;
+    this.value = built?.value;
     this.errors = parser.errors;
-    this.lineStarts = [0];
     for (let i = 0; i < text.length; i++) {
-      if (text.charCodeAt(i) === 10) this.lineStarts.push(i + 1);
+      const code = text.charCodeAt(i);
+      if (code === 10) this.lineStarts.push(i + 1);
+      else if (code === 13) {
+        if (text.charCodeAt(i + 1) === 10) i++;
+        this.lineStarts.push(i + 1);
+      } else if (code >= 0xd800 && code <= 0xdbff) {
+        const low = text.charCodeAt(i + 1);
+        if (low >= 0xdc00 && low <= 0xdfff) this.astral.push(i);
+      }
     }
   }
 
-  /** The plain value, or undefined when the file did not parse. */
-  get value(): unknown {
-    return this.root === undefined ? undefined : toValue(this.root);
-  }
-
-  /** 1-based line and column; columns count Unicode code points, so emoji count once. */
+  /** 1-based line and column; columns count Unicode code points, so emoji count once. O(log n). */
   positionAt(offset: number): Position {
-    let lo = 0;
-    let hi = this.lineStarts.length - 1;
-    while (lo < hi) {
-      const mid = (lo + hi + 1) >> 1;
-      if ((this.lineStarts[mid] ?? 0) <= offset) lo = mid;
-      else hi = mid - 1;
-    }
-    const lineStart = this.lineStarts[lo] ?? 0;
-    return { line: lo + 1, column: [...this.text.slice(lineStart, offset)].length + 1 };
+    const line = upperBound(this.lineStarts, offset) - 1;
+    const lineStart = this.lineStarts[line] ?? 0;
+    const pairs = lowerBound(this.astral, offset) - lowerBound(this.astral, lineStart);
+    return { line: line + 1, column: offset - lineStart - pairs + 1 };
   }
 
   rangeAt(start: number, end: number): Range {
@@ -350,8 +450,8 @@ export class JsonDocument {
     if (start === undefined) return "";
     const next = this.lineStarts[line];
     return this.text
-      .slice(start, next === undefined ? this.text.length : next - 1)
-      .replace(/\r$/, "");
+      .slice(start, next === undefined ? this.text.length : next)
+      .replace(/(?:\r\n|\r|\n)$/, "");
   }
 
   /**
@@ -380,7 +480,8 @@ export class JsonDocument {
 
   /**
    * The source range for a JSON Pointer: the value's range, or the key's with target "key".
-   * A pointer that does not exist resolves to the opening line of its deepest existing ancestor.
+   * A pointer that does not exist resolves to the key (or opening character) of its deepest
+   * existing ancestor.
    */
   rangeOf(pointer: string, target: "value" | "key" = "value"): Range | undefined {
     const found = this.locate(pointer);
@@ -397,23 +498,26 @@ export class JsonDocument {
   }
 }
 
-function toValue(node: JsonNode): unknown {
-  switch (node.kind) {
-    case "object": {
-      const out: Record<string, unknown> = {};
-      for (const member of node.members) {
-        Object.defineProperty(out, member.key, {
-          value: toValue(member.value),
-          enumerable: true,
-          writable: true,
-          configurable: true,
-        });
-      }
-      return out;
-    }
-    case "array":
-      return node.items.map(toValue);
-    default:
-      return node.value;
+/** First index whose value is greater than target. */
+function upperBound(sorted: readonly number[], target: number): number {
+  let lo = 0;
+  let hi = sorted.length;
+  while (lo < hi) {
+    const mid = (lo + hi) >> 1;
+    if ((sorted[mid] ?? 0) <= target) lo = mid + 1;
+    else hi = mid;
   }
+  return lo;
+}
+
+/** First index whose value is greater than or equal to target. */
+function lowerBound(sorted: readonly number[], target: number): number {
+  let lo = 0;
+  let hi = sorted.length;
+  while (lo < hi) {
+    const mid = (lo + hi) >> 1;
+    if ((sorted[mid] ?? 0) < target) lo = mid + 1;
+    else hi = mid;
+  }
+  return lo;
 }

@@ -63,8 +63,38 @@ describe("JsonDocument", () => {
     expect(doc.rangeOf("/v")?.start).toEqual({ line: 1, column: 17 });
   });
 
-  it("ignores a leading byte order mark", () => {
-    expect(new JsonDocument("x.json", "\ufeff[1]").value).toEqual([1]);
+  it("parses deeply nested input without overflowing the stack", () => {
+    const depth = 100_000;
+    const text = `${"[".repeat(depth)}0${"]".repeat(depth)}`;
+    const doc = new JsonDocument("x.json", text);
+    expect(doc.errors).toEqual([]);
+    let value = doc.value;
+    for (let i = 0; i < depth; i++) value = (value as unknown[])[0];
+    expect(value).toBe(0);
+    const objects = `${'{"a":'.repeat(depth)}1${"}".repeat(depth)}`;
+    expect(new JsonDocument("x.json", objects).errors).toEqual([]);
+  });
+
+  it("maps positions in linear time on one long line", () => {
+    const item = `{"a":1,"a":2,"v":"${"x".repeat(1000)}"},`;
+    const time = (n: number) => {
+      const text = `[${item.repeat(n)}0]`;
+      const t0 = performance.now();
+      const { diagnostics } = parseJsonFile("x.json", text);
+      expect(diagnostics).toHaveLength(n);
+      return performance.now() - t0;
+    };
+    time(200);
+    const small = time(1000);
+    const large = time(4000);
+    expect(large).toBeLessThan(small * 12 + 50);
+    expect(large).toBeLessThan(2000);
+  });
+
+  it("treats a lone carriage return as a line break", () => {
+    const doc = new JsonDocument("x.json", '{\r  "a": 1,\r  "b": 2\r}');
+    expect(doc.rangeOf("/b")?.start).toEqual({ line: 3, column: 8 });
+    expect(doc.lineText(2)).toBe('  "a": 1,');
   });
 
   it("handles CRLF line endings", () => {
@@ -80,6 +110,42 @@ describe("parseJsonFile syntax diagnostics", () => {
       { code: "HM1002", message: "trailing commas are not allowed in JSON", at: "2:9", fix: "" },
     ]);
     expect(errorsOf("[1, 2, ]")[0]).toMatchObject({ at: "1:6", fix: "" });
+  });
+
+  it("rejects a leading byte order mark like JSON.parse, with a safe deletion", () => {
+    expect(() => JSON.parse("\ufeff[1]")).toThrow();
+    expect(errorsOf("\ufeff[1]")).toEqual([
+      {
+        code: "HM1002",
+        message: "a byte order mark is not allowed at the start of a JSON file",
+        at: "1:1",
+        fix: "",
+      },
+    ]);
+  });
+
+  it("never joins tokens when deleting a comment", () => {
+    const apply = (text: string) => {
+      const d = parseJsonFile("x.json", text).diagnostics[0];
+      if (d?.fix?.op !== "text") throw new Error("no text fix");
+      const doc = new JsonDocument("x.json", text);
+      const toOffset = (line: number, column: number) => {
+        let offset = 0;
+        for (let l = 1; l < line; l++) offset += doc.lineText(l).length + 1;
+        return offset + column - 1;
+      };
+      const { start, end } = d.fix.range;
+      return (
+        text.slice(0, toOffset(start.line, start.column)) +
+        d.fix.text +
+        text.slice(toOffset(end.line, end.column))
+      );
+    };
+    expect(apply("[1/*x*/2]")).toBe("[1 2]");
+    expect(apply("[//x\r1,2]")).toBe("[\r1,2]");
+    expect(JSON.parse(apply("[//x\r1,2]"))).toEqual([1, 2]);
+    expect(apply("[1, // x\n2]")).toBe("[1, \n2]");
+    expect(errorsOf("[1 /* open")[0]).toMatchObject({ code: "HM1002", fix: undefined });
   });
 
   it("reports comments with a safe deletion", () => {
@@ -124,5 +190,13 @@ describe("parseJsonFile syntax diagnostics", () => {
       help: "the first one is at line 2; keep one of them",
     });
     expect(document.value).toEqual({ a: 2 });
+  });
+
+  it("points every repeat of a key at its first occurrence", () => {
+    const { diagnostics } = parseJsonFile("x.json", '{\n"a":1,\n"a":2,\n"a":3\n}');
+    expect(diagnostics.map((d) => [d.range?.start.line, d.label, d.help])).toEqual([
+      [3, "repeated here", "the first one is at line 2; keep one of them"],
+      [4, "repeated here", "the first one is at line 2; keep one of them"],
+    ]);
   });
 });

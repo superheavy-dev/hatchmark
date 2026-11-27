@@ -24,7 +24,7 @@ export function parseJsonFile(
       ...(error.related === undefined
         ? {}
         : {
-            label: "second occurrence",
+            label: "repeated here",
             help: `the first one is at line ${document.positionAt(error.related).line}; keep one of them`,
           }),
       docs: docsCommand(code),

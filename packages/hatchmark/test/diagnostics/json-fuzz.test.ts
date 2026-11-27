@@ -15,6 +15,10 @@ const seeds = [
   '{\n  "a": "é\\u00e9\\n",\n  "b": [\n    1,\n    2\n  ]\n}\n',
 ];
 const alphabet = [
+  "\r",
+  "\ufeff",
+  "\t",
+  "0",
   '"',
   ",",
   ":",

@@ -1,4 +1,5 @@
 import type { Diagnostic, DiagnosticReport, Severity } from "./diagnostic.js";
+import { splitLines } from "./json.js";
 
 export interface HumanRenderOptions {
   /** Source text by project-relative file path, used to print the offending line. */
@@ -20,10 +21,41 @@ const severityStyle: Record<Severity, keyof typeof ANSI> = {
   note: "cyan",
 };
 
-function lineOf(source: string, line: number): string | undefined {
-  const lines = source.split("\n");
-  const text = lines[line - 1];
-  return text?.replace(/\r$/, "");
+const WIDE =
+  /[\u1100-\u115f\u2e80-\u303e\u3041-\u33ff\u3400-\u4dbf\u4e00-\u9fff\ua000-\ua4cf\uac00-\ud7a3\uf900-\ufaff\ufe30-\ufe4f\uff00-\uff60\uffe0-\uffe6]|[\u{1f300}-\u{1f64f}\u{1f900}-\u{1faff}\u{20000}-\u{3fffd}]/u;
+const ZERO_WIDTH = /^(?:\p{M}|[\u200b-\u200f\u2060])$/u;
+
+/** Terminal columns a string occupies: wide East Asian characters and emoji take two, marks none. */
+function displayWidth(text: string): number {
+  let width = 0;
+  for (const ch of text) {
+    if (ch === "\t") width += 4;
+    else if (ZERO_WIDTH.test(ch)) width += 0;
+    else width += WIDE.test(ch) ? 2 : 1;
+  }
+  return width;
+}
+
+const lineCache = new WeakMap<object, Map<string, string[]>>();
+
+function lineOf(
+  sources: ReadonlyMap<string, string>,
+  file: string,
+  line: number,
+): string | undefined {
+  let byFile = lineCache.get(sources);
+  if (byFile === undefined) {
+    byFile = new Map();
+    lineCache.set(sources, byFile);
+  }
+  let lines = byFile.get(file);
+  if (lines === undefined) {
+    const source = sources.get(file);
+    if (source === undefined) return undefined;
+    lines = splitLines(source);
+    byFile.set(file, lines);
+  }
+  return lines[line - 1];
 }
 
 function describeFix(diagnostic: Diagnostic): string | undefined {
@@ -43,8 +75,10 @@ export function renderDiagnostic(diagnostic: Diagnostic, options: HumanRenderOpt
   );
 
   const range = diagnostic.range;
-  const source = diagnostic.file === undefined ? undefined : options.sources?.get(diagnostic.file);
-  const text = range && source !== undefined ? lineOf(source, range.start.line) : undefined;
+  const text =
+    range && diagnostic.file !== undefined && options.sources
+      ? lineOf(options.sources, diagnostic.file, range.start.line)
+      : undefined;
   const gutterWidth = range ? String(range.start.line).length : 1;
   const pad = " ".repeat(gutterWidth);
   const bar = paint(color, "blue", "|");
@@ -55,7 +89,6 @@ export function renderDiagnostic(diagnostic: Diagnostic, options: HumanRenderOpt
   }
   if (range && text !== undefined) {
     const chars = [...text];
-    const expand = (cs: string[]): string => cs.map((c) => (c === "\t" ? "    " : c)).join("");
     const startCol = Math.min(range.start.column - 1, chars.length);
     const endCol =
       range.end.line === range.start.line
@@ -64,12 +97,14 @@ export function renderDiagnostic(diagnostic: Diagnostic, options: HumanRenderOpt
             Math.max(chars.length, startCol + 1),
           )
         : Math.max(chars.length, startCol + 1);
-    const lead = expand(chars.slice(0, startCol)).length;
-    const width = Math.max(1, expand(chars.slice(startCol, endCol)).length);
+    const lead = displayWidth(chars.slice(0, startCol).join(""));
+    const width = Math.max(1, displayWidth(chars.slice(startCol, endCol).join("")));
     const carets = paint(color, style, "^".repeat(width));
     const label = diagnostic.label ? ` ${paint(color, style, diagnostic.label)}` : "";
     out.push(`${pad} ${bar}`);
-    out.push(`${paint(color, "blue", String(range.start.line))} ${bar} ${expand(chars)}`);
+    out.push(
+      `${paint(color, "blue", String(range.start.line))} ${bar} ${text.replaceAll("\t", "    ")}`,
+    );
     out.push(`${pad} ${bar} ${" ".repeat(lead)}${carets}${label}`);
   } else if (diagnostic.label) {
     out.push(`${pad} ${paint(color, "blue", "=")} ${diagnostic.label}`);

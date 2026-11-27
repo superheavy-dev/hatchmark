@@ -87,6 +87,28 @@ describe("renderHuman", () => {
     expect(out).toContain("  |          ^^^");
   });
 
+  it("frames the right line in CR-only files", () => {
+    const text = '{\r\t"a": tru\r}';
+    const { diagnostics } = parseJsonFile("x.json", text);
+    const out = renderHuman(createReport(diagnostics), { sources: new Map([["x.json", text]]) });
+    expect(out).toContain(" --> x.json:2:7");
+    expect(out).toContain('2 |     "a": tru');
+    expect(out).toContain("  |          ^^^");
+  });
+
+  it("aligns carets after wide characters and combining marks", () => {
+    for (const [text, line, caret] of [
+      ['{"界": tru}', '1 | {"界": tru}', `  | ${" ".repeat(7)}^^^`],
+      ['{"e\u0301": tru}', '1 | {"e\u0301": tru}', `  | ${" ".repeat(6)}^^^`],
+      ['{"📈": tru}', '1 | {"📈": tru}', `  | ${" ".repeat(7)}^^^`],
+    ] as const) {
+      const { diagnostics } = parseJsonFile("x.json", text);
+      const out = renderHuman(createReport(diagnostics), { sources: new Map([["x.json", text]]) });
+      expect(out, text).toContain(line);
+      expect(out, text).toContain(caret);
+    }
+  });
+
   it("only adds ANSI colour when asked", () => {
     const report = createReport([unknownMetric()]);
     expect(renderHuman(report)).not.toContain("\u001b[");
@@ -114,6 +136,28 @@ describe("createReport and renderJson", () => {
       warning_count: 1,
     });
     expect(report.diagnostics).toEqual([warning, base, later]);
+  });
+
+  it("gives the same bytes whatever the input order, even for ties", () => {
+    const base = unknownMetric();
+    const a = { ...base, pointer: "/a" };
+    const b = { ...base, pointer: "/b" };
+    expect(renderJson(createReport([a, b]))).toBe(renderJson(createReport([b, a])));
+  });
+
+  it("refuses values JSON cannot carry instead of changing them", () => {
+    const base = unknownMetric();
+    const fix = {
+      op: "replace" as const,
+      pointer: "/amount",
+      value: Number.POSITIVE_INFINITY,
+      applicability: "safe" as const,
+      description: "x",
+    };
+    expect(() => renderJson(createReport([{ ...base, fix }]))).toThrow(TypeError);
+    expect(() =>
+      renderJson(createReport([{ ...base, fix: { ...fix, value: [undefined] } }])),
+    ).toThrow(TypeError);
   });
 
   it("is ok with warnings only", () => {

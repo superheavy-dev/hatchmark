@@ -75,7 +75,31 @@ export function compareDiagnostics(a: Diagnostic, b: Diagnostic): number {
   const sevDiff = severityOrder[a.severity] - severityOrder[b.severity];
   if (sevDiff !== 0) return sevDiff;
   if (a.code !== b.code) return a.code < b.code ? -1 : 1;
-  return a.message < b.message ? -1 : a.message > b.message ? 1 : 0;
+  const keyA = serialize(a);
+  const keyB = serialize(b);
+  return keyA < keyB ? -1 : keyA > keyB ? 1 : 0;
+}
+
+/**
+ * JSON.stringify that refuses values JSON cannot carry (NaN, Infinity, undefined in arrays,
+ * functions, bigint) instead of silently turning them into null or dropping them, so a fix value
+ * never changes on the wire.
+ */
+function serialize(value: unknown): string {
+  return JSON.stringify(value, (key, v: unknown) => {
+    if (typeof v === "number" && !Number.isFinite(v)) {
+      throw new TypeError(`diagnostic field "${key}" holds ${v}, which JSON cannot represent`);
+    }
+    if (typeof v === "bigint" || typeof v === "function" || typeof v === "symbol") {
+      throw new TypeError(
+        `diagnostic field "${key}" holds a ${typeof v}, which JSON cannot represent`,
+      );
+    }
+    if (v === undefined && key !== "") {
+      throw new TypeError(`diagnostic field "${key}" is undefined; omit the field instead`);
+    }
+    return v;
+  });
 }
 
 /** Builds the versioned report; ok is false only when there is at least one error. */
@@ -91,7 +115,10 @@ export function createReport(diagnostics: readonly Diagnostic[]): DiagnosticRepo
   };
 }
 
-/** Serializes a report as one line of JSON for stdout. */
+/**
+ * Serializes a report as one line of JSON for stdout. Throws a TypeError when a diagnostic holds a
+ * value JSON cannot represent, which is an internal bug rather than a user error.
+ */
 export function renderJson(report: DiagnosticReport): string {
-  return JSON.stringify(report);
+  return serialize(report);
 }
