@@ -366,6 +366,8 @@ type Resolved = Context & {
   empty?: "no_complete_day" | "no_data";
 };
 const span = (w: Window) => ({ start: w[0], end: w[1] });
+/** RFC 0001 section 6.5 leading edge: a series window starts at the start of its first bucket. */
+const snapped = (w: Window, g: Grain): Window => (w[0] < w[1] ? [bucket(w[0], g), w[1]] : w);
 const blind = (ctx: Resolved, m: string) => ctx.presetOnly?.has(m) === true;
 
 /** Checks one DashboardData against the oracle, block by block, per the dashboard spec. */
@@ -397,7 +399,7 @@ export function checkDashboard(
     if (sb.type === "kpi") checkKpi(b as KpiData, sb, ctx, cur, diff);
     else if (sb.type === "table") checkTable(b as TableData, sb, ctx, cur, diff);
     else if (sb.type === "bar" && sb.by !== undefined) checkBar(b as BarData, sb, ctx, cur, diff);
-    else checkTime(b as LineData, sb, ctx, inWindow(ctx.rows, ctx.current), diff);
+    else checkTime(b as LineData, sb, ctx, diff);
   }
   return diff;
 }
@@ -432,8 +434,9 @@ function checkKpi(b: KpiData, sb: SpecBlock, ctx: Resolved, cur: Row[], diff: Di
   }
   if (sb.sparkline) {
     const g = { unit: "month" };
-    const buckets = spine(ctx.current, g);
-    const series = inWindow(ctx.rows, ctx.current);
+    const win = snapped(ctx.current, g);
+    const buckets = spine(win, g);
+    const series = inWindow(ctx.rows, win);
     diff.same(`${at}.sparkline.buckets`, b.sparkline?.buckets, buckets);
     diff.same(`${at}.sparkline.partial`, b.sparkline?.partial, partialOf(buckets, g, ctx.horizon));
     buckets.forEach((x, i) => {
@@ -578,10 +581,10 @@ function checkTable(b: TableData, sb: SpecBlock, ctx: Resolved, cur: Row[], diff
   }
 }
 
-function checkTime(b: LineData, sb: SpecBlock, ctx: Resolved, cur: Row[], diff: Diff): void {
+function checkTime(b: LineData, sb: SpecBlock, ctx: Resolved, diff: Diff): void {
   const own = resolveGrain(sb.grain, ctx.anchors);
   if (sb.grains === undefined) {
-    checkSeries(`${sb.id} ${grainKey(own)}`, b.axis, b.series, own, sb, ctx, cur, diff);
+    checkSeries(`${sb.id} ${grainKey(own)}`, b.axis, b.series, own, sb, ctx, diff);
     return;
   }
   const options = sb.grains.map((g) => resolveGrain(g, ctx.anchors));
@@ -604,7 +607,7 @@ function checkTime(b: LineData, sb: SpecBlock, ctx: Resolved, cur: Row[], diff: 
   );
   options.forEach((g, i) => {
     const o = b.grains?.options[i];
-    if (o) checkSeries(`${sb.id} ${o.key}`, o.axis, o.series, g, sb, ctx, cur, diff);
+    if (o) checkSeries(`${sb.id} ${o.key}`, o.axis, o.series, g, sb, ctx, diff);
   });
 }
 
@@ -615,17 +618,18 @@ function checkSeries(
   g: Grain,
   sb: SpecBlock,
   ctx: Resolved,
-  cur: Row[],
   diff: Diff,
 ): void {
-  const buckets = spine(ctx.current, g);
+  const win = snapped(ctx.current, g);
+  const cur = inWindow(ctx.rows, win);
+  const buckets = spine(win, g);
   const h = ctx.horizon.us;
-  const cut = h > naive(ctx.current[0]) && h < naive(ctx.current[1]);
+  const cut = h > naive(win[0]) && h < naive(win[1]);
   diff.same(`${at}.axis`, axis, {
     kind: "time",
     grain: g.unit,
     buckets,
-    window: { ...span(ctx.current), ...(cut ? { endAt: wallText(h) } : {}) },
+    window: { ...span(win), ...(cut ? { endAt: wallText(h) } : {}) },
   });
   const partial = partialOf(buckets, g, ctx.horizon);
   const metrics = sb.metrics as string[];
