@@ -1,6 +1,6 @@
 import type { TableData, TableRow } from "../compiler/dashboard-data.js";
 import { isNumber, metricOf, type RenderContext } from "./chart.js";
-import { formatKey, formatValue } from "./format.js";
+import { formatDate, formatKey, formatSpan, formatValue, parseDate } from "./format.js";
 import { esc, r } from "./svg.js";
 
 /**
@@ -42,7 +42,12 @@ function track(geometry: { left: number; width: number }, zero: number | undefin
  * and keep their full text in a title. An outer key that repeats the row above, or that a subtotal
  * row already names, is left to screen readers, so groups read as groups.
  */
-export function renderTable(block: TableData, ctx: RenderContext, alone = true): string {
+export function renderTable(
+  block: TableData,
+  ctx: RenderContext,
+  alone = true,
+  described = false,
+): string {
   const locale = ctx.data.locale;
   const width = block.by.length;
   const metrics = block.metrics.map((m) => metricOf(ctx, m));
@@ -93,11 +98,52 @@ export function renderTable(block: TableData, ctx: RenderContext, alone = true):
     numeric: boolean,
     csv = label,
     extra = "",
+    describedBy = "",
   ) => {
     const text = esc(label);
     const content = numeric ? `${CARET}${text}` : `${text}${CARET}`;
     const csvAttr = csv === label && extra === "" ? "" : ` data-csv="${esc(csv)}"`;
-    return `<th scope="col"${cls ? ` class="${cls}"` : ""} aria-sort="${sortState(by)}" data-hm-num="${numeric ? 1 : 0}"${csvAttr}><button type="button" class="hm-sort">${content}</button>${extra}</th>`;
+    const described = describedBy ? ` aria-describedby="${describedBy}"` : "";
+    return `<th scope="col"${cls ? ` class="${cls}"` : ""}${described} aria-sort="${sortState(by)}" data-hm-num="${numeric ? 1 : 0}"${csvAttr}><button type="button" class="hm-sort"${described}>${content}</button>${extra}</th>`;
+  };
+  const day = 86_400_000;
+  const lastDay = (end: string) =>
+    new Date(parseDate(end).getTime() - day).toISOString().slice(0, 10);
+  const behind = (main: string | undefined, own: string) => {
+    const days =
+      main === undefined
+        ? 0
+        : Math.round((parseDate(main).getTime() - parseDate(own).getTime()) / day);
+    return days > 0 ? ` · ${days} ${days === 1 ? "day" : "days"} behind` : "";
+  };
+  const windows = new Map(Object.entries(block.windows ?? {}));
+  const throughs = new Map(Object.entries(block.throughs ?? {}));
+  const empties = new Map(Object.entries(block.emptyMetrics ?? {}));
+  const allTime = new Set(block.allTime ?? []);
+  const noteOf = (m: string): string | undefined => {
+    const window = windows.get(m);
+    if (window) {
+      const read =
+        block.window?.start === window.start
+          ? `Data through ${formatDate(lastDay(window.end), locale)}`
+          : formatSpan(window, locale);
+      return `${read}${behind(block.window?.end, window.end)}`;
+    }
+    const through = throughs.get(m);
+    if (through)
+      return `Data through ${formatDate(through, locale)}${behind(block.through, through)}`;
+    if (allTime.has(m)) return "All time";
+    const empty = empties.get(m);
+    if (empty === "no_complete_day") return "No complete day yet";
+    if (empty === "no_data") return "No data in this period";
+    return undefined;
+  };
+  const metricHeader = (m: { name: string; label: string }, index: number) => {
+    const note = noteOf(m.name);
+    if (note === undefined) return header(m.label, m.name, "", true);
+    const id = `hm-${esc(block.id)}-w${index}`;
+    const marker = `<span class="hm-winw"><button type="button" class="hm-win" aria-label="Window of ${esc(m.label)}" aria-describedby="${id}"><span aria-hidden="true"></span></button><span class="hm-win-tip" role="tooltip" id="${id}">${esc(note)}</span></span><span class="hm-win-print" aria-hidden="true">${esc(note)}</span>`;
+    return header(m.label, m.name, "", true, m.label, marker, id);
   };
   const outerLabels = block.by
     .slice(0, -1)
@@ -114,8 +160,8 @@ export function renderTable(block: TableData, ctx: RenderContext, alone = true):
         i === width - 1 && grouped && !block.subtotals ? mobile(outerLabels, true, true) : "",
       ),
     ),
-    ...metrics.flatMap((m) => [
-      header(m.label, m.name, "", true),
+    ...metrics.flatMap((m, index) => [
+      metricHeader(m, index),
       ...(block.percentOfTotal.includes(m.name)
         ? [
             header(
@@ -253,5 +299,5 @@ export function renderTable(block: TableData, ctx: RenderContext, alone = true):
   const overflow = block.overflow ?? (alone ? "page" : "scroll");
   const tall =
     block.rows.length > TALL_TABLE_ROWS ? ` hm-tall${overflow === "page" ? " hm-grow" : ""}` : "";
-  return `<div class="hm-table-wrap${tall}" tabindex="0" role="region" aria-labelledby="hm-${esc(block.id)}-t"><table class="hm-table${grouped ? (block.subtotals ? " hm-ma" : " hm-mb") : ""}${grouped && block.subtotals && width > 2 ? " hm-deep" : ""}"><thead><tr>${head}</tr></thead><tbody>${rows}</tbody>${total}</table></div>${empty}${note}`;
+  return `<div class="hm-table-wrap${tall}" tabindex="0" role="region" aria-labelledby="hm-${esc(block.id)}-t"><table${described ? ` aria-describedby="hm-${esc(block.id)}-s"` : ""} class="hm-table${grouped ? (block.subtotals ? " hm-ma" : " hm-mb") : ""}${grouped && block.subtotals && width > 2 ? " hm-deep" : ""}"><thead><tr>${head}</tr></thead><tbody>${rows}</tbody>${total}</table></div>${empty}${note}`;
 }

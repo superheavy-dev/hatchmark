@@ -835,7 +835,6 @@ class Assembler {
   }
 
   table(block: Block & { type: "table" }, plan: BlockPlan, common: Common): TableData {
-    const expressions = block.metrics.map((m) => plan.measures[m]);
     const percent = block.percentOfTotal ?? [];
     const width = block.by.length;
     const sets = tableGroupingSets(block);
@@ -926,7 +925,58 @@ class Assembler {
     };
     const subtotals = block.subtotals === true && width > 1;
     const rows = subtotals ? nest(leaves, []) : cut(leaves, []);
-    const window = span(this.bounds(expressions[0]), this.context.timezone);
+    const scopes = block.metrics.map((m) => {
+      const bounds = this.bounds(plan.measures[m]);
+      const end =
+        bounds?.kind === "bounded" || bounds?.kind === "unbounded" ? bounds.end : undefined;
+      const before =
+        end === undefined
+          ? undefined
+          : span({ kind: "bounded", start: end, end }, this.context.timezone)?.end;
+      return {
+        m,
+        window: span(bounds, this.context.timezone),
+        through:
+          before === undefined
+            ? undefined
+            : new Date(Date.parse(`${before}T00:00:00Z`) - 86_400_000).toISOString().slice(0, 10),
+      };
+    });
+    const read = scopes.filter(({ m }) => emptyOf.get(m) === undefined);
+    const mostRead = <T>(values: T[]): T | undefined => {
+      const counts = new Map<string, { value: T; count: number }>();
+      for (const value of values) {
+        const id = JSON.stringify(value);
+        counts.set(id, { value, count: (counts.get(id)?.count ?? 0) + 1 });
+      }
+      let best: { value: T; count: number } | undefined;
+      for (const entry of counts.values()) if (!best || entry.count > best.count) best = entry;
+      return best?.value;
+    };
+    const window = mostRead(read.flatMap((s) => (s.window ? [s.window] : [])));
+    const through = window
+      ? undefined
+      : mostRead(read.flatMap((s) => (s.window === undefined && s.through ? [s.through] : [])));
+    const windows = Object.fromEntries(
+      read.flatMap((s) =>
+        window && s.window && JSON.stringify(s.window) !== JSON.stringify(window)
+          ? [[s.m, s.window]]
+          : [],
+      ),
+    );
+    const throughs = Object.fromEntries(
+      read.flatMap((s) =>
+        through && s.window === undefined && s.through && s.through !== through
+          ? [[s.m, s.through]]
+          : [],
+      ),
+    );
+    const allTime =
+      window || through
+        ? read.filter((s) => s.window === undefined && s.through === undefined).map((s) => s.m)
+        : [];
+    const emptyMetrics: Record<string, EmptyWindow> = {};
+    for (const [m, why] of emptyOf) if (why && !empty) emptyMetrics[m] = why;
     return {
       ...common,
       type: "table",
@@ -943,6 +993,11 @@ class Assembler {
         ? { total: { values: totals, ...(percent.length > 0 ? { share: shares(totals) } : {}) } }
         : {}),
       ...(window ? { window } : {}),
+      ...(Object.keys(windows).length > 0 ? { windows } : {}),
+      ...(through ? { through } : {}),
+      ...(Object.keys(throughs).length > 0 ? { throughs } : {}),
+      ...(allTime.length > 0 ? { allTime } : {}),
+      ...(Object.keys(emptyMetrics).length > 0 ? { emptyMetrics } : {}),
       ...(empty ? { empty } : {}),
     };
   }

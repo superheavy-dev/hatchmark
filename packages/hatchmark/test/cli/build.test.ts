@@ -345,7 +345,7 @@ describe("hatchmark build", () => {
     const html = await readFile(path.join(target, "sales/index.html"), "utf8");
     expect(html).toContain("<h1>Global sales</h1>");
     expect(html).toContain("Data through Oct 31, 2026");
-    expect(html).toContain('<table class="hm-table">');
+    expect(html).toContain('<table aria-describedby="hm-');
     const bytes = await tree(target);
     await build(ctx(example), { out: target });
     expect(await tree(target)).toEqual(bytes);

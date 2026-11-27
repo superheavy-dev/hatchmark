@@ -203,6 +203,64 @@ export function wireTable(card: HTMLElement): void {
   live.className = "hm-sr";
   live.setAttribute("aria-live", "polite");
   card.append(live);
+  const marks = [...table.querySelectorAll<HTMLButtonElement>("button.hm-win")];
+  const close = () => {
+    for (const mark of marks) mark.parentElement?.classList.remove("hm-open");
+  };
+  const place = (box: HTMLElement) => {
+    const tip = box.querySelector<HTMLElement>(".hm-win-tip");
+    if (!tip || !wrap) return;
+    const clip = wrap.getBoundingClientRect();
+    const left = Math.max(clip.left, 0) + 4;
+    const right = Math.min(clip.right, window.innerWidth) - 4;
+    tip.style.translate = "";
+    tip.style.maxWidth = `${Math.max(120, Math.min(260, right - left))}px`;
+    const rect = tip.getBoundingClientRect();
+    const shift = rect.left < left ? left - rect.left : rect.right > right ? right - rect.right : 0;
+    if (shift !== 0) tip.style.translate = `${shift}px 0`;
+  };
+  for (const mark of marks) {
+    const box = mark.parentElement;
+    if (!box) continue;
+    const show = () => {
+      place(box);
+      requestAnimationFrame(() => place(box));
+    };
+    mark.addEventListener("click", (event) => {
+      event.stopPropagation();
+      const open = !box.classList.contains("hm-open");
+      close();
+      box.classList.toggle("hm-shut", !open);
+      box.classList.toggle("hm-open", open);
+      show();
+    });
+    mark.addEventListener("mousemove", () => box.classList.remove("hm-shut"));
+    box.addEventListener("mouseenter", show);
+    box.addEventListener("mouseleave", () => box.classList.remove("hm-shut"));
+    mark.addEventListener("focus", () => {
+      box.classList.remove("hm-shut");
+      show();
+    });
+    mark.addEventListener("blur", () => {
+      box.classList.remove("hm-shut");
+      box.classList.remove("hm-open");
+    });
+  }
+  if (marks.length > 0) {
+    wrap?.addEventListener("scroll", () => {
+      for (const mark of marks) if (mark.parentElement) place(mark.parentElement);
+    });
+    document.addEventListener("click", close);
+    document.addEventListener("keydown", (event) => {
+      if (event.key !== "Escape") return;
+      for (const mark of marks) {
+        const box = mark.parentElement;
+        const tip = box?.querySelector<HTMLElement>(".hm-win-tip");
+        if (box && tip && getComputedStyle(tip).display !== "none") box.classList.add("hm-shut");
+      }
+      close();
+    });
+  }
   const headers = [...(table.tHead?.querySelectorAll<HTMLTableCellElement>("th") ?? [])];
   for (const th of headers) {
     const button = th.querySelector<HTMLButtonElement>("button.hm-sort");

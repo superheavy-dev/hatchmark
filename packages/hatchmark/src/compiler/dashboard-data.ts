@@ -277,7 +277,23 @@ export interface TableData extends BlockCommon {
    * totals is false.
    */
   total?: { values: Record<string, Value>; share?: Record<string, Value> };
+  /**
+   * The window most dated metrics read (the first one on a tie); the others read the same unless
+   * windows lists them. Each metric's window ends at its own horizon.
+   */
   window?: DateSpan;
+  /** Dated metrics whose window differs from window (an earlier or later horizon), by name. */
+  windows?: Record<string, DateSpan>;
+  /**
+   * Set instead of window when the period has no start (all time): the last day, inclusive, that most
+   * dated metrics read. throughs lists dated metrics that read through another day.
+   */
+  through?: string;
+  throughs?: Record<string, string>;
+  /** Metrics without a time column, read over all their rows while the others read window. */
+  allTime?: string[];
+  /** Metrics whose own window is empty while others fill the rows, with why. */
+  emptyMetrics?: Record<string, EmptyWindow>;
   /**
    * Set when every metric's window is empty: no rows, and every total is null. A metric whose own
    * window is empty is null in every row and in the total, while the others fill the rows.

@@ -140,7 +140,7 @@ export function blockHeading(
   let span: string | undefined;
   if (block.type === "table") {
     by = listOf(block.by.map((b) => b.label));
-    span = block.window ? formatSpan(block.window, locale) : undefined;
+    span = tableSpan(block, ctx);
   } else if (block.axis.kind === "time") {
     by = block.axis.grain;
     span = formatSpan(block.axis.window, locale);
@@ -158,6 +158,16 @@ export function blockHeading(
     title: block.title ?? what,
     subtitle: block.title ? subtitle : [span, extra].filter(Boolean).join(", "),
   };
+}
+
+function tableSpan(block: TableData, ctx: RenderContext): string | undefined {
+  if (block.empty) return undefined;
+  const locale = ctx.data.locale;
+  return block.window
+    ? formatSpan(block.window, locale)
+    : block.through
+      ? `through ${formatDate(block.through, locale)}`
+      : "all time";
 }
 
 /**
@@ -316,10 +326,12 @@ function card(
   const { title, subtitle } = blockHeading(block, ctx);
   const id = `hm-${block.id}-t`;
   const body =
-    block.type === "table" ? renderTable(block, ctx, alone) : chartBody(block, ctx, title);
+    block.type === "table"
+      ? renderTable(block, ctx, alone, subtitle !== "")
+      : chartBody(block, ctx, title);
   if (block.type === "table") {
     const download = `<button type="button" class="hm-csv" data-hm-csv="${esc(block.id)}" aria-label="Download ${esc(title)} as CSV" hidden>Download CSV</button>`;
-    return `<section class="hm-card hm-table" style="--span:${block.span}" aria-labelledby="${esc(id)}"><header class="hm-card-head hm-switch"><div class="hm-card-titles"><h2 id="${esc(id)}">${esc(title)}</h2>${subtitle ? `<p>${esc(subtitle)}</p>` : ""}</div>${download}</header>${body}</section>`;
+    return `<section class="hm-card hm-table" style="--span:${block.span}" aria-labelledby="${esc(id)}"><header class="hm-card-head hm-switch"><div class="hm-card-titles"><h2 id="${esc(id)}">${esc(title)}</h2>${subtitle ? `<p id="hm-${esc(block.id)}-s">${esc(subtitle)}</p>` : ""}</div>${download}</header>${body}</section>`;
   }
   return `<section class="hm-card hm-${block.type}" style="--span:${chartSpan(block)}" aria-labelledby="${esc(id)}"><header class="hm-card-head"><h2 id="${esc(id)}">${esc(title)}</h2>${subtitle ? `<p>${esc(subtitle)}</p>` : ""}</header>${body}</section>`;
 }
@@ -466,6 +478,7 @@ export function pageStyles(assets: PageAssets, theme: Theme = DEFAULT_THEME): st
     `@media print{.hm-tall{max-height:none;overflow:visible}.hm-grow th,.hm-grow td{transform:none!important}.hm-csv{display:none}}`,
     `.hm-footer{display:flex;justify-content:space-between;gap:2px 12px;flex-wrap:wrap;padding-top:4px}`,
     `.hm-sr{position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap;border:0}`,
+    `.hm-winw{position:relative;display:inline-block;margin-left:1px}.hm-win{display:inline-block;font:inherit;line-height:inherit;padding:0 4px;margin:0;border:0;background:none;color:var(--hm-text-subtle);cursor:help}.hm-win>span{display:inline-block;width:6px;height:6px;border-radius:50%;border:1.5px solid currentColor;vertical-align:middle}.hm-win:hover,.hm-winw.hm-open .hm-win{color:var(--hm-text-muted)}.hm-win:focus-visible{outline:2px solid var(--hm-focus);outline-offset:0;border-radius:50%}.hm-win-tip{display:none;position:absolute;top:calc(100% + 4px);right:0;z-index:10;width:max-content;max-width:260px;white-space:normal;text-align:left;padding:6px 8px;font-size:12px;line-height:16px;font-weight:400;color:var(--hm-text);background:var(--hm-card);border:1px solid var(--hm-border-strong);border-radius:${theme.radius.tooltip}px;box-shadow:var(--hm-shadow)}.hm-win-tip::before{content:"";position:absolute;left:0;right:0;top:-6px;height:6px}.hm-win-print{display:none}.hm-winw:hover .hm-win-tip,.hm-win:focus-visible+.hm-win-tip,.hm-winw.hm-open .hm-win-tip{display:block}.hm-winw.hm-shut .hm-win-tip{display:none}@media print{.hm-winw{display:none}.hm-win-print{display:block;font-size:10px;line-height:14px;font-weight:400;white-space:normal;color:var(--hm-text-muted)}}`,
     `.hm-tip{position:absolute;z-index:10;pointer-events:none;min-width:168px;max-width:260px;display:flex;flex-direction:column;gap:6px;padding:8px 10px;background:var(--hm-card);border:1px solid var(--hm-border-strong);border-radius:${theme.radius.tooltip}px;box-shadow:var(--hm-shadow)}`,
     `.hm-kpi .hm-tip{position:fixed}.hm-tip-h{font-size:12px;line-height:16px;font-weight:500}.hm-tip-r{display:flex;justify-content:space-between;align-items:center;gap:16px}.hm-tip-n{display:flex;align-items:center;gap:6px;color:var(--hm-text-muted);min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.hm-tip-n i{width:10px;height:2px;border-radius:1px;flex-shrink:0}.hm-tip-sq .hm-tip-n i{width:8px;height:8px;border-radius:2px}.hm-tip-v{font-weight:500;white-space:nowrap}.hm-tip-p{display:inline-block;min-width:52px;text-align:right;font-weight:400;color:var(--hm-text-muted)}.hm-tip-t{padding-top:6px;border-top:1px solid var(--hm-border)}.hm-tip-t .hm-tip-v{font-weight:600}`,
     paint,
