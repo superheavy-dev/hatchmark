@@ -1,51 +1,50 @@
-# Dashboards (dashboards/<name>.json)
+# Dashboards (dashboards/<name>.yaml)
 
 A dashboard is one page: a title, a period, and blocks in reading order. Each lives in its own file
-under `dashboards/`; the file name is the page's name and URL (`dashboards/sales.json` builds
+under `dashboards/`; the file name is the page's name and URL (`dashboards/sales.yaml` builds
 `dist/sales/index.html`). Print the full JSON Schema with `hatchmark schema dashboard`.
 
-```json
-{
-  "title": "Global sales",
-  "description": "Orders from every market, last 12 months against the 12 before.",
-  "period": {
-    "asOf": "latest_data",
-    "range": "last_12_months",
-    "compare": "previous_period"
-  },
-  "blocks": [
-    { "type": "kpi", "metric": "revenue", "sparkline": true },
-    { "type": "kpi", "metric": "orders" },
-    { "type": "kpi", "metric": "avg_order_value" },
-    { "type": "kpi", "metric": "refund_rate" },
-    {
-      "type": "line",
-      "title": "Revenue by month, by region",
-      "metrics": ["revenue"],
-      "grain": "month",
-      "split": "region",
-      "span": 8
-    },
-    {
-      "type": "bar",
-      "title": "Revenue by channel",
-      "metrics": ["revenue"],
-      "by": "channel",
-      "orientation": "horizontal",
-      "sort": { "by": "revenue", "order": "desc" },
-      "span": 4
-    },
-    {
-      "type": "table",
-      "title": "Top countries by revenue",
-      "by": ["country"],
-      "metrics": ["revenue", "orders", "avg_order_value", "customers"],
-      "percentOfTotal": ["revenue"],
-      "sort": { "by": "revenue", "order": "desc" },
-      "limit": 15
-    }
-  ]
-}
+```yaml
+title: Global sales
+description: Orders from every market, last 12 months against the 12 before.
+period:
+  asOf: latest_data
+  range: last_12_months
+  compare: previous_period
+blocks:
+  - type: kpi
+    metric: revenue
+    sparkline: true
+  - type: kpi
+    metric: orders
+  - type: kpi
+    metric: avg_order_value
+  - type: kpi
+    metric: refund_rate
+  - type: line
+    title: Revenue by month, by region
+    metrics: [revenue]
+    grain: month
+    split: region
+    span: 8
+  - type: bar
+    title: Revenue by channel
+    metrics: [revenue]
+    by: channel
+    orientation: horizontal
+    sort:
+      by: revenue
+      order: desc
+    span: 4
+  - type: table
+    title: Top countries by revenue
+    by: [country]
+    metrics: [revenue, orders, avg_order_value, customers]
+    percentOfTotal: [revenue]
+    sort:
+      by: revenue
+      order: desc
+    limit: 15
 ```
 
 | Field         | Meaning                               |
@@ -66,7 +65,7 @@ Every block reads the same window.
 | `range`   | `last_7_days`, `last_30_days`, `last_90_days`, `last_12_months`, `month_to_date`, `quarter_to_date`, `year_to_date`, `last_complete_month`, `last_complete_quarter`, `last_complete_year`, `all_time`. |
 | `compare` | `previous_period` (the previous calendar unit for calendar ranges, the same length just before for rolling ones), `previous_year` (the same span a year earlier) or `none`.                            |
 
-Without `period`, a dashboard uses `{ "asOf": "latest_data", "range": "last_12_months", "compare": "previous_period" }`.
+Without `period`, a dashboard uses `{ asOf: latest_data, range: last_12_months, compare: previous_period }`.
 Windows are calendar dates in the project time zone; [numbers.md](numbers.md#time) has the rules.
 
 ## Blocks
@@ -96,12 +95,21 @@ Metric names in blocks are metric file names (see [metrics.md](metrics.md)); col
 `filters` declares controls a reader can change: `select` on a column, `period` with a list of
 ranges, or `grain` with a list of grains.
 
-```json
-"filters": [
-  { "type": "select", "id": "region", "label": "Region", "column": "region", "multiple": true },
-  { "type": "period", "id": "period", "options": ["last_30_days", "last_12_months"], "default": "last_12_months" },
-  { "type": "grain", "id": "grain", "options": ["week", "month", "quarter"], "default": "month" }
-]
+```yaml
+filters:
+  - type: select
+    id: region
+    label: Region
+    column: region
+    multiple: true
+  - type: period
+    id: period
+    options: [last_30_days, last_12_months]
+    default: last_12_months
+  - type: grain
+    id: grain
+    options: [week, month, quarter]
+    default: month
 ```
 
 A `grain` filter draws one control in the page header. Choosing a grain switches every line, area

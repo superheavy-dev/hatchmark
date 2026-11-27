@@ -3,18 +3,18 @@
 Metrics by one to three columns, with a total row. Readers sort by any column and download the
 rows as CSV.
 
-```json
-{
-  "type": "table",
-  "title": "The top 8 countries bring in 79% of revenue",
-  "by": ["country"],
-  "metrics": ["revenue", "orders", "avg_order_value"],
-  "percentOfTotal": ["revenue"],
-  "bars": ["orders"],
-  "sort": { "by": "revenue", "order": "desc" },
-  "limit": 8,
-  "other": true
-}
+```yaml
+type: table
+title: The top 8 countries bring in 79% of revenue
+by: [country]
+metrics: [revenue, orders, avg_order_value]
+percentOfTotal: [revenue]
+bars: [orders]
+sort:
+  by: revenue
+  order: desc
+limit: 8
+other: true
 ```
 
 | Field            | Meaning                                                                                                   |
@@ -61,13 +61,13 @@ short announcement.
 ## Top N and Other
 
 `limit` keeps the first N rows in `sort` order; ties at the boundary are broken by the grouping
-values, ascending, so a build always keeps the same rows. With `"other": true` the rest become one
+values, ascending, so a build always keeps the same rows. With `other: true` the rest become one
 row, "Other (16)", recomputed from those rows' parts rather than looked up:
 
 - sums and counts add up, min and max take the extreme;
 - an average divides the summed sum by the summed count, and a ratio divides its two folded sides,
   so Other's average order value is Other's revenue ÷ Other's orders;
-- distinct counts, medians, SQL metrics declared `"additive": false` and sums read with
+- distinct counts, medians, SQL metrics declared `additive: false` and sums read with
   `over_time` min or max cannot be folded (two rows can share a customer), so Other shows `—` for
   them and check warns with HM4063.
 
@@ -77,7 +77,7 @@ Other add up to the total for additive metrics.
 
 ## Subtotals
 
-With two or three `by` columns, `"subtotals": true` adds a subtotal row before each group of every
+With two or three `by` columns, `subtotals: true` adds a subtotal row before each group of every
 outer column. Subtotals come from the query (SQL `ROLLUP`), never from adding the rows below, so a
 distinct count or an average is right at every level. Groups are ordered among themselves by their
 subtotal in `sort` order, rows within each group likewise. `limit` and `other` then apply inside
@@ -92,7 +92,7 @@ On a phone-sized card (under 600 px), a table with two or three `by` columns kee
 pinned at the left edge, and how it names the groups depends on the spec, never on the current
 sort, so the layout stays put when someone sorts by a column:
 
-- With `"subtotals": true`, rows always stay in their groups. Each subtotal row becomes the group's
+- With `subtotals: true`, rows always stay in their groups. Each subtotal row becomes the group's
   header row, its name in bold in the pinned column, and only the innermost key column is shown
   (with three columns, the middle level is indented under the outer one).
 - Without subtotals, a sort by a metric interleaves the groups. Each row shows its innermost value
@@ -120,7 +120,7 @@ A table with more than 15 rows keeps its header row and total row in view, in on
   height of about 16 rows and the rows scroll inside it under a pinned header and total, with a
   thin scrollbar in the theme's colours. The row's cards stay the same height.
 
-`"overflow": "page"` or `"scroll"` overrides the default. `"page"` in a shared row makes the
+`overflow: page` or `"scroll"` overrides the default. `"page"` in a shared row makes the
 other cards in the row stretch to the table's height, so check warns with HM2026. "Alone in its row"
 follows the 12-column grid as the spec lays it out: a run of KPIs counts as one card, a chart is
 counted at its drawn width (at least 3 columns), and a block that does not fit in what is left of

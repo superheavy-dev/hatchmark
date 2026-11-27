@@ -2,8 +2,10 @@
 
 A headline number with its change against the previous period.
 
-```json
-{ "type": "kpi", "metric": "revenue", "sparkline": true }
+```yaml
+type: kpi
+metric: revenue
+sparkline: true
 ```
 
 | Field       | Meaning                                                                                   |
