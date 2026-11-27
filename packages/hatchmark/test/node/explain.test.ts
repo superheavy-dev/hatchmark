@@ -34,21 +34,25 @@ describe("explain", () => {
   it("prints SQL that returns what the bound SQL returns, for every query of the example", async () => {
     const { project } = await loadAt(ROOT);
     const explained = await withExecutor(ROOT, project, async (executor) => {
-      const sales = await explainDashboard(project, "sales", executor);
-      const metrics = await Promise.all(
-        [...project.metrics.keys()].map((m) => explainMetric(project, m, executor)),
-      );
-      return { sales, metrics };
+      const dashboards = [];
+      for (const name of [...project.dashboards.keys()].sort()) {
+        dashboards.push(await explainDashboard(project, name, executor));
+      }
+      const metrics = [];
+      for (const m of project.metrics.keys())
+        metrics.push(await explainMetric(project, m, executor));
+      return { dashboards, metrics };
     });
-    expect(explained.sales.diagnostics).toEqual([]);
+    for (const d of explained.dashboards) expect(d.diagnostics).toEqual([]);
     const queries = [
-      ...(explained.sales.blocks ?? []).flatMap((b) => b.queries),
+      ...explained.dashboards.flatMap((d) => (d.blocks ?? []).flatMap((b) => b.queries)),
       ...explained.metrics.flatMap((m) => m.queries ?? []),
     ];
-    const plan = planDashboard(project, "sales").plan;
-    expect(new Set(queries.map((q) => q.id))).toEqual(
-      new Set([...(plan?.queries.map((q) => q.id) ?? []), ...queries.map((q) => q.id)]),
+    const planned = [...project.dashboards.keys()].flatMap(
+      (name) => planDashboard(project, name).plan?.queries.map((q) => q.id) ?? [],
     );
+    const ids = new Set(queries.map((q) => q.id));
+    expect(planned.filter((id) => !ids.has(id))).toEqual([]);
     expect(queries.length).toBeGreaterThan(8);
 
     const connection = await (await DuckDBInstance.create(":memory:")).connect();

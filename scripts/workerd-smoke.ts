@@ -7,6 +7,7 @@ import { build } from "esbuild";
 import { Miniflare } from "miniflare";
 
 interface SmokeResult {
+  sql: string;
   report: {
     format_version: string;
     error_count: number;
@@ -57,6 +58,10 @@ try {
   assert.deepEqual(body.params, []);
   assert.deepEqual(body.window, { kind: "bounded", start: "2026-09-01", end: "2026-10-01" });
   assert.equal(body.kpi.value, 10);
+  assert.equal(
+    body.sql,
+    'SELECT coalesce(sum("amount"), 0)\nFROM (SELECT * FROM "__hm_source_orders") AS "hm_rows"\nWHERE "ordered_at" >= CAST(\'2026-10-01\' AS DATE) AND "ordered_at" < CAST(\'2026-11-01\' AS DATE)',
+  );
   assert.deepEqual(body.kpi.current, { start: "2026-10-01", end: "2026-11-01" });
   assert.equal(body.planHash, "16eef3ef02f5f012d7a5a6154c470ae18c3de048a762c23c1d3486bd731d9b99");
   assert.match(body.page, /^<!doctype html>/);
