@@ -232,6 +232,8 @@ describe("fixes read back as exactly the value they write", () => {
       crlf: "a: 1\r\nb: B\r\n",
       "list item": "- a: 1\n  b: B\n",
       "only member": "b: B",
+      "explicit first key": "? a\n: 1\nb: B\n",
+      "list item explicit first key": "- ? a\n  : 1\n  b: B\n",
       "list item at end of file": "- a: 1\n  b: B",
       nested: "o:\n  a: 1\n  b: B\nz: 2\n",
     };
@@ -309,5 +311,13 @@ describe("fixes read back as exactly the value they write", () => {
       expect(fix?.applicability, text).toBe("unsafe");
       expect(fix?.description, text).toContain("kept block scalar");
     }
+  });
+
+  it("indents an added property like an explicit first key", () => {
+    const text = "? a\n: 1\nb: |\n  SELECT 1\n";
+    const fix = addPropertyFix(new SpecDocument("x.yaml", text), "", "k", "v", "safe", "add k");
+    const fixed = new SpecDocument("x.yaml", applyFix(text, fix));
+    expect(fixed.errors).toEqual([]);
+    expect(fixed.value).toEqual({ a: 1, b: "SELECT 1\n", k: "v" });
   });
 });
