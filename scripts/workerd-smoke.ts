@@ -11,6 +11,7 @@ interface SmokeResult {
     error_count: number;
     diagnostics: [{ code: string; message: string; range: { start: unknown } }];
   };
+  kpi: { value: unknown; current: unknown };
   human: string;
   columns: string[];
   schemaTitle: string;

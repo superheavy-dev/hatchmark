@@ -20,7 +20,6 @@ export const doctorHelp: CommandHelp = {
 
 /** The package root: dist/cli/commands or src/cli/commands, three levels up. */
 const PACKAGE_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../../..");
-const MIN_NODE = [22, 18] as const;
 
 type Status = "ok" | "warn" | "fail";
 interface Check {
@@ -39,13 +38,13 @@ async function exists(file: string): Promise<boolean> {
 export async function doctor(ctx: CommandContext): Promise<CommandResult> {
   const checks: Check[] = [];
   const [major = 0, minor = 0] = process.versions.node.split(".").map(Number);
-  const nodeOk = major > MIN_NODE[0] || (major === MIN_NODE[0] && minor >= MIN_NODE[1]);
+  const nodeOk = major >= 24 || (major === 23 && minor >= 6) || (major === 22 && minor >= 18);
   checks.push({
     name: "node",
     status: nodeOk ? "ok" : "fail",
     detail: nodeOk
       ? `Node.js ${process.versions.node}`
-      : `Node.js ${process.versions.node} is too old; install ${MIN_NODE.join(".")} or later`,
+      : `Node.js ${process.versions.node} is not supported; install 22.18 or later on the 22 line, or 23.6 or later`,
   });
 
   const docs = path.join(PACKAGE_ROOT, "docs", "diagnostics.md");

@@ -10,7 +10,7 @@
     "directory": "packages/hatchmark"
   },
   "engines": {
-    "node": ">=22.18"
+    "node": "^22.18.0 || >=23.6.0"
   },
   "exports": {
     ".": {
