@@ -13,16 +13,17 @@ concurrency:
   group: preview-${{ github.event.pull_request.number || github.ref }}
   cancel-in-progress: true
 
-env:
-  PREVIEW_PR: ${{ github.event.pull_request.number }}
-  PREVIEW_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
-
 jobs:
+  # Builds the gallery with no secrets and hands it to preview-deploy.yml as an artifact: the site,
+  # the placeholder page and preview.json naming the event, pull request and head sha.
   preview-build:
     name: preview-build
     runs-on: ubuntu-latest
     permissions:
       contents: read
+    env:
+      PREVIEW_PR: ${{ github.event.pull_request.number }}
+      PREVIEW_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
     steps:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
         with:
@@ -36,128 +37,19 @@ jobs:
       - run: pnpm install --frozen-lockfile
       - name: Build the preview site
         run: pnpm build && pnpm --filter @hatchmark/preview run site
+      - name: Record what was built
+        if: github.event_name != 'merge_group'
+        run: >-
+          jq -n --arg event "$GITHUB_EVENT_NAME" --arg pr "$PREVIEW_PR" --arg sha "$PREVIEW_SHA"
+          '{event: $event, pr: (if $pr == "" then null else ($pr | tonumber) end), sha: $sha}'
+          > packages/preview/dist/preview.json
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        if: github.event_name != 'merge_group'
         with:
           name: preview-site
           path: |
             packages/preview/dist/site
             packages/preview/dist/placeholder
+            packages/preview/dist/preview.json
           if-no-files-found: error
           retention-days: 7
-
-  # Holds the Cloudflare credentials, so it runs no code from the pull request: no checkout, no
-  # install, no repository scripts. It deploys the built files with a pinned wrangler and the
-  # Worker config below.
-  preview-deploy:
-    name: preview-deploy
-    needs: preview-build
-    if: github.event_name != 'merge_group'
-    runs-on: ubuntu-latest
-    permissions:
-      pull-requests: write
-    env:
-      WRANGLER_VERSION: 4.168.0
-    steps:
-      - uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5.0.0
-        with:
-          node-version: lts/*
-      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
-        with:
-          name: preview-site
-          path: deploy
-      - name: Deploy to Cloudflare Workers
-        id: deploy
-        working-directory: deploy
-        env:
-          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
-          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
-          HEAD_REPO: ${{ github.event.pull_request.head.repo.full_name }}
-        run: |
-          set -euo pipefail
-          fail() { echo "::error::$1"; exit 1; }
-          if [ -z "${CLOUDFLARE_API_TOKEN:-}" ] || [ -z "${CLOUDFLARE_ACCOUNT_ID:-}" ]; then
-            if [ "$GITHUB_EVENT_NAME" = pull_request ] && { [ "$HEAD_REPO" != "$GITHUB_REPOSITORY" ] || [ "$GITHUB_ACTOR" = "dependabot[bot]" ]; }; then
-              echo "::notice::Pull requests from forks and Dependabot get no secrets: the preview was built but not deployed."
-              exit 0
-            fi
-            fail "CLOUDFLARE_API_TOKEN or CLOUDFLARE_ACCOUNT_ID is missing, so nothing was deployed."
-          fi
-
-          cat > wrangler.jsonc <<'EOF'
-          {
-            "name": "hatchmark-preview",
-            "compatibility_date": "2026-11-23",
-            "workers_dev": true,
-            "preview_urls": true,
-            "assets": {
-              "directory": "./site",
-              "html_handling": "auto-trailing-slash",
-              "not_found_handling": "404-page"
-            }
-          }
-          EOF
-
-          wrangler() {
-            : > output.ndjson
-            WRANGLER_OUTPUT_FILE_PATH="$PWD/output.ndjson" WRANGLER_SEND_METRICS=false \
-              npx --yes "wrangler@$WRANGLER_VERSION" "$@" >&2 || true
-            jq -sc '[.[] | select(.type != "wrangler-session")] | last // {}' output.ndjson
-          }
-          message() { jq -r '.message // "no output"' <<<"$1"; }
-
-          if [ "$GITHUB_EVENT_NAME" = push ]; then
-            result=$(wrangler deploy --message "main at $PREVIEW_SHA")
-            [ "$(jq -r .type <<<"$result")" = deploy ] || fail "Deploying main failed: $(message "$result")"
-            echo "Gallery of main at \`$PREVIEW_SHA\`: $(jq -r '.targets[0] // empty' <<<"$result")" >> "$GITHUB_STEP_SUMMARY"
-            exit 0
-          fi
-
-          upload() { wrangler versions upload --preview-alias "pr-$PREVIEW_PR" --message "PR #$PREVIEW_PR at $PREVIEW_SHA"; }
-          result=$(upload)
-          if jq -e '.type == "command-failed" and ((.message // "") | contains("Worker that does not yet exist"))' <<<"$result" >/dev/null; then
-            echo "::notice::The preview Worker does not exist yet; deploying a placeholder page to create it."
-            created=$(wrangler deploy --assets ./placeholder --message "Placeholder until main deploys")
-            [ "$(jq -r .type <<<"$created")" = deploy ] || fail "Creating the preview Worker failed: $(message "$created")"
-            result=$(upload)
-          fi
-          [ "$(jq -r .type <<<"$result")" = version-upload ] || fail "Uploading the preview failed: $(message "$result")"
-          alias_url=$(jq -r '.preview_alias_url // empty' <<<"$result")
-          [ -n "$alias_url" ] || fail "Wrangler returned no preview alias URL; are preview URLs enabled on the Worker?"
-          {
-            echo "alias_url=$alias_url"
-            echo "version_url=$(jq -r '.preview_url // empty' <<<"$result")"
-          } >> "$GITHUB_OUTPUT"
-          echo "Preview of PR #$PREVIEW_PR at \`$PREVIEW_SHA\`: $alias_url" >> "$GITHUB_STEP_SUMMARY"
-
-      - name: Comment the preview URL on the pull request
-        if: steps.deploy.outputs.alias_url != ''
-        uses: actions/github-script@ed597411d8f924073f98dfc5c65a23a2325f34cd # v8.0.0
-        env:
-          ALIAS_URL: ${{ steps.deploy.outputs.alias_url }}
-          VERSION_URL: ${{ steps.deploy.outputs.version_url }}
-        with:
-          script: |
-            const marker = "<!-- hatchmark-preview -->";
-            const { ALIAS_URL, VERSION_URL, PREVIEW_SHA } = process.env;
-            const body = [
-              marker,
-              `**Preview:** ${ALIAS_URL}`,
-              "",
-              `Built from ${PREVIEW_SHA}.${VERSION_URL ? ` This exact version: ${VERSION_URL}` : ""}`,
-            ].join("\n");
-            const { owner, repo } = context.repo;
-            const issue_number = context.issue.number;
-            const comments = await github.paginate(github.rest.issues.listComments, {
-              owner,
-              repo,
-              issue_number,
-              per_page: 100,
-            });
-            const existing = comments.find(
-              (c) => c.user?.login === "github-actions[bot]" && c.body?.includes(marker),
-            );
-            if (existing) {
-              await github.rest.issues.updateComment({ owner, repo, comment_id: existing.id, body });
-            } else {
-              await github.rest.issues.createComment({ owner, repo, issue_number, body });
-            }
