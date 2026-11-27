@@ -55,6 +55,10 @@ afterAll(async () => {
 const hash = (page: Page) =>
   Object.fromEntries(new URLSearchParams(new URL(page.url()).hash.slice(1)));
 const gallery = (page: Page) => page.frameLocator("#frame");
+const shownPath = (page: Page) =>
+  page
+    .locator("#frame")
+    .evaluate((frame: HTMLIFrameElement) => frame.contentWindow?.location.pathname);
 
 async function sectionTop(page: Page, id: string): Promise<number> {
   const frame = page.frame({ url: /\/components\// }) as Frame;
@@ -117,6 +121,29 @@ describe("preview shell deep links", () => {
     await page.getByRole("button", { name: "Example dashboard" }).click();
     expect(await page.locator("#frame").getAttribute("src")).toBe("dashboard/sales/");
     expect(hash(page)).not.toHaveProperty("locale");
+    await page.close();
+  });
+
+  it("keeps the toolbar on the page the frame shows after Back", async () => {
+    const page = await browser.newPage();
+    await page.goto(`${origin}/#view=dashboard&locale=de-DE`);
+    await expect.poll(() => shownPath(page)).toBe("/dashboard-de-DE/sales/");
+    await page.getByRole("button", { name: "ja-JP" }).click();
+    await expect.poll(() => shownPath(page)).toBe("/dashboard-ja-JP/sales/");
+    await page.getByRole("button", { name: "Date range picker" }).click();
+    await expect.poll(() => shownPath(page)).toBe("/dashboard-ja-JP/explorer/");
+    await page.evaluate(() => history.back());
+    await expect.poll(() => shownPath(page)).toBe("/dashboard-ja-JP/sales/");
+    await expect.poll(() => hash(page)).toMatchObject({ view: "dashboard", locale: "ja-JP" });
+    await page.evaluate(() => history.back());
+    await expect.poll(() => shownPath(page)).toBe("/dashboard-de-DE/sales/");
+    await expect.poll(() => hash(page)).toMatchObject({ view: "dashboard", locale: "de-DE" });
+    expect(await page.getByRole("button", { name: "de-DE" }).getAttribute("aria-pressed")).toBe(
+      "true",
+    );
+    expect(
+      await page.getByRole("button", { name: "Example dashboard" }).getAttribute("aria-pressed"),
+    ).toBe("true");
     await page.close();
   });
 
