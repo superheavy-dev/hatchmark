@@ -278,7 +278,7 @@ function dashboard(
   description?: string,
 ): DashboardData {
   return {
-    version: 1,
+    version: 2,
     name,
     title,
     ...(description === undefined ? {} : { description }),
@@ -293,7 +293,7 @@ function dashboard(
     locale: "en-US",
     currency: "USD",
     timezone: "America/New_York",
-    weekStart: "monday",
+    anchors: { week: "monday", quarter: "01-01", year: "01-01" },
     metrics: METRICS,
     blocks,
   };

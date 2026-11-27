@@ -161,7 +161,7 @@ const table: TableData = {
   window: OCT,
 };
 const data: DashboardData = {
-  version: 1,
+  version: 2,
   name: "parcelwise",
   title: "Revenue overview",
   description: d.meta.description,
@@ -171,7 +171,7 @@ const data: DashboardData = {
   locale: "en-US",
   currency: "USD",
   timezone: "America/New_York",
-  weekStart: "monday",
+  anchors: { week: "monday", quarter: "01-01", year: "01-01" },
   metrics,
   blocks: [...kpis, line, bar, table],
 };
