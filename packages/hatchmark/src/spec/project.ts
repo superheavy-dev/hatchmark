@@ -274,7 +274,12 @@ export function parseCsvRecord(
         field += '"';
         i++;
       } else if (ch === '"') quoted = false;
-      else field += ch;
+      else {
+        let end = text.indexOf('"', i);
+        if (end === -1) end = text.length;
+        field += text.slice(i, end);
+        i = end - 1;
+      }
     } else if (ch === '"' && field === "") quoted = true;
     else if (ch === delimiter) {
       fields.push(field);
@@ -282,7 +287,16 @@ export function parseCsvRecord(
     } else if (ch === "\n" || ch === "\r") {
       fields.push(field);
       return fields;
-    } else field += ch;
+    } else {
+      let end = i + 1;
+      while (end < text.length) {
+        const next = text[end];
+        if (next === delimiter || next === "\n" || next === "\r") break;
+        end++;
+      }
+      field += text.slice(i, end);
+      i = end - 1;
+    }
   }
   if (quoted || !atEnd) return undefined;
   fields.push(field);
