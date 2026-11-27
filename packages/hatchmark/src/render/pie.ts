@@ -85,6 +85,7 @@ export function pieNote(block: PieData, ctx: RenderContext): string | undefined 
 
 interface KeyLayout {
   rows: { lines: string[]; cut: boolean; y: number; height: number }[];
+  total?: { y: number; height: number };
   note: string[];
   height: number;
 }
@@ -94,7 +95,12 @@ const NAME_STYLE = { size: BODY } as const;
 const NAME_MAX_LINES = 4;
 const VALUE_STYLE = { size: BODY, weight: 500 } as const;
 
-function keyLayout(block: PieData, ctx: RenderContext, width: number): KeyLayout {
+function keyLayout(
+  block: PieData,
+  ctx: RenderContext,
+  width: number,
+  totalText: string | undefined,
+): KeyLayout {
   const metric = metricOf(ctx, block.metric);
   const items = pieItems(block);
   const valueWidth = Math.max(
@@ -102,6 +108,7 @@ function keyLayout(block: PieData, ctx: RenderContext, width: number): KeyLayout
     ...items.map((i) =>
       textWidth(formatValue(i.value, metric, ctx.data.locale, "compact"), VALUE_STYLE),
     ),
+    totalText === undefined ? 0 : textWidth(totalText, VALUE_STYLE),
   );
   const nameWidth = Math.max(40, width - DOT - 8 - VALUE_GAP - valueWidth - SHARE_WIDTH);
   let y = 0;
@@ -112,10 +119,20 @@ function keyLayout(block: PieData, ctx: RenderContext, width: number): KeyLayout
     y += height;
     return row;
   });
+  const total = totalText === undefined ? undefined : { y, height: ROW };
+  if (total) y += ROW;
   const text = pieNote(block, ctx);
   const note = text ? wrapLines(text, width, { size: CAPTION }, 4).lines : [];
   const height = y + (note.length > 0 ? 8 + note.length * LABEL_LINE : 0);
-  return { rows, note, height };
+  return { rows, ...(total ? { total } : {}), note, height };
+}
+
+/** The donut's total, and whether it fits in the hole at a size; otherwise the key states it. */
+function donutTotal(block: PieData, ctx: RenderContext, diameter: number) {
+  const text = formatValue(block.total, metricOf(ctx, block.metric), ctx.data.locale, "headline");
+  const room = diameter * HOLE - 12;
+  const size = textWidth(text, { size: 20 }) <= room ? 20 : 16;
+  return { text, room, size, inHole: textWidth(text, { size }) <= room };
 }
 
 /** Where the pie and its key go at a width: the key beside the pie, or under it on narrow cards. */
@@ -124,13 +141,15 @@ function geometry(block: PieData, ctx: RenderContext, width: number, plotHeight:
   const diameter = Math.min(MAX_DIAMETER, plotHeight - 24, Math.floor(width * (side ? 0.42 : 0.7)));
   const keyX = side ? diameter + KEY_GAP : 0;
   const keyWidth = side ? width - keyX : width;
-  const key = keyLayout(block, ctx, keyWidth);
+  const empty = pieItems(block).length === 0 || block.whole === 0;
+  const total = block.type === "donut" && !empty ? donutTotal(block, ctx, diameter) : undefined;
+  const key = keyLayout(block, ctx, keyWidth, total && !total.inHole ? total.text : undefined);
   const pieArea = side ? plotHeight : diameter + 8;
   const height = side ? Math.max(plotHeight, key.height) : pieArea + 16 + key.height;
   const keyY = side ? Math.max(0, (height - key.height) / 2) : pieArea + 16;
   const cy = side ? height / 2 : pieArea / 2;
   const cx = side ? diameter / 2 : width / 2;
-  return { side, diameter, keyX, keyY, keyWidth, key, height, cx, cy };
+  return { side, diameter, keyX, keyY, keyWidth, key, height, cx, cy, total };
 }
 
 /** The height a pie card's chart takes at a width: the plot height, or more for a long key. */
@@ -233,18 +252,19 @@ export function renderPie(
     });
   }
 
-  if (block.type === "donut" && !empty) {
-    const total = formatValue(block.total, metric, locale, "headline");
-    const room = inner * 2 - 12;
-    const sizeTotal = textWidth(total, { size: 20 }) <= room ? 20 : 16;
-    const label = truncateEnd(metric.label, room, { size: CAPTION });
+  if (g.total) {
+    const label = truncateEnd(metric.label, g.total.room, { size: CAPTION });
+    if (g.total.inHole) {
+      parts.push(
+        svgText(paint, g.cx, g.cy - 6, g.total.text, {
+          size: g.total.size,
+          anchor: "middle",
+          color: isNumber(block.total) ? "text" : "textSubtle",
+        }),
+      );
+    }
     parts.push(
-      svgText(paint, g.cx, g.cy - 6, total, {
-        size: sizeTotal,
-        anchor: "middle",
-        color: isNumber(block.total) ? "text" : "textSubtle",
-      }),
-      svgText(paint, g.cx, g.cy + 14, label, {
+      svgText(paint, g.cx, g.total.inHole ? g.cy + 14 : g.cy, label, {
         size: CAPTION,
         anchor: "middle",
         color: "textMuted",
@@ -283,7 +303,20 @@ export function renderPie(
       }),
     );
   });
-  const noteTop = g.keyY + (g.key.rows.at(-1)?.y ?? 0) + (g.key.rows.at(-1)?.height ?? 0) + 8;
+  const total = g.key.total;
+  if (total && g.total) {
+    const cy = g.keyY + total.y + total.height / 2;
+    parts.push(
+      svgText(paint, g.keyX + DOT + 8, cy, "Total", { ...NAME_STYLE, color: "text" }),
+      svgText(paint, valueRight, cy, g.total.text, {
+        ...VALUE_STYLE,
+        anchor: "end",
+        color: isNumber(block.total) ? "text" : "textSubtle",
+      }),
+    );
+  }
+  const last = total ?? g.key.rows.at(-1);
+  const noteTop = g.keyY + (last?.y ?? 0) + (last?.height ?? 0) + 8;
   g.key.note.forEach((line, j) => {
     parts.push(
       svgText(paint, g.keyX, noteTop + j * LABEL_LINE + LABEL_LINE / 2, line, {

@@ -152,6 +152,7 @@ rules.
 
 KPIs switch large currency values to compact notation at 100,000 and plain numbers at 1,000,000 on
 their own. Tables show the full value unless `compact` is `true`. A compact value is rounded only
-when it shows a unit such as K, Mio. or 万; where the locale has no unit for that size (de-DE
-below a million, ja-JP below ten thousand, every locale below a thousand), the full value is shown
-instead.
+when the result shows a unit such as K, Mio. or 万; when the locale's compact form has no unit for
+it, the full value is shown instead. A value can round up into a unit (999,500 is `1 Mio. $` in
+de-DE). Where an exact value is too long for a chart, bar charts leave out their inline values and
+a donut states its total in the key; tooltips keep the value.
