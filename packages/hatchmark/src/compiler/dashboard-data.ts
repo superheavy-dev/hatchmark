@@ -308,7 +308,10 @@ export interface ScatterData extends BlockCommon {
   omittedPoints?: number;
   /** Categories with x and y that limit (or the 500-point cap, HM5022) left out. */
   omittedCategories?: number;
+  /** The window x, y and size all read: through the earliest horizon among them. */
   window?: DateSpan;
+  /** Set when x's or y's window is empty (no complete day yet, or no data): no points. */
+  empty?: EmptyWindow;
 }
 
 export type BlockData = KpiData | LineData | BarData | PieData | TableData | ScatterData;

@@ -167,7 +167,7 @@ function scatterHeading(
 ): { title: string; subtitle: string } {
   const label = (m: string) => ctx.data.metrics[m]?.label ?? m;
   const what = `${label(block.y)} against ${label(block.x)} by ${humanize(block.column)}`;
-  const window = block.window ?? ctx.data.period.current;
+  const window = block.window ?? (block.empty ? undefined : ctx.data.period.current);
   const span = window ? formatSpan(window, ctx.data.locale) : undefined;
   const shown = block.points.length;
   const limited = block.omittedCategories

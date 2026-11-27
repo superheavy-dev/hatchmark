@@ -162,7 +162,9 @@ export function queryId(query: Omit<PlannedQuery, "id">): string {
  * Plans a set of metrics read on the same axes. Leaf metrics group into one query per source and
  * time column (the column that windows them and places them on a time axis). A SQL metric with
  * filters gets a query of its own, since its filters cannot attach to one aggregate call and must
- * filter the query's rows. Ratios become MeasureExpressions over those queries.
+ * filter the query's rows. Ratios become MeasureExpressions over those queries. With oneWindow every
+ * metric ends at the earliest horizon among all of them, like a ratio's operands: a scatter point
+ * reads x, y and size over one window.
  */
 function planReading(
   ctx: Context,
@@ -170,6 +172,7 @@ function planReading(
   axes: AxisDimension[],
   groupingSets: number[][],
   shift: Comparison,
+  oneWindow = false,
 ): Reading {
   const groups = new Map<
     string,
@@ -178,7 +181,9 @@ function planReading(
   const queryOf = new Map<string, string>();
   const horizonsOf = (name: string): TimeColumn[] => {
     const columns = new Map<string, TimeColumn>();
-    for (const leaf of leaves(name, ctx.metrics)) {
+    for (const leaf of oneWindow
+      ? names.flatMap((n) => leaves(n, ctx.metrics))
+      : leaves(name, ctx.metrics)) {
       const metric = ctx.metrics.get(leaf);
       if (metric === undefined || (metric.type !== "aggregate" && metric.type !== "sql")) continue;
       if (metric.time === undefined) continue;
@@ -416,6 +421,7 @@ function planBlockAt(
             [{ kind: "column", column: block.by }],
             [[0]],
             "none",
+            true,
           ),
         };
       default:

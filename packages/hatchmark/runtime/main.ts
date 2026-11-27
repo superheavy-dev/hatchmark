@@ -308,9 +308,18 @@ function attach(figure: HTMLElement, chart: RuntimeChart): void {
     const y = ((event.clientY - box.top) * svg.viewBox.baseVal.height) / box.height;
     if (chart.kind === "scatter") {
       const reach = (SCATTER_PICK * svg.viewBox.baseVal.width) / box.width;
+      const points = scatterPoints(svg);
       let best = -1;
+      let smallest = Number.POSITIVE_INFINITY;
+      points.forEach(([cx = 0, cy = 0, radius = 0], i) => {
+        if (Math.hypot(x - cx, y - cy) <= radius && radius < smallest) {
+          smallest = radius;
+          best = i;
+        }
+      });
+      if (best >= 0) return best;
       let nearest = Number.POSITIVE_INFINITY;
-      scatterPoints(svg).forEach(([cx = 0, cy = 0, radius = 0], i) => {
+      points.forEach(([cx = 0, cy = 0, radius = 0], i) => {
         const distance = Math.hypot(x - cx, y - cy) - radius;
         if (distance <= reach && distance < nearest) {
           nearest = distance;

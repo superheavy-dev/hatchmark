@@ -877,7 +877,14 @@ class Assembler {
     const expressions = [block.x, block.y, block.size].flatMap((m) =>
       m === undefined ? [] : [plan.measures[m]],
     );
-    const value = (metric: string, key: Key) => this.evaluate(plan.measures[metric], 0, [key]);
+    const emptyOf = new Map(
+      [block.x, block.y, block.size].flatMap((m) =>
+        m === undefined ? [] : [[m, this.empty(plan.measures[m])] as const],
+      ),
+    );
+    const value = (metric: string, key: Key) =>
+      emptyOf.get(metric) === undefined ? this.evaluate(plan.measures[metric], 0, [key]) : null;
+    const empty = emptyOf.get(block.x) ?? emptyOf.get(block.y);
     const all: ScatterPoint[] = this.keys(expressions, 0).map(([key = null]) => ({
       key,
       label: key === null ? "(empty)" : String(key),
@@ -887,12 +894,7 @@ class Assembler {
     }));
     const placed = all.filter((p) => p.x !== null && p.y !== null);
     const rank = (p: ScatterPoint) => (block.size === undefined ? p.y : (p.size ?? null));
-    placed.sort(
-      (a, b) =>
-        compareValues(rank(a), rank(b), "desc") ||
-        compareValues(a.y, b.y, "desc") ||
-        compareKey(a.key, b.key),
-    );
+    placed.sort((a, b) => compareValues(rank(a), rank(b), "desc") || compareKey(a.key, b.key));
     const limit = block.limit ?? MAX_SCATTER_POINTS;
     const points = placed.slice(0, limit);
     const omittedPoints = all.length - placed.length;
@@ -952,7 +954,8 @@ class Assembler {
       points,
       ...(omittedPoints > 0 ? { omittedPoints } : {}),
       ...(omittedCategories > 0 ? { omittedCategories } : {}),
-      ...(window ? { window } : {}),
+      ...(window && !empty ? { window } : {}),
+      ...(empty ? { empty } : {}),
     };
   }
 
