@@ -182,7 +182,15 @@ describe("global-sales example", () => {
 
 describe("global-sales trends dashboard (grain switching)", () => {
   let trends: DashboardData;
-  const T_CURRENT = `${LOCAL} >= TIMESTAMP '2025-10-01' AND ${LOCAL} < TIMESTAMP '2026-10-01'`;
+  // The window is Oct 1, 2025 to Sep 30, 2026; edges "snap" (the default) starts each grain at its
+  // first bucket, so the Sunday weeks begin on Sep 28 (RFC 0001 section 6.5).
+  const FIRST: Record<string, string> = {
+    "week:sunday": "2025-09-28",
+    month: "2025-10-01",
+    "quarter:01-01": "2025-10-01",
+  };
+  const current = (key: string) =>
+    `${LOCAL} >= TIMESTAMP '${FIRST[key]}' AND ${LOCAL} < TIMESTAMP '2026-10-01'`;
   const BUCKET: Record<string, string> = {
     "week:sunday": `date_trunc('week', CAST(${LOCAL} AS DATE) + INTERVAL 1 DAY) - INTERVAL 1 DAY`,
     month: `date_trunc('month', ${LOCAL})`,
@@ -227,7 +235,7 @@ describe("global-sales trends dashboard (grain switching)", () => {
     for (const option of line.grains?.options ?? []) {
       const cells = await oracle.rows(`
         SELECT region, strftime(${BUCKET[option.key]}, '%Y-%m-%d') AS b, CAST(sum(amount) AS DOUBLE) AS revenue
-        FROM read_csv('${CSV}') WHERE ${PAID} AND ${T_CURRENT} GROUP BY ALL`);
+        FROM read_csv('${CSV}') WHERE ${PAID} AND ${current(option.key)} GROUP BY ALL`);
       expect(option.series.map((s) => s.splitValue).sort()).toEqual(["APAC", "Americas", "EMEA"]);
       for (const series of option.series) {
         series.values.forEach((v, i) => {
@@ -244,7 +252,7 @@ describe("global-sales trends dashboard (grain switching)", () => {
         .flatMap((s) => s.values)
         .reduce((a: number, v) => a + (v ?? 0), 0);
       const [all] = await oracle.rows(
-        `SELECT CAST(sum(amount) AS DOUBLE) AS v FROM read_csv('${CSV}') WHERE ${PAID} AND ${T_CURRENT}`,
+        `SELECT CAST(sum(amount) AS DOUBLE) AS v FROM read_csv('${CSV}') WHERE ${PAID} AND ${current(option.key)}`,
       );
       expect(total).toBeCloseTo(all?.v as number, 6);
     }

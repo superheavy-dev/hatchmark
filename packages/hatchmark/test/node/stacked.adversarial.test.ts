@@ -431,7 +431,11 @@ const CONFIG = {
 };
 
 const LOCAL = "(ts AT TIME ZONE 'America/New_York')";
-const win = (end: string) => `${LOCAL} >= TIMESTAMP '2026-01-01' AND ${LOCAL} < TIMESTAMP '${end}'`;
+const win = (end: string, start = "2026-01-01") =>
+  `${LOCAL} >= TIMESTAMP '${start}' AND ${LOCAL} < TIMESTAMP '${end}'`;
+// edges "snap" (the default) starts a time series' window at its first bucket (RFC 0001 6.5): Jan 1,
+// 2026 is a Thursday, so the first Sunday week starts on Dec 28.
+const snapped = (unit: string) => (unit === "week" ? "2025-12-28" : "2026-01-01");
 const bucket = (unit: string) =>
   unit === "week"
     ? `strftime(CAST(${LOCAL} AS DATE) - CAST(dayofweek(${LOCAL}) AS INTEGER), '%Y-%m-%d')`
@@ -690,11 +694,11 @@ describe("stacked charts against a SQL oracle (HAT-58 harness)", () => {
       for (const o of block(main.data, id).grains?.options ?? []) {
         const unit = o.key.split(":")[0] as string;
         const t = await grouped(
-          `SELECT ${bucket(unit)} AS m, sum(amount) FILTER (WHERE status = 'paid') AS v FROM o WHERE ${win("2026-07-01")} GROUP BY ALL`,
+          `SELECT ${bucket(unit)} AS m, sum(amount) FILTER (WHERE status = 'paid') AS v FROM o WHERE ${win("2026-07-01", snapped(unit))} GROUP BY ALL`,
           ["m"],
         );
         const p = await grouped(
-          `SELECT ${bucket(unit)} AS m, ${split}, sum(amount) AS v FROM o WHERE ${win("2026-07-01")} AND status = 'paid' GROUP BY ALL`,
+          `SELECT ${bucket(unit)} AS m, ${split}, sum(amount) AS v FROM o WHERE ${win("2026-07-01", snapped(unit))} AND status = 'paid' GROUP BY ALL`,
           ["m", split],
         );
         expect(
@@ -814,11 +818,11 @@ describe("stacked charts against a SQL oracle (HAT-58 harness)", () => {
       for (const o of options) {
         const unit = o.key.split(":")[0] as string;
         const t = await grouped(
-          `SELECT ${bucket(unit)} AS m, ${agg} AS v FROM o WHERE ${win("2026-07-01")}${extra} GROUP BY ALL`,
+          `SELECT ${bucket(unit)} AS m, ${agg} AS v FROM o WHERE ${win("2026-07-01", snapped(unit))}${extra} GROUP BY ALL`,
           ["m"],
         );
         const p = await grouped(
-          `SELECT ${bucket(unit)} AS m, ${split}, ${agg} AS v FROM o WHERE ${win("2026-07-01")}${extra} GROUP BY ALL`,
+          `SELECT ${bucket(unit)} AS m, ${split}, ${agg} AS v FROM o WHERE ${win("2026-07-01", snapped(unit))}${extra} GROUP BY ALL`,
           ["m", split],
         );
         expect(
@@ -840,11 +844,11 @@ describe("stacked charts against a SQL oracle (HAT-58 harness)", () => {
     for (const o of block(result.data, "h_split_pct").grains?.options ?? []) {
       const unit = o.key.split(":")[0] as string;
       const t = await grouped(
-        `SELECT ${bucket(unit)} AS m, sum(amount) AS v FROM r WHERE ${win("2026-07-01")} GROUP BY ALL`,
+        `SELECT ${bucket(unit)} AS m, sum(amount) AS v FROM r WHERE ${win("2026-07-01", snapped(unit))} GROUP BY ALL`,
         ["m"],
       );
       const p = await grouped(
-        `SELECT ${bucket(unit)} AS m, region, sum(amount) AS v FROM r WHERE ${win("2026-07-01")} GROUP BY ALL`,
+        `SELECT ${bucket(unit)} AS m, region, sum(amount) AS v FROM r WHERE ${win("2026-07-01", snapped(unit))} GROUP BY ALL`,
         ["m", "region"],
       );
       const cutFrom = (o.series[0]?.partial?.[0]?.index ?? -2) + 1;

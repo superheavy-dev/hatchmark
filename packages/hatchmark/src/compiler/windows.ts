@@ -286,8 +286,25 @@ function daysBetween(from: string, to: string): number {
  * bucket is marked (section 6.5): its window ends at the horizon instant, and its comparison is
  * cut to the same elapsed local time. Such a bound is a UTC instant "YYYY-MM-DDTHH:MM:SS.ffffffZ",
  * so a cutoff inside a repeated hour stays exact; every other bound is a local date.
+ *
+ * A time series' window then starts at the start of the bucket its start falls in (section 6.5,
+ * leading edge), so its first bucket is whole, unless the window clips (window.edges "clip") or is
+ * empty.
  */
 export function windowAt(
+  query: PlannedQuery,
+  context: BoundsContext,
+  horizon: bigint | undefined,
+): WindowBounds | undefined {
+  const bounds = endedWindow(query, context, horizon);
+  const time = query.dimensions.find((d) => d.kind === "time");
+  if (time?.kind !== "time" || query.window.edges === "clip" || bounds?.kind !== "bounded")
+    return bounds;
+  if (bounds.start === bounds.end || bounds.start.endsWith("Z")) return bounds;
+  return { ...bounds, start: bucketStart(bounds.start, time.grain) };
+}
+
+function endedWindow(
   query: PlannedQuery,
   context: BoundsContext,
   horizon: bigint | undefined,

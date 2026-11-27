@@ -145,7 +145,6 @@ function compareBlocks(
 ): { cells: number; problems: string[] } {
   const problems: string[] = [];
   let cells = 0;
-  const rows = inWindow(window, where);
   for (const sb of specBlocks.filter((b) => b.grains)) {
     const b = (data.blocks as unknown as SwitchBlock[]).find((x) => x.id === sb.id);
     const grains = sb.grains as GrainSpec[];
@@ -171,6 +170,9 @@ function compareBlocks(
     }
     for (const [i, o] of b.grains.options.entries()) {
       const g = resolve(grains[i], anchors);
+      // edges "snap" (the default) starts each grain's window at its first bucket (RFC 0001 6.5).
+      const snapped: [string, string] = [bucket(window[0], g), window[1]];
+      const rows = inWindow(snapped, where);
       const buckets = (o.axis as { buckets: string[] }).buckets;
       const want = [...new Set(rows.map((r) => bucket(r.d, g)))].sort();
       const missing = want.filter((w) => !buckets.includes(w));
@@ -199,7 +201,7 @@ function compareBlocks(
       const metrics = sb.metrics as string[];
       if (metrics.length === 1 && (metrics[0] === "revenue" || metrics[0] === "orders")) {
         const total = o.series.flatMap((s) => s.values).reduce<number>((a, v) => a + num(v), 0);
-        const w = num(oracleTotal(metrics[0], window, where));
+        const w = num(oracleTotal(metrics[0], snapped, where));
         if (Math.abs(total - w) > 1e-6)
           problems.push(`${sb.id} ${o.key}: total ${total} want ${w}`);
       }

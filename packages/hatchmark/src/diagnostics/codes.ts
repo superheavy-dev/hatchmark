@@ -279,6 +279,11 @@ export const CODES = {
     explanation:
       "A KPI, table or category chart reads whole days ending at the last complete day of its data. Its window has begun, but no day of it is complete yet, such as month-to-date on the 1st, so it shows no value rather than 0. It fills in once a day is complete. Set period.asOf to an earlier date to show a complete day instead.",
   },
+  HM4014: {
+    title: "partial bucket shown as complete",
+    explanation:
+      'A time series with "incomplete": "show" draws its last bucket like the others, but the data covers only part of it, so a flow metric (a sum or count over the bucket) reads low there. Leave incomplete at "mark" to show it as in progress, or set "hide" to leave the bucket out.',
+  },
   HM4016: {
     title: "timestamps without an offset",
     explanation:

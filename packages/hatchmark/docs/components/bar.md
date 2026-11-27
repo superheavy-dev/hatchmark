@@ -15,15 +15,16 @@ A metric by category or by time bucket, as vertical or horizontal bars.
 }
 ```
 
-| Field           | Meaning                                                                                                                        |
-| --------------- | ------------------------------------------------------------------------------------------------------------------------------ |
-| `metrics`       | One to eight metrics. Several metrics are drawn side by side (grouped) unless `stack` is true.                                 |
-| `by` or `grain` | A category column, or time buckets. Use one of the two.                                                                        |
-| `grains`        | With `grain` only: grains the card switches between, as for [line](line.md).                                                   |
-| `split`         | A column that splits one metric into a bar segment per value.                                                                  |
-| `stack`         | `true` stacks the series, `"percent"` stacks them to 100%; otherwise they are grouped side by side. See [stacked](stacked.md). |
-| `orientation`   | `vertical` (default) or `horizontal`. Horizontal suits long category names and rankings.                                       |
-| `sort`, `limit` | Order and keep the top N categories. The subtitle then says "top 10 of 51".                                                    |
+| Field                 | Meaning                                                                                                                        |
+| --------------------- | ------------------------------------------------------------------------------------------------------------------------------ |
+| `metrics`             | One to eight metrics. Several metrics are drawn side by side (grouped) unless `stack` is true.                                 |
+| `by` or `grain`       | A category column, or time buckets. Use one of the two.                                                                        |
+| `grains`              | With `grain` only: grains the card switches between, as for [line](line.md).                                                   |
+| `edges`, `incomplete` | With `grain` only: the first bucket and partial buckets, as for [line](line.md) (HM3007 with `by`).                            |
+| `split`               | A column that splits one metric into a bar segment per value.                                                                  |
+| `stack`               | `true` stacks the series, `"percent"` stacks them to 100%; otherwise they are grouped side by side. See [stacked](stacked.md). |
+| `orientation`         | `vertical` (default) or `horizontal`. Horizontal suits long category names and rankings.                                       |
+| `sort`, `limit`       | Order and keep the top N categories. The subtitle then says "top 10 of 51".                                                    |
 
 What it draws:
 
