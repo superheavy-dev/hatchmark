@@ -39,6 +39,20 @@ const TRICKY: TableData = {
   sort: { by: "revenue", order: "desc" },
 };
 
+/** A one-column table on numeric and multi-line keys, in a locale whose number format differs. */
+const keyed = (id: string, keys: (string | number)[]): DashboardData => ({
+  ...dashboard(id, id, [
+    {
+      ...TRICKY,
+      id,
+      by: [{ column: "key", label: "Key" }],
+      rows: keys.map((key, i) => ({ keys: [key], values: { revenue: i + 0.123456789012345 } })),
+      rowCount: keys.length,
+    },
+  ]),
+  locale: "de-DE",
+});
+
 beforeAll(async () => {
   browser = await chromium.launch();
   dir = await mkdtemp(path.join(tmpdir(), "hatchmark-table-"));
@@ -56,6 +70,16 @@ beforeAll(async () => {
     tall: variant("table-tall"),
     bars: variant("table-bars-negative"),
     tricky: dashboard("tricky", "Tricky", [TRICKY]),
+    numeric: keyed("numeric", [2, -2, 1000, -10]),
+    lines: keyed("lines", [
+      1000.1234567,
+      0.0044,
+      0.00449,
+      "alpha\r\nbeta",
+      "alpha\rbeta",
+      "alpha\nbeta",
+      '"é", two',
+    ]),
   };
   for (const [name, data] of Object.entries(pages)) {
     await writeFile(
@@ -189,6 +213,60 @@ describe("sorting", () => {
       expect((await column(page, 1)).at(-1)).toBe("");
       await page.click("thead th:nth-child(2) button");
     }
+    await page.close();
+  });
+});
+
+describe("review regressions (HAT-55)", () => {
+  it("sorts a numeric grouping column by value, not by its formatted text", async () => {
+    const page = await open("numeric");
+    await page.getByRole("button", { name: "Key", exact: true }).press("Enter");
+    expect(await page.locator("tbody .hm-key span").allTextContents()).toEqual([
+      "−10",
+      "−2",
+      "2",
+      "1.000",
+    ]);
+    await page.close();
+  });
+
+  it("exports grouping values unformatted, line breaks included", async () => {
+    const page = await open("lines");
+    const text = await download(page);
+    const body = text.slice(text.indexOf("\r\n") + 2);
+    const keys = [
+      1000.1234567,
+      0.0044,
+      0.00449,
+      "alpha\r\nbeta",
+      "alpha\rbeta",
+      "alpha\nbeta",
+      '"é", two',
+    ];
+    const expected = keys.map((key, i) => {
+      const field = String(key);
+      const quoted = /[",\r\n]/.test(field) ? `"${field.replaceAll('"', '""')}"` : field;
+      return `${quoted},${i + 0.123456789012345}`;
+    });
+    expect(body.startsWith(`${expected.join("\r\n")}\r\n`)).toBe(true);
+    await page.close();
+  });
+
+  it("keeps a focused header out from under the pinned first column (390 px)", async () => {
+    const page = await open("tall", 390);
+    const wrap = page.locator(".hm-table-wrap");
+    await wrap.focus();
+    for (let i = 0; i < 5; i++) await page.keyboard.press("Tab");
+    await page.keyboard.press("Shift+Tab");
+    await page.keyboard.press("Shift+Tab");
+    const info = await page.evaluate(() => {
+      const button = document.activeElement as HTMLElement;
+      const r = button.getBoundingClientRect();
+      const pinned = document.querySelector(".hm-table thead th")?.getBoundingClientRect();
+      return { name: button.textContent?.trim(), left: r.left, pinned: pinned?.right ?? 0 };
+    });
+    expect(info.name).toBe("% of total");
+    expect(info.left).toBeGreaterThanOrEqual(info.pinned);
     await page.close();
   });
 });

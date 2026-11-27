@@ -6,6 +6,9 @@ import { esc, r } from "./svg.js";
 /** Rows past which the table scrolls inside its card under a sticky header and total row. */
 export const TALL_TABLE_ROWS = 15;
 
+/** An attribute value that keeps carriage returns and line feeds, which HTML parsing would fold. */
+const attr = (text: string) => esc(text).replaceAll("\r", "&#13;").replaceAll("\n", "&#10;");
+
 const CARET = `<svg class="hm-caret" width="8" height="8" viewBox="0 0 8 8" aria-hidden="true"><path d="M1.5 3 4 5.5 6.5 3" fill="none" stroke="currentColor" stroke-width="1.25" stroke-linecap="round" stroke-linejoin="round"/></svg>`;
 
 /** A bar's start and width as fractions of its track, measured from zero across both signs. */
@@ -116,11 +119,17 @@ export function renderTable(block: TableData, ctx: RenderContext): string {
         ...(block.percentOfTotal.includes(m) ? [shareCell(share(m), m, bar)] : []),
       ])
       .join("");
-  const keyCell = (i: number, text: string, cls: string, hidden: boolean, csv = text) => {
+  const keyCell = (
+    i: number,
+    text: string,
+    cls: string,
+    hidden: boolean,
+    value: string | number | boolean | null = text,
+  ) => {
     const tag = i === 0 ? 'th scope="row"' : "td";
     const content = text === "" ? "" : `<span${hidden ? ' class="hm-sr"' : ""}>${esc(text)}</span>`;
     const title = text === "" || hidden ? "" : ` title="${esc(text)}"`;
-    return `<${tag} class="${keyClass(i)}${cls}"${title} data-v="${esc(csv)}">${content}</${tag.split(" ")[0]}>`;
+    return `<${tag} class="${keyClass(i)}${cls}"${title}${typeof value === "number" ? ' data-t="n"' : ""} data-v="${attr(value === null ? "" : String(value))}">${content}</${tag.split(" ")[0]}>`;
   };
   const keysOf = (row: TableRow, previous: TableRow | undefined): string[] => {
     const level = row.kind === "subtotal" ? (row.level ?? 1) : undefined;
@@ -130,11 +139,11 @@ export function renderTable(block: TableData, ctx: RenderContext): string {
       const nullCls = key === null ? " hm-null" : "";
       if (level !== undefined) {
         if (i >= level) return keyCell(i, "", "", false, i === level ? "Subtotal" : "");
-        return keyCell(i, text, nullCls, i < level - 1, key === null ? "" : text);
+        return keyCell(i, text, nullCls, i < level - 1, key);
       }
       if (otherAt !== undefined) {
         if (i > otherAt) return keyCell(i, "", "", false);
-        if (i < otherAt) return keyCell(i, text, nullCls, true, key === null ? "" : text);
+        if (i < otherAt) return keyCell(i, text, nullCls, true, key);
         return keyCell(
           i,
           `Other (${(row.count ?? 0).toLocaleString(locale)})`,
@@ -149,7 +158,7 @@ export function renderTable(block: TableData, ctx: RenderContext): string {
           previous !== undefined &&
           previous.kind === undefined &&
           previous.keys.slice(0, i + 1).every((k, j) => k === row.keys[j]);
-      return keyCell(i, text, nullCls, repeat, key === null ? "" : text);
+      return keyCell(i, text, nullCls, repeat, key);
     });
   };
   const rows = block.rows

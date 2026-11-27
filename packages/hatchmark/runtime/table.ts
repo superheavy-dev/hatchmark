@@ -49,7 +49,9 @@ export function sortRows(
     const va = value(a.row?.cells[column]);
     const vb = value(b.row?.cells[column]);
     if (va === "" || vb === "") return va === vb ? a.index - b.index : va === "" ? 1 : -1;
-    const c = numeric ? Number(va) - Number(vb) : collator.compare(va, vb);
+    const cells = [a.row?.cells[column], b.row?.cells[column]];
+    const byNumber = numeric || cells.every((cell) => cell?.getAttribute("data-t") === "n");
+    const c = byNumber ? Number(va) - Number(vb) : collator.compare(va, vb);
     return (order === "asc" ? c : -c) || a.index - b.index;
   };
   const ordered: HTMLTableRowElement[] = [];
@@ -110,7 +112,8 @@ export function tableCsv(table: HTMLTableElement): string {
       const text = header
         ? (cell.dataset.csv ?? cell.textContent ?? "").trim()
         : (cell.getAttribute("data-v") ?? "");
-      out.push(field(text, header || cell.classList.contains("hm-key")));
+      const key = cell.classList.contains("hm-key") && cell.getAttribute("data-t") !== "n";
+      out.push(field(text, header || key));
       for (let i = 1; i < cell.colSpan; i++) out.push("");
     }
     lines.push(out.join(","));
@@ -132,10 +135,26 @@ function download(name: string, text: string): void {
   setTimeout(() => URL.revokeObjectURL(url), 1000);
 }
 
+/**
+ * Scrolls a focused header button out from under the pinned first column, which the browser's own
+ * focus scrolling does not know about.
+ */
+function revealFocus(wrap: HTMLElement, table: HTMLTableElement): void {
+  wrap.addEventListener("focusin", (event) => {
+    const target = event.target as HTMLElement;
+    const pinned = table.tHead?.rows[0]?.cells[0];
+    if (!pinned || target === wrap || pinned.contains(target)) return;
+    const covered = pinned.getBoundingClientRect().right - target.getBoundingClientRect().left;
+    if (covered > 0) wrap.scrollLeft -= covered + 8;
+  });
+}
+
 /** Wires one table card: sortable headers, a polite announcement, and the CSV button. */
 export function wireTable(card: HTMLElement): void {
   const table = card.querySelector<HTMLTableElement>("table.hm-table");
   if (!table) return;
+  const wrap = table.closest<HTMLElement>(".hm-table-wrap");
+  if (wrap) revealFocus(wrap, table);
   const live = document.createElement("div");
   live.className = "hm-sr";
   live.setAttribute("aria-live", "polite");
