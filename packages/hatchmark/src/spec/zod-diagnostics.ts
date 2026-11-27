@@ -8,7 +8,7 @@ import {
   type SpecDocument,
   toPointer,
 } from "../diagnostics/index.js";
-import { addPropertyFix, replaceValueFix } from "./fixes.js";
+import { addPropertyFix, replaceValueFix, yamlText } from "./fixes.js";
 
 type Path = (string | number)[];
 type Schema = core.$ZodType;
@@ -146,10 +146,6 @@ function closestFix(
   return { help: `did you mean "${match}"?`, ...(fix ? { fix } : {}) };
 }
 
-/**
- * For a YAML plain scalar that YAML 1.2 reads as a number or boolean where a string is expected:
- * help to quote it, and a safe fix that quotes the text exactly as written.
- */
 function quoteFix(document: SpecDocument, pointer: string): { help?: string; fix?: Fix } {
   const node = document.locate(pointer);
   if (!node?.exact || (node.node.kind !== "number" && node.node.kind !== "boolean")) return {};
@@ -270,7 +266,7 @@ export function issuesToDiagnostics(
             expected: allowed,
             ...(paging
               ? {
-                  help: 'tables do not paginate: a dashboard is read at a glance, and rows on a later page are easy to miss. Show the top rows with "limit" and fold the rest into one row with "other": true',
+                  help: 'tables do not paginate: a dashboard is read at a glance, and rows on a later page are easy to miss. Show the top rows with "limit" and fold the rest into one row with other: true',
                 }
               : match
                 ? { help: `did you mean "${match}"?` }
@@ -279,7 +275,7 @@ export function issuesToDiagnostics(
               ? {
                   fix: {
                     range: keyRange,
-                    text: JSON.stringify(match),
+                    text: yamlText(match),
                     applicability:
                       match.toLowerCase() === extraKey.toLowerCase() ? "safe" : "unsafe",
                     description: `rename to "${match}"`,

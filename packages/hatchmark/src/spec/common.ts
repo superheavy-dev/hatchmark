@@ -117,7 +117,7 @@ export const grainSchema = z
   .meta({
     id: "Grain",
     description:
-      'A bucket unit, such as "month", or {"unit": "year", "anchor": "02-01"} to override the project anchors.',
+      'A bucket unit, such as "month", or {unit: year, anchor: 02-01} to override the project anchors.',
   });
 export type Grain = z.infer<typeof grainSchema>;
 
@@ -152,7 +152,7 @@ export const rangeSchema = z
   .meta({
     id: "Range",
     description:
-      'A date range [start, end) in the project time zone: {"start": "2026-02-01", "end": "2026-11-01"}, or a shorthand resolved at the as-of date: {"last": 30, "unit": "day"}, {"to_date": "quarter"}, {"last_complete": "month"}, or a named range such as "last_12_months".',
+      'A date range [start, end) in the project time zone: {start: 2026-02-01, end: 2026-11-01}, or a shorthand resolved at the as-of date: {last: 30, unit: day}, {to_date: quarter}, {last_complete: month}, or a named range such as "last_12_months".',
   });
 export type RangeSpec = z.infer<typeof rangeSchema>;
 
@@ -178,7 +178,7 @@ export const comparison = z
   .meta({
     id: "Comparison",
     description:
-      'previous_period: the previous calendar unit for calendar ranges (October vs September; to-date ranges compare the same elapsed span), or the same length just before for rolling ranges (last N days, last 12 months). previous_year: the same span one year earlier. {"shift": {"unit": "week", "by": -1}}: the range moved by whole units. none: no comparison.',
+      "previous_period: the previous calendar unit for calendar ranges (October vs September; to-date ranges compare the same elapsed span), or the same length just before for rolling ranges (last N days, last 12 months). previous_year: the same span one year earlier. {shift: {unit: week, by: -1}}: the range moved by whole units. none: no comparison.",
   });
 export type Comparison = z.infer<typeof comparison>;
 

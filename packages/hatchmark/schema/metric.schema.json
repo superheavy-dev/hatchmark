@@ -856,7 +856,7 @@
           "additionalProperties": false
         }
       ],
-      "description": "A length of time, such as {\"days\": 30} or {\"months\": 12}."
+      "description": "A length of time, such as {days: 30} or {months: 12}."
     },
     "RatioMetric": {
       "type": "object",

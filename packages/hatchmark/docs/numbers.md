@@ -11,7 +11,7 @@ ZONE` value is converted to it. A timestamp without an offset (`2026-01-31 18:30
   the source's `timezone`, or as UTC when the source sets none, and converted; a non-UTC project
   gets note HM4016 for such a source. A `DATE` is a calendar date and is used as it is.
 - **Windows.** A range is a span of calendar dates in that time zone, start inclusive and
-  end exclusive: `{"start", "end"}` dates, a shorthand (`{ last: 30, unit: day }`,
+  end exclusive: `{ start, end }` dates, a shorthand (`{ last: 30, unit: day }`,
   `{ to_date: quarter }`, `{ last_complete: month }`) or a named alias of one
   (`last_30_days`). A comparison is the range shifted by whole units (`previous_period`,
   `previous_year` or `{ shift: { unit: week, by: -1 } }`), with days clamped to the target
@@ -42,7 +42,7 @@ ZONE` value is converted to it. A timestamp without an offset (`2026-01-31 18:30
   complete. A window with no complete day yet, such as month-to-date on the 1st, shows no value
   rather than 0 (`empty: "no_complete_day"`, note HM4024).
 - **Buckets.** Time series bucket by local date; weeks start on the week anchor, and quarters and
-  years on their `MM-DD` anchors (hatchmark.yaml `anchors`, or a block's `{"unit", "anchor"}`
+  years on their `MM-DD` anchors (hatchmark.yaml `anchors`, or a block's `{ unit, anchor }`
   grain). The axis lists every
   bucket of the window, empty ones included. Each series ends at its own horizon instant: buckets
   after it have no value, and the bucket it cuts is listed in `partial` with the share elapsed in

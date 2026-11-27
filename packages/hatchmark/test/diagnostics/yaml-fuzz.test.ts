@@ -1,10 +1,11 @@
 import { describe, expect, it } from "vitest";
-import { parseAllDocuments } from "yaml";
+import { parseAllDocuments, stringify } from "yaml";
 import {
   type Position,
   parseYamlFile,
   type Range,
   SpecDocument,
+  type SpecNode,
 } from "../../src/diagnostics/index.js";
 
 function lcg(seed: number): () => number {
@@ -140,5 +141,179 @@ describe("span invariants", () => {
         }
       }
     }
+  });
+});
+
+describe("stringOffset on every scalar style", () => {
+  const WORDS = ["a", "bb", "é", "😀", "x#y", "q'q", 'd"d', "b\\s", "--", ":", "-", "  ", "\t"];
+  const STYLES = [
+    "PLAIN",
+    "QUOTE_SINGLE",
+    "QUOTE_DOUBLE",
+    "BLOCK_LITERAL",
+    "BLOCK_FOLDED",
+  ] as const;
+  it("maps a token's start and end to the token in the source, however the value is written", () => {
+    const random = lcg(1839);
+    let checked = 0;
+    for (let n = 0; n < 400; n++) {
+      const words = Array.from(
+        { length: 2 + Math.floor(random() * 14) },
+        () => WORDS[Math.floor(random() * WORDS.length)],
+      );
+      const at = Math.floor(random() * (words.length + 1));
+      words.splice(at, 0, "{{tok}}");
+      const value = words.join(random() < 0.2 ? "\n" : " ").trim();
+      const style = STYLES[Math.floor(random() * STYLES.length)] ?? "PLAIN";
+      const text = stringify(
+        { x: value },
+        {
+          version: "1.2",
+          defaultStringType: style,
+          lineWidth: 12 + Math.floor(random() * 30),
+          minContentWidth: 4,
+        },
+      );
+      const doc = new SpecDocument("x.yaml", text);
+      const node = doc.locate("/x")?.node;
+      if (node?.kind !== "string" || node.value !== value) continue;
+      const index = node.value.indexOf("{{tok}}");
+      const start = doc.stringOffset(node, index);
+      const end = doc.stringOffset(node, index + "{{tok}}".length, "end");
+      const where = JSON.stringify(text);
+      expect(text[start], where).toBe("{");
+      expect(text[end - 1], where).toBe("}");
+      expect(text.slice(start, end).replace(/\\\r?\n\s*/g, ""), where).toBe("{{tok}}");
+      checked++;
+    }
+    expect(checked).toBeGreaterThan(300);
+  });
+});
+
+describe("stringOffset against the characters of the source", () => {
+  const MARKS = "αβγδεζηθικλμνξοπρστυφχψωΑΒΓΔΕΖΗΘΙΚΛΜΝΞΟΠΡΣΤΥΦΧΨΩабвгдежзийклмнопрстуфхцчшщъыьэюя";
+  const FILL = [
+    " ",
+    "  ",
+    "\n",
+    "\n\n",
+    "\t",
+    "'",
+    '"',
+    "\\",
+    "#",
+    ":",
+    "-",
+    "😀",
+    "é",
+    "{",
+    ",",
+    "\u0085",
+    "\u00a0",
+  ];
+  const STYLES = [
+    "PLAIN",
+    "QUOTE_SINGLE",
+    "QUOTE_DOUBLE",
+    "BLOCK_LITERAL",
+    "BLOCK_FOLDED",
+  ] as const;
+  const failures = (text: string): string[] => {
+    const doc = new SpecDocument("x.yaml", text);
+    if (doc.errors.length > 0 || doc.root === undefined) return [];
+    const found: string[] = [];
+    const walk = (node: SpecNode): void => {
+      if (node.kind === "object") for (const m of node.members) walk(m.value);
+      else if (node.kind === "array") for (const item of node.items) walk(item);
+      else if (node.kind === "string")
+        for (let i = 0; i < node.value.length; i++) {
+          const ch = node.value[i] ?? "";
+          if (!MARKS.includes(ch)) continue;
+          const start = doc.stringOffset(node, i);
+          const end = doc.stringOffset(node, i + 1, "end");
+          if (text[start] !== ch || text[end - 1] !== ch)
+            found.push(
+              `${JSON.stringify(text)} ${ch}@${i}: ${JSON.stringify(text[start])} ${JSON.stringify(text[end - 1])}`,
+            );
+        }
+    };
+    walk(doc.root);
+    return found;
+  };
+
+  it("lands on each marked character for hand-written scalars", () => {
+    const cases = [
+      'x: "\\U0001F600αβ"\n',
+      'x: "\\ud83d\\ude00αβ"\n',
+      'x: "\\x41α"\n',
+      'x: "\\N\\L\\P\\_α"\n',
+      'x: "\\ \\\tα"\n',
+      'x: "αβ\\\n  γδ"\n',
+      'x: "αβ\\\n  \tγδ"\n',
+      'x: "αβ \\\t\\\n  \t γδ"\n',
+      'x: "α \\\n   \\ β"\n',
+      'x: "α\n\n\n  β"\n',
+      'x: "α   \n  β"\n',
+      'x: "\\U0001F600α\n  β"\n',
+      "x: 'α ''β''\n\n  γ'\n",
+      "x: α\n\n  β\n   γ\n",
+      "x: |2\n    α\n   β\n",
+      "x: |+\n  α\n\n  β\n\n",
+      "x: |\n\n  α\n",
+      "x: |\n    α\n  β\n",
+      "x: |\n  \tα\n  β\n",
+      "x: |\n  \tα\n  \tβ\n",
+      "x: |\n  \u00a0α\n  \u00a0β\n",
+      "x: >\n  α\n    β\n  γ\n\n  δ\n",
+      "x: >2\n   α\n  β\n",
+      "x: >-\n  α β\n  γ\n",
+      "x: >\n  α\tβ\n  γ\n",
+      "- |\n  α\n  β\n- >\n  γ\n  δ\n",
+      "x: 😀α😀β\n",
+      'x: "😀α"\n',
+      "x: |\n  😀α\n  😀β\n",
+      "x: [α\n  β, γ]\n",
+      'x: {k: "α\n  β"}\n',
+      "x: >\r\n  α\r\n  β\r\n",
+      'x: "α\r\n  β"\r\n',
+      "x: |\r\n  α\r\n  β\r\n",
+      'x: "α\\\r\n  β"\r\n',
+      "a:\n  b:\n    - x: |-\n         α\\βγ\n",
+    ];
+    expect(cases.flatMap(failures)).toEqual([]);
+  });
+
+  it("lands on each marked character however the yaml package writes the value", () => {
+    const random = lcg(96);
+    const sweep = process.env.HM_SWEEP === "full" ? 20_000 : 600;
+    const pick = <T>(list: readonly T[]): T => list[Math.floor(random() * list.length)] as T;
+    const found: string[] = [];
+    for (let n = 0; n < sweep; n++) {
+      let mark = 0;
+      let value = "";
+      for (let i = 1 + Math.floor(random() * 14); i > 0; i--)
+        value += random() < 0.55 ? MARKS[mark++ % MARKS.length] : pick(FILL);
+      const wrap = pick(["map", "nested", "seq", "flow", "flowseq"] as const);
+      const doc =
+        wrap === "map"
+          ? { x: value, y: 1 }
+          : wrap === "nested"
+            ? { a: { b: [{ x: value }] } }
+            : wrap === "seq"
+              ? [value, "z"]
+              : wrap === "flow"
+                ? { x: value }
+                : { x: [value] };
+      const text = stringify(doc, {
+        defaultStringType: pick(STYLES),
+        defaultKeyType: "PLAIN",
+        lineWidth: pick([0, 8, 12, 20, 40]),
+        minContentWidth: 0,
+        collectionStyle: wrap.startsWith("flow") ? "flow" : "block",
+      });
+      found.push(...failures(text));
+      if (random() < 0.3) found.push(...failures(text.replace(/\n/g, "\r\n")));
+    }
+    expect(found.slice(0, 5)).toEqual([]);
   });
 });

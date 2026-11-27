@@ -657,8 +657,8 @@ describe("count filters and thresholds", () => {
     const found = checkReferences(fixture.project).filter((d) => d.code === "HM3009");
     expect(found.map((d) => [d.file, d.pointer, d.fix?.text, d.fix?.applicability])).toEqual([
       ["metrics/number.yaml", "/filters/0/value", undefined, undefined],
-      ["metrics/spaced.yaml", "/filters/0/value", '"2026-02-01T10:00"', "unsafe"],
-      ["metrics/unpadded.yaml", "/filters/0/value", '"2026-02-01"', "unsafe"],
+      ["metrics/spaced.yaml", "/filters/0/value", "2026-02-01T10:00", "unsafe"],
+      ["metrics/unpadded.yaml", "/filters/0/value", "2026-02-01", "unsafe"],
       ["metrics/word.yaml", "/filters/0/value", undefined, undefined],
     ]);
     const unpadded = found.find((d) => d.file === "metrics/unpadded.yaml");

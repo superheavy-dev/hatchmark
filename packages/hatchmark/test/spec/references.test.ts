@@ -27,7 +27,7 @@ describe("checkReferences", () => {
       pointer: "/blocks/0/metric",
       label: "no file metrics/revenu.yaml",
       help: 'did you mean "revenue"?',
-      fix: { text: '"revenue"', applicability: "unsafe" },
+      fix: { text: "revenue", applicability: "unsafe" },
     });
     expect(d?.expected).toEqual(Object.keys(METRICS));
   });
@@ -88,7 +88,7 @@ describe("checkReferences", () => {
       ["HM2005", "/blocks/2/metrics/0"],
       ["HM2005", "/blocks/4/metrics/0"],
     ]);
-    expect(ds[0]?.help).toContain('"compare": "none"');
+    expect(ds[0]?.help).toContain("compare: none");
   });
 
   it("allows percent of total only for additive metrics in the table", () => {

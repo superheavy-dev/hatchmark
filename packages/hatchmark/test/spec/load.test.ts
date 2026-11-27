@@ -97,7 +97,7 @@ describe("source paths with glob characters", () => {
         severity: "error",
         file: "hatchmark.yaml",
         pointer: "/sources/orders/path",
-        fix: { applicability: "unsafe", text: JSON.stringify(renamed) },
+        fix: { applicability: "unsafe", text: renamed },
       },
     ]);
     const fixed = fromYaml(applyFix(project.config.document.text, found[0]?.fix));

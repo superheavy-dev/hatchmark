@@ -518,7 +518,7 @@
                       "description": "A column name in the source data."
                     },
                     "minProperties": 1,
-                    "description": "Base column to lookup column, such as {\"subscription\": \"id\"}."
+                    "description": "Base column to lookup column, such as {subscription: id}."
                   },
                   "asof": {
                     "description": "Pick the latest lookup row on or before an instant among rows with an equal key.",

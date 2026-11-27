@@ -96,7 +96,7 @@ const lookupSchema = z
       .refine((k) => Object.keys(k).length > 0, { error: "needs at least one column pair" })
       .meta({
         minProperties: 1,
-        description: 'Base column to lookup column, such as {"subscription": "id"}.',
+        description: "Base column to lookup column, such as {subscription: id}.",
       }),
     asof: z
       .strictObject({

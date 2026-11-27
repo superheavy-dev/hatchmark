@@ -133,7 +133,7 @@ export function notBuiltYet(
   }
   if (metric.type === "sql") return undefined;
   if (metric.over_time !== undefined && metric.over_time !== "sum")
-    return `"over_time": "${metric.over_time}"`;
+    return `over_time: ${metric.over_time}`;
   for (const key of ["value", "entity", "active", "trailing", "scale"] as const) {
     if (metric[key] !== undefined) return `"${key}"`;
   }

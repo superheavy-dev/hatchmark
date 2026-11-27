@@ -1,4 +1,20 @@
+import { parse, stringify } from "yaml";
 import type { Applicability, Fix, SpecDocument } from "../diagnostics/index.js";
+
+/** A value as YAML flow text that reads back as the same value at any key, list item or flow position. */
+export function yamlText(value: unknown): string {
+  const json = JSON.stringify(value);
+  if (typeof value === "string" && /[,[\]{}\r\n]/.test(value)) return json;
+  const options = { version: "1.2", schema: "core" } as const;
+  const text = stringify(value, {
+    ...options,
+    collectionStyle: "flow",
+    flowCollectionPadding: false,
+    lineWidth: 0,
+  }).replace(/\n$/, "");
+  if (/[\r\n]/.test(text)) return json;
+  return JSON.stringify(parse(text, options)) === json ? text : json;
+}
 
 export function replaceValueFix(
   document: SpecDocument,
@@ -9,9 +25,12 @@ export function replaceValueFix(
 ): Fix | undefined {
   const found = document.locate(pointer);
   if (!found?.exact) return undefined;
+  const before = document.text.slice(0, found.node.start);
+  const tag = /![^\s,[\]{}]*[ \t]+$/.exec(before.slice(before.search(/[^\r\n]*$/)));
+  const start = tag ? found.node.start - tag[0].length : found.node.start;
   return {
-    range: document.rangeAt(found.node.start, found.node.end),
-    text: JSON.stringify(value),
+    range: document.rangeAt(start, found.node.end),
+    text: yamlText(value),
     applicability,
     description,
   };
@@ -28,7 +47,7 @@ export function addPropertyFix(
   const found = document.locate(objectPointer);
   if (!found?.exact || found.node.kind !== "object") return undefined;
   const object = found.node;
-  const property = `${JSON.stringify(key)}: ${JSON.stringify(value)}`;
+  const property = `${yamlText(key)}: ${yamlText(value)}`;
   const last = object.members.at(-1);
   if (object.flow) {
     if (last === undefined) {
@@ -48,8 +67,36 @@ export function addPropertyFix(
   }
   if (last === undefined) return undefined;
   const first = object.members[0] ?? last;
-  const indent = document.positionAt(first.keyStart).column - 1;
+  const firstLine =
+    document.text
+      .slice(0, first.keyStart)
+      .split(/\r\n|\r|\n/)
+      .at(-1) ?? "";
+  const indent = firstLine.replace(/\?[ \t]+$/, "").length;
   const end = last.value.end;
+  const lastValue = last.value;
+  const kept =
+    lastValue.kind === "string" &&
+    (lastValue.style === "literal" || lastValue.style === "folded") &&
+    /^[|>](?:[1-9]?\+|\+[1-9]?)/.test(document.text.slice(lastValue.start));
+  if (kept) {
+    const rest = /^[^\r\n]*(?:\r\n|\r|\n)(?:[ \t]*(?:\r\n|\r|\n))*/.exec(document.text.slice(end));
+    if (rest === null) {
+      return {
+        range: document.rangeAt(end, end),
+        text: `\n${" ".repeat(indent)}${property}`,
+        applicability: "unsafe",
+        description: `${description}; review it first, because it adds a line break to the kept block scalar before it`,
+      };
+    }
+    const at = end + rest[0].length;
+    return {
+      range: document.rangeAt(at, at),
+      text: `${" ".repeat(indent)}${property}\n`,
+      applicability,
+      description,
+    };
+  }
   return {
     range: document.rangeAt(end, end),
     text: `\n${" ".repeat(indent)}${property}`,

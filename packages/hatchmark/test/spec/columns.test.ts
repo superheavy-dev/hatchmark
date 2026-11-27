@@ -73,7 +73,7 @@ describe("HM3008", () => {
       file: "dashboards/sales.yaml",
       pointer: "/filters/0/default",
       message: 'filter "region" selects one value, but its default is a list',
-      fix: { text: '"West"', applicability: "safe" },
+      fix: { text: "West", applicability: "safe" },
     });
     const fixed = applyFix(project.dashboards.get("sales")?.document.text ?? "", d?.fix);
     expect(fromYaml(fixed).filters[0].default).toBe("West");
@@ -85,7 +85,7 @@ describe("HM3008", () => {
     );
     expect(many?.fix).toMatchObject({
       applicability: "unsafe",
-      description: 'add "multiple": true',
+      description: "add multiple: true",
     });
     const project = withFilter({ default: ["West", "East"] });
     const fixed = applyFix(project.dashboards.get("sales")?.document.text ?? "", many?.fix);

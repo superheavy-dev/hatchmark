@@ -24,7 +24,7 @@ import {
   PIE_READABLE_LIMIT,
 } from "./dashboard.js";
 import { ENTITY_NAMES, type Expr, exprRefs, parseExpr, shapeError } from "./expr.js";
-import { addPropertyFix, removeItemFix, replaceValueFix } from "./fixes.js";
+import { addPropertyFix, removeItemFix, replaceValueFix, yamlText } from "./fixes.js";
 import { filterTables, metricSources, readSources, sourceTables } from "./graph.js";
 import { aloneInRow, MIN_CHART_SPAN } from "./layout.js";
 import type { Filter, Metric, TableMetric } from "./metric.js";
@@ -392,7 +392,7 @@ function checkMetrics(project: Project, out: Diagnostic[]): void {
           "uses the default: an interval that ends exactly at a bucket end still counts in that bucket",
           {
             severity: "note",
-            help: `set "ends": "exclusive" to drop it from that bucket; set "ends": "inclusive" to keep the default and silence this note`,
+            help: `set ends: exclusive to drop it from that bucket; set ends: inclusive to keep the default and silence this note`,
           },
         );
       }
@@ -582,7 +582,7 @@ function checkMetrics(project: Project, out: Diagnostic[]): void {
         "uses the default: when a block splits by a column, an entity takes its group from the current instant, else from the prior one",
         {
           severity: "note",
-          help: `set "group_at": "prior" to group by the reference instant (a cohort view); set "group_at": "current" to keep the default and silence this note`,
+          help: `set group_at: prior to group by the reference instant (a cohort view); set group_at: current to keep the default and silence this note`,
         },
       );
     }
@@ -654,7 +654,7 @@ function checkNatureMix(
     {
       ...flow.at,
       label: "flow combined with point-in-time",
-      help: `give "${flow.name}" a "trailing" window (such as {"days": 30}) so it is read at an instant too`,
+      help: `give "${flow.name}" a "trailing" window (such as {days: 30}) so it is read at an instant too`,
     },
   );
 }
@@ -665,7 +665,7 @@ function checkSnapshot(r: Reporter, metric: TableMetric, configured: Record<stri
   const base = declared?.type === "lookup" ? configured[declared.from] : declared;
   if (base === undefined || base.type === "lookup" || base.snapshot === undefined) return;
   const column = base.snapshot;
-  const help = `read one snapshot date at a time: "time": "${column}" with "over_time": "last" (or "first", "avg", "min", "max")`;
+  const help = `read one snapshot date at a time: time: ${yamlText(column)} with over_time: last (or "first", "avg", "min", "max")`;
   const report = (pointer: string, message: string, severity?: Severity) =>
     r.report("HM4007", pointer, `source "${metric.table}" is a snapshot table, ${message}`, {
       label: "every snapshot would count again",
@@ -718,8 +718,8 @@ function checkEvaluationLookups(
     "/table",
     `source "${metric.table}" joins "${lookup.table}" at the evaluation instant, but this metric is ${nature === "flow" ? "summed over each period" : "not placed in time"}`,
     {
-      label: '"at": "$evaluation" needs a point-in-time metric',
-      help: 'join at each row\'s own time with "at": "<time column>" in a separate lookup source, or read the metric at an instant (over_time, active or trailing)',
+      label: "at: $evaluation needs a point-in-time metric",
+      help: "join at each row's own time with at: <time column> in a separate lookup source, or read the metric at an instant (over_time, active or trailing)",
     },
   );
 }
@@ -766,7 +766,7 @@ function checkFormatCurrency(
   if (typeof derived !== "string" || shown === undefined || shown === derived) return;
   r.report("HM4005", "/format", `the values are in ${derived}, but the format shows ${shown}`, {
     label: "a format changes the label, not the currency",
-    help: `set "currency": "${derived}" in format, or convert the operands to ${shown}`,
+    help: `set currency: ${yamlText(derived)} in format, or convert the operands to ${shown}`,
   });
 }
 
@@ -809,7 +809,7 @@ function checkTargetsAndTests(
         "prorate days splits a target in proportion to days, which holds only for a metric that adds up over time; this one doesn't",
         {
           label: "an average, ratio or distinct count",
-          help: 'set "prorate": "none", which is the default for this metric',
+          help: "set prorate: none, which is the default for this metric",
         },
       );
     }
@@ -826,7 +826,7 @@ function checkTargetsAndTests(
     const base = `/tests/${i}`;
     if (nature === "point" && test.window !== undefined) {
       r.report("HM3007", `${base}/window`, 'this metric is read at an instant; test it with "at"', {
-        help: 'replace "window" with "at": "<date>"',
+        help: 'replace "window" with at: <date>',
       });
     }
     if (nature === "flow" && test.at !== undefined) {
@@ -834,7 +834,7 @@ function checkTargetsAndTests(
         "HM3007",
         `${base}/at`,
         'this metric is summed over a period; test it with "window"',
-        { help: 'replace "at" with "window": ["<start>", "<end>"]' },
+        { help: 'replace "at" with window: [<start>, <end>]' },
       );
     }
     checkSegmentRefs(r, project, file, test.segments, `${base}/segments`);
@@ -965,7 +965,7 @@ function checkPie(
             `${base}/limit`,
             PIE_READABLE_LIMIT,
             "unsafe",
-            `set "limit": ${PIE_READABLE_LIMIT}`,
+            `set limit: ${PIE_READABLE_LIMIT}`,
           ),
         ),
       },
@@ -995,7 +995,7 @@ function checkStack(
       `${base}/stack`,
       percent,
       "unsafe",
-      percent ? 'set "stack": true' : 'set "stack": false',
+      percent ? "set stack: true" : "set stack: false",
     ),
   );
   block.metrics.forEach((name, i) => {
@@ -1005,7 +1005,7 @@ function checkStack(
     if (percent) {
       r.report("HM4001", pointer, `a 100% stack is not meaningful for "${name}"`, {
         label: notAdditiveLabel(metric),
-        help: 'shares need parts that add up to the total; stack a sum or a count, or use "stack": true',
+        help: "shares need parts that add up to the total; stack a sum or a count, or use stack: true",
         ...fix,
       });
       return;
@@ -1036,10 +1036,10 @@ function checkStack(
         label: percent
           ? "a share of values in different units means nothing"
           : "values in different units cannot be added",
-        help: 'stack metrics of one unit, or set "stack": false and show them side by side or in separate charts',
+        help: "stack metrics of one unit, or set stack: false and show them side by side or in separate charts",
         ...optional(
           "fix",
-          replaceValueFix(file.document, `${base}/stack`, false, "unsafe", 'set "stack": false'),
+          replaceValueFix(file.document, `${base}/stack`, false, "unsafe", "set stack: false"),
         ),
       },
     );
@@ -1120,11 +1120,11 @@ function checkDashboard(project: Project, file: SpecFile<"dashboard">, out: Diag
       r.report(
         "HM2026",
         `${base}/overflow`,
-        'a table with "overflow": "page" shares its grid row, so the other cards in the row stretch to its height',
+        "a table with overflow: page shares its grid row, so the other cards in the row stretch to its height",
         {
           severity: "warning",
           label: "the row grows with the table",
-          help: 'remove "overflow" to scroll inside the card, or give the table its own row with "span": 12',
+          help: 'remove "overflow" to scroll inside the card, or give the table its own row with span: 12',
         },
       );
     }
@@ -1155,7 +1155,7 @@ function checkDashboard(project: Project, file: SpecFile<"dashboard">, out: Diag
         {
           severity: "warning",
           label: `drawn ${MIN_CHART_SPAN} columns wide`,
-          help: `set "span": ${MIN_CHART_SPAN} or more, or use a kpi block with "sparkline": true for one number`,
+          help: `set span: ${MIN_CHART_SPAN} or more, or use a kpi block with sparkline: true for one number`,
           ...optional(
             "fix",
             replaceValueFix(
@@ -1163,7 +1163,7 @@ function checkDashboard(project: Project, file: SpecFile<"dashboard">, out: Diag
               `${base}/span`,
               MIN_CHART_SPAN,
               "safe",
-              `set "span": ${MIN_CHART_SPAN}`,
+              `set span: ${MIN_CHART_SPAN}`,
             ),
           ),
         },
@@ -1181,8 +1181,8 @@ function checkDashboard(project: Project, file: SpecFile<"dashboard">, out: Diag
           {
             help:
               block.type === "kpi"
-                ? `add "time" to metrics/${ref.name}.yaml, or set "compare": "none" on this block`
-                : `add "time": "<date column>" to metrics/${ref.name}.yaml`,
+                ? `add "time" to metrics/${ref.name}.yaml, or set compare: none on this block`
+                : `add time: <date column> to metrics/${ref.name}.yaml`,
           },
         );
       }
@@ -1232,13 +1232,7 @@ function checkDashboard(project: Project, file: SpecFile<"dashboard">, out: Diag
             help: `remove "other", or show a metric that adds up instead of "${name}"`,
             ...optional(
               "fix",
-              replaceValueFix(
-                file.document,
-                `${base}/other`,
-                false,
-                "unsafe",
-                'set "other": false',
-              ),
+              replaceValueFix(file.document, `${base}/other`, false, "unsafe", "set other: false"),
             ),
           });
         }
@@ -1492,7 +1486,7 @@ function checkDashboard(project: Project, file: SpecFile<"dashboard">, out: Diag
         `metric "${name}" cannot be added up from days, so a custom range shows it as "—" and asks for a preset`,
         {
           severity: "note",
-          help: 'every preset computes it exactly; set "custom": false to offer presets only and silence this note',
+          help: "every preset computes it exactly; set custom: false to offer presets only and silence this note",
         },
       );
     }
@@ -1549,7 +1543,7 @@ function checkDashboard(project: Project, file: SpecFile<"dashboard">, out: Diag
               "multiple",
               true,
               "unsafe",
-              'add "multiple": true',
+              "add multiple: true",
             )
           : undefined;
     r.report(
@@ -1565,8 +1559,8 @@ function checkDashboard(project: Project, file: SpecFile<"dashboard">, out: Diag
           values.length === 1
             ? "write the one value without brackets"
             : values.length === 0
-              ? 'remove the default for "all", or set "multiple": true'
-              : 'set "multiple": true to select several values, or keep one value',
+              ? 'remove the default for "all", or set multiple: true'
+              : "set multiple: true to select several values, or keep one value",
         ...optional("fix", fix),
       },
     );

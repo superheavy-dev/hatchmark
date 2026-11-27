@@ -117,7 +117,7 @@ describe("table options", () => {
       const [d] = schema({ by: ["country"], metrics: ["revenue"], [key]: 25 });
       expect(d).toMatchObject({ code: "HM3002", pointer: `/blocks/0/${key}` });
       expect(d?.help).toContain("tables do not paginate");
-      expect(d?.help).toContain('"other": true');
+      expect(d?.help).toContain("other: true");
       expect(d?.fix).toBeUndefined();
     });
   }
