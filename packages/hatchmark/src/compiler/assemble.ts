@@ -941,7 +941,7 @@ class Assembler {
         'set "limit" to keep fewer, or plot a coarser column',
       );
     }
-    const window = span(this.bounds(expressions[0]));
+    const window = span(this.bounds(expressions[0]), this.context.timezone);
     return {
       ...common,
       type: "scatter",
