@@ -84,7 +84,10 @@ export const durationSchema = z
     z.strictObject({ days: z.number().int().min(1).max(3660) }),
     z.strictObject({ months: z.number().int().min(1).max(120) }),
   ])
-  .meta({ description: 'A length of time, such as {"days": 30} or {"months": 12}.' });
+  .meta({
+    id: "Duration",
+    description: 'A length of time, such as {"days": 30} or {"months": 12}.',
+  });
 export type Duration = z.infer<typeof durationSchema>;
 
 const isoDate = z.iso.date();
@@ -113,6 +116,16 @@ const targetSchema = z
     segments: z.array(identifier).optional().meta({
       description: "Segments the target was set for; it hides when other segments are toggled.",
     }),
+  })
+  .meta({
+    id: "Target",
+    oneOf: [
+      {
+        required: ["values"],
+        not: { anyOf: [{ required: ["table"] }, { required: ["date"] }, { required: ["value"] }] },
+      },
+      { required: ["table", "date", "value"], not: { required: ["values"] } },
+    ],
   })
   .superRefine((t, ctx) => {
     const fromTable = t.table !== undefined || t.date !== undefined || t.value !== undefined;
@@ -151,6 +164,18 @@ const testSchema = z
       .record(identifier, z.string().min(1))
       .optional()
       .meta({ description: "Swap sources for fixture files, by source name." }),
+  })
+  .meta({
+    id: "MetricTest",
+    allOf: [
+      { oneOf: [{ required: ["at"] }, { required: ["window"] }] },
+      {
+        if: { required: ["by"] },
+        // biome-ignore lint/suspicious/noThenProperty: a JSON Schema keyword, not a thenable
+        then: { properties: { expect: { type: "object" } } },
+        else: { properties: { expect: { type: "number" } } },
+      },
+    ],
   })
   .superRefine((t, ctx) => {
     if ((t.at === undefined) === (t.window === undefined)) {
@@ -220,7 +245,10 @@ const activeSchema = z
 const scale = z
   .number()
   .refine((n) => Number.isFinite(n) && n !== 0, { error: "must be a non-zero number" })
-  .meta({ description: "Constant multiplier applied after aggregation, such as 0.01 or 12." });
+  .meta({
+    description: "Constant multiplier applied after aggregation, such as 0.01 or 12.",
+    not: { const: 0 },
+  });
 
 const aggregateMetric = z
   .strictObject({
@@ -255,6 +283,37 @@ const aggregateMetric = z
         "Makes the metric point-in-time: at each instant, aggregate the rows of this length before it.",
     }),
     scale: scale.optional(),
+  })
+  .meta({
+    allOf: [
+      { not: { required: ["column", "value"] } },
+      {
+        if: { not: { properties: { aggregate: { const: "count" } } } },
+        // biome-ignore lint/suspicious/noThenProperty: a JSON Schema keyword, not a thenable
+        then: { anyOf: [{ required: ["column"] }, { required: ["value"] }] },
+      },
+      { not: { required: ["time", "active"] } },
+      {
+        if: { required: ["active"] },
+        // biome-ignore lint/suspicious/noThenProperty: a JSON Schema keyword, not a thenable
+        then: { not: { anyOf: [{ required: ["over_time"] }, { required: ["trailing"] }] } },
+      },
+      {
+        if: { anyOf: [{ required: ["over_time"] }, { required: ["trailing"] }] },
+        // biome-ignore lint/suspicious/noThenProperty: a JSON Schema keyword, not a thenable
+        then: { anyOf: [{ required: ["time"] }, { required: ["active"] }] },
+      },
+      {
+        if: { required: ["trailing", "over_time"] },
+        // biome-ignore lint/suspicious/noThenProperty: a JSON Schema keyword, not a thenable
+        then: { properties: { over_time: { const: "sum" } } },
+      },
+      {
+        if: { required: ["entity"] },
+        // biome-ignore lint/suspicious/noThenProperty: a JSON Schema keyword, not a thenable
+        then: { required: ["over_time"], properties: { over_time: { enum: ["last", "first"] } } },
+      },
+    ],
   })
   .superRefine((m, ctx) => {
     if (m.column !== undefined && m.value !== undefined) {
@@ -326,14 +385,16 @@ const sqlMetric = z
   })
   .meta({ id: "SqlMetric" });
 
-const formulaMetric = z.strictObject({
-  ...common,
-  type: z.literal("formula"),
-  expr: z.string().min(1).meta({
-    description:
-      "Arithmetic over metric names: + - * /, parentheses, numbers, coalesce, min, max, abs. Such as subscription_arr + credit_run_rate * 0.6.",
-  }),
-});
+const formulaMetric = z
+  .strictObject({
+    ...common,
+    type: z.literal("formula"),
+    expr: z.string().min(1).meta({
+      description:
+        "Arithmetic over metric names: + - * /, parentheses, numbers, coalesce, min, max, abs. Such as subscription_arr + credit_run_rate * 0.6.",
+    }),
+  })
+  .meta({ id: "FormulaMetric" });
 
 const perEntityMetric = z
   .strictObject({
@@ -361,6 +422,12 @@ const perEntityMetric = z
       description:
         "When a block splits by a column, which instant gives an entity its group. Default current, falling back to prior.",
     }),
+  })
+  .meta({
+    id: "PerEntityMetric",
+    if: { required: ["aggregate"], properties: { aggregate: { const: "count" } } },
+    // biome-ignore lint/suspicious/noThenProperty: a JSON Schema keyword, not a thenable
+    then: { not: { required: ["expr"] } },
   })
   .superRefine((m, ctx) => {
     if (m.aggregate === "count" && m.expr !== undefined) {

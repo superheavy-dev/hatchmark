@@ -56,8 +56,11 @@ export function timeNature(
 
 /**
  * Whether summing the metric over groups gives the metric over all rows, at the same point in
- * time. Sums and counts are; distinct counts, averages, medians, ratios and non-linear formulas
- * are not. A formula is additive when it is a linear combination of additive metrics.
+ * time. Sums and counts are, read at any instant or over any period, including over_time last,
+ * first and avg (the snapshot dates are the source's, not each group's). over_time min and max are
+ * not: each group can peak on a different date. Distinct counts, averages, medians and ratios are
+ * not. A formula is additive when it is a linear combination of additive metrics with no constant
+ * term (a + 1 adds 1 to every group but only once to the total).
  */
 export function groupAdditive(
   name: string,
@@ -68,7 +71,11 @@ export function groupAdditive(
   if (metric === undefined || seen.has(name)) return false;
   switch (metric.type) {
     case "aggregate":
-      return metric.aggregate === "sum" || metric.aggregate === "count";
+      return (
+        (metric.aggregate === "sum" || metric.aggregate === "count") &&
+        metric.over_time !== "min" &&
+        metric.over_time !== "max"
+      );
     case "sql":
       return metric.additive;
     case "ratio":
@@ -99,8 +106,10 @@ function linear(expr: Expr, additive: (name: string) => boolean): Linearity {
       const a = linear(expr.left, additive);
       const b = linear(expr.right, additive);
       if (a === "no" || b === "no") return "no";
-      if (expr.op === "+" || expr.op === "-")
-        return a === "const" && b === "const" ? "const" : "linear";
+      if (expr.op === "+" || expr.op === "-") {
+        if (a === "const" && b === "const") return "const";
+        return a === "linear" && b === "linear" ? "linear" : "no";
+      }
       if (expr.op === "*")
         return a === "const" || b === "const" ? (a === b ? "const" : "linear") : "no";
       if (expr.op === "/") return b === "const" ? a : "no";

@@ -49,7 +49,7 @@ export const CODES = {
   HM1004: {
     title: "invalid file name",
     explanation:
-      "Metric and dashboard names come from their file names, so a file name must be lowercase snake_case (metrics/net_revenue.json). Dashboard names may also contain hyphens, since they become URL paths. Rename the file.",
+      "Metric and dashboard names come from their file names, so a file name must be lowercase snake_case (metrics/net_revenue.json), and a metric may not be named and, or, not or null, which are operators in formulas. Dashboard names may also contain hyphens, since they become URL paths. Rename the file.",
   },
   HM1005: {
     title: "project config not found",
@@ -206,7 +206,7 @@ export const CODES = {
   HM4001: {
     title: "percent of total on a non-additive metric",
     explanation:
-      "A share of the total only makes sense when the parts add up to the total. Averages, distinct counts, medians, ratios, non-linear formulas and SQL metrics declared additive: false do not. Point-in-time sums such as balances do, at one instant. Remove the metric from percentOfTotal, or show the additive metric it is built from.",
+      "A share of the total only makes sense when the parts add up to the total. Averages, distinct counts, medians, ratios, non-linear formulas and SQL metrics declared additive: false do not; neither does a formula with a constant term (a + 1000 adds 1,000 to every group but once to the total), nor a sum read with over_time min or max (each group can peak on a different date). Point-in-time sums such as balances do, at one instant. Remove the metric from percentOfTotal, or show the additive metric it is built from.",
   },
   HM4002: {
     title: "block type not built yet",
@@ -226,17 +226,17 @@ export const CODES = {
   HM4005: {
     title: "different currencies added",
     explanation:
-      "A formula adds or subtracts metrics whose formats name different currencies. Convert one of them first, with an as-of lookup on a rates table and a row expression such as amount * fx_rates.rate, so both are in one currency.",
+      "A formula adds, subtracts or chooses between (coalesce, min, max) metrics whose formats name different currencies; multiplying by a number, unary minus and abs keep a metric's currency. A formula whose format names another currency than its operands is reported too, since a format changes the label, not the amounts. Convert one of them first, with an as-of lookup on a rates table and a row expression such as amount * fx_rates.rate, so both are in one currency.",
   },
   HM4007: {
     title: "snapshot summed over time",
     explanation:
-      'The source is declared a snapshot table ("snapshot" in hatchmark.json): each date holds the full state, so adding rows over a period counts every snapshot again (thirty daily snapshots make a month thirty times too large). Set "over_time" to "last" (the value at the end of each period), "first", "avg", "min" or "max".',
+      'The source is declared a snapshot table ("snapshot" in hatchmark.json): each date holds the full state, so adding rows over a period counts every snapshot again (thirty daily snapshots make a month thirty times too large). Every aggregate on it, or on a lookup source whose base it is, must read one snapshot date at a time: "time" is the snapshot column and "over_time" is "last" (the value at the end of each period), "first", "avg", "min" or "max". No time, another time column, trailing or active would add snapshots too. A SQL metric gets a warning, since it cannot set over_time yet.',
   },
   HM4008: {
     title: "per_entity needs a point-in-time sum or count",
     explanation:
-      "per_entity reads one metric for each entity at two instants. That metric must be an aggregate with sum or count that is read at an instant (over_time last or first, active, or trailing), so each entity has one value at each instant.",
+      "per_entity reads one metric for each entity at two instants. That metric must be an aggregate with sum or count that is read at an instant (over_time last or first, active, or trailing), so each entity has one value at each instant; over_time avg, min and max summarise many dates and have none.",
   },
   HM4009: {
     title: "flow combined with a point-in-time value",

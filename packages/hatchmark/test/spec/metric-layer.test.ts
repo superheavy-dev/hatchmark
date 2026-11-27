@@ -1,4 +1,6 @@
+import { Ajv2020 } from "ajv/dist/2020.js";
 import { describe, expect, it } from "vitest";
+import { planDashboard } from "../../src/compiler/index.js";
 import {
   checkReferences,
   dashboardsAffectedBy,
@@ -6,6 +8,7 @@ import {
   parseDiagnostics,
   timeNature,
 } from "../../src/spec/index.js";
+import { jsonSchema } from "../../src/spec/json-schema.js";
 import { applyFix, CONFIG, projectFrom } from "./helpers.js";
 
 /**
@@ -193,6 +196,15 @@ const metrics: Record<string, unknown> = {
     trailing: { days: 30 },
     scale: 12.1667,
   },
+  credit_purchases_total: {
+    label: "Credit purchases",
+    ...money,
+    type: "aggregate",
+    table: "credit_purchases",
+    aggregate: "sum",
+    column: "amount",
+    time: "created",
+  },
   credit_run_rate: {
     label: "Credit purchase run rate",
     ...money,
@@ -223,10 +235,11 @@ const metrics: Record<string, unknown> = {
     aggregate: "count_distinct",
     column: "subscriptions.customer",
     active: {
-      from: "valid_from",
+      from: "greatest(valid_from, coalesce(subscriptions.trial_end, valid_from))",
       to: "coalesce(valid_to, subscriptions.ended_at)",
       ends: "inclusive",
     },
+    segments: ["external"],
   },
   arpa: { label: "ARPA", ...money, type: "formula", expr: "arr / paying_customers" },
   cohort_arr_prior: {
@@ -431,7 +444,7 @@ describe("metric layer checks", () => {
     const { over_time: _, ...summed } = metrics.arr_snapshot as Record<string, unknown>;
     const ds = checkReferences(larkspur(withMetric("arr_snapshot", summed)));
     expect(ds).toMatchObject([
-      { code: "HM4007", pointer: "/table", file: "metrics/arr_snapshot.json" },
+      { code: "HM4007", pointer: "/time", file: "metrics/arr_snapshot.json" },
     ]);
   });
 
@@ -518,6 +531,7 @@ describe("metric layer checks", () => {
     expect(ds.map((d) => [d.file, d.code, d.help])).toEqual([
       ["segments/external.json", "HM2001", undefined],
       ["metrics/arr.json", "HM2021", 'did you mean "external"?'],
+      ["metrics/paying_customers.json", "HM2018", undefined],
     ]);
   });
 
@@ -602,5 +616,302 @@ describe("metric layer checks", () => {
     expect(dashboardsAffectedBy(project, "data/internal_accounts.csv")).toEqual(["arr"]);
     expect(dashboardsAffectedBy(project, "segments/external.json")).toEqual(["arr"]);
     expect(dashboardsAffectedBy(project, "data/fx_rates.csv")).toEqual(["arr", "cash"]);
+  });
+});
+
+const codes = (ds: { file?: string; code: string; pointer?: string }[]) =>
+  ds.map((d) => [d.file, d.code, d.pointer]);
+const only = (name: string, value: unknown) =>
+  checkReferences(larkspur(withMetric(name, value))).filter(
+    (d) => d.file === `metrics/${name}.json` && d.severity !== "note",
+  );
+
+describe("metric layer invariants", () => {
+  const snapshot = metrics.arr_snapshot as Record<string, unknown>;
+  const { over_time: _, ...flowSnapshot } = snapshot;
+
+  it("reads a snapshot table one snapshot date at a time, whatever the time primitive (HM4007)", () => {
+    const cases: [string, unknown, string][] = [
+      ["over_time sum", { ...snapshot, over_time: "sum" }, "/over_time"],
+      ["trailing", { ...flowSnapshot, trailing: { days: 30 } }, "/trailing"],
+      [
+        "active",
+        { ...flowSnapshot, time: undefined, active: { from: "snapshot_date", to: "null" } },
+        "/active",
+      ],
+      ["no time", { ...flowSnapshot, time: undefined }, "/table"],
+      ["another time column", { ...snapshot, time: "plan" }, "/time"],
+      [
+        "sql",
+        {
+          ...money,
+          label: "S",
+          type: "sql",
+          table: "mrr_snapshots",
+          sql: "sum(mrr_usd)",
+          additive: true,
+        },
+        "/sql",
+      ],
+    ];
+    for (const [label, value, pointer] of cases) {
+      expect(codes(only("probe", value)), label).toEqual([
+        ["metrics/probe.json", "HM4007", pointer],
+      ]);
+    }
+    expect(only("probe", { ...snapshot, over_time: "avg" })).toEqual([]);
+    expect(only("probe", { ...snapshot, time: "SNAPSHOT_DATE" })).toEqual([]);
+  });
+
+  it("checks the snapshot of a lookup's base table, not of its lookup tables (HM4007)", () => {
+    const config = structuredClone(larkspurConfig) as typeof larkspurConfig;
+    Object.assign(config.sources, {
+      snapshots_joined: {
+        type: "lookup",
+        from: "mrr_snapshots",
+        lookups: [{ table: "subscriptions", key: { subscription: "id" } }],
+      },
+    });
+    Object.assign(config.sources.fx_rates, { snapshot: "date" });
+    const joined = { ...flowSnapshot, table: "snapshots_joined" };
+    const ds = checkReferences(larkspur({ config, metrics: { ...metrics, joined } }));
+    expect(codes(ds.filter((d) => d.severity !== "note"))).toEqual([
+      ["metrics/joined.json", "HM4007", "/time"],
+    ]);
+  });
+
+  it("joins at the evaluation instant only for point-in-time metrics (HM4019)", () => {
+    const flow = {
+      ...money,
+      label: "Item value",
+      type: "aggregate",
+      table: "items",
+      aggregate: "sum",
+      value: "unit_amount * fx_rates.rate",
+      time: "valid_from",
+    };
+    expect(codes(only("probe", flow))).toEqual([["metrics/probe.json", "HM4019", "/table"]]);
+    expect(codes(only("probe", { ...flow, time: undefined }))).toEqual([
+      ["metrics/probe.json", "HM4019", "/table"],
+    ]);
+    expect(only("probe", { ...flow, over_time: "last", entity: "id" })).toEqual([]);
+  });
+
+  it("keeps currencies through scalar arithmetic and functions (HM4005)", () => {
+    const eur = {
+      ...(metrics.credit_run_rate as object),
+      format: { type: "currency", currency: "EUR" },
+    };
+    const formula = (expr: string, format: unknown = money.format) => ({
+      ...money,
+      format,
+      label: "F",
+      type: "formula",
+      expr,
+    });
+    const mixed = [
+      "arr + eur * (2 + 3)",
+      "arr + -2 * eur",
+      "arr + abs(eur)",
+      "arr + coalesce(eur, 0)",
+      "max(arr, eur)",
+      "arr - eur / 4",
+    ];
+    for (const expr of mixed) {
+      const ds = checkReferences(larkspur({ metrics: { ...metrics, eur, f: formula(expr) } }));
+      expect(codes(ds), expr).toEqual([["metrics/f.json", "HM4005", "/expr"]]);
+    }
+    const fine = ["arr + coalesce(arr, 0) * 2", "arr / eur", "arr + 1000"];
+    for (const expr of fine) {
+      const ds = checkReferences(larkspur({ metrics: { ...metrics, eur, f: formula(expr) } }));
+      expect(codes(ds), expr).toEqual([]);
+    }
+    const relabelled = checkReferences(
+      larkspur({ metrics: { ...metrics, eur, f: formula("eur * 2") } }),
+    );
+    expect(codes(relabelled)).toEqual([["metrics/f.json", "HM4005", "/format"]]);
+    const labelled = formula("eur * 2", { type: "currency", currency: "EUR" });
+    expect(checkReferences(larkspur({ metrics: { ...metrics, eur, f: labelled } }))).toEqual([]);
+  });
+
+  it("treats constant terms and min or max over time as non-additive (HM4001)", () => {
+    const map = (extra: Record<string, unknown>) => {
+      const project = larkspur({ metrics: { ...metrics, ...extra } });
+      return new Map([...project.metrics].map(([k, v]) => [k, v.spec as never]));
+    };
+    const m = map({
+      plus_one: { ...money, label: "A", type: "formula", expr: "arr + 1" },
+      minus_const: { ...money, label: "B", type: "formula", expr: "1000 - arr" },
+      scaled: { ...money, label: "C", type: "formula", expr: "(arr - credit_run_rate) * 2 / 4" },
+      snap_min: { ...snapshot, over_time: "min" },
+      snap_max: { ...snapshot, over_time: "max" },
+      snap_avg: { ...snapshot, over_time: "avg" },
+    });
+    expect(groupAdditive("plus_one", m)).toBe(false);
+    expect(groupAdditive("minus_const", m)).toBe(false);
+    expect(groupAdditive("scaled", m)).toBe(true);
+    expect(groupAdditive("snap_min", m)).toBe(false);
+    expect(groupAdditive("snap_max", m)).toBe(false);
+    expect(groupAdditive("snap_avg", m)).toBe(true);
+    expect(groupAdditive("arr_snapshot", m)).toBe(true);
+  });
+
+  it("reads per_entity only from metrics with a value per entity at an instant (HM4008)", () => {
+    for (const over of ["avg", "min", "max"]) {
+      const project = larkspur({
+        metrics: {
+          ...metrics,
+          snap: { ...snapshot, over_time: over },
+          per: { ...(metrics.cohort_arr_now as object), of: "snap", key: "customer" },
+        },
+      });
+      expect(codes(checkReferences(project).filter((d) => d.severity !== "note")), over).toEqual([
+        ["metrics/per.json", "HM4008", "/of"],
+      ]);
+    }
+  });
+
+  it("prorates flow targets by days only for metrics that add up over time (HM3007)", () => {
+    const target = { id: "t", grain: "month", values: { "2026-11-01": 10 }, prorate: "days" };
+    const avg = { ...(metrics.revenue as object), aggregate: "avg", targets: [target] };
+    expect(codes(only("probe", avg))).toEqual([
+      ["metrics/probe.json", "HM3007", "/targets/0/prorate"],
+    ]);
+    expect(only("probe", { ...(metrics.revenue as object), targets: [target] })).toEqual([]);
+  });
+
+  it("swaps test data only for sources the metric reads (HM2023)", () => {
+    const test = (data: Record<string, string>) => ({
+      ...(metrics.revenue as object),
+      tests: [{ window: ["2026-10-01", "2026-10-31"], expect: 1, data }],
+    });
+    expect(codes(only("probe", test({ usage: "fixtures/usage.csv" })))).toEqual([
+      ["metrics/probe.json", "HM2023", "/tests/0/data/usage"],
+    ]);
+    expect(
+      only("probe", test({ fx_rates: "fixtures/fx.csv", invoice_lines_raw: "f.csv" })),
+    ).toEqual([]);
+    const viaSegment = {
+      ...(metrics.arr as object),
+      tests: [{ at: "2026-10-31", expect: 1, data: { internal_accounts: "f.csv" } }],
+    };
+    expect(only("probe", viaSegment)).toEqual([]);
+  });
+
+  it("reserves expression keywords as metric names (HM1004)", () => {
+    const ds = diagnose(withMetric("and", metrics.revenue));
+    expect(codes(ds)).toEqual([["metrics/and.json", "HM1004", undefined]]);
+  });
+
+  it("puts a fix on the name inside parentheses, not on the parentheses", () => {
+    const ds = checkReferences(
+      larkspur(
+        withMetric("probe", { ...money, label: "P", type: "formula", expr: "((revenu)) * 2" }),
+      ),
+    );
+    const fix = ds.find((d) => d.code === "HM2020")?.fix;
+    const text =
+      larkspur(
+        withMetric("probe", { ...money, label: "P", type: "formula", expr: "((revenu)) * 2" }),
+      ).metrics.get("probe")?.document.text ?? "";
+    expect(applyFix(text, fix)).toContain('"((revenue)) * 2"');
+  });
+
+  it("keeps the ARPA operands on one population and one interval", () => {
+    const arr = metrics.arr as { active: unknown; segments: unknown; table: unknown };
+    const customers = metrics.paying_customers as typeof arr;
+    expect(customers.active).toEqual(arr.active);
+    expect(customers.segments).toEqual(arr.segments);
+    expect(customers.table).toEqual(arr.table);
+  });
+
+  it("exports the shape rules to the JSON Schema, agreeing with check", () => {
+    const ajv = new Ajv2020({ strict: false, validateFormats: false });
+    const validate = ajv.compile(jsonSchema("metric"));
+    for (const [name, value] of Object.entries(metrics)) {
+      expect(validate(value), `${name}: ${ajv.errorsText(validate.errors)}`).toBe(true);
+    }
+    const revenue = metrics.revenue as Record<string, unknown>;
+    const invalid: [string, unknown][] = [
+      ["time and active", { ...revenue, active: { from: "paid_at", to: "null" } }],
+      ["column and value", { ...revenue, column: "amount" }],
+      ["neither column nor value", { ...revenue, value: undefined }],
+      ["over_time without time", { ...revenue, time: undefined, over_time: "last" }],
+      ["trailing with over_time last", { ...revenue, trailing: { days: 30 }, over_time: "last" }],
+      ["active with trailing", { ...(metrics.contracted_arr as object), trailing: { days: 30 } }],
+      ["entity without last or first", { ...revenue, entity: "customer" }],
+      ["scale 0", { ...revenue, scale: 0 }],
+      [
+        "target with neither values nor table",
+        { ...revenue, targets: [{ id: "t", grain: "month" }] },
+      ],
+      [
+        "target with values and table",
+        {
+          ...revenue,
+          targets: [
+            {
+              id: "t",
+              grain: "month",
+              values: {},
+              table: "arr_plan",
+              date: "month",
+              value: "arr_target",
+            },
+          ],
+        },
+      ],
+      [
+        "test with at and window",
+        {
+          ...revenue,
+          tests: [{ at: "2026-10-31", window: ["2026-10-01", "2026-10-31"], expect: 1 }],
+        },
+      ],
+      [
+        "test by without an object",
+        {
+          ...revenue,
+          tests: [{ window: ["2026-10-01", "2026-10-31"], by: "customer", expect: 1 }],
+        },
+      ],
+      [
+        "per_entity count with expr",
+        { ...(metrics.cohort_arr_retained as object), aggregate: "count" },
+      ],
+    ];
+    for (const [label, value] of invalid) {
+      const text = JSON.stringify(value);
+      expect(validate(JSON.parse(text)), `JSON Schema accepts ${label}`).toBe(false);
+      const errors = diagnose(withMetric("probe", JSON.parse(text))).filter(
+        (d) => d.file === "metrics/probe.json" && d.severity === "error",
+      );
+      expect(errors.length, `check accepts ${label}`).toBeGreaterThan(0);
+    }
+  });
+
+  it("leaves out blocks whose metrics use primitives the planner does not evaluate (HM4023)", () => {
+    const project = projectFrom({
+      config: larkspurConfig,
+      metrics,
+      segments,
+      columns,
+      dashboards: {
+        d: {
+          title: "D",
+          blocks: [
+            { type: "kpi", id: "arr", metric: "arr" },
+            { type: "kpi", id: "nrr", metric: "nrr" },
+            { type: "kpi", id: "credits", metric: "credit_purchases_total" },
+          ],
+        },
+      },
+    });
+    const result = planDashboard(project, "d");
+    expect(result.diagnostics.map((d) => [d.code, d.pointer])).toEqual([
+      ["HM4023", "/blocks/0"],
+      ["HM4023", "/blocks/1"],
+    ]);
+    expect(result.plan?.blocks.map((b) => b.blockId)).toEqual(["credits"]);
   });
 });

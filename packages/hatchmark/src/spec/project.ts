@@ -9,6 +9,7 @@ import { GLOB_CHARACTERS, IDENTIFIER_PATTERN, normalizePath } from "./common.js"
 import type { FileSource } from "./config.js";
 import { PROJECT_DEFAULTS, type ProjectConfig, projectConfigSchema } from "./config.js";
 import { type Dashboard, dashboardSchema } from "./dashboard.js";
+import { KEYWORDS } from "./expr.js";
 import { type Metric, metricSchema } from "./metric.js";
 import { type Segment, segmentSchema } from "./segment.js";
 import { issuesToDiagnostics } from "./zod-diagnostics.js";
@@ -75,14 +76,18 @@ export function parseSpecFile<K extends SpecKind>(
   const result: SpecFile<K> = { kind, name, file, document, diagnostics };
   if (kind !== "project") {
     const pattern = kind === "dashboard" ? DASHBOARD_NAME_PATTERN : IDENTIFIER_PATTERN;
-    if (!pattern.test(name)) {
+    const keyword = kind === "metric" && KEYWORDS.has(name);
+    if (!pattern.test(name) || keyword) {
       diagnostics.push({
         code: "HM1004",
         severity: "error",
-        message: `invalid ${kind} file name "${base}"`,
+        message: keyword
+          ? `"${name}" is an expression keyword, so it cannot name a metric`
+          : `invalid ${kind} file name "${base}"`,
         file,
-        help:
-          kind !== "dashboard"
+        help: keyword
+          ? `and, or, not and null are operators in expressions; rename the file, such as ${name}_count.json`
+          : kind !== "dashboard"
             ? `${kind} names are lowercase snake_case, such as ${kind === "metric" ? "net_revenue" : "external_customers"}.json`
             : "dashboard names are lowercase letters, digits, _ and -, such as sales-overview.json",
         docs: docsCommand("HM1004"),

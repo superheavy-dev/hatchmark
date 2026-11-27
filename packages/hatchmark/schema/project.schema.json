@@ -485,6 +485,7 @@
                       "minLength": 1,
                       "description": "A column name in the source data."
                     },
+                    "minProperties": 1,
                     "description": "Base column to lookup column, such as {\"subscription\": \"id\"}."
                   },
                   "asof": {

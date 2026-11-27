@@ -9,10 +9,11 @@ import {
   type Severity,
 } from "../diagnostics/index.js";
 import { foldColumn, GLOB_CHARACTERS, sameColumn } from "./common.js";
+import type { Source } from "./config.js";
 import { type Block, blockId, type Dashboard, DEFAULT_PERIOD } from "./dashboard.js";
 import { ENTITY_NAMES, type Expr, exprRefs, parseExpr, shapeError } from "./expr.js";
 import { addPropertyFix, removeItemFix, replaceValueFix } from "./fixes.js";
-import { metricSources, sourceTables } from "./graph.js";
+import { filterTables, metricSources, readSources } from "./graph.js";
 import type { Filter, Metric, TableMetric } from "./metric.js";
 import type { Project, SpecFile } from "./project.js";
 import { currencyUnit, groupAdditive, metricDeps, timeNature } from "./semantics.js";
@@ -369,20 +370,8 @@ function checkMetrics(project: Project, out: Diagnostic[]): void {
       if (project.config.spec && !sourceSuggestion(r, file, "/table", metric.table, sources))
         continue;
       checkColumns(r, project, metric.table, tableMetricColumns(r, file, metric, project));
-      const snapshot = sourceTables(configured, metric.table)
-        .map((s) => configured[s])
-        .find((s) => s !== undefined && s.type !== "lookup" && s.snapshot !== undefined);
-      if (snapshot !== undefined && timeNature(name, metrics) === "flow") {
-        r.report(
-          "HM4007",
-          metric.type === "aggregate" && metric.over_time ? "/over_time" : "/table",
-          `source "${metric.table}" is a snapshot table, so summing it over time counts each snapshot again`,
-          {
-            label: "would add every snapshot in the period",
-            help: `add "over_time": "last" (the value at the end of each period), or "avg", "min", "max"`,
-          },
-        );
-      }
+      checkSnapshot(r, metric, configured);
+      checkEvaluationLookups(r, name, metric, configured, metrics);
       if (
         metric.type === "aggregate" &&
         metric.active !== undefined &&
@@ -509,7 +498,7 @@ function checkMetrics(project: Project, out: Diagnostic[]): void {
       } else {
         checkNatureMix(r, "/expr", operands, metrics);
       }
-      checkUnits(r, file, expr, metrics, projectCurrency);
+      checkUnits(r, file, metric, expr, metrics, projectCurrency);
       continue;
     }
 
@@ -528,7 +517,10 @@ function checkMetrics(project: Project, out: Diagnostic[]): void {
         if (
           of.type !== "aggregate" ||
           (of.aggregate !== "sum" && of.aggregate !== "count") ||
-          timeNature(metric.of, metrics) !== "point"
+          timeNature(metric.of, metrics) !== "point" ||
+          of.over_time === "avg" ||
+          of.over_time === "min" ||
+          of.over_time === "max"
         ) {
           r.report(
             "HM4008",
@@ -536,10 +528,12 @@ function checkMetrics(project: Project, out: Diagnostic[]): void {
             `"${metric.of}" must be a point-in-time sum or count to be read per entity`,
             {
               label:
-                of.type === "aggregate"
-                  ? `${of.aggregate}, ${timeNature(metric.of, metrics) ?? "unknown"}`
-                  : of.type,
-              help: "point at an aggregate metric with sum or count and over_time last/first, active or trailing",
+                of.type !== "aggregate"
+                  ? of.type
+                  : of.over_time === "avg" || of.over_time === "min" || of.over_time === "max"
+                    ? `over_time ${of.over_time} has no value per entity at an instant`
+                    : `${of.aggregate}, ${timeNature(metric.of, metrics) ?? "unknown"}`,
+              help: "point at an aggregate metric with sum or count and over_time last or first, active or trailing",
             },
           );
         } else {
@@ -653,45 +647,133 @@ function checkNatureMix(
   );
 }
 
-/** HM4005: adding or subtracting values in different currencies. */
+/** HM4007: an aggregate over a snapshot table must read one snapshot date at a time. */
+function checkSnapshot(r: Reporter, metric: TableMetric, configured: Record<string, Source>): void {
+  const declared = configured[metric.table];
+  const base = declared?.type === "lookup" ? configured[declared.from] : declared;
+  if (base === undefined || base.type === "lookup" || base.snapshot === undefined) return;
+  const column = base.snapshot;
+  const help = `read one snapshot date at a time: "time": "${column}" with "over_time": "last" (or "first", "avg", "min", "max")`;
+  const report = (pointer: string, message: string, severity?: Severity) =>
+    r.report("HM4007", pointer, `source "${metric.table}" is a snapshot table, ${message}`, {
+      label: "every snapshot would count again",
+      help,
+      ...optional("severity", severity),
+    });
+  if (metric.type === "sql") {
+    report("/sql", "and a SQL metric cannot read one snapshot date at a time", "warning");
+    return;
+  }
+  if (metric.active !== undefined) {
+    report(
+      "/active",
+      "so an interval on each snapshot row counts the same state once per snapshot",
+    );
+  } else if (metric.time === undefined) {
+    report("/table", "and without a time column the aggregate adds every snapshot in the table");
+  } else if (!sameColumn(metric.time, column)) {
+    report("/time", `so the time column must be its snapshot column "${column}"`);
+  } else if (metric.trailing !== undefined) {
+    report("/trailing", "so a trailing window adds every snapshot inside it");
+  } else if (metric.over_time === undefined || metric.over_time === "sum") {
+    report(
+      metric.over_time === undefined ? "/time" : "/over_time",
+      "so summing it over each period counts each snapshot again",
+    );
+  }
+}
+
+/** HM4019: an as-of lookup at "$evaluation" only has an instant to join at for point-in-time metrics. */
+function checkEvaluationLookups(
+  r: Reporter,
+  name: string,
+  metric: TableMetric,
+  configured: Record<string, Source>,
+  metrics: ReadonlyMap<string, Metric>,
+): void {
+  const declared = configured[metric.table];
+  if (declared?.type !== "lookup") return;
+  const lookup = declared.lookups.find((l) => l.asof?.at === "$evaluation");
+  const nature = timeNature(name, metrics);
+  if (lookup === undefined || nature === "point") return;
+  r.report(
+    "HM4019",
+    "/table",
+    `source "${metric.table}" joins "${lookup.table}" at the evaluation instant, but this metric is ${nature === "flow" ? "summed over each period" : "not placed in time"}`,
+    {
+      label: '"at": "$evaluation" needs a point-in-time metric',
+      help: 'join at each row\'s own time with "at": "<time column>" in a separate lookup source, or read the metric at an instant (over_time, active or trailing)',
+    },
+  );
+}
+
+/**
+ * HM4005: adding, subtracting or choosing between values in different currencies. Scalar factors
+ * (any sub-expression without a metric), unary minus, abs, and the choosing functions keep their
+ * operand's currency; the formula's own currency format must be that currency too.
+ */
 function checkUnits(
   r: Reporter,
   file: SpecFile,
+  metric: Metric,
   expr: Expr,
   metrics: ReadonlyMap<string, Metric>,
   projectCurrency: string,
 ): void {
+  const scalar = (e: Expr) => exprRefs(e).length === 0;
+  const mismatch = (e: Expr, a: string, b: string) => {
+    const message = e.kind === "call" ? `${e.fn} mixes ${a} and ${b}` : `adds ${a} to ${b}`;
+    r.report("HM4005", "/expr", message, {
+      ...expressionRange(file, "/expr", e.start, e.end),
+      label: "different currencies",
+      help: "convert one side with an as-of lookup on a rates table, so both metrics are in one currency",
+    });
+  };
+  const common = (e: Expr, units: (string | null | undefined)[]): string | null | undefined => {
+    const currencies = [...new Set(units.filter((u): u is string => typeof u === "string"))];
+    const [first, second] = currencies;
+    if (first !== undefined && second !== undefined) {
+      mismatch(e, first, second);
+      return undefined;
+    }
+    if (first !== undefined) return first;
+    return units.includes(undefined) ? undefined : null;
+  };
   const unit = (e: Expr): string | null | undefined => {
     switch (e.kind) {
+      case "number":
+        return null;
       case "ref": {
         const m = metrics.get(e.name);
         return m ? (currencyUnit(m, projectCurrency) ?? null) : undefined;
       }
       case "unary":
         return unit(e.arg);
+      case "call": {
+        const units = e.args.map(unit);
+        if (e.fn === "abs") return units[0];
+        return common(e, e.fn === "if" ? units.slice(1) : units);
+      }
       case "binary": {
         const a = unit(e.left);
         const b = unit(e.right);
-        if (e.op === "*" && (e.left.kind === "number" || e.right.kind === "number")) {
-          return e.left.kind === "number" ? b : a;
-        }
-        if (e.op === "/" && e.right.kind === "number") return a;
-        if (e.op !== "+" && e.op !== "-") return undefined;
-        if (typeof a === "string" && typeof b === "string" && a !== b) {
-          r.report("HM4005", "/expr", `adds ${a} to ${b}`, {
-            ...expressionRange(file, "/expr", e.start, e.end),
-            label: "different currencies",
-            help: "convert one side with an as-of lookup on a rates table, so both metrics are in one currency",
-          });
-          return undefined;
-        }
-        return typeof a === "string" ? a : b;
+        if (e.op === "+" || e.op === "-") return common(e, [a, b]);
+        if (e.op === "*" && scalar(e.left)) return b;
+        if ((e.op === "*" || e.op === "/") && scalar(e.right)) return a;
+        return undefined;
       }
       default:
         return undefined;
     }
   };
-  unit(expr);
+  const result = unit(expr);
+  const shown = currencyUnit(metric, projectCurrency);
+  if (typeof result === "string" && shown !== undefined && shown !== result) {
+    r.report("HM4005", "/format", `the formula is in ${result}, but its format shows ${shown}`, {
+      label: "a format changes the label, not the currency",
+      help: `set "currency": "${result}" in format, or convert the operands to ${shown}`,
+    });
+  }
 }
 
 function checkTargetsAndTests(
@@ -726,6 +808,17 @@ function checkTargetsAndTests(
         { help: "remove path" },
       );
     }
+    if (nature === "flow" && target.prorate === "days" && !groupAdditive(file.name, metrics)) {
+      r.report(
+        "HM3007",
+        `${base}/prorate`,
+        "prorate days splits a target in proportion to days, which holds only for a metric that adds up over time; this one doesn't",
+        {
+          label: "an average, ratio or distinct count",
+          help: 'set "prorate": "none", which is the default for this metric',
+        },
+      );
+    }
     if (nature === "point" && target.prorate !== undefined) {
       r.report(
         "HM3007",
@@ -752,8 +845,21 @@ function checkTargetsAndTests(
     }
     checkSegmentRefs(r, project, file, test.segments, `${base}/segments`);
     checkFilterTables(r, project, file, test.where ?? [], `${base}/where`, sources);
-    for (const key of Object.keys(test.data ?? {}))
-      sourceSuggestion(r, file, `${base}/data/${key}`, key, sources);
+    const read = readSources(project, file.name);
+    const testFilters = [
+      ...(test.where ?? []),
+      ...(test.segments ?? []).flatMap((s) => project.segments.get(s)?.spec?.filters ?? []),
+    ];
+    for (const s of filterTables(testFilters)) read.add(s);
+    for (const key of Object.keys(test.data ?? {})) {
+      const pointer = `${base}/data/${key}`;
+      if (!sourceSuggestion(r, file, pointer, key, sources) || read.has(key)) continue;
+      r.report("HM2023", pointer, `metric "${file.name}" does not read source "${key}"`, {
+        label: "swapping it changes nothing",
+        expected: [...read].sort(),
+        help: "remove the entry, or name a source the metric reads",
+      });
+    }
   });
 }
 

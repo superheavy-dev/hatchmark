@@ -85,7 +85,10 @@ const lookupSchema = z
     key: z
       .record(columnName, columnName)
       .refine((k) => Object.keys(k).length > 0, { error: "needs at least one column pair" })
-      .meta({ description: 'Base column to lookup column, such as {"subscription": "id"}.' }),
+      .meta({
+        minProperties: 1,
+        description: 'Base column to lookup column, such as {"subscription": "id"}.',
+      }),
     asof: z
       .strictObject({
         column: columnName.meta({ description: "The lookup table's date or timestamp column." }),

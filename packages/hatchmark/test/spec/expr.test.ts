@@ -96,13 +96,22 @@ describe("parseExpr", () => {
     });
   });
 
+  it("keeps a name's location inside parentheses, and refuses numbers too large to hold", () => {
+    const r = parseExpr("((revenu)) * 2", "formula");
+    expect(r.ok && exprRefs(r.expr)).toEqual([{ name: "revenu", start: 2, end: 8 }]);
+    expect(fail(`1${"0".repeat(309)}`)).toMatchObject({ message: "number too large" });
+    expect(fail(`coalesce(${Array(17).fill("a").join(", ")})`)).toMatchObject({
+      message: "coalesce takes 2 to 16 arguments, not 17",
+    });
+  });
+
   it("checks arity and date_diff units", () => {
     expect(fail("abs(a, b)")).toMatchObject({
       text: "abs(a, b)",
       message: "abs takes 1 arguments, not 2",
     });
     expect(fail("coalesce(a)")).toMatchObject({
-      message: "coalesce takes at least 2 arguments, not 1",
+      message: "coalesce takes 2 to 16 arguments, not 1",
     });
     expect(fail("if(a, b)", "row")).toMatchObject({ message: "if takes 3 arguments, not 2" });
     expect(fail("date_diff('week', a, b)", "row")).toMatchObject({ text: "'week'" });

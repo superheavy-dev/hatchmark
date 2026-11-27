@@ -43,7 +43,8 @@ const FUNCTIONS: Record<ExprMode, Record<string, [number, number]>> = {
 };
 
 export const ENTITY_NAMES = ["current", "prior"] as const;
-const KEYWORDS = new Set(["and", "or", "not", "null"]);
+/** Words the parser reads as operators or literals, so no metric may be named after one. */
+export const KEYWORDS: ReadonlySet<string> = new Set(["and", "or", "not", "null"]);
 const DATE_DIFF_UNITS = ["day", "month"];
 
 type Token =
@@ -90,7 +91,9 @@ function tokenize(text: string, mode: ExprMode): Token[] {
         );
       if (NAME_START.test(text[i] ?? ""))
         throw new Failure("unexpected letter after a number", i, i + 1);
-      tokens.push({ type: "number", value: Number(text.slice(start, i)), start, end: i });
+      const value = Number(text.slice(start, i));
+      if (!Number.isFinite(value)) throw new Failure("number too large", start, i);
+      tokens.push({ type: "number", value, start, end: i });
       continue;
     }
     if (ch === "'") {
@@ -299,7 +302,7 @@ class Parser {
       if (close.type !== "op" || close.value !== ")") {
         throw new Failure('missing ")"', close.start, close.end || close.start + 1);
       }
-      return { ...inner, start: t.start, end: close.end };
+      return inner;
     }
     if (t.type === "name") return this.name(t);
     if (t.type === "end") throw new Failure("expression ends too early", t.start, t.end);
@@ -354,7 +357,7 @@ class Parser {
     }
     const [min, max] = arity;
     if (args.length < min || args.length > max) {
-      const count = min === max ? `${min}` : max >= 16 ? `at least ${min}` : `${min} to ${max}`;
+      const count = min === max ? `${min}` : `${min} to ${max}`;
       throw new Failure(
         `${t.value} takes ${count} arguments, not ${args.length}`,
         t.start,

@@ -45,6 +45,32 @@ export function metricSources(
   return out;
 }
 
+/**
+ * Every source a metric reads rows from, through ratios, formulas and per_entity: each table
+ * metric's source with its lookup parts, and the tables of its in_table filters and segments.
+ */
+export function readSources(project: Project, name: string): Set<string> {
+  const configured = project.config.spec?.sources ?? {};
+  const out = new Set<string>();
+  const seen = new Set<string>();
+  const visit = (metricName: string): void => {
+    if (seen.has(metricName)) return;
+    seen.add(metricName);
+    const metric = project.metrics.get(metricName)?.spec;
+    if (metric === undefined) return;
+    if (metric.type === "aggregate" || metric.type === "sql") {
+      for (const s of sourceTables(configured, metric.table)) out.add(s);
+      const segmentFilters = (metric.segments ?? []).flatMap(
+        (s) => project.segments.get(s)?.spec?.filters ?? [],
+      );
+      for (const s of filterTables([...(metric.filters ?? []), ...segmentFilters])) out.add(s);
+    }
+    for (const dep of metricDeps(metric)) visit(dep);
+  };
+  visit(name);
+  return out;
+}
+
 /** Sources a source reads rows from: itself, and a lookup's base and lookup tables. */
 export function sourceTables(sources: Record<string, Source>, name: string): string[] {
   const source = sources[name];
