@@ -5,6 +5,13 @@
   "description": "Orders from every market, last 12 months against the 12 before.",
   "project": "Global Sales",
   "asOf": "2026-10-31",
+  "horizons": [
+    {
+      "source": "orders",
+      "column": "ordered_at",
+      "through": "2026-10-31T22:54:53.000001Z"
+    }
+  ],
   "period": {
     "range": "last_12_months",
     "compare": "previous_period",

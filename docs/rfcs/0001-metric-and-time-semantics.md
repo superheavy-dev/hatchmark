@@ -711,15 +711,15 @@ Accessibility: the dash or hollow point is never the only signal; the tooltip, t
 
 ### 6.7 What check says
 
-| Code   | Severity | When                                                                                                                         |
-| ------ | -------- | ---------------------------------------------------------------------------------------------------------------------------- |
-| HM4010 | warning  | a source's horizon is more than one day behind the dashboard's as-of; names the source, both dates and the fix (`freshness`) |
-| HM4011 | error    | `latest_data` has no source to resolve from                                                                                  |
-| HM4012 | warning  | a horizon is more than a day after the build machine's clock (future-dated rows); lists the first rows                       |
-| HM4013 | warning  | a block's window has no data before its horizon (a KPI that would be empty)                                                  |
-| HM4014 | warning  | `incomplete: "show"` on a flow whose last bucket is partial                                                                  |
-| HM4015 | warning  | a snapshot source has a bucket with no snapshot, or its last snapshot in a complete bucket isn't on the bucket's last day    |
-| HM4016 | note     | naive timestamps in a project whose timezone isn't UTC                                                                       |
+| Code   | Severity | When                                                                                                                           |
+| ------ | -------- | ------------------------------------------------------------------------------------------------------------------------------ |
+| HM4010 | warning  | a source's horizon is more than one day behind the dashboard's as-of; names the source, both dates and the fix (`freshness`)   |
+| HM4011 | error    | `latest_data` has no source to resolve from                                                                                    |
+| HM4012 | warning  | a column's newest value is more than a day after the build machine's clock (future-dated rows); names that value and the clock |
+| HM4013 | warning  | a block's window has no data before its horizon (a KPI that would be empty)                                                    |
+| HM4014 | warning  | `incomplete: "show"` on a flow whose last bucket is partial                                                                    |
+| HM4015 | warning  | a snapshot source has a bucket with no snapshot, or its last snapshot in a complete bucket isn't on the bucket's last day      |
+| HM4016 | note     | naive timestamps in a project whose timezone isn't UTC                                                                         |
 
 ## 7. Goals and targets
 
@@ -896,16 +896,13 @@ interface QueryPlan {
   anchors: { week: Weekday; quarter: string; year: string };
   /** "latest_data" resolves to the newest voting horizon, "latest_common_data" to the oldest. */
   asOfRule: "latest_data" | "latest_common_data" | "fixed";
-  /** What the executor must measure per source to resolve horizons and latest_data. */
-  horizons: Record<
-    string,
-    {
-      column?: string;
-      rule: "max" | { lagMs: number } | { lagDays: number } | { through: "as_of" | string };
-      votes: boolean;
-      columnType?: "date" | "timestamp";
-    }
-  >;
+  /** What the executor must measure to resolve horizons and latest_data: one entry per source and time column, sorted. */
+  horizons: {
+    source: string;
+    column?: string; // absent for a "through" rule
+    rule: "max" | { lag: { days: number } | { hours: number } } | { through: "as_of" | string };
+    votes: boolean;
+  }[];
   segments: { id: string; filters: Filter[]; sources: string[] }[];
   tests: {
     metric: string;
@@ -921,13 +918,14 @@ interface ExecutionContext {
   // existing, plus:
   /** Resolved once per plan, before any query: instants in UTC ISO 8601. */
   asOfInstant: string;
-  horizons: Record<string, string>;
+  /** Measured horizons as exclusive UTC instants (YYYY-MM-DDTHH:MM:SS.ffffffZ): just after the latest timestamp, or the start of the day after the latest date; DashboardData carries the same list. */
+  horizons: { source: string; column?: string; through: string }[];
   /** Bucket bounds computed by the core (bucketBounds in windows.ts) as local dates; the executor converts them with the plan timezone. */
   buckets?: { start: string; end: string; instant: string }[];
 }
 ```
 
-New pure core functions: `resolveRange(spec, shift, asOf, anchors)`, `bucketBounds(range, grain)`, `bucketStatus(bucket, horizon, timezone)`, `trimWindow(bounds, horizon, rangeKind)`, `targetValue(target, bucket, grain)`, `parseFormula(text)` and `parseRowExpr(text)` with positions. The executor gains one method, `horizon(source, column): Promise<string | undefined>`, which runs `select max(<column>)` with no filters.
+New pure core functions: `resolveRange(spec, shift, asOf, anchors)`, `bucketBounds(range, grain)`, `bucketStatus(bucket, horizon, timezone)`, `trimWindow(bounds, horizon, rangeKind)`, `targetValue(target, bucket, grain)`, `parseFormula(text)` and `parseRowExpr(text)` with positions. The executor gains one method, `horizon(column): Promise<{ latest?: string; date: boolean; naive: boolean }>`, which runs `select max(<column>)` with no filters and returns a date, or a UTC instant, with whether the column holds timestamps without an offset; the core turns it into the horizon (the time zone, the lag, DST) and compares horizons as instants. HM4012 names that newest value; it never runs a second query, stops a build, or changes the output.
 
 ## 12. SQL the executor generates
 

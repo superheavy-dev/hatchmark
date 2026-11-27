@@ -84,13 +84,14 @@ export async function run(
   root: string,
   project: Project,
   dashboard: string,
-  options: { threads?: number } = {},
+  options: { threads?: number; now?: Date } = {},
 ) {
   const config = project.config.spec;
   if (config === undefined) throw new Error("invalid hatchmark.json");
-  const executor = await createDuckDbExecutor({ root, config, ...options });
+  const { now, ...rest } = options;
+  const executor = await createDuckDbExecutor({ root, config, ...rest });
   try {
-    return await runDashboard(project, dashboard, executor);
+    return await runDashboard(project, dashboard, executor, now);
   } finally {
     await executor.close();
   }

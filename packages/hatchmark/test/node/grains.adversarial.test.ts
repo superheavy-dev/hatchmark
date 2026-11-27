@@ -719,11 +719,11 @@ describe("plan hashes and query reuse for grain switches (HAT-40 data.mjs and ha
     expect(perBlock.a).toEqual(perBlock.b);
   });
 
-  it("the sales example plans to the hash it had before and after #16", async () => {
+  it("the sales example plans to a pinned hash (the #16 value 036644c0…, then plan horizons)", async () => {
     const { project } = await loadAt(EXAMPLE);
     const { plan } = planDashboard(project, "sales");
     expect(plan && planHash(plan)).toBe(
-      "036644c09b3f2391f21a9393307354d2d91ccd49d831b32a533a4ba31d8aa9ea",
+      "41e1db7b9fb43fa16d5263c4a46390d19cdf15543c81dab0d328dcff3e75c520",
     );
   });
 

@@ -62,7 +62,7 @@ Every block reads the same window.
 
 | Field     | Values                                                                                                                                                                                                 |
 | --------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `asOf`    | `latest_data` (the last date in the data the dashboard reads) or a fixed `YYYY-MM-DD`, for builds that stay the same as data grows.                                                                    |
+| `asOf`    | `latest_data` (the last date in the data the dashboard reads), `latest_common_data` (the last date every source has) or a fixed `YYYY-MM-DD`, for builds that stay the same as data grows.             |
 | `range`   | `last_7_days`, `last_30_days`, `last_90_days`, `last_12_months`, `month_to_date`, `quarter_to_date`, `year_to_date`, `last_complete_month`, `last_complete_quarter`, `last_complete_year`, `all_time`. |
 | `compare` | `previous_period` (the previous calendar unit for calendar ranges, the same length just before for rolling ones), `previous_year` (the same span a year earlier) or `none`.                            |
 

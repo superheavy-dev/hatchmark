@@ -85,7 +85,7 @@ export async function check(
     try {
       for (const [name, file] of [...project.dashboards].sort(([a], [b]) => (a < b ? -1 : 1))) {
         if (!selected(file.file)) continue;
-        const explained = await explainDashboard(project, name, executor);
+        const explained = await explainDashboard(project, name, executor, undefined, new Date());
         const seen = new Set(diagnostics.map((d) => JSON.stringify(d)));
         diagnostics.push(
           ...explained.diagnostics.filter((d) => selected(d.file) && !seen.has(JSON.stringify(d))),

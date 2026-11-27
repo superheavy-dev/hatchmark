@@ -47,6 +47,7 @@ export async function explainDashboard(
   dashboard: string,
   executor: SqlExecutor,
   blockId?: string,
+  now?: Date,
 ): Promise<{ blocks?: ExplainedBlock[]; asOf?: string; diagnostics: Diagnostic[] }> {
   const errors = blockingErrors(project, dashboard);
   if (errors.length > 0) return { diagnostics: errors };
@@ -70,9 +71,10 @@ export async function explainDashboard(
       ],
     };
   }
-  const resolved = await executionContext(plan, executor);
+  const resolved = await executionContext(project, plan, executor, now);
+  diagnostics.push(...resolved.diagnostics);
   const { context } = resolved;
-  if (context === undefined) return { diagnostics: [...diagnostics, ...resolved.diagnostics] };
+  if (context === undefined) return { diagnostics };
   const queries = new Map(plan.queries.map((q) => [q.id, q]));
   const explained: ExplainedBlock[] = [];
   try {
@@ -105,6 +107,7 @@ export async function explainMetric(
   project: Project,
   metric: string,
   executor: SqlExecutor,
+  now?: Date,
 ): Promise<{ queries?: ExplainedQuery[]; asOf?: string; diagnostics: Diagnostic[] }> {
   const file = `dashboards/${CANONICAL}.json`;
   const withBlock = (block: Record<string, unknown>, period: Record<string, unknown>): Project => {
@@ -128,6 +131,7 @@ export async function explainMetric(
     CANONICAL,
     executor,
     "metric",
+    now,
   );
   const queries = blocks?.[0]?.queries;
   return {

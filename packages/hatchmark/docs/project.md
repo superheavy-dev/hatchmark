@@ -65,6 +65,19 @@ such as `orders` or `web_sessions`.
 }
 ```
 
+Every file source also takes these options:
+
+| Option      | Meaning                                                                                                                                                                                                                                                                                                                                                                                                                                       |
+| ----------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `timezone`  | IANA time zone that the file's timestamps without an offset were written in, such as `America/Chicago`. Without it they are read as UTC; a project whose `timezone` isn't UTC gets note `HM4016` when a source has them. Timestamps with an offset and dates never shift.                                                                                                                                                                     |
+| `freshness` | How complete the source is (its horizon). By default it is complete through the latest value of the time column a metric uses, over all rows. `{"column": "exported_at"}` measures another column, `{"lag": {"days": 1}}` or `{"lag": {"hours": 6}}` takes the still-filling end off, `{"through": "2026-11-26"}` fixes the last complete date, and `{"through": "as_of"}` says the source is complete whenever the build runs (sparse logs). |
+
+```json
+"usage": { "type": "csv", "path": "data/usage_daily.csv", "freshness": { "lag": { "days": 1 } } }
+```
+
+[numbers.md](numbers.md#time) says how horizons decide `latest_data`.
+
 Column types are inferred from every row of the file (see [numbers.md](numbers.md#reading-files)).
 A metric or block that names a column the file does not have fails `hatchmark build` with `HM2015`,
 which names the source and the column; `hatchmark check` does not catch every such case.

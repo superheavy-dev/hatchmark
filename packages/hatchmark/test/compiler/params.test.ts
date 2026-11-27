@@ -178,6 +178,7 @@ describe("paramsForQuery", () => {
       dashboard: "sales",
       period: { asOf: "latest_data", range: "all_time", compare: "none" },
       timezone: "UTC",
+      horizons: [],
       anchors: { ...DEFAULT_ANCHORS, week: "monday" },
       params: [],
       blocks: [],

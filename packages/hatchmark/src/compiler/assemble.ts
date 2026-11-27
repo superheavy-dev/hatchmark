@@ -633,6 +633,7 @@ export function assemble(
     ...(spec.description === undefined ? {} : { description: spec.description }),
     project: config.name,
     asOf: context.asOf,
+    horizons: context.horizons ?? [],
     period: {
       range: period.range,
       compare: period.compare,

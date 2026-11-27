@@ -159,7 +159,7 @@ async function metricSql(
   metric: string,
   executor: SqlExecutor,
 ): Promise<CommandResult> {
-  const result = await explainMetric(project, metric, executor);
+  const result = await explainMetric(project, metric, executor, new Date());
   const { asOf } = result;
   return printed(
     ctx,
@@ -178,7 +178,13 @@ async function blockSql(
   block: string,
   executor: SqlExecutor,
 ): Promise<CommandResult> {
-  const { blocks, asOf, diagnostics } = await explainDashboard(project, dashboard, executor, block);
+  const { blocks, asOf, diagnostics } = await explainDashboard(
+    project,
+    dashboard,
+    executor,
+    block,
+    new Date(),
+  );
   return printed(
     ctx,
     { dashboard, block, ...(asOf !== undefined ? { as_of: asOf } : {}) },

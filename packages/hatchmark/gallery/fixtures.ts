@@ -284,6 +284,7 @@ function dashboard(
     ...(description === undefined ? {} : { description }),
     project: "Northwind Outfitters",
     asOf: "2026-10-31",
+    horizons: [],
     period: {
       range: "last_complete_month",
       compare: "previous_period",

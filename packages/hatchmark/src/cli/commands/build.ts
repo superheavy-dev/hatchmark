@@ -370,7 +370,7 @@ async function runAll(
   const executor = await deps.createExecutor({ root, config });
   try {
     for (const name of [...project.dashboards.keys()].sort()) {
-      const result = await deps.runDashboard(project, name, executor);
+      const result = await deps.runDashboard(project, name, executor, new Date());
       for (const d of result.diagnostics) diagnostics.set(JSON.stringify(d), d);
       if (result.data) pages.push(result.data);
     }

@@ -18,9 +18,9 @@ import {
   canonicalJson,
   column,
   type ExecutionContext,
+  horizonSql,
   isFloat,
   isTimestamp,
-  latestDateSql,
   type MeasureComponent,
   ORDINAL,
   type PlannedQuery,
@@ -136,17 +136,11 @@ export async function createDuckDbExecutor(options: {
       const { text, params } = querySql(await planned(query), query, context);
       return { text, params };
     },
-    async latestDate(columns: TimeColumn[], timezone: string) {
-      let latest: string | undefined;
-      for (const { source, column } of columns) {
-        const { text, params } = latestDateSql(await load(source), column, timezone);
-        const { values, types } = boundParams(params);
-        const reader = await connection.runAndReadAll(text, values, types);
-        const value = reader.getRows()[0]?.[0];
-        const date = value instanceof DuckDBDateValue ? value.toString() : undefined;
-        if (date !== undefined && (latest === undefined || date > latest)) latest = date;
-      }
-      return latest;
+    async horizon({ source, column }: TimeColumn) {
+      const { text, params, date, naive } = horizonSql(await load(source), column);
+      const { values, types } = boundParams(params);
+      const value = (await connection.runAndReadAll(text, values, types)).getRows()[0]?.[0];
+      return { ...(typeof value === "string" ? { latest: value } : {}), date, naive };
     },
     async close() {
       connection.closeSync();
@@ -284,7 +278,13 @@ async function loadSource(
     .getRows()
     .map((row) => ({ name: String(row[0]), type: String(row[1]) }))
     .filter((c) => c.name !== "__hm_ord");
-  return { name, relation: table, columns, magnitudes: new Map() };
+  return {
+    name,
+    relation: table,
+    columns,
+    ...(source.timezone !== undefined ? { timezone: source.timezone } : {}),
+    magnitudes: new Map(),
+  };
 }
 
 /** Rounds a floating result to 15 significant digits, the digits every summation order agrees on. */

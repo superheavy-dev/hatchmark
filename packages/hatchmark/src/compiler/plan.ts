@@ -10,6 +10,7 @@ import type {
   RangeSpec,
   ResolvedGrain,
 } from "../spec/index.js";
+import type { PlannedHorizon, SourceHorizon } from "./horizons.js";
 
 /**
  * The query plan: the one logical description of what a dashboard needs from its data, shared by
@@ -206,6 +207,8 @@ export interface QueryPlan {
   /** Where week, quarter and year buckets begin, from hatchmark.json (projectAnchors). */
   anchors: Anchors;
   params: PlanParam[];
+  /** The source horizons the plan needs, to resolve the as-of instant (planHorizons). */
+  horizons: PlannedHorizon[];
   blocks: BlockPlan[];
   queries: PlannedQuery[];
   materialization: Record<string, Materialization>;
@@ -241,6 +244,8 @@ export interface ExecutionContext {
   anchors: Anchors;
   bindings: ParamBindings;
   materialization?: Materialization;
+  /** The plan's measured horizons, in plan order; absent when the caller measured none. */
+  horizons?: SourceHorizon[];
 }
 
 /**

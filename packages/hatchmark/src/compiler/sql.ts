@@ -26,6 +26,8 @@ export interface SqlSource {
   name: string;
   relation: string;
   columns: { name: string; type: string }[];
+  /** Time zone of timestamps without an offset (the source's "timezone"); UTC when absent. */
+  timezone?: string;
 }
 
 /** A query's SQL and the layout of its result row. */
@@ -79,7 +81,7 @@ function localTime(source: SqlSource, name: string, timezone: string, sql: Sql):
   if (type === "DATE") return q;
   if (type === "TIMESTAMP WITH TIME ZONE") return `timezone(${sql.bind(timezone)}, ${q})`;
   if (isTimestamp(type)) {
-    return `timezone(${sql.bind(timezone)}, timezone('UTC', CAST(${q} AS TIMESTAMP)))`;
+    return `timezone(${sql.bind(timezone)}, timezone(${naiveZone(source, sql)}, CAST(${q} AS TIMESTAMP)))`;
   }
   throw new Error(
     `time column "${actual}" of source "${source.name}" has type ${type}; it needs DATE or TIMESTAMP`,
@@ -92,7 +94,12 @@ function instant(source: SqlSource, name: string, timezone: string, sql: Sql): s
   const q = quote(actual);
   if (type === "TIMESTAMP WITH TIME ZONE") return q;
   if (type === "DATE") return `timezone(${sql.bind(timezone)}, CAST(${q} AS TIMESTAMP))`;
-  return `timezone('UTC', CAST(${q} AS TIMESTAMP))`;
+  return `timezone(${naiveZone(source, sql)}, CAST(${q} AS TIMESTAMP))`;
+}
+
+/** The zone a timestamp without an offset is read in: the source's timezone, else UTC. */
+function naiveZone(source: SqlSource, sql: Sql): string {
+  return source.timezone === undefined ? "'UTC'" : sql.bind(source.timezone);
 }
 
 /**
@@ -337,13 +344,37 @@ export function querySql(
   };
 }
 
-/** The SQL of latest_data for one time column: its last local date. */
-export function latestDateSql(source: SqlSource, name: string, timezone: string): BuiltSql {
+/**
+ * The SQL of a source horizon (RFC 0001 section 6.1): the latest value of a column over all rows,
+ * with no filters. A DATE column gives "YYYY-MM-DD"; a timestamp gives its UTC instant
+ * "YYYY-MM-DDTHH:MM:SS.ffffff", read in the source's timezone (else UTC) when it has no offset.
+ * A column of another type with no values (a header-only CSV) is empty; with values it is an error.
+ * naive is true for a timestamp column without an offset.
+ */
+export function horizonSql(
+  source: SqlSource,
+  name: string,
+): BuiltSql & { date: boolean; naive: boolean } {
   const sql = new Sql();
-  const local = localTime(source, name, timezone, sql);
+  const { name: actual, type } = column(source, name);
+  if (type !== "DATE" && !isTimestamp(type)) {
+    const wrong = `time column "${actual}" of source "${source.name}" has type ${type}; it needs DATE or TIMESTAMP`;
+    return {
+      text: `SELECT CASE WHEN count(${quote(actual)}) = 0 THEN NULL ELSE error(${sql.bind(wrong)}) END FROM ${source.relation}`,
+      params: sql.values(),
+      date: false,
+      naive: false,
+    };
+  }
+  const value =
+    type === "DATE"
+      ? `CAST(max(${quote(actual)}) AS VARCHAR)`
+      : `strftime(timezone('UTC', max(${instant(source, actual, "UTC", sql)})), '%Y-%m-%dT%H:%M:%S.%f')`;
   return {
-    text: `SELECT max(CAST(${local} AS DATE)) FROM ${source.relation}`,
+    text: `SELECT ${value} FROM ${source.relation}`,
     params: sql.values(),
+    date: type === "DATE",
+    naive: isTimestamp(type) && type !== "TIMESTAMP WITH TIME ZONE",
   };
 }
 
