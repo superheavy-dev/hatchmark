@@ -1,5 +1,5 @@
 import { dashboardDependencies, type Metric, type Project } from "../spec/index.js";
-import type { PlanParam } from "./plan.js";
+import type { PlannedParam, PlanParam } from "./plan.js";
 
 /**
  * Resolves a dashboard's filters into self-contained plan parameters. A select filter binds to
@@ -42,5 +42,25 @@ export function resolveParams(project: Project, dashboard: string): PlanParam[] 
       default: fallback === undefined ? [] : Array.isArray(fallback) ? fallback : [fallback],
       sources: sources.filter((s) => project.columns.get(s)?.includes(filter.column) !== false),
     };
+  });
+}
+
+/**
+ * The dashboard filters one query applies, in dashboard order, each with its column and default:
+ * select filters bound to the query's source, and period filters that window its time column.
+ */
+export function paramsForQuery(
+  params: PlanParam[],
+  source: string,
+  timeColumn: string | undefined,
+): PlannedParam[] {
+  return params.flatMap((param): PlannedParam[] => {
+    if (param.kind === "select") {
+      if (!param.sources.includes(source)) return [];
+      const { id, kind, column, operator, multiple } = param;
+      return [{ id, kind, source, column, operator, multiple, default: param.default }];
+    }
+    if (timeColumn === undefined || param.columns[source]?.includes(timeColumn) !== true) return [];
+    return [{ id: param.id, kind: "period", source, column: timeColumn, default: param.default }];
   });
 }

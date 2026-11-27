@@ -1,5 +1,12 @@
 import { describe, expect, it } from "vitest";
-import { resolveParams } from "../../src/compiler/index.js";
+import {
+  type ExecutionContext,
+  type PlannedQuery,
+  paramsForQuery,
+  planHash,
+  type QueryPlan,
+  resolveParams,
+} from "../../src/compiler/index.js";
 import { CONFIG, METRICS, projectFrom } from "../spec/helpers.js";
 
 const dashboard = (filters: unknown[]) => ({
@@ -93,5 +100,124 @@ describe("resolveParams", () => {
         columns: { orders: ["ordered_at"] },
       },
     ]);
+  });
+});
+
+const ROWS = [
+  { region: "West", ordered_at: "2026-04-02" },
+  { region: "West", ordered_at: "2026-04-03" },
+  { region: "East", ordered_at: "2026-04-04" },
+];
+
+function regionQuery(regionDefault: unknown): PlannedQuery {
+  const project = projectFrom({
+    config: CONFIG,
+    metrics: METRICS,
+    dashboards: dashboard([
+      { type: "select", id: "region", column: "region", default: regionDefault },
+    ]),
+  });
+  return {
+    id: "orders_count",
+    source: "orders",
+    measures: [],
+    dimensions: [],
+    groupingSets: [[]],
+    window: { range: "all_time", shift: "none" },
+    params: paramsForQuery(resolveParams(project, "sales"), "orders", "ordered_at"),
+  };
+}
+
+/** A stand-in executor that reads only the query and the context, as QueryExecutor must. */
+function countRows(query: PlannedQuery, context: ExecutionContext): number {
+  return ROWS.filter((row) =>
+    query.params.every((param) => {
+      if (param.kind !== "select") return true;
+      const bound = context.bindings[param.id];
+      const values = bound === undefined ? param.default : (bound as unknown[]);
+      return values.length === 0 || values.includes(row[param.column as keyof typeof row]);
+    }),
+  ).length;
+}
+
+describe("paramsForQuery", () => {
+  const context: ExecutionContext = {
+    asOf: "2026-04-30",
+    timezone: "UTC",
+    weekStart: "monday",
+    bindings: {},
+  };
+
+  it("carries each filter's default, so West and East defaults give different executor inputs (HAT-13)", () => {
+    const west = regionQuery("West");
+    const east = regionQuery("East");
+    expect(west.params).toEqual([
+      {
+        id: "region",
+        kind: "select",
+        source: "orders",
+        column: "region",
+        operator: "in",
+        multiple: false,
+        default: ["West"],
+      },
+    ]);
+    expect(JSON.stringify([west, context])).not.toBe(JSON.stringify([east, context]));
+    expect(countRows(west, context)).toBe(2);
+    expect(countRows(east, context)).toBe(1);
+    expect(countRows(regionQuery(undefined), context)).toBe(3);
+    expect(countRows(west, { ...context, bindings: { region: ["East"] } })).toBe(1);
+  });
+
+  it("changes the query and the plan hash whenever a default changes (property)", () => {
+    const defaults: unknown[] = [undefined, "West", "East", ["West"], ["West", "East"], 1, true];
+    const plan = (regionDefault: unknown): QueryPlan => ({
+      version: 1,
+      dashboard: "sales",
+      period: { asOf: "latest_data", range: "all_time", compare: "none" },
+      timezone: "UTC",
+      weekStart: "monday",
+      params: [],
+      blocks: [],
+      queries: [regionQuery(regionDefault)],
+      materialization: {},
+    });
+    for (const from of defaults) {
+      for (const to of defaults) {
+        const label = `${JSON.stringify(from)} -> ${JSON.stringify(to)}`;
+        const values = (d: unknown) =>
+          JSON.stringify(Array.isArray(d) ? d : d === undefined ? [] : [d]);
+        if (values(from) === values(to)) continue;
+        expect(JSON.stringify(regionQuery(from)), label).not.toBe(JSON.stringify(regionQuery(to)));
+        expect(planHash(plan(from)), label).not.toBe(planHash(plan(to)));
+      }
+    }
+  });
+
+  it("windows the query's time column with the period filter's default, and skips other columns", () => {
+    const project = projectFrom({
+      config: CONFIG,
+      metrics: METRICS,
+      dashboards: dashboard([
+        {
+          type: "period",
+          id: "range",
+          options: ["last_7_days", "last_30_days"],
+          default: "last_7_days",
+        },
+      ]),
+    });
+    const params = resolveParams(project, "sales");
+    expect(paramsForQuery(params, "orders", "ordered_at")).toEqual([
+      {
+        id: "range",
+        kind: "period",
+        source: "orders",
+        column: "ordered_at",
+        default: "last_7_days",
+      },
+    ]);
+    expect(paramsForQuery(params, "orders", "shipped_at")).toEqual([]);
+    expect(paramsForQuery(params, "orders", undefined)).toEqual([]);
   });
 });

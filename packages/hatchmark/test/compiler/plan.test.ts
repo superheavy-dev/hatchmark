@@ -36,7 +36,15 @@ describe("query plan types", () => {
 
   it("carry each filter's column, so the same filter id on another column is another query", () => {
     const params = (column: string): PlannedParam[] => [
-      { id: "slice", kind: "select", source: "orders", column, operator: "in", multiple: false },
+      {
+        id: "slice",
+        kind: "select",
+        source: "orders",
+        column,
+        operator: "in",
+        multiple: false,
+        default: [],
+      },
     ];
     expect(JSON.stringify(params("region"))).not.toBe(JSON.stringify(params("channel")));
   });

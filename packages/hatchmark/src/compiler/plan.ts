@@ -20,7 +20,7 @@ import type {
  *   browser never sends SQL.
  *
  * A plan is plain JSON-serializable data and is deterministic: the same project gives the same
- * plan, byte for byte, so plans can be cached and diffed.
+ * plan, byte for byte, so plans can be cached and diffed. planHash() in hash.ts keys caches by it.
  */
 export const PLAN_VERSION = 1;
 
@@ -112,9 +112,11 @@ export interface PlannedQuery {
 }
 
 /**
- * A dashboard filter as one query applies it. A select filter keeps rows whose column equals the
- * bound value (any of the values when multiple); no binding means no filter. A period filter
- * replaces the window's range with the bound range, on the query's time column.
+ * A dashboard filter as one query applies it, default included, so the query alone decides what an
+ * execution without a binding reads. A select filter keeps rows whose column equals one of the
+ * bound values, or of the default when nothing is bound; an empty default means no filter. A
+ * period filter replaces the window's range with the bound range, or with the default, on the
+ * query's time column. paramsForQuery() in params.ts derives these from QueryPlan.params.
  */
 export type PlannedParam =
   | {
@@ -124,8 +126,9 @@ export type PlannedParam =
       column: string;
       operator: "in";
       multiple: boolean;
+      default: (string | number | boolean)[];
     }
-  | { id: string; kind: "period"; source: string; column: string };
+  | { id: string; kind: "period"; source: string; column: string; default: PeriodRange };
 
 /** How build mode stores a query's result for in-browser filtering. */
 export type Materialization =
@@ -217,7 +220,10 @@ export interface ExecutionContext {
   materialization?: Materialization;
 }
 
-/** Filter values bound for one execution: absent means the filter's default. */
+/**
+ * Filter values bound for one execution, by filter id. A filter with no binding reads the default
+ * its PlannedParam carries; the executor never looks a default up anywhere else.
+ */
 export type ParamBindings = Readonly<Record<string, unknown>>;
 
 export interface QueryResult {
