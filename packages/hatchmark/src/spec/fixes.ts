@@ -25,8 +25,11 @@ export function replaceValueFix(
 ): Fix | undefined {
   const found = document.locate(pointer);
   if (!found?.exact) return undefined;
+  const before = document.text.slice(0, found.node.start);
+  const tag = /![^\s,[\]{}]*[ \t]+$/.exec(before.slice(before.search(/[^\r\n]*$/)));
+  const start = tag ? found.node.start - tag[0].length : found.node.start;
   return {
-    range: document.rangeAt(found.node.start, found.node.end),
+    range: document.rangeAt(start, found.node.end),
     text: yamlText(value),
     applicability,
     description,
@@ -66,6 +69,21 @@ export function addPropertyFix(
   const first = object.members[0] ?? last;
   const indent = document.positionAt(first.keyStart).column - 1;
   const end = last.value.end;
+  const lastValue = last.value;
+  const kept =
+    lastValue.kind === "string" &&
+    (lastValue.style === "literal" || lastValue.style === "folded") &&
+    /^[|>](?:[1-9]?\+|\+[1-9]?)/.test(document.text.slice(lastValue.start));
+  if (kept) {
+    const rest = /^[^\r\n]*(?:\r\n|\r|\n)(?:[ \t]*(?:\r\n|\r|\n))*/.exec(document.text.slice(end));
+    const at = end + (rest?.[0].length ?? document.text.length - end);
+    return {
+      range: document.rangeAt(at, at),
+      text: `${" ".repeat(indent)}${property}\n`,
+      applicability,
+      description,
+    };
+  }
   return {
     range: document.rangeAt(end, end),
     text: `\n${" ".repeat(indent)}${property}`,
