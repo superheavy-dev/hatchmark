@@ -94,7 +94,7 @@ export function renderTable(block: TableData, ctx: RenderContext): string {
             scale.neg > 0 && scale.pos > 0 ? scale.neg / (scale.neg + scale.pos) : undefined,
           )
         : "";
-    const cls = [bars.has(name) ? "hm-bar" : "", isNumber(value) ? "" : "hm-null"]
+    const cls = [bars.has(name) ? "hm-cellbar" : "", isNumber(value) ? "" : "hm-null"]
       .filter(Boolean)
       .join(" ");
     return `<td${cls ? ` class="${cls}"` : ""} data-v="${raw(value)}">${drawn}${esc(formatValue(value ?? null, metricOf(ctx, name), locale, "full"))}</td>`;

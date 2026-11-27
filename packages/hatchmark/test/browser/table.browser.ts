@@ -264,14 +264,14 @@ describe("tall tables", () => {
 
   it("hides in-cell bars on a phone, like the share bars", async () => {
     const page = await open("bars", 390);
-    expect(await page.$eval("td.hm-bar .hm-track", (n) => getComputedStyle(n).display)).toBe(
+    expect(await page.$eval("td.hm-cellbar .hm-track", (n) => getComputedStyle(n).display)).toBe(
       "none",
     );
     await page.close();
     const desktop = await open("bars");
-    expect(await desktop.$eval("td.hm-bar .hm-track", (n) => getComputedStyle(n).display)).not.toBe(
-      "none",
-    );
+    expect(
+      await desktop.$eval("td.hm-cellbar .hm-track", (n) => getComputedStyle(n).display),
+    ).not.toBe("none");
     await desktop.close();
   });
 });
