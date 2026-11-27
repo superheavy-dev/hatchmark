@@ -666,6 +666,29 @@ describe("DuckDB executor queries", () => {
     expect(diagnostics[0]?.message).toContain("outside the supported dates");
   });
 
+  it("rejects a fixed as-of date past the last supported date", async () => {
+    const late = await writeProject({
+      ...files(),
+      "data/orders.csv": `${ORDERS.trimEnd()}\n98,9998-12-31T12:00:00Z,West,web,paid,8,0,c98\n`,
+      "dashboards/late.json": {
+        title: "Late",
+        period: { asOf: "9999-12-31", range: "all_time", compare: "none" },
+        blocks: [
+          { type: "kpi", id: "orders", metric: "orders" },
+          { type: "line", id: "daily", metrics: ["orders"], grain: "day" },
+        ],
+      },
+    });
+    const { data, diagnostics } = await run(late.root, late.project, "late");
+    expect(data).toBeUndefined();
+    expect(diagnostics.map((d) => [d.code, d.message])).toEqual([
+      [
+        "HM2015",
+        "the as-of date 9999-12-31 is outside the supported dates 0001-01-01 to 9998-12-31",
+      ],
+    ]);
+  });
+
   it("reports a missing column as HM2015 with the cause", async () => {
     const broken = await writeProject({
       ...files(),

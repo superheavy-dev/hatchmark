@@ -140,9 +140,10 @@ function anchored(unit: TimeGrain, anchors: Anchors): ResolvedGrain {
  *   the bucket before it.
  * - {shift: {unit, by}} moves the range by whole units, and previous_year is {unit: "year", by: -1}.
  *   A window of whole months (start and end on the 1st) shifted by months, quarters or years moves
- *   both ends and stays whole months. Any other window moves its first and last day, each clamped
- *   to the target month (Mar 31 minus a month is Feb 28/29), so it is never empty and keeps its
- *   day count except for that clamping; a to-date range covers the same elapsed days.
+ *   both ends and stays whole months. Any other window moves its first and last day, each keeping
+ *   its day of the month clamped to the target month (Mar 31 minus a month is Feb 28/29), so it is
+ *   never empty; day and week shifts keep its day count exactly, and a to-date range covers the
+ *   same elapsed days of its bucket.
  * - all_time is unbounded and has no comparison: undefined for any shift but "none".
  * - Throws a RangeError for a window that reaches outside SUPPORTED_DATES, current or shifted.
  */

@@ -110,6 +110,11 @@ export async function runDashboard(
     bindings: {},
   };
   try {
+    if (!(asOf >= SUPPORTED_DATES.first && asOf <= SUPPORTED_DATES.last)) {
+      throw new RangeError(
+        `the as-of date ${asOf} is outside the supported dates ${SUPPORTED_DATES.first} to ${SUPPORTED_DATES.last}`,
+      );
+    }
     for (const query of plan.queries) queryBounds(query, context);
     for (const shift of ["none", plan.period.compare] as const) {
       resolveRange(plan.period.range, shift, asOf, plan.anchors);
