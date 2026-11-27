@@ -446,6 +446,70 @@ describe("build cache", () => {
     }
   });
 
+  const blocked = [".hatchmark", "cache", "cache/v1", "cache/v1/q", "cache/v1/h", "tmp"].flatMap(
+    (under) => [0o000, 0o555].map((mode) => [under, mode] as const),
+  );
+  it.each(blocked)(
+    "with .hatchmark/%s at mode %o, build and explain succeed and match --no-cache (best effort)",
+    async (under, mode) => {
+      const root = await example();
+      await build(root, true);
+      await appendFile(
+        path.join(root, "data", "orders.csv"),
+        "999999,2026-11-03T10:00:00Z,C00001,Canada,Americas,Direct,Home,paid,10.00\n",
+      );
+      const dir = path.join(
+        root,
+        ...(under === ".hatchmark" ? [under] : [".hatchmark", ...under.split("/")]),
+      );
+      await mkdir(dir, { recursive: true });
+      await chmod(dir, mode);
+      try {
+        const oracle = await build(root, false);
+        const cached = await build(root, true);
+        expect(cached.code).toBe(0);
+        expect(cached.files).toEqual(oracle.files);
+        expect(cached.report.cache?.enabled).toBe(false);
+        expect(cached.report.cache?.reason).toBeTruthy();
+        const explained = await cliJson([
+          "explain",
+          "--cwd",
+          root,
+          "--dashboard",
+          "sales",
+          "--block",
+          "revenue",
+        ]);
+        expect(explained.code).toBe(0);
+        if (mode === 0o000 && under !== "tmp") {
+          const queries = (explained.json as { queries: { cache?: { status: string } }[] }).queries;
+          for (const q of queries) expect(q.cache?.status).toBe("off");
+        }
+      } finally {
+        await chmod(dir, 0o755);
+      }
+    },
+  );
+
+  it.each([0o000, 0o555])(
+    "with an empty .hatchmark at mode %o, a first build succeeds and matches --no-cache",
+    async (mode) => {
+      const root = await example();
+      const dir = path.join(root, ".hatchmark");
+      await mkdir(dir);
+      await chmod(dir, mode);
+      try {
+        const oracle = await build(root, false);
+        const cached = await build(root, true);
+        expect(cached.code).toBe(0);
+        expect(cached.files).toEqual(oracle.files);
+        expect(cached.report.cache?.enabled).toBe(false);
+      } finally {
+        await chmod(dir, 0o755);
+      }
+    },
+  );
+
   it("treats corrupted, truncated and swapped entries as misses and rewrites them", async () => {
     const root = await example();
     const oracle = await build(root, false);

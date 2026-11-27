@@ -374,7 +374,8 @@ export async function build(
 }
 
 function cacheLine(cache: CacheStats): string {
-  if (!cache.enabled) return `Cache off: ${cache.reason}`;
+  if (!cache.enabled)
+    return `warning: the build cache is off: ${cache.reason}; the build ran without it`;
   const total = cache.hits + cache.misses;
   return `Reused ${cache.hits} of ${total} quer${total === 1 ? "y" : "ies"} from ${cache.dir}/`;
 }

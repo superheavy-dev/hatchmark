@@ -109,9 +109,12 @@ changed. `hatchmark init` adds `.hatchmark/` to `.gitignore`.
   entry is ignored and rewritten.
 - Each build removes the entries it did not use, so the cache holds the last build's results.
   Deleting `.hatchmark/cache/` is always safe.
-- The cache turns itself off (and says why in `cache.reason`) when `.hatchmark` or any
-  directory under it that the cache uses is a symbolic link. When an entry cannot be written or removed (a read-only directory,
-  a full disk), build still succeeds and simply keeps fewer entries.
+- The cache is best effort: it never fails a build or changes its output. When `.hatchmark` or
+  a directory under it that the cache uses is a symbolic link, unreadable or unwritable, or when
+  copying a data file, writing an entry or removing an unused one fails, the cache turns off for
+  the rest of the command. The build continues as with `--no-cache`, prints one warning, and
+  reports `"enabled": false` with the reason in `cache.reason`; `explain` shows such queries as
+  `off`.
 
 `hatchmark explain --dashboard <name> --block <id>` lists each query's cache status after its SQL:
 `hit` with the time the entry was stored, `stale` with what changed since (`data` with the file,

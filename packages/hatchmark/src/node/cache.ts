@@ -1,6 +1,16 @@
 import { createHash, randomUUID } from "node:crypto";
 import { constants, createReadStream } from "node:fs";
-import { copyFile, lstat, mkdir, readdir, readFile, rename, rm } from "node:fs/promises";
+import {
+  access,
+  copyFile,
+  lstat,
+  mkdir,
+  readdir,
+  readFile,
+  rename,
+  rm,
+  stat,
+} from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { DuckDBInstance } from "@duckdb/node-api";
@@ -50,9 +60,13 @@ import { VERSION } from "../version.js";
  * Raw SQL metrics (type "sql") are never cached: their SQL can read the clock, other files or
  * anything else DuckDB reaches, which no key can fingerprint, so their queries always run.
  *
- * The cache is skipped (every query runs on the project's own files) when .hatchmark, or any
- * directory under it that the cache uses, is a symbolic link or not a directory, or when a data
- * file cannot be copied (it is missing, or outside the project). Failing to write or sweep entries
+ * Best effort. The cache never fails a command and never changes its output. When .hatchmark or
+ * any directory under it that the cache uses is a symbolic link, not a directory or not
+ * accessible, or when reading the snapshot, writing an entry or sweeping fails, the cache turns
+ * off for the rest of the command (stats.enabled false, stats.reason says why, and build prints
+ * one warning) and every remaining query runs on the project's own files, as with --no-cache. A
+ * query whose data file is missing or outside the project runs uncached, so the executor reports
+ * it exactly as --no-cache does. Failing to write or sweep entries
  * (a read-only directory, a full disk) never fails the build; those entries are just not kept.
  */
 
@@ -174,14 +188,29 @@ const CACHE_DIRS = [KIND_DIR.query, KIND_DIR.horizon, "tmp"];
  * Why a directory under .hatchmark cannot be used, or undefined: .hatchmark and every existing
  * step down to it must be a real directory, never a symbolic link.
  */
-async function unsafeDir(root: string, under: string): Promise<string | undefined> {
+async function unsafeDir(root: string, under: string, writing = true): Promise<string | undefined> {
   let at = root;
   for (const part of [".hatchmark", ...under.split("/")]) {
     at = path.join(at, part);
-    const info = await lstat(at).catch(() => undefined);
-    if (info === undefined) return undefined;
+    let info: Awaited<ReturnType<typeof lstat>>;
+    try {
+      info = await lstat(at);
+    } catch (error) {
+      const code = (error as NodeJS.ErrnoException).code;
+      if (code === "ENOENT") return undefined;
+      return `${path.relative(root, at)} cannot be read (${code ?? String(error)})`;
+    }
     if (info.isSymbolicLink() || !info.isDirectory()) {
-      return `${path.relative(root, at)} is not a real directory, so the build cache is off`;
+      return `${path.relative(root, at)} is not a real directory`;
+    }
+    const needed = constants.R_OK | constants.X_OK | (writing ? constants.W_OK : 0);
+    if (
+      !(await access(at, needed).then(
+        () => true,
+        () => false,
+      ))
+    ) {
+      return `${path.relative(root, at)} is not ${writing ? "readable and writable" : "readable"}`;
     }
   }
   return undefined;
@@ -226,11 +255,18 @@ export async function createCachedExecutor(options: {
 }): Promise<CachedExecutor> {
   const { root, config } = options;
   const stats: CacheStats = { enabled: true, dir: CACHE_DIR, hits: 0, misses: 0, written: 0 };
-  let off: string | undefined;
-  for (const under of CACHE_DIRS) off ??= await unsafeDir(root, under);
-  if (off !== undefined) {
+  /** Turns the cache off for the rest of this command, keeping the first reason. */
+  const turnOff = (reason: string) => {
+    if (!stats.enabled) return;
     stats.enabled = false;
-    stats.reason = off;
+    stats.reason = reason;
+  };
+  const failure = (doing: string, error: unknown) =>
+    `${doing} failed (${(error as NodeJS.ErrnoException).code ?? (error instanceof Error ? error.message : String(error))})`;
+  for (const under of CACHE_DIRS) {
+    if (options.readOnly && under === "tmp") continue;
+    const unsafe = await unsafeDir(root, under, !options.readOnly);
+    if (unsafe !== undefined) turnOff(unsafe);
   }
   const instance = await DuckDBInstance.create(":memory:");
   const connection = await instance.connect();
@@ -266,11 +302,17 @@ export async function createCachedExecutor(options: {
         }
         const original = path.join(root, ...file.split("/"));
         if (!snapshotting) return { source, file, ...(await hashFile(original)) };
+        await stat(original);
         const copy = path.join(snapshot, ...file.split("/"));
-        snapshotted = true;
-        await mkdir(path.dirname(copy), { recursive: true });
-        await copyFile(original, copy, constants.COPYFILE_FICLONE | constants.COPYFILE_EXCL);
-        return { source, file, ...(await hashFile(copy)) };
+        try {
+          snapshotted = true;
+          await mkdir(path.dirname(copy), { recursive: true });
+          await copyFile(original, copy, constants.COPYFILE_FICLONE | constants.COPYFILE_EXCL);
+          return { source, file, ...(await hashFile(copy)) };
+        } catch (error) {
+          turnOff(failure(`copying ${file} into .hatchmark/tmp`, error));
+          throw error;
+        }
       })();
       fingerprints.set(file, found);
     }
@@ -423,7 +465,11 @@ export async function createCachedExecutor(options: {
       });
       appender.closeSync();
       await mkdir(target, { recursive: true });
-      if ((await unsafeDir(root, KIND_DIR[entry.kind])) !== undefined) return;
+      const unsafe = await unsafeDir(root, KIND_DIR[entry.kind]);
+      if (unsafe !== undefined) {
+        turnOff(unsafe);
+        return;
+      }
       const final = path.join(target, entryName(entry.id, entry.key));
       const fresh = `${final}.${randomUUID()}.tmp`;
       await connection.run(
@@ -561,19 +607,28 @@ export async function createCachedExecutor(options: {
     stats: () => ({ ...stats }),
     async close() {
       try {
-        if (!options.readOnly && stats.enabled) {
-          for (const entry of pending) await write(entry).catch(() => {});
+        for (const entry of pending) {
+          if (options.readOnly || !stats.enabled) break;
+          await write(entry).catch((error) => turnOff(failure("writing a cache entry", error)));
         }
-        if (!options.readOnly && options.sweep && stats.enabled) {
-          for (const kind of ["query", "horizon"] as const) {
-            if ((await unsafeDir(root, KIND_DIR[kind])) !== undefined) continue;
-            const target = entryDir(kind);
-            for (const name of await readdir(target).catch(() => [] as string[])) {
+        for (const kind of ["query", "horizon"] as const) {
+          if (options.readOnly || !options.sweep || !stats.enabled) break;
+          const unsafe = await unsafeDir(root, KIND_DIR[kind]);
+          if (unsafe !== undefined) {
+            turnOff(unsafe);
+            break;
+          }
+          const target = entryDir(kind);
+          try {
+            for (const name of await readdir(target).catch((error) => {
+              if ((error as NodeJS.ErrnoException).code === "ENOENT") return [] as string[];
+              throw error;
+            })) {
               const file = path.join(target, name);
-              if (name.endsWith(".parquet") && !used.has(file)) {
-                await rm(file, { force: true }).catch(() => {});
-              }
+              if (name.endsWith(".parquet") && !used.has(file)) await rm(file, { force: true });
             }
+          } catch (error) {
+            turnOff(failure("removing unused cache entries", error));
           }
         }
       } finally {
