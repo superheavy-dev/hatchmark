@@ -34,7 +34,7 @@ const jsonSource = z.strictObject({
 
 export const sourceSchema = z
   .discriminatedUnion("type", [csvSource, parquetSource, jsonSource])
-  .meta({ description: "A table read from a file in the project." });
+  .meta({ id: "Source", description: "A table read from a file in the project." });
 export type Source = z.infer<typeof sourceSchema>;
 
 const supported = (key: "timeZone"): Set<string> => new Set(Intl.supportedValuesOf(key));

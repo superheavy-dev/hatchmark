@@ -13,6 +13,18 @@ describe("committed JSON Schemas", () => {
     });
   }
 
+  for (const kind of Object.keys(SCHEMA_FILES) as SpecKind[]) {
+    it(`${SCHEMA_FILES[kind]} names every definition (name the schema with .meta({ id }))`, () => {
+      const schema = jsonSchema(kind);
+      const text = JSON.stringify(schema);
+      expect(text).not.toMatch(/__schema|__shared|#\/\$defs\/schema\d/);
+      const names = Object.keys((schema.$defs ?? {}) as Record<string, unknown>);
+      for (const name of names) expect(name).toMatch(/^[A-Z][A-Za-z0-9]*$/);
+      const refs = [...text.matchAll(/"\$ref":"#\/\$defs\/([^"]+)"/g)].map((m) => m[1]);
+      for (const ref of refs) expect(names).toContain(ref);
+    });
+  }
+
   it("closes every object so typos are rejected by editors too", () => {
     const text = JSON.stringify(jsonSchema("dashboard"));
     const objects = text.match(/"type":"object"/g)?.length ?? 0;
