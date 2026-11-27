@@ -111,6 +111,16 @@ describe("hatchmark init and check", () => {
     const codes = failed.json().diagnostics.map((d: { code: string }) => d.code);
     expect(codes).toContain("HM4011");
     expect(codes).not.toContain("HM4040");
+    await writeFile(path.join(cwd, "shop/data/orders.csv"), csv);
+    await writeFile(
+      path.join(cwd, "shop/dashboards/broken.yaml"),
+      "title: Broken\nblocks:\n  - type: kpi\n    metric: nope\n",
+    );
+    const scoped = await cli(["check", "--cwd", "shop", "dashboards/sales.yaml", "--json"], {
+      cwd,
+    });
+    expect(scoped.code).toBe(0);
+    expect(scoped.json().diagnostics.map((d: { code: string }) => d.code)).not.toContain("HM4040");
   });
 
   it("writes the same bytes every time", async () => {

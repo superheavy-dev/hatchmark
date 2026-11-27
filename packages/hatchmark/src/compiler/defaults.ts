@@ -1,5 +1,6 @@
 import { type Diagnostic, docsCommand } from "../diagnostics/index.js";
 import {
+  type Anchors,
   type Block,
   type Dashboard,
   DEFAULT_PERIOD,
@@ -8,8 +9,10 @@ import {
   projectAnchors,
   type RangeSpec,
   type ResolvedGrain,
+  resolveGrain,
   type SpecFile,
 } from "../spec/index.js";
+import { shownGrain } from "./planner.js";
 import { bucketStart, resolveRange } from "./windows.js";
 
 /**
@@ -33,8 +36,9 @@ export function explainDefaults(project: Project): Diagnostic[] {
       );
     }
     const asOf = (dashboard.period ?? DEFAULT_PERIOD).asOf;
-    const range = shownRange(dashboard);
-    const chosen = dashboard.filters?.find((f) => f.type === "grain")?.default;
+    const anchors = projectAnchors(project.config.spec);
+    const shownRange = firstRange(dashboard);
+    const bounded = ranges(dashboard).some((r) => r !== "all_time");
     dashboard.blocks.forEach((block, index) => {
       const grains = timeGrains(block);
       if (grains.length === 0) return;
@@ -43,21 +47,24 @@ export function explainDefaults(project: Project): Diagnostic[] {
         const own = typeof g === "object" && g.anchor !== undefined;
         if ((unit === "week" || unit === "quarter" || unit === "year") && !own) anchored.add(unit);
       }
-      const shown =
-        chosen !== undefined && grains.some((g) => same(g, chosen)) ? chosen : (grains[0] as Grain);
+      const shown = shownGrain(
+        { spec: dashboard, anchors },
+        grains[0] as Grain,
+        "grains" in block ? block.grains : undefined,
+      );
       const pointer = `/blocks/${index}/grain`;
-      const edged = unitOf(shown) === "day" ? grains.find((g) => unitOf(g) !== "day") : shown;
-      if (
-        !("edges" in block && block.edges !== undefined) &&
-        edged !== undefined &&
-        range !== "all_time"
-      ) {
-        const unit = unitOf(edged);
+      const edged =
+        shown.unit === "day"
+          ? grains.map((g) => resolveGrain(g, anchors)).find((g) => g.unit !== "day")
+          : shown;
+      if (!("edges" in block && block.edges !== undefined) && edged !== undefined && bounded) {
+        const unit = edged.unit;
+        const dated = shown.unit === "day" ? undefined : snapped(anchors, asOf, shownRange, edged);
         out.push(
           note(
             file,
             pointer,
-            `uses edges: snap: ${snapped(project, asOf, range, edged) ?? `the first ${unit} starts at the start of the ${unit} that holds the range start`}`,
+            `uses edges: snap: ${dated ?? `the first ${unit} starts at the start of the ${unit} that holds the range start`}`,
             "set edges: clip to start exactly at the range; edges: snap keeps the default and silences this note",
           ),
         );
@@ -67,7 +74,7 @@ export function explainDefaults(project: Project): Diagnostic[] {
           note(
             file,
             pointer,
-            `uses incomplete: mark: a ${unitOf(shown)} the data doesn't fully cover is marked in progress`,
+            `uses incomplete: mark: a ${shown.unit} the data doesn't fully cover is marked in progress`,
             "set incomplete: hide to leave such buckets out, or show to draw them as complete; incomplete: mark keeps the default and silences this note",
           ),
         );
@@ -108,7 +115,9 @@ export function explainDefaults(project: Project): Diagnostic[] {
         project.config,
         "/name",
         "uses the default year anchor: years start on Jan 1",
-        `set anchors: {year: ${example}} for a year from ${monthDay(example)}${quarter === undefined ? "" : ", or another quarter start"}, or a block's grain: {unit: year, anchor: ${example}}; anchors: {year: 01-01} keeps the default and silences this note`,
+        quarter === undefined
+          ? `set anchors: {year: ${example}} for a year from ${monthDay(example)}, or a block's grain: {unit: year, anchor: ${example}}; anchors: {year: 01-01} keeps the default and silences this note`
+          : `set anchors: {year: ${example}} for a year from ${monthDay(example)}, or another quarter start; a block's grain: {unit: year, anchor: 01-01} keeps years from Jan 1 and silences this note`,
       ),
     );
   }
@@ -136,10 +145,14 @@ function same(a: Grain, b: Grain): boolean {
   return JSON.stringify(a) === JSON.stringify(b);
 }
 
-function shownRange(dashboard: Dashboard): RangeSpec {
+function firstRange(dashboard: Dashboard): RangeSpec {
   const filter = dashboard.filters?.find((f) => f.type === "period");
-  if (filter !== undefined) return filter.default;
-  return (dashboard.period ?? DEFAULT_PERIOD).range;
+  return filter?.default ?? (dashboard.period ?? DEFAULT_PERIOD).range;
+}
+
+function ranges(dashboard: Dashboard): RangeSpec[] {
+  const filter = dashboard.filters?.find((f) => f.type === "period");
+  return filter?.options ?? [(dashboard.period ?? DEFAULT_PERIOD).range];
 }
 
 function timeGrains(block: Block): Grain[] {
@@ -149,20 +162,12 @@ function timeGrains(block: Block): Grain[] {
 }
 
 function snapped(
-  project: Project,
+  anchors: Anchors,
   asOf: string,
   range: RangeSpec,
-  grain: Grain,
+  grain: ResolvedGrain,
 ): string | undefined {
-  if (!/^\d{4}-\d{2}-\d{2}$/.test(asOf)) return undefined;
-  const anchors = projectAnchors(project.config.spec);
-  const unit = unitOf(grain);
-  const anchor = typeof grain === "object" ? grain.anchor : undefined;
-  const resolved = (
-    unit === "day" || unit === "month"
-      ? { unit }
-      : { unit, anchor: anchor ?? (unit === "week" ? anchors.week : anchors[unit]) }
-  ) as ResolvedGrain;
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(asOf) || range === "all_time") return undefined;
   let bounds: ReturnType<typeof resolveRange>;
   try {
     bounds = resolveRange(range, "none", asOf, anchors);
@@ -170,9 +175,9 @@ function snapped(
     return undefined;
   }
   if (bounds?.kind !== "bounded") return undefined;
-  const start = bucketStart(bounds.start, resolved);
+  const start = bucketStart(bounds.start, grain);
   if (start === bounds.start) return undefined;
-  return `the first ${unit} starts on ${day(start, unit === "week")}, before the range starts on ${day(bounds.start, false)}`;
+  return `the first ${grain.unit} starts on ${day(start, grain.unit === "week")}, before the range starts on ${day(bounds.start, false)}`;
 }
 
 function monthDay(md: string): string {

@@ -16,26 +16,35 @@ const PERIOD = { asOf: "latest_data", range: "last_12_months", compare: "none" }
 
 function notes(
   blocks: unknown[],
-  options: { period?: unknown; config?: unknown; filters?: boolean } = {},
+  options: { period?: unknown; config?: unknown; filters?: boolean | unknown[] } = {},
 ) {
   const d = dashboard(blocks, "period" in options ? options.period : PERIOD);
   const project = projectFrom({
     config: options.config ?? CONFIG,
     dashboards: {
-      d: options.filters
-        ? {
-            ...d,
-            filters: [
-              {
-                type: "period",
-                id: "period",
-                options: ["last_30_days", "last_90_days"],
-                default: "last_90_days",
-              },
-              { type: "grain", id: "grain", options: ["day", "week", "month"], default: "month" },
-            ],
-          }
-        : d,
+      d:
+        options.filters === undefined || options.filters === false
+          ? d
+          : {
+              ...d,
+              filters:
+                options.filters === true
+                  ? [
+                      {
+                        type: "period",
+                        id: "period",
+                        options: ["last_30_days", "last_90_days"],
+                        default: "last_90_days",
+                      },
+                      {
+                        type: "grain",
+                        id: "grain",
+                        options: ["day", "week", "month"],
+                        default: "month",
+                      },
+                    ]
+                  : options.filters,
+            },
     },
   });
   expect(checkReferences(project).filter((d) => d.severity !== "note")).toEqual([]);
@@ -199,8 +208,48 @@ describe("check explains the defaults it applies (HM4040)", () => {
     expect(ds.map((d) => [d.message, d.help])).toEqual([
       [
         "uses the default year anchor: years start on Jan 1",
-        "set anchors: {year: 02-01} for a year from Feb 1, or another quarter start, or a block's grain: {unit: year, anchor: 02-01}; anchors: {year: 01-01} keeps the default and silences this note",
+        "set anchors: {year: 02-01} for a year from Feb 1, or another quarter start; a block's grain: {unit: year, anchor: 01-01} keeps years from Jan 1 and silences this note",
       ],
     ]);
+  });
+
+  it("matches the grain filter's default the way the planner does, anchors included", () => {
+    const ds = notes(
+      [
+        {
+          type: "line",
+          metrics: ["revenue"],
+          grain: "day",
+          grains: ["day", "month", { unit: "week", anchor: "monday" }],
+        },
+      ],
+      {
+        period: { asOf: "2026-10-31", range: "last_30_days", compare: "none" },
+        filters: [
+          { type: "grain", id: "grain", options: ["day", "week", "month"], default: "week" },
+        ],
+      },
+    );
+    expect(ds.map((d) => d.message)).toEqual([
+      "uses edges: snap: the first week starts on Mon Sep 28, before the range starts on Oct 2",
+      "uses incomplete: mark: a week the data doesn't fully cover is marked in progress",
+    ]);
+  });
+
+  it("explains edges when a bounded preset exists, even if the page opens on all_time", () => {
+    const ds = notes([{ type: "line", metrics: ["revenue"], grain: "month" }], {
+      period: { asOf: "2026-10-31", range: "all_time", compare: "none" },
+      filters: [
+        {
+          type: "period",
+          id: "period",
+          options: ["all_time", "last_30_days"],
+          default: "all_time",
+        },
+      ],
+    });
+    expect(ds[0]?.message).toBe(
+      "uses edges: snap: the first month starts at the start of the month that holds the range start",
+    );
   });
 });

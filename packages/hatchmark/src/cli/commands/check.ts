@@ -73,6 +73,7 @@ export async function check(
     file === CONFIG_FILE ||
     prefixes.some((p) => p === "" || file === p || file.startsWith(`${p}/`));
   let diagnostics = [...parseDiagnostics(project), ...loadDiagnostics, ...checkReferences(project)];
+  const projectErrors = diagnostics.some((d) => d.severity === "error");
   diagnostics.push(...explainDefaults(project));
   diagnostics = diagnostics.filter((d) => selected(d.file));
 
@@ -114,7 +115,7 @@ export async function check(
       await executor.close();
     }
   }
-  if (diagnostics.some((d) => d.severity === "error"))
+  if (projectErrors || diagnostics.some((d) => d.severity === "error"))
     diagnostics = diagnostics.filter((d) => d.code !== "HM4040");
   const report = createReport(diagnostics);
   const quietOk = ctx.quiet && report.ok && report.warning_count === 0;
