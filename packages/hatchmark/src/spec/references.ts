@@ -24,7 +24,7 @@ import {
   PIE_READABLE_LIMIT,
 } from "./dashboard.js";
 import { ENTITY_NAMES, type Expr, exprRefs, parseExpr, shapeError } from "./expr.js";
-import { addPropertyFix, removeItemFix, replaceValueFix } from "./fixes.js";
+import { addPropertyFix, removeItemFix, replaceValueFix, yamlText } from "./fixes.js";
 import { filterTables, metricSources, readSources, sourceTables } from "./graph.js";
 import { aloneInRow, MIN_CHART_SPAN } from "./layout.js";
 import type { Filter, Metric, TableMetric } from "./metric.js";
@@ -665,7 +665,7 @@ function checkSnapshot(r: Reporter, metric: TableMetric, configured: Record<stri
   const base = declared?.type === "lookup" ? configured[declared.from] : declared;
   if (base === undefined || base.type === "lookup" || base.snapshot === undefined) return;
   const column = base.snapshot;
-  const help = `read one snapshot date at a time: time: ${column} with over_time: last (or "first", "avg", "min", "max")`;
+  const help = `read one snapshot date at a time: time: ${yamlText(column)} with over_time: last (or "first", "avg", "min", "max")`;
   const report = (pointer: string, message: string, severity?: Severity) =>
     r.report("HM4007", pointer, `source "${metric.table}" is a snapshot table, ${message}`, {
       label: "every snapshot would count again",
@@ -766,7 +766,7 @@ function checkFormatCurrency(
   if (typeof derived !== "string" || shown === undefined || shown === derived) return;
   r.report("HM4005", "/format", `the values are in ${derived}, but the format shows ${shown}`, {
     label: "a format changes the label, not the currency",
-    help: `set currency: ${derived} in format, or convert the operands to ${shown}`,
+    help: `set currency: ${yamlText(derived)} in format, or convert the operands to ${shown}`,
   });
 }
 

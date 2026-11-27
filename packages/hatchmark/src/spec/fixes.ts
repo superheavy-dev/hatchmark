@@ -1,17 +1,19 @@
-import { stringify } from "yaml";
+import { parse, stringify } from "yaml";
 import type { Applicability, Fix, SpecDocument } from "../diagnostics/index.js";
 
 /** A value as YAML flow text that reads back as the same value at any key, list item or flow position. */
 export function yamlText(value: unknown): string {
-  if (typeof value === "string" && /[,[\]{}\r\n]/.test(value)) return JSON.stringify(value);
+  const json = JSON.stringify(value);
+  if (typeof value === "string" && /[,[\]{}\r\n]/.test(value)) return json;
+  const options = { version: "1.2", schema: "core" } as const;
   const text = stringify(value, {
-    version: "1.2",
-    schema: "core",
+    ...options,
     collectionStyle: "flow",
     flowCollectionPadding: false,
     lineWidth: 0,
-  }).trimEnd();
-  return /[\r\n]/.test(text) ? JSON.stringify(value) : text;
+  }).replace(/\n$/, "");
+  if (/[\r\n]/.test(text)) return json;
+  return JSON.stringify(parse(text, options)) === json ? text : json;
 }
 
 export function replaceValueFix(
