@@ -545,16 +545,16 @@ describe("window bounds at a midnight that a fall-back repeats, against DuckDB",
     expect(block<KpiData>("orders").value).toBe(value);
   });
 
-  it("keeps a day bucket read only before the later midnight, partial, under mark and show", async () => {
+  it("reads a horizon at the later midnight as the end of the day before, in charts and KPIs alike", async () => {
     const data: [string, number][] = [
       ["2024-11-02T12:00:00Z", 2],
       ["2024-11-03T04:59:59.999999Z", 4],
     ];
-    const nov3 = await sum(
-      "CAST(timezone('America/Havana', ts) AS DATE) = DATE '2024-11-03'",
+    const total = await sum(
+      "ts >= timezone('America/Havana', TIMESTAMP '2024-01-01') AND ts < timezone('America/Havana', TIMESTAMP '2024-11-03')",
       data,
     );
-    expect(nov3).toBe(4);
+    expect(total).toBe(6);
     const built = async (incomplete: string) =>
       dashboard({
         timezone: "America/Havana",
@@ -562,14 +562,28 @@ describe("window bounds at a midnight that a fall-back repeats, against DuckDB",
         period: { asOf: "latest_data", range: { last: 2, unit: "day" }, compare: "none" },
         blocks: [{ type: "line", id: "trend", metrics: ["orders"], grain: "day", incomplete }],
       });
-    const mark = await built("mark");
-    const series = mark.block<LineData>("trend").series[0];
-    expect(series?.values).toEqual([2, nov3]);
-    expect(series?.partial?.map((p) => p.index)).toEqual([1]);
-    const show = await built("show");
-    expect(show.block<LineData>("trend").series[0]?.values).toEqual([2, nov3]);
-    expect(show.diagnostics.map((d) => d.code)).toContain("HM4014");
-    const hide = await built("hide");
-    expect(hide.block<LineData>("trend").series[0]?.values).toEqual([2]);
+    for (const incomplete of ["mark", "show"]) {
+      const { data: page, block, diagnostics } = await built(incomplete);
+      expect(page?.asOf).toBe("2024-11-02");
+      const line = block<LineData>("trend");
+      expect(line.axis.kind === "time" ? line.axis.buckets : []).toEqual([
+        "2024-11-01",
+        "2024-11-02",
+      ]);
+      expect(line.series[0]?.values).toEqual([0, 2]);
+      expect(line.series[0]?.partial).toBeUndefined();
+      expect(diagnostics.map((d) => d.code)).not.toContain("HM4014");
+    }
+    const ytd = await dashboard({
+      timezone: "America/Havana",
+      sources: { orders: rows(...data) },
+      period: { asOf: "latest_data", range: "year_to_date", compare: "none" },
+      blocks: [{ type: "kpi", id: "orders", metric: "orders" }],
+    });
+    expect(ytd.block<KpiData>("orders")).toMatchObject({
+      value: total,
+      current: { start: "2024-01-01", end: "2024-11-03" },
+    });
+    expect(ytd.block<KpiData>("orders").current?.endAt).toBeUndefined();
   });
 });

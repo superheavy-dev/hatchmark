@@ -101,5 +101,14 @@ export function isRepeated(wall: bigint, timezone: string): boolean {
   return readings(wall, timezone).shown.length > 1;
 }
 
+/**
+ * The local wall time of the last microsecond read before an instant. An instant whose local wall
+ * time is midnight ends the day before, even when a fall-back repeats that midnight.
+ */
+export function lastWallBefore(us: bigint, timezone: string): bigint {
+  const wall = toLocal(us, timezone);
+  return wall % DAY_US === 0n ? wall - 1n : toLocal(us - 1n, timezone);
+}
+
 export const describeInstant = (us: bigint, timezone: string) =>
   formatWall(toLocal(us, timezone)).slice(0, 16).replace("T", " ");

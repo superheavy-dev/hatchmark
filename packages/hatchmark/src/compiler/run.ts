@@ -22,6 +22,7 @@ import {
   formatInstant,
   formatWall,
   fromLocal,
+  lastWallBefore,
   parseInstant,
   toLocal,
 } from "./instants.js";
@@ -201,7 +202,7 @@ export async function executionContext(
     instant = startOf(nextDay(asOfRule), tz);
     fixedAsOf = asOfRule;
   }
-  const lastDay = toLocal(instant - 1n, tz);
+  const lastDay = lastWallBefore(instant, tz);
   if (
     lastDay < parseInstant(SUPPORTED_DATES.first) ||
     lastDay >= parseInstant(nextDay(SUPPORTED_DATES.last))
@@ -360,7 +361,10 @@ export async function executionContext(
               const start = bounds.kind === "bounded" ? local(bounds.start) : undefined;
               if (start !== undefined && at <= start) return false;
               const end = bounds.end === undefined ? at : local(bounds.end);
-              const last = formatWall(end < at ? end - 1n : toLocal(horizon - 1n, tz)).slice(0, 10);
+              const last = formatWall(end < at ? end - 1n : lastWallBefore(horizon, tz)).slice(
+                0,
+                10,
+              );
               const bucket = bucketStart(last, grain);
               return (
                 (start !== undefined && start > parseInstant(bucket)) ||

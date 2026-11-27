@@ -34,7 +34,7 @@ import {
   type TimeAxis,
   type Value,
 } from "./dashboard-data.js";
-import { formatWall, parseInstant, toLocal } from "./instants.js";
+import { formatWall, lastWallBefore, parseInstant, toLocal } from "./instants.js";
 import { rangeKey, rangeName } from "./periods.js";
 import type {
   BlockPlan,
@@ -139,14 +139,22 @@ function compareValues(a: Value, b: Value, order: "asc" | "desc"): number {
 const wallAt = (bound: string, timezone: string) =>
   formatWall(toLocal(parseInstant(bound), timezone));
 
+const atMidnight = (wall: string) => wall.endsWith("T00:00:00.000000");
+
+/** The exclusive end date of the days a wall-clock end reaches into. */
+const dayEnding = (wall: string) =>
+  atMidnight(wall) ? wall.slice(0, 10) : nextDay(wall.slice(0, 10));
+
 function span(bounds: WindowBounds | undefined, timezone: string): DateSpan | undefined {
   if (bounds?.kind !== "bounded") return undefined;
   const { start, end } = bounds;
-  const startAt = start.endsWith("Z") ? wallAt(start, timezone) : undefined;
-  const endAt = end.endsWith("Z") ? wallAt(end, timezone) : undefined;
+  const startWall = start.endsWith("Z") ? wallAt(start, timezone) : undefined;
+  const endWall = end.endsWith("Z") ? wallAt(end, timezone) : undefined;
+  const startAt = startWall !== undefined && !atMidnight(startWall) ? startWall : undefined;
+  const endAt = endWall !== undefined && !atMidnight(endWall) ? endWall : undefined;
   return {
-    start: startAt === undefined ? start : startAt.slice(0, 10),
-    end: endAt === undefined ? end : nextDay(endAt.slice(0, 10)),
+    start: startWall === undefined ? start : startWall.slice(0, 10),
+    end: endWall === undefined ? end : dayEnding(endWall),
     ...(startAt !== undefined ? { startAt } : {}),
     ...(endAt !== undefined ? { endAt } : {}),
   };
@@ -287,7 +295,7 @@ class Assembler {
     const clip = clipFrom === undefined ? undefined : parseInstant(clipFrom);
     if (at === undefined && clip === undefined) return series;
     const horizon = at === undefined ? undefined : toLocal(at, this.context.timezone);
-    const lastRead = at === undefined ? undefined : toLocal(at - 1n, this.context.timezone);
+    const lastRead = at === undefined ? undefined : lastWallBefore(at, this.context.timezone);
     const partial: PartialBucket[] = [];
     const values = series.values.map((value, index) => {
       const start = parseInstant(buckets[index] ?? "");
@@ -411,15 +419,19 @@ class Assembler {
       .map((keys) => keys[0])
       .filter((k): k is string => typeof k === "string");
     const last = [this.context.asOf, ...observed].sort().at(-1) ?? this.context.asOf;
-    const endAt = bounds?.end?.endsWith("Z") ? wallAt(bounds.end, timezone) : undefined;
-    const end = nextDay(endAt?.slice(0, 10) ?? last);
+    const endWall = bounds?.end?.endsWith("Z") ? wallAt(bounds.end, timezone) : undefined;
+    const end = endWall === undefined ? nextDay(last) : dayEnding(endWall);
     const start = observed[0] ?? end;
     const buckets = timeBuckets(start, end, grain);
     return {
       kind: "time",
       grain: grain.unit,
       buckets,
-      window: { start: buckets[0] ?? start, end, ...(endAt !== undefined ? { endAt } : {}) },
+      window: {
+        start: buckets[0] ?? start,
+        end,
+        ...(endWall !== undefined && !atMidnight(endWall) ? { endAt: endWall } : {}),
+      },
     };
   }
 
