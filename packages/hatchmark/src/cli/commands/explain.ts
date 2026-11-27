@@ -12,7 +12,13 @@ import {
   isDiagnosticCode,
   renderHuman,
 } from "../../diagnostics/index.js";
-import { createDuckDbExecutor, nodeProjectHost } from "../../node/index.js";
+import {
+  type CachedExecutor,
+  type CacheProbe,
+  createCachedExecutor,
+  createDuckDbExecutor,
+  nodeProjectHost,
+} from "../../node/index.js";
 import { blockId, loadProject, type Project, type ProjectConfig } from "../../spec/index.js";
 import type { CommandHelp } from "../help.js";
 import { type CommandContext, type CommandResult, EXIT } from "../io.js";
@@ -21,7 +27,8 @@ import { exitCodeFor } from "./check.js";
 
 export const explainHelp: CommandHelp = {
   name: "explain",
-  summary: "Explain a diagnostic code, or print the SQL a metric or a block runs.",
+  summary:
+    "Explain a diagnostic code, or print the SQL a metric or a block runs and whether build would reuse its cached result.",
   usage: "hatchmark explain <code> | <metric> | --dashboard <name> --block <id>",
   options: [
     { flag: "<code>", description: "A code such as HM2003, from check output." },
@@ -45,6 +52,9 @@ export type CreateSqlExecutor = (options: {
   config: ProjectConfig;
 }) => Promise<SqlExecutor & { close(): Promise<void> }>;
 
+/** An explained query with its build-cache status, when explain looked it up. */
+export type ExplainedWithCache = ExplainedQuery & { cache?: CacheProbe };
+
 /** The queries as SQL to read: a comment naming each query, then its SQL with values inlined. */
 export function renderQueries(queries: ExplainedQuery[]): string {
   return queries
@@ -53,6 +63,24 @@ export function renderQueries(queries: ExplainedQuery[]): string {
         `-- query ${q.id} on source "${q.source}"\n${printSql({ text: q.sql, params: q.params })};`,
     )
     .join("\n\n");
+}
+
+/** A query's build-cache status as one line, for the cache section after the SQL. */
+function cacheLine(id: string, cache: CacheProbe): string {
+  switch (cache.status) {
+    case "hit":
+      return `-- ${id}: hit, stored ${cache.stored_at}; build reuses it`;
+    case "stale": {
+      const what = (cache.changed ?? []).map((c) =>
+        c === "data" && cache.changed_files ? `data (${cache.changed_files.join(", ")})` : c,
+      );
+      return `-- ${id}: stale, ${what.join(", ")} changed since the entry stored ${cache.stored_at}; build recomputes it`;
+    }
+    case "miss":
+      return `-- ${id}: miss; build computes it`;
+    case "off":
+      return `-- ${id}: cache off${cache.reason ? `, ${cache.reason}` : ""}`;
+  }
 }
 
 export async function explain(
@@ -115,7 +143,12 @@ export async function explain(
       });
     }
   }
-  const executor = await createExecutor({ root: ctx.root, config: project.config.spec });
+  const executor = await createCachedExecutor({
+    root: ctx.root,
+    config: project.config.spec,
+    inner: await createExecutor({ root: ctx.root, config: project.config.spec }),
+    readOnly: true,
+  });
   try {
     return input !== undefined
       ? await metricSql(ctx, project, input, executor)
@@ -129,12 +162,13 @@ export async function explain(
  * The queries as a result. Errors print the report instead (exit 1 or 2). A block the planner
  * leaves out has no queries; its warnings are in diagnostics, and the exit code is 0 as for check.
  */
-function printed(
+async function printed(
   ctx: CommandContext,
   head: Record<string, unknown>,
   title: string,
   result: { queries?: ExplainedQuery[] | undefined; diagnostics: Diagnostic[] },
-): CommandResult {
+  executor: CachedExecutor,
+): Promise<CommandResult> {
   const report = createReport(result.diagnostics);
   if (report.error_count > 0) {
     return {
@@ -143,13 +177,20 @@ function printed(
       human: renderHuman(report, { color: ctx.color }),
     };
   }
-  const queries = result.queries ?? [];
+  const queries: ExplainedWithCache[] = [];
+  for (const query of result.queries ?? []) {
+    const cache = await executor.probe(query.id);
+    queries.push({ ...query, ...(cache !== undefined ? { cache } : {}) });
+  }
   const notes = report.warning_count > 0 ? renderHuman(report, { color: ctx.color }) : "";
   const body = queries.length > 0 ? renderQueries(queries) : "-- no queries";
+  const cached = queries.flatMap((q) => (q.cache ? [cacheLine(q.id, q.cache)] : []));
+  const cacheSection =
+    cached.length > 0 ? `-- build cache (.hatchmark/cache)\n${cached.join("\n")}` : "";
   return {
     exitCode: EXIT.ok,
     json: { format_version: "1", ...head, queries, diagnostics: report.diagnostics },
-    human: [`-- ${title}\n\n${body}`, notes].filter((s) => s !== "").join("\n\n"),
+    human: [`-- ${title}\n\n${body}`, cacheSection, notes].filter((s) => s !== "").join("\n\n"),
   };
 }
 
@@ -157,7 +198,7 @@ async function metricSql(
   ctx: CommandContext,
   project: Project,
   metric: string,
-  executor: SqlExecutor,
+  executor: CachedExecutor,
 ): Promise<CommandResult> {
   const result = await explainMetric(project, metric, executor, new Date());
   const { asOf } = result;
@@ -168,6 +209,7 @@ async function metricSql(
       ? `${metric} by month over last_12_months as of ${asOf}, with no dashboard filters`
       : `${metric}${result.queries?.length ? " over all rows" : ""}, with no dashboard filters`,
     result,
+    executor,
   );
 }
 
@@ -176,7 +218,7 @@ async function blockSql(
   project: Project,
   dashboard: string,
   block: string,
-  executor: SqlExecutor,
+  executor: CachedExecutor,
 ): Promise<CommandResult> {
   const { blocks, asOf, diagnostics } = await explainDashboard(
     project,
@@ -190,6 +232,7 @@ async function blockSql(
     { dashboard, block, ...(asOf !== undefined ? { as_of: asOf } : {}) },
     `block "${block}" of dashboard "${dashboard}"${asOf !== undefined ? ` as of ${asOf}` : ""}, with the filter defaults`,
     { queries: blocks?.[0]?.queries, diagnostics },
+    executor,
   );
 }
 

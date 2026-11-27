@@ -16,3 +16,6 @@ packages/hatchmark/NOTICE
 
 # Built by vite build (the browser runtime)
 packages/hatchmark/assets/runtime/
+
+# Build cache (hatchmark build)
+.hatchmark/

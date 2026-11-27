@@ -7,6 +7,7 @@ host. It never asks questions and prints one line of JSON when an agent runs it.
 hatchmark build            # writes outDir from hatchmark.json (dist by default)
 hatchmark build --out site # writes site/ instead, relative to --cwd
 hatchmark build --json     # one line of JSON on stdout
+hatchmark build --no-cache # run every query instead of reusing .hatchmark/cache/
 ```
 
 ## What it does
@@ -77,12 +78,39 @@ See [components/](components/) for each block type.
   "diagnostics": [],
   "out_dir": "dist",
   "pages": [{ "dashboard": "sales", "path": "dist/sales/index.html" }],
-  "files": 9
+  "files": 9,
+  "cache": { "enabled": true, "dir": ".hatchmark/cache", "hits": 24, "misses": 0, "written": 0 }
 }
 ```
 
-`index` is added when an index page was written. On errors the result is the diagnostic report
+`index` is added when an index page was written. `cache` counts the queries reused from the build
+cache (`hits`), the ones that ran (`misses`) and the entries written; it is absent with
+`--no-cache`. On errors the result is the diagnostic report
 described in [diagnostics.md](diagnostics.md) and nothing is written.
+
+## Build cache
+
+Build keeps every query result, and the latest date of every time column it measured, in
+`.hatchmark/cache/` as Parquet files, so the next build runs only the queries whose inputs
+changed. `hatchmark init` adds `.hatchmark/` to `.gitignore`.
+
+- A result is reused only when everything that decides it is unchanged: the query (its metric,
+  filters, grouping, window and the source's reader options in `hatchmark.json`), the as-of date,
+  time zone, week and year anchors and filter defaults, the contents of the data files it reads,
+  and the engine (the Hatchmark version, its query and executor code, and the DuckDB version).
+- Data files are compared by the SHA-256 of their contents, never by size or modification time,
+  so any changed byte runs the query again. A file that changes while a build runs is read again
+  at the end, and results read from it are not stored.
+- A cached build writes the same bytes as `hatchmark build --no-cache`. A damaged or unreadable
+  entry is ignored and rewritten.
+- Each build removes the entries it did not use, so the cache holds the last build's results.
+  Deleting `.hatchmark/cache/` is always safe.
+- The cache turns itself off (and says why in `cache.reason`) when `.hatchmark` or a directory
+  under it is a symbolic link.
+
+`hatchmark explain --dashboard <name> --block <id>` lists each query's cache status after its SQL:
+`hit` with the time the entry was stored, `stale` with what changed since (`data` with the file,
+`context`, `query` or `engine`), or `miss`.
 
 ## Exit codes
 
