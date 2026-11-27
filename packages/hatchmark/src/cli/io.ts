@@ -30,5 +30,9 @@ export interface CommandResult {
   exitCode: ExitCode;
   json: unknown;
   human: string;
-  printed?: boolean;
+}
+
+export interface PrintedResult {
+  exitCode: ExitCode;
+  printed: true;
 }

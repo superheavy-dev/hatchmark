@@ -1,7 +1,7 @@
 import { startDevServer } from "../../dev/server.js";
 import { renderHuman } from "../../diagnostics/index.js";
 import type { CommandHelp } from "../help.js";
-import { type CommandContext, type CommandResult, EXIT } from "../io.js";
+import { type CommandContext, type CommandResult, EXIT, type PrintedResult } from "../io.js";
 import { usageError } from "../usage.js";
 
 export const devHelp: CommandHelp = {
@@ -47,7 +47,7 @@ export async function dev(
   ctx: CommandContext,
   flags: { port?: string; host?: string; open: boolean },
   deps: DevDeps = defaultDeps,
-): Promise<CommandResult> {
+): Promise<CommandResult | PrintedResult> {
   const port = flags.port === undefined ? undefined : Number(flags.port);
   if (port !== undefined && !(Number.isInteger(port) && port >= 0 && port <= 65535)) {
     return usageError(
@@ -98,5 +98,5 @@ export async function dev(
   }
   await deps.stopped();
   await server.close();
-  return { exitCode: EXIT.ok, json: undefined, human: "", printed: true };
+  return { exitCode: EXIT.ok, printed: true };
 }
