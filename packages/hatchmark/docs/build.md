@@ -53,7 +53,7 @@ dist/
 - Header with the project name, dashboard title, the period ("Nov 2025 – Oct 2026 compared with
   Nov 2024 – Oct 2025 · USD"), the description, and the data date. Footer with the source files.
 - Consecutive `kpi` blocks form one KPI strip. Other blocks are cards in a 12-column grid, as
-  wide as their `span`. Line, area and bar charts are at least 3 columns wide (HM2018 warns when
+  wide as their `span`. Line, area and bar charts are at least 3 columns wide (HM2024 warns when
   `span` is smaller); a card that no longer fits beside the cards before it starts the next row.
 - Light and dark follow the reader's system setting. `?theme=dark` or `?theme=light` in the URL,
   or `data-theme="dark"` on the `<html>` element, overrides it.

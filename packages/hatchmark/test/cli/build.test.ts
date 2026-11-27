@@ -279,7 +279,7 @@ describe("hatchmark build", () => {
     }
   });
 
-  it("reports HM2018 for a chart narrower than 3 columns and still builds it", async () => {
+  it("reports HM2024 for a chart narrower than 3 columns and still builds it", async () => {
     const root = await project();
     const file = path.join(root, "dashboards/sales.json");
     const spec = JSON.parse(await readFile(file, "utf8"));
@@ -296,7 +296,7 @@ describe("hatchmark build", () => {
         .diagnostics,
     ).toContainEqual(
       expect.objectContaining({
-        code: "HM2018",
+        code: "HM2024",
         severity: "warning",
         pointer: `/blocks/${chart}/span`,
       }),

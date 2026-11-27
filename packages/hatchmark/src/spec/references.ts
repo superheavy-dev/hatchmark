@@ -940,7 +940,7 @@ function checkDashboard(project: Project, file: SpecFile<"dashboard">, out: Diag
       block.span < MIN_CHART_SPAN
     ) {
       r.report(
-        "HM2018",
+        "HM2024",
         `${base}/span`,
         `a ${block.type} chart needs at least ${MIN_CHART_SPAN} of the 12 columns, but this one has span ${block.span}`,
         {

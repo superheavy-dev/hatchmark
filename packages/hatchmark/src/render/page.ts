@@ -139,7 +139,7 @@ export function blockHeading(
 
 /**
  * The columns a chart card takes: its span, but never fewer than MIN_CHART_SPAN (check warns with
- * HM2018). CSS grid auto-placement moves the card to the next row when the widened card no longer
+ * HM2024). CSS grid auto-placement moves the card to the next row when the widened card no longer
  * fits beside the cards before it, so the layout stays a function of the spec alone.
  */
 function chartSpan(block: LineData | BarData): number {
