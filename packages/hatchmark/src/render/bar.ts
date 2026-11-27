@@ -236,10 +236,14 @@ export function renderBar(
           s.values.map((v) => (isNumber(v) ? formatValue(v, metric, locale, "compact") : "")),
         )
       : [totalText ?? []];
-    const valueWidth = Math.max(0, ...valueTexts.flat().map((t) => textWidth(t, valueStyle)));
     const hasNegative = ends.some((v) => v < 0);
-    const barLeft = labelWidth + 12 + (hasNegative ? valueWidth + VALUE_GAP : 0);
-    const barRight = size.width - valueWidth - VALUE_GAP;
+    const textWidthMax = Math.max(0, ...valueTexts.flat().map((t) => textWidth(t, valueStyle)));
+    const plotRoom = size.width - labelWidth - 12;
+    const labelRoom = (textWidthMax + VALUE_GAP) * (hasNegative ? 2 : 1);
+    const showValues = plotRoom - labelRoom >= plotRoom / 2;
+    const valueWidth = showValues ? textWidthMax : 0;
+    const barLeft = labelWidth + 12 + (hasNegative && showValues ? valueWidth + VALUE_GAP : 0);
+    const barRight = size.width - (showValues ? valueWidth + VALUE_GAP : 0);
     const shares =
       block.percent && !empty
         ? shareAxis(ends, barRight - barLeft, locale, SHARE_QUARTERS_WIDTH)
@@ -285,7 +289,7 @@ export function renderBar(
             : `<rect x="${r(x0)}" y="${r(cy + offset - thick / 2)}" width="${r(w)}" height="${thick}" rx="${ctx.theme.radius.bar}"${paint.attrs(seriesFill(k))}/>`,
         );
         if (markers[k]?.has(i)) marks.push(hollowPoint(ctx, seriesColor(k), scale(b), cy + offset));
-        if (grouped) {
+        if (grouped && showValues) {
           const text = (valueTexts[k] as string[])[i] as string;
           const neg = b < 0;
           parts.push(
@@ -297,7 +301,7 @@ export function renderBar(
           );
         }
       });
-      if (!grouped) {
+      if (!grouped && showValues) {
         const total = totals?.[i];
         if (isNumber(total)) {
           const end = stacked

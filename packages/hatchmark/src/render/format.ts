@@ -31,12 +31,16 @@ export function formatValue(
     return minus(
       numberFormat(locale, {
         style: "percent",
+        signDisplay: "negative",
         minimumFractionDigits: style === "axis" ? 0 : digits,
         maximumFractionDigits: digits,
       }).format(value),
     );
   }
-  const currency = f.type === "currency" ? { style: "currency", currency: f.currency } : {};
+  const currency = {
+    signDisplay: "negative",
+    ...(f.type === "currency" ? { style: "currency", currency: f.currency } : {}),
+  };
   const threshold = f.type === "currency" ? 1e5 : 1e6;
   const compact =
     style === "compact" ||
@@ -44,15 +48,22 @@ export function formatValue(
     (style === "headline" && (f.compact ?? Math.abs(value) >= threshold)) ||
     (style === "full" && f.compact === true);
   if (compact) {
-    return minus(
-      numberFormat(locale, {
-        ...currency,
-        notation: Math.abs(value) >= 1e15 ? "scientific" : "compact",
-        ...(style === "axis"
-          ? { minimumFractionDigits: 0, maximumFractionDigits: decimals ?? 1 }
-          : { maximumSignificantDigits: 3 }),
-      } as Intl.NumberFormatOptions).format(value),
-    );
+    const axisFraction = { minimumFractionDigits: 0, maximumFractionDigits: decimals ?? 1 };
+    const parts = numberFormat(locale, {
+      ...currency,
+      notation: Math.abs(value) >= 1e15 ? "scientific" : "compact",
+      ...(style === "axis" ? axisFraction : { maximumSignificantDigits: 3 }),
+    } as Intl.NumberFormatOptions).formatToParts(value);
+    if (parts.some((p) => p.type === "compact" || p.type === "exponentInteger")) {
+      return minus(parts.map((p) => p.value).join(""));
+    }
+    if (style === "axis") {
+      return minus(
+        numberFormat(locale, { ...currency, ...axisFraction } as Intl.NumberFormatOptions).format(
+          value,
+        ),
+      );
+    }
   }
   const fraction =
     decimals !== undefined
