@@ -491,6 +491,80 @@ describe("build cache", () => {
     },
   );
 
+  const extra = [".hatchmark", "cache", "cache/v1", "cache/v1/q", "cache/v1/h", "tmp"].flatMap(
+    (under) => (["0300", "file"] as const).map((how) => [under, how] as const),
+  );
+  it.each(extra)(
+    "with .hatchmark/%s as %s, build and explain succeed and match --no-cache (HAT-53 perms.mjs)",
+    async (under, how) => {
+      const root = await example();
+      await build(root, true);
+      await appendFile(
+        path.join(root, "data", "orders.csv"),
+        "999999,2026-11-03T10:00:00Z,C00001,Canada,Americas,Direct,Home,paid,10.00\n",
+      );
+      const dir = path.join(
+        root,
+        ...(under === ".hatchmark" ? [under] : [".hatchmark", ...under.split("/")]),
+      );
+      await mkdir(dir, { recursive: true });
+      if (how === "file") {
+        await rm(dir, { recursive: true, force: true });
+        await writeFile(dir, "x");
+      } else {
+        await chmod(dir, 0o300);
+      }
+      try {
+        const oracle = await build(root, false);
+        const cached = await build(root, true);
+        expect(cached.code).toBe(0);
+        expect(cached.files).toEqual(oracle.files);
+        expect(cached.report.cache?.enabled).toBe(false);
+        const explained = await cliJson([
+          "explain",
+          "--cwd",
+          root,
+          "--dashboard",
+          "sales",
+          "--block",
+          "revenue",
+        ]);
+        expect(explained.code).toBe(0);
+      } finally {
+        if (how !== "file") await chmod(dir, 0o755);
+      }
+    },
+  );
+
+  it.each(["q", "h"])(
+    "with one %s entry file at mode 000, build and explain succeed and match --no-cache (HAT-53 perms.mjs)",
+    async (kind) => {
+      const root = await example();
+      await build(root, true);
+      const dir = path.join(root, ".hatchmark", "cache", "v1", kind);
+      const entry = path.join(dir, (await readdir(dir)).find((n) => n.endsWith(".parquet")) ?? "");
+      await chmod(entry, 0o000);
+      try {
+        const oracle = await build(root, false);
+        const cached = await build(root, true);
+        expect(cached.code).toBe(0);
+        expect(cached.files).toEqual(oracle.files);
+        const explained = await cliJson([
+          "explain",
+          "--cwd",
+          root,
+          "--dashboard",
+          "sales",
+          "--block",
+          "revenue",
+        ]);
+        expect(explained.code).toBe(0);
+      } finally {
+        await chmod(entry, 0o644).catch(() => {});
+      }
+    },
+  );
+
   it.each([0o000, 0o555])(
     "with an empty .hatchmark at mode %o, a first build succeeds and matches --no-cache",
     async (mode) => {
