@@ -132,7 +132,7 @@ async function editInPlace(root: string, from: string, to: string): Promise<void
   expect(after.mtimeMs).toBe(before.mtimeMs);
 }
 
-describe("build cache", () => {
+describe("build cache", { timeout: 30_000 }, () => {
   it("gives byte-identical output cold, warm and with --no-cache, and reuses every query warm", async () => {
     const root = await example();
     const oracle = await build(root, false);

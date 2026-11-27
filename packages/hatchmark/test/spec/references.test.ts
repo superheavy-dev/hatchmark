@@ -177,6 +177,8 @@ describe("checkReferences", () => {
     });
     const dashboards = { sales: { ...DASHBOARD, filters: [grain("grain"), grain("grain_2")] } };
     expect(refs({ dashboards }).map((d) => [d.code, d.pointer, d.message])).toEqual([
+      ["HM2025", "/filters/0", 'grain filter "grain" switches no block'],
+      ["HM2025", "/filters/1", 'grain filter "grain_2" switches no block'],
       ["HM3007", "/filters/1", 'a dashboard takes one grain filter, and "grain" is already one'],
     ]);
   });
@@ -218,7 +220,124 @@ describe("checkReferences", () => {
     ).toEqual([]);
     expect(codes([line({})], [filter({ default: "quarter" })])).toEqual([
       ["HM3007", "/filters/0/default"],
+      ["HM2025", "/filters/0"],
     ]);
+  });
+
+  it("warns about grain filter options no block switches to (HM2025), compared at the anchors", () => {
+    const line = (grains: unknown[]) => ({
+      type: "line",
+      metrics: ["revenue"],
+      grain: "month",
+      grains,
+    });
+    const codes = (blocks: unknown[], options: unknown[]) =>
+      refs({
+        config: { ...CONFIG, weekStart: "sunday" },
+        dashboards: {
+          sales: {
+            ...DASHBOARD,
+            filters: [{ type: "grain", id: "g", options, default: "month" }],
+            blocks,
+          },
+        },
+      }).map((d) => [d.code, d.severity, d.pointer]);
+    expect(codes([line(["week", "month"])], ["week", "month"])).toEqual([]);
+    expect(codes([line([{ unit: "week", anchor: "sunday" }, "month"])], ["week", "month"])).toEqual(
+      [],
+    );
+    expect(codes([line(["week", "month"])], ["week", "month", "quarter"])).toEqual([
+      ["HM2025", "warning", "/filters/0/options/2"],
+    ]);
+    expect(
+      codes([line(["day", "week"]), { type: "kpi", metric: "revenue" }], ["month", "quarter"]),
+    ).toEqual([
+      ["HM3007", "error", "/blocks/0/grain"],
+      ["HM2025", "warning", "/filters/0"],
+    ]);
+  });
+
+  it("checks period presets: once each, the default among them (HM3007), and notes metrics custom ranges can't add up (HM4041)", () => {
+    const codes = (filter: Record<string, unknown>, blocks: unknown[] = DASHBOARD.blocks) =>
+      refs({
+        dashboards: {
+          sales: { ...DASHBOARD, filters: [{ type: "period", id: "p", ...filter }], blocks },
+        },
+      }).map((d) => [d.code, d.severity, d.pointer, d.message]);
+    expect(
+      codes({
+        options: ["last_30_days", { last: 30, unit: "day" }, { to_date: "month" }],
+        default: "last_30_days",
+      }),
+    ).toEqual([
+      [
+        "HM3007",
+        "error",
+        "/filters/0/options/1",
+        'preset {"last":30,"unit":"day"} reads the same dates as "last_30_days" (last_30_days)',
+      ],
+    ]);
+    expect(codes({ options: ["last_7_days"], default: { last: 1, unit: "month" } })).toEqual([
+      [
+        "HM3007",
+        "error",
+        "/filters/0/default",
+        'default {"last":1,"unit":"month"} is not one of options (last_7_days)',
+      ],
+    ]);
+    expect(codes({ options: [{ to_date: "month" }], default: { last: 1, unit: "month" } })).toEqual(
+      [],
+    );
+    const distinct = {
+      ...(METRICS.orders as object),
+      label: "Customers",
+      aggregate: "count_distinct",
+      column: "customer_id",
+    };
+    const project = (custom?: boolean) =>
+      refs({
+        metrics: {
+          ...METRICS,
+          customers: distinct,
+          per_customer: {
+            label: "Per customer",
+            type: "ratio",
+            numerator: "revenue",
+            denominator: "customers",
+            format: { type: "currency" },
+            better: "up",
+          },
+        },
+        dashboards: {
+          sales: {
+            ...DASHBOARD,
+            filters: [
+              {
+                type: "period",
+                id: "p",
+                options: ["last_7_days"],
+                default: "last_7_days",
+                ...(custom === undefined ? {} : { custom }),
+              },
+            ],
+            blocks: [
+              { type: "kpi", metric: "per_customer" },
+              { type: "kpi", metric: "merchants" },
+              { type: "table", by: ["plan"], metrics: ["revenue", "net_revenue"] },
+            ],
+          },
+        },
+      })
+        .filter((d) => d.code === "HM4041")
+        .map((d) => [d.severity, d.pointer, d.message]);
+    expect(project()).toEqual([
+      [
+        "note",
+        "/filters/0",
+        'metric "customers" cannot be added up from days, so a custom range shows it as "—" and asks for a preset',
+      ],
+    ]);
+    expect(project(false)).toEqual([]);
   });
 
   it("checks text references with exact positions inside the string", () => {

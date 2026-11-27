@@ -7,11 +7,11 @@ import {
   grainOptions,
   grainSchema,
   identifier,
-  periodRange,
   rangeSchema,
   scalar,
   schemaRef,
 } from "./common.js";
+import { PIE_DEFAULT_LIMIT } from "./units.js";
 
 const blockCommon = {
   id: identifier.optional().meta({
@@ -196,8 +196,7 @@ const barBlock = z
     ],
   });
 
-/** Slices a pie or donut shows before grouping the rest into "Other". */
-export const PIE_DEFAULT_LIMIT = 5;
+export { PIE_DEFAULT_LIMIT };
 /** More slices than this get HM5010: the angles become too thin to compare. */
 export const PIE_READABLE_LIMIT = 6;
 
@@ -367,8 +366,17 @@ export const dashboardFilterSchema = z
       type: z.literal("period"),
       id: identifier,
       label: z.string().optional(),
-      options: z.array(periodRange).min(1),
-      default: periodRange,
+      options: z.array(rangeSchema).min(1).max(12).meta({
+        description:
+          'Presets the reader picks from, such as [{"last": 7, "unit": "day"}, {"to_date": "month"}, {"last_complete": "month"}, "last_12_months"]. Each is computed exactly at build time.',
+      }),
+      default: rangeSchema.meta({
+        description: "The preset the page shows first; one of options.",
+      }),
+      custom: z.boolean().optional().meta({
+        description:
+          "Also offer a calendar for any start and end date. Default true. A static build embeds day-grain aggregates for it; set false to offer only the presets and keep the page small (HM5002).",
+      }),
     }),
     z.strictObject({
       type: z.literal("grain"),
@@ -418,7 +426,4 @@ export const dashboardSchema = z
   .meta({ title: "Hatchmark dashboard (dashboards/<name>.json)" });
 export type Dashboard = z.infer<typeof dashboardSchema>;
 
-/** The id a block is addressed by: its explicit id, else <type>_<index>. */
-export function blockId(block: Block, index: number): string {
-  return block.id ?? `${block.type}_${index}`;
-}
+export { blockId } from "./units.js";

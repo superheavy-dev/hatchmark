@@ -1,8 +1,8 @@
 /// <reference types="vite/client" />
 /**
  * The hatchmark dev client, served only by hatchmark dev and never part of a build. It listens on
- * Vite's HMR connection: hatchmark:update swaps the cards that changed and attaches the runtime to
- * them, hatchmark:reload reloads the page after a structural change, and hatchmark:error and
+ * Vite's HMR connection: hatchmark:update swaps the cards that changed, attaches the runtime to
+ * them and replaces the period filter's data, hatchmark:reload reloads the page after a structural change, and hatchmark:error and
  * hatchmark:ok show and clear the diagnostics overlay.
  */
 
@@ -49,23 +49,29 @@ const keepGrains = (before: Element, after: Element) => {
 
 const hot = import.meta.hot;
 if (hot) {
-  hot.on("hatchmark:update", (event: { dashboard: string; cards: CardUpdate[] }) => {
-    if (event.dashboard !== state.dashboard) return;
-    const grid = document.querySelector("main.hm-grid");
-    for (const update of event.cards) {
-      const item = grid?.children[update.index];
-      const target =
-        update.kpi === undefined ? item : item?.querySelectorAll(":scope > .hm-kpi")[update.kpi];
-      const next = fragment(update.html);
-      if (!target || !next) {
-        location.reload();
-        return;
+  hot.on(
+    "hatchmark:update",
+    (event: { dashboard: string; cards: CardUpdate[]; periods?: string }) => {
+      if (event.dashboard !== state.dashboard) return;
+      const periods = document.querySelector("script[data-hm-periods]");
+      if (event.periods !== undefined && periods) periods.textContent = event.periods;
+      const grid = document.querySelector("main.hm-grid");
+      for (const update of event.cards) {
+        const item = grid?.children[update.index];
+        const target =
+          update.kpi === undefined ? item : item?.querySelectorAll(":scope > .hm-kpi")[update.kpi];
+        const next = fragment(update.html);
+        if (!target || !next) {
+          location.reload();
+          return;
+        }
+        target.replaceWith(next);
+        window.hatchmark?.mount(next);
+        keepGrains(target, next);
       }
-      target.replaceWith(next);
-      window.hatchmark?.mount(next);
-      keepGrains(target, next);
-    }
-  });
+      if (event.periods !== undefined) window.hatchmark?.refresh();
+    },
+  );
   hot.on("hatchmark:reload", (event: { dashboard?: string }) => {
     if (event.dashboard === undefined || event.dashboard === state.dashboard) location.reload();
   });

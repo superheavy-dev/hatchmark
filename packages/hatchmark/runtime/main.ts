@@ -13,6 +13,7 @@
  * measures the tooltip's origin instead of assuming the viewport.
  */
 
+import { mountPeriod, type PeriodView, writeParam } from "./period-control.js";
 import { wireTable } from "./table.js";
 
 interface RuntimeSeries {
@@ -472,10 +473,14 @@ function segmented(group: HTMLElement, choose: (key: string) => void): void {
   });
 }
 
+/** The grain the header filter chose, and each card's own later choice, by card. */
+const grains: { page?: string; cards: Map<string, string> } = { cards: new Map() };
+const cardKey = (card: Element) => card.getAttribute("aria-labelledby") ?? "";
+
 /**
- * Attaches the runtime to everything in root, root included: the whole document on load, or one
- * card that hatchmark dev has just swapped in. The grain filter finds the cards when it is used, so
- * it also switches cards swapped in later.
+ * Attaches the runtime to everything in root, root included: the whole document on load, the blocks
+ * a period redraws, or one card that hatchmark dev has just swapped in. Cards keep the grains chosen
+ * so far.
  */
 function mount(root: ParentNode): void {
   const all = (selector: string): HTMLElement[] => [
@@ -483,14 +488,15 @@ function mount(root: ParentNode): void {
     ...root.querySelectorAll<HTMLElement>(selector),
   ];
   for (const card of all("[data-hm-grains]")) {
+    if (grains.page !== undefined) selectGrain(card, grains.page);
+    const own = grains.cards.get(cardKey(card));
+    if (own !== undefined) selectGrain(card, own);
     const group = card.querySelector<HTMLElement>(".hm-seg");
-    if (group) segmented(group, (key) => selectGrain(card, key));
-  }
-  for (const group of all("[data-hm-grain-filter]")) {
-    segmented(group, (key) => {
-      checkButton([...group.querySelectorAll<HTMLButtonElement>("button")], key);
-      for (const card of document.querySelectorAll("[data-hm-grains]")) selectGrain(card, key);
-    });
+    if (group) {
+      segmented(group, (key) => {
+        if (selectGrain(card, key)) grains.cards.set(cardKey(card), key);
+      });
+    }
   }
   for (const figure of all("[data-hm-chart]")) {
     const source = figure.querySelector(":scope > script[type='application/json']");
@@ -507,12 +513,68 @@ function mount(root: ParentNode): void {
   }
 }
 
-declare global {
-  interface Window {
-    /** The one hook hatchmark dev uses, to attach the runtime to a card it swapped in. */
-    hatchmark?: { mount(root: ParentNode): void };
+/** Puts the period engine's blocks on the page and says which metrics need a preset. */
+function redraw(view: PeriodView): void {
+  const grid = document.querySelector<HTMLElement>("main.hm-grid");
+  if (!grid) return;
+  grid.innerHTML = view.blocks;
+  mount(grid);
+  const caption = document.querySelector("[data-hm-caption]");
+  if (caption) caption.textContent = view.caption;
+  const note = document.querySelector<HTMLElement>("[data-hm-period-note]");
+  if (note) {
+    const names = view.presetOnly;
+    note.textContent =
+      names.length === 0
+        ? ""
+        : `${names.join(", ")} ${names.length === 1 ? "needs" : "need"} a preset: a custom range adds up daily totals, which distinct counts and medians cannot be built from.`;
+    note.hidden = names.length === 0;
   }
 }
 
-window.hatchmark = { mount };
-mount(document);
+function start(): void {
+  const cards = () => [...document.querySelectorAll<HTMLElement>("[data-hm-grains]")];
+  const params = new URLSearchParams(location.search);
+  for (const group of document.querySelectorAll<HTMLElement>("[data-hm-grain-filter]")) {
+    const id = group.dataset.hmGrainFilter ?? "grain";
+    const buttons = [...group.querySelectorAll<HTMLButtonElement>("button")];
+    const initial = buttons.find((b) => b.getAttribute("aria-checked") === "true")?.dataset.hmGrain;
+    const choose = (key: string) => {
+      if (!buttons.some((b) => b.dataset.hmGrain === key)) return;
+      checkButton(buttons, key);
+      grains.page = key;
+      grains.cards.clear();
+      for (const card of cards()) selectGrain(card, key);
+      writeParam(id, key === initial ? undefined : key);
+    };
+    segmented(group, choose);
+    const requested = params.get(id);
+    if (requested !== null) {
+      if (buttons.some((b) => b.dataset.hmGrain === requested)) choose(requested);
+      else writeParam(id, undefined);
+    }
+  }
+  mount(document);
+  for (const root of document.querySelectorAll<HTMLElement>("[data-hm-period]")) {
+    refreshers.push(mountPeriod(root, redraw));
+  }
+}
+
+const refreshers: (() => void)[] = [];
+
+function refresh(): void {
+  for (const again of refreshers) again();
+}
+
+declare global {
+  interface Window {
+    /**
+     * The hooks hatchmark dev uses: mount attaches the runtime to a card it swapped in, refresh
+     * redraws the chosen period after it replaced the period data.
+     */
+    hatchmark?: { mount(root: ParentNode): void; refresh(): void };
+  }
+}
+
+window.hatchmark = { mount, refresh };
+start();

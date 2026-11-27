@@ -12,7 +12,14 @@ import {
   rmdir,
 } from "node:fs/promises";
 import path from "node:path";
-import { type DashboardData, type DashboardExecutor, runDashboard } from "../../compiler/index.js";
+import {
+  type DashboardData,
+  type DashboardExecutor,
+  type PeriodData,
+  pageWeight,
+  runDashboard,
+  runPeriodData,
+} from "../../compiler/index.js";
 import { createReport, type Diagnostic, renderHuman } from "../../diagnostics/index.js";
 import {
   type CacheStats,
@@ -77,6 +84,11 @@ export interface BuildDeps {
 }
 
 const defaultDeps: BuildDeps = { createExecutor: createDuckDbExecutor, runDashboard };
+
+export interface Page {
+  data: DashboardData;
+  periods?: PeriodData;
+}
 
 function hashedName(file: string, content: Uint8Array): string {
   const hash = createHash("sha256").update(content).digest("hex").slice(0, 10);
@@ -264,22 +276,26 @@ export async function build(
     };
   }
 
-  const assets = await bundledAssets();
+  const assets = await bundledAssets(pages.some((p) => p.periods !== undefined));
   const files = new Map<string, Uint8Array | string>(assets.files);
   const { assetsFrom } = assets;
   const sources = sourceNames(config);
-  for (const data of pages) {
-    files.set(
-      `${data.name}/index.html`,
-      renderDashboardPage(data, { assets: assetsFrom("../"), sources }),
-    );
+  for (const { data, periods } of pages) {
+    const html = renderDashboardPage(data, {
+      assets: assetsFrom("../"),
+      sources,
+      ...(periods ? { periods } : {}),
+    });
+    files.set(`${data.name}/index.html`, html);
+    const heavy = pageWeight(project, data.name, html, periods);
+    if (heavy) diagnostics.push(heavy);
   }
   if (pages.length > 1) {
     files.set(
       "index.html",
       renderIndexPage(
         config.name,
-        pages.map((p) => ({
+        pages.map(({ data: p }) => ({
           name: p.name,
           title: p.title,
           ...(p.description === undefined ? {} : { description: p.description }),
@@ -340,7 +356,7 @@ export async function build(
   const report = createReport(diagnostics);
   const relative = path.relative(ctx.root, outDir);
   const outLabel = relative.startsWith("..") ? outDir : relative.split(path.sep).join("/") || ".";
-  const written = pages.map((p) => ({
+  const written = pages.map(({ data: p }) => ({
     dashboard: p.name,
     path: `${outLabel}/${p.name}/index.html`,
   }));
@@ -372,7 +388,7 @@ function cacheLine(cache: CacheStats): string {
  * (_hatchmark/ with content-hashed names), and the URLs of those files from a page whose path
  * to the output directory is prefix. hatchmark dev serves the same files under the same URLs.
  */
-export async function bundledAssets(): Promise<{
+export async function bundledAssets(withPeriods = false): Promise<{
   files: Map<string, Uint8Array>;
   assetsFrom(prefix: string): PageAssets;
 }> {
@@ -388,10 +404,17 @@ export async function bundledAssets(): Promise<{
   const runtime = await readAsset("runtime/hatchmark.js");
   const runtimeName = hashedName("hatchmark.js", runtime);
   files.set(`${ASSET_DIR}/${runtimeName}`, runtime);
+  let periodsName: string | undefined;
+  if (withPeriods) {
+    const engine = await readAsset("runtime/hatchmark-periods.js");
+    periodsName = hashedName("hatchmark-periods.js", engine);
+    files.set(`${ASSET_DIR}/${periodsName}`, engine);
+  }
   return {
     files,
     assetsFrom: (prefix) => ({
       runtime: `${prefix}${ASSET_DIR}/${runtimeName}`,
+      ...(periodsName ? { periods: `${prefix}${ASSET_DIR}/${periodsName}` } : {}),
       fonts: Object.fromEntries(
         Object.entries(fonts).map(([file, name]) => [file, `${prefix}${ASSET_DIR}/${name}`]),
       ),
@@ -410,14 +433,37 @@ export function sourceNames(config: ProjectConfig): string[] {
   ].sort();
 }
 
+/**
+ * A dashboard's page with its period filter's data: every preset run exactly and the day cubes for
+ * custom ranges. hatchmark dev renders the same page.
+ */
+export async function periodPage(
+  project: Project,
+  name: string,
+  executor: DashboardExecutor,
+  data: DashboardData,
+  now: Date,
+): Promise<{ page: Page; diagnostics: Diagnostic[] }> {
+  const periods = await runPeriodData(project, name, executor, data, now);
+  const span = periods.data?.custom?.span;
+  const shown =
+    span && data.periodFilter
+      ? { ...data, periodFilter: { ...data.periodFilter, custom: span } }
+      : data;
+  return {
+    page: { data: shown, ...(periods.data ? { periods: periods.data } : {}) },
+    diagnostics: periods.diagnostics,
+  };
+}
+
 async function runAll(
   root: string,
   project: Project,
   config: ProjectConfig,
   deps: BuildDeps,
   useCache: boolean,
-): Promise<{ pages: DashboardData[]; diagnostics: Diagnostic[]; cache?: CacheStats }> {
-  const pages: DashboardData[] = [];
+): Promise<{ pages: Page[]; diagnostics: Diagnostic[]; cache?: CacheStats }> {
+  const pages: Page[] = [];
   const diagnostics = new Map<string, Diagnostic>();
   for (const d of [...parseDiagnostics(project), ...checkReferences(project)]) {
     if (d.severity === "warning") diagnostics.set(JSON.stringify(d), d);
@@ -433,9 +479,13 @@ async function runAll(
   const executor = cached ?? (await deps.createExecutor({ root, config }));
   try {
     for (const name of [...project.dashboards.keys()].sort()) {
-      const result = await deps.runDashboard(project, name, executor, new Date());
+      const now = new Date();
+      const result = await deps.runDashboard(project, name, executor, now);
       for (const d of result.diagnostics) diagnostics.set(JSON.stringify(d), d);
-      if (result.data) pages.push(result.data);
+      if (result.data === undefined) continue;
+      const page = await periodPage(project, name, executor, result.data, now);
+      for (const d of page.diagnostics) diagnostics.set(JSON.stringify(d), d);
+      pages.push(page.page);
     }
   } finally {
     await executor.close();

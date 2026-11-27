@@ -5,7 +5,6 @@ import type {
   Comparison,
   FileSource,
   Filter,
-  PeriodRange,
   Project,
   RangeSpec,
   ResolvedGrain,
@@ -148,7 +147,7 @@ export type PlannedParam =
       multiple: boolean;
       default: (string | number | boolean)[];
     }
-  | { id: string; kind: "period"; source: string; column: string; default: PeriodRange };
+  | { id: string; kind: "period"; source: string; column: string; default: RangeSpec };
 
 /** How build mode stores a query's result for in-browser filtering. */
 export type Materialization =
@@ -178,8 +177,9 @@ export type PlanParam =
   | {
       id: string;
       kind: "period";
-      options: PeriodRange[];
-      default: PeriodRange;
+      /** The presets, as written; a custom range binds a {start, end} range instead. */
+      options: RangeSpec[];
+      default: RangeSpec;
       /** Time columns this filter windows, by source. */
       columns: Record<string, string[]>;
     };

@@ -3,7 +3,13 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import type { Plugin, ViteDevServer } from "vite";
-import { type BuildDeps, bundledAssets, sourceNames } from "../cli/commands/build.js";
+import {
+  type BuildDeps,
+  bundledAssets,
+  type Page,
+  periodPage,
+  sourceNames,
+} from "../cli/commands/build.js";
 import {
   type DashboardData,
   type DashboardExecutor,
@@ -62,7 +68,11 @@ export interface CardUpdate {
 
 /** A custom event sent to every open page over Vite's HMR connection. */
 export type DevEvent =
-  | { event: "hatchmark:update"; data: { dashboard: string; cards: CardUpdate[] } }
+  | {
+      event: "hatchmark:update";
+      /** periods: the period filter's new data (the JSON inside data-hm-periods), when it changed. */
+      data: { dashboard: string; cards: CardUpdate[]; periods?: string };
+    }
   | { event: "hatchmark:reload"; data: { dashboard?: string } }
   | { event: "hatchmark:error"; data: { overlay: string; diagnostics: Diagnostic[] } }
   | { event: "hatchmark:ok"; data: Record<string, never> };
@@ -97,8 +107,13 @@ export interface DevServer {
 
 interface Rendered {
   data: DashboardData;
-  /** The page with the grid's contents cut out: any difference is a structural change. */
+  /**
+   * The page with the grid's contents and the period filter's data cut out: any difference is a
+   * structural change.
+   */
   shell: string;
+  /** The JSON inside data-hm-periods, which an update replaces in place. */
+  periods: string;
   items: GridItem[];
   html: string;
 }
@@ -162,7 +177,7 @@ export async function startDevServer(
   const first = await loadProject(host);
   if (first.project === undefined) return { report: createReport(first.diagnostics) };
 
-  const assets = await bundledAssets();
+  const assets = await bundledAssets(true);
   let project: Project | undefined;
   let config: ProjectConfig | undefined;
   let executor: (DashboardExecutor & { close(): Promise<void> }) | undefined;
@@ -193,16 +208,22 @@ export async function startDevServer(
     return files;
   };
 
-  const render = (data: DashboardData): Rendered => {
+  const render = ({ data, periods }: Page): Rendered => {
     const html = renderDashboardPage(data, {
       assets: assets.assetsFrom("../"),
       sources: config ? sourceNames(config) : [],
+      ...(periods ? { periods } : {}),
     });
     const items = gridItems(data.blocks, { data, theme: DEFAULT_THEME, paint: cssPaint });
     const grid = `<main class="hm-grid">${items.map((i) => i.html).join("")}</main>`;
     const at = html.indexOf(grid);
-    const shell = at < 0 ? html : `${html.slice(0, at)}${html.slice(at + grid.length)}`;
-    return { data, shell, items, html };
+    const cut = at < 0 ? html : `${html.slice(0, at)}${html.slice(at + grid.length)}`;
+    const open = '<script type="application/json" data-hm-periods>';
+    const from = cut.indexOf(open) + open.length;
+    const to = cut.indexOf("</script>", from);
+    if (from < open.length) return { data, shell: cut, periods: "", items, html };
+    const shell = `${cut.slice(0, from)}${cut.slice(to)}`;
+    return { data, shell, periods: cut.slice(from, to), items, html };
   };
 
   const rebuild = async (changed: ReadonlySet<string> | "all"): Promise<void> => {
@@ -286,16 +307,22 @@ export async function startDevServer(
           Object.keys(page.data.metrics).some((m) => changedMetrics.has(m));
         plans.set(name, planKey);
         if (!affected) continue;
-        const result = await deps.runDashboard(next, name, executor, new Date());
-        runDiagnostics.set(name, result.diagnostics);
-        if (result.data === undefined) continue;
-        const rendered = render(result.data);
+        const now = new Date();
+        const result = await deps.runDashboard(next, name, executor, now);
+        if (result.data === undefined) {
+          runDiagnostics.set(name, result.diagnostics);
+          continue;
+        }
+        const period = await periodPage(next, name, executor, result.data, now);
+        runDiagnostics.set(name, [...result.diagnostics, ...period.diagnostics]);
+        const rendered = render(period.page);
         pages.set(name, rendered);
         const cards = page === undefined ? undefined : diffPages(page, rendered);
         if (cards === undefined) {
           updates.push({ event: "hatchmark:reload", data: { dashboard: name } });
-        } else if (cards.length > 0) {
-          updates.push({ event: "hatchmark:update", data: { dashboard: name, cards } });
+        } else if (cards.length > 0 || page?.periods !== rendered.periods) {
+          const periods = page?.periods === rendered.periods ? {} : { periods: rendered.periods };
+          updates.push({ event: "hatchmark:update", data: { dashboard: name, cards, ...periods } });
         }
       }
       const key = JSON.stringify([

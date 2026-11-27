@@ -44,16 +44,24 @@ export function renderKpi(block: KpiData, ctx: RenderContext): string {
         : `${direction}${judged === "neutral" ? "" : `, ${judged === "good" ? "better" : "worse"}`}`;
     delta = `<span class="hm-delta hm-${judged}">${arrow ? `<span aria-hidden="true">${arrow}</span>\u2009` : ""}${esc(changeText)}<span class="hm-sr"> (${spoken})</span></span>`;
   }
+  const shown = ctx.data.period.current;
+  const own =
+    block.current !== undefined &&
+    shown !== undefined &&
+    (block.current.start !== shown.start || block.current.end !== shown.end)
+      ? `${formatSpan(block.current, locale)} \u00B7 `
+      : "";
   let note: string;
-  if (block.value === null) note = "No data in this period";
+  if (block.presetOnly === true) note = "Pick a preset to see this";
+  else if (block.value === null) note = "No data in this period";
   else if (block.previous === undefined || block.previousValue === undefined) {
     note = block.current ? formatSpan(block.current, locale) : "All time";
   } else {
     const span = formatPreviousSpan(block.previous, block.current, locale);
     note =
       block.previousValue === null
-        ? `No ${span} data to compare`
-        : `vs ${formatValue(block.previousValue, metric, locale, "headline")} in ${span}`;
+        ? `${own}No ${span} data to compare`
+        : `${own}vs ${formatValue(block.previousValue, metric, locale, "headline")} in ${span}`;
   }
   if (metric.better === "down") note += " \u00B7 lower is better";
   let spark = "";

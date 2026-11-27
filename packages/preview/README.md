@@ -23,7 +23,7 @@ The shell sets `data-theme="light"` or `data-theme="dark"` on the `<html>` eleme
 
 `entries.ts` imports `packages/hatchmark/gallery/entries.ts` by relative path, and tsc compiles that gallery with the render sources it uses into `dist/lib/` (hence `rootDir: ".."` and the d3 and zod dependencies here). The fixtures therefore never enter the published `hatchmark` package. The builder copies the fonts and the runtime into `site/_hatchmark/`.
 
-The example dashboard is built with `hatchmark build --cwd packages/hatchmark/examples/global-sales --out dist/site/dashboard`, run from `src/build.ts`. The shell's View toggle switches the frame between the components and the dashboard (`#view=dashboard`).
+The example dashboard is built with `hatchmark build --cwd packages/hatchmark/examples/global-sales --out dist/site/dashboard`, run from `src/build.ts`. The shell's View toggle switches the frame between the components and the dashboard (`#view=dashboard`). `#view=period` opens the example's date range picker (`dashboard/explorer/`), and `#view=periods` lists the picker's other variants, built from `src/periods.ts` into `dist/site/periods/` (presets only, a distinct count that needs a preset, fixed-date presets).
 
 ## Deploy
 

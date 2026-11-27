@@ -1,17 +1,13 @@
 import { type Diagnostic, docsCommand } from "../diagnostics/index.js";
-import {
-  type Block,
-  blockId,
-  type DashboardFilter,
-  grainKey,
-  type Metric,
-  PIE_DEFAULT_LIMIT,
-  type Project,
-  type RangeSpec,
-  type ResolvedGrain,
-  resolveGrain,
-  timeNature,
+import type {
+  Block,
+  DashboardFilter,
+  Metric,
+  Project,
+  RangeSpec,
+  ResolvedGrain,
 } from "../spec/index.js";
+import { blockId, grainKey, PIE_DEFAULT_LIMIT, resolveGrain } from "../spec/units.js";
 import {
   type BarData,
   type BlockData,
@@ -25,6 +21,8 @@ import {
   type LineData,
   type MetricInfo,
   type PartialBucket,
+  type PeriodFilter,
+  type PeriodOption,
   type PieData,
   type PieSlice,
   type ScatterData,
@@ -37,6 +35,7 @@ import {
   type Value,
 } from "./dashboard-data.js";
 import { formatWall, fromLocal, parseInstant, toLocal } from "./instants.js";
+import { rangeKey, rangeName } from "./periods.js";
 import type {
   BlockPlan,
   ExecutionContext,
@@ -1180,6 +1179,39 @@ export function grainLabels(grains: ResolvedGrain[]): string[] {
   });
 }
 
+/** DashboardData.periodFilter from the dashboard's period filter, with the selected range's key. */
+function periodFilter(
+  filters: DashboardFilter[] | undefined,
+  plan: QueryPlan,
+  context: ExecutionContext,
+  range: RangeSpec,
+): { periodFilter: PeriodFilter } | Record<string, never> {
+  const filter = filters?.find((f) => f.type === "period");
+  if (filter === undefined) return {};
+  const options = filter.options.map((option): PeriodOption => {
+    const label = rangeName(option);
+    let current: DateSpan | undefined;
+    try {
+      current = span(resolveRange(option, "none", context.asOf, plan.anchors), context.timezone);
+    } catch (error) {
+      if (!(error instanceof RangeError)) throw error;
+    }
+    return {
+      key: rangeKey(option),
+      ...(label === undefined ? {} : { label }),
+      ...(current ? { current } : {}),
+    };
+  });
+  return {
+    periodFilter: {
+      id: filter.id,
+      label: filter.label ?? "Period",
+      options,
+      selected: rangeKey(range),
+    },
+  };
+}
+
 /** DashboardData.grainFilter from the dashboard's grain filter, resolved at the project anchors. */
 function grainFilter(
   filters: DashboardFilter[] | undefined,
@@ -1207,16 +1239,15 @@ function columnLabel(column: string): string {
 }
 
 /**
- * Turns a plan and its query results into DashboardData. Pure and deterministic: the same plan,
- * results and context give the same data, byte for byte. Totals come from each query's grand
- * total grouping set, never from summing rows; ratio rows match on grouping set and dimension
- * values with null as a real value; limit cuts leaf rows only.
+ * assemble with the point-in-time metrics given rather than derived from the metric specs, for
+ * callers whose project carries portable metrics instead of full specs.
  */
-export function assemble(
+export function assembleWith(
   project: Project,
   plan: QueryPlan,
   results: ReadonlyMap<string, QueryResult>,
   context: ExecutionContext,
+  pointMetrics: ReadonlySet<string>,
 ): { data?: DashboardData; diagnostics: Diagnostic[] } {
   const spec = project.dashboards.get(plan.dashboard)?.spec;
   const config = project.config.spec;
@@ -1261,8 +1292,6 @@ export function assemble(
   }
 
   const metrics: Record<string, MetricInfo> = {};
-  const specs = new Map<string, Metric>();
-  for (const [name, file] of project.metrics) if (file.spec) specs.set(name, file.spec);
   for (const name of [...shown].sort()) {
     const metric = assembler.metric(name);
     if (metric === undefined) continue;
@@ -1275,7 +1304,7 @@ export function assemble(
           ? { ...metric.format, currency: metric.format.currency ?? config.currency }
           : metric.format,
       better: metric.better,
-      ...(timeNature(name, specs) === "point" ? { nature: "point" as const } : {}),
+      ...(pointMetrics.has(name) ? { nature: "point" as const } : {}),
     };
   }
 
@@ -1309,6 +1338,7 @@ export function assemble(
     timezone: plan.timezone,
     anchors: plan.anchors,
     ...grainFilter(spec.filters, plan),
+    ...periodFilter(spec.filters, plan, context, period.range),
     metrics,
     blocks,
   };

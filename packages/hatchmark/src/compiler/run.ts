@@ -8,7 +8,7 @@ import {
   resolveGrain,
   timeNature,
 } from "../spec/index.js";
-import { assemble } from "./assemble.js";
+import { assembleWith } from "./assemble.js";
 import type { DashboardData } from "./dashboard-data.js";
 import {
   type PlannedHorizon,
@@ -28,6 +28,7 @@ import {
 import type {
   ExecutionContext,
   MeasureExpression,
+  ParamBindings,
   QueryExecutor,
   QueryPlan,
   QueryResult,
@@ -383,7 +384,8 @@ export async function executionContext(
  * The project is checked first: any error in hatchmark.json, a metric, or this dashboard is
  * returned without running anything. The as-of date resolves once, before any query runs, from the
  * source horizons (executionContext), so every window ends on the same day. now is the build
- * machine's clock, used only for the HM4012 warning. Queries run
+ * machine's clock, used only for the HM4012 warning. bindings sets filter values (a period filter's
+ * preset or custom range); unbound filters read their defaults. Queries run
  * one after another in plan order, except comparisons that have no window (a period filter set to
  * all_time), which are skipped so their KPIs show no comparison. A failing query or an empty
  * latest_data is an HM2015 error.
@@ -393,6 +395,7 @@ export async function runDashboard(
   dashboard: string,
   executor: DashboardExecutor,
   now?: Date,
+  bindings: ParamBindings = {},
 ): Promise<{ data?: DashboardData; diagnostics: Diagnostic[] }> {
   const errors = blockingErrors(project, dashboard);
   if (errors.length > 0) return { diagnostics: errors };
@@ -401,8 +404,8 @@ export async function runDashboard(
 
   const resolved = await executionContext(project, plan, executor, now);
   diagnostics.push(...resolved.diagnostics);
-  const { context } = resolved;
-  if (context === undefined) return { diagnostics };
+  if (resolved.context === undefined) return { diagnostics };
+  const context: ExecutionContext = { ...resolved.context, bindings };
   const message = (error: unknown) => (error instanceof Error ? error.message : String(error));
   const results = new Map<string, QueryResult>();
   const imprecise = new Map<string, Diagnostic>();
@@ -493,4 +496,26 @@ function largeResults(
     }
   }
   return out;
+}
+
+/**
+ * Turns a plan and its query results into DashboardData. Pure and deterministic: the same plan,
+ * results and context give the same data, byte for byte. Totals come from each query's grand
+ * total grouping set, never from summing rows; ratio rows match on grouping set and dimension
+ * values with null as a real value; limit cuts leaf rows only.
+ */
+export function assemble(
+  project: Project,
+  plan: QueryPlan,
+  results: ReadonlyMap<string, QueryResult>,
+  context: ExecutionContext,
+): { data?: DashboardData; diagnostics: Diagnostic[] } {
+  return assembleWith(project, plan, results, context, pointMetrics(project));
+}
+
+/** The metrics whose time nature is point-in-time, which assembly labels "as of". */
+export function pointMetrics(project: Project): Set<string> {
+  const specs = new Map<string, Metric>();
+  for (const [name, file] of project.metrics) if (file.spec) specs.set(name, file.spec);
+  return new Set([...specs.keys()].filter((name) => timeNature(name, specs) === "point"));
 }

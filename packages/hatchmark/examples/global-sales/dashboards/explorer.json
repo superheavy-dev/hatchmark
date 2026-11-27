@@ -1,0 +1,116 @@
+{
+  "$schema": "../../../schema/dashboard.schema.json",
+  "title": "Sales explorer",
+  "description": "Pick a preset or any start and end date; every chart and table follows.",
+  "period": {
+    "asOf": "latest_data",
+    "range": "last_12_months",
+    "compare": "previous_period"
+  },
+  "filters": [
+    {
+      "type": "period",
+      "id": "period",
+      "label": "Period",
+      "options": [
+        {
+          "last": 7,
+          "unit": "day"
+        },
+        {
+          "last": 30,
+          "unit": "day"
+        },
+        {
+          "to_date": "month"
+        },
+        {
+          "last_complete": "month"
+        },
+        {
+          "to_date": "quarter"
+        },
+        {
+          "last_complete": "quarter"
+        },
+        {
+          "to_date": "year"
+        },
+        {
+          "last": 12,
+          "unit": "month"
+        }
+      ],
+      "default": {
+        "last": 12,
+        "unit": "month"
+      }
+    },
+    {
+      "type": "grain",
+      "id": "grain",
+      "label": "Grain",
+      "options": ["day", "week", "month"],
+      "default": "week"
+    }
+  ],
+  "blocks": [
+    {
+      "type": "kpi",
+      "id": "revenue",
+      "metric": "revenue",
+      "sparkline": true
+    },
+    {
+      "type": "kpi",
+      "id": "orders",
+      "metric": "orders"
+    },
+    {
+      "type": "kpi",
+      "id": "aov",
+      "metric": "avg_order_value"
+    },
+    {
+      "type": "kpi",
+      "id": "refund_rate",
+      "metric": "refund_rate"
+    },
+    {
+      "type": "line",
+      "id": "revenue_by_region",
+      "title": "Revenue by region",
+      "metrics": ["revenue"],
+      "grain": "week",
+      "grains": ["day", "week", "month"],
+      "split": "region",
+      "span": 8
+    },
+    {
+      "type": "bar",
+      "id": "revenue_by_channel",
+      "title": "Revenue by channel",
+      "metrics": ["revenue"],
+      "by": "channel",
+      "orientation": "horizontal",
+      "sort": {
+        "by": "revenue",
+        "order": "desc"
+      },
+      "span": 4
+    },
+    {
+      "type": "table",
+      "id": "countries",
+      "title": "Countries",
+      "by": ["country"],
+      "metrics": ["revenue", "orders", "avg_order_value", "refund_rate"],
+      "percentOfTotal": ["revenue"],
+      "sort": {
+        "by": "revenue",
+        "order": "desc"
+      },
+      "limit": 10
+    }
+  ]
+}

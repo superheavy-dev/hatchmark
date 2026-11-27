@@ -119,7 +119,12 @@ iframe { width: 100%; height: 100%; border: 0; background: var(--bg); }
 body[data-width="mobile"] iframe { width: 390px; border-inline: 1px solid var(--line); }`;
 
 const SHELL_SCRIPT = `const frame = document.getElementById("frame");
-const VIEWS = { components: "components/", dashboard: "dashboard/sales/" };
+const VIEWS = {
+  components: "components/",
+  dashboard: "dashboard/sales/",
+  period: "dashboard/explorer/",
+  periods: "periods/",
+};
 const state = {
   view: "components",
   theme: matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light",
@@ -195,6 +200,8 @@ function shell(input: SiteInput): string {
 ${toggle("view", "View", [
   ["components", "Components"],
   ["dashboard", "Example dashboard"],
+  ["period", "Date range picker"],
+  ["periods", "Picker variants"],
 ])}
 ${toggle("theme", "Theme", [
   ["light", "Light"],
