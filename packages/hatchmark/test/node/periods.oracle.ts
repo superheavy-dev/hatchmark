@@ -551,7 +551,7 @@ function checkTable(b: TableData, sb: SpecBlock, ctx: Resolved, cur: Row[], diff
     diff,
   );
   diff.same(`${sb.id}.rowCount`, b.rowCount, all.size);
-  diff.same(`${sb.id}.window`, b.window, span(ctx.kpi.current));
+  diff.same(`${sb.id}.window`, b.window, ctx.empty ? undefined : span(ctx.kpi.current));
   diff.same(`${sb.id}.empty`, b.empty, ctx.empty);
   const totals = Object.fromEntries(
     metrics.map((m) => [m, blind(ctx, m) || ctx.empty ? null : metricOf(m, cur)]),
