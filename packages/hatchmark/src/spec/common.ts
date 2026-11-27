@@ -41,7 +41,7 @@ export const schemaRef = z
 export const scalar = z.union([z.string(), z.number(), z.boolean()]);
 
 export const TIME_GRAINS = ["day", "week", "month", "quarter", "year"] as const;
-export const timeGrain = z.enum(TIME_GRAINS);
+export const timeGrain = z.enum(TIME_GRAINS).meta({ id: "TimeGrain" });
 export type TimeGrain = z.infer<typeof timeGrain>;
 
 export const PERIOD_RANGES = [
@@ -57,11 +57,12 @@ export const PERIOD_RANGES = [
   "last_complete_year",
   "all_time",
 ] as const;
-export const periodRange = z.enum(PERIOD_RANGES);
+export const periodRange = z.enum(PERIOD_RANGES).meta({ id: "PeriodRange" });
 export type PeriodRange = z.infer<typeof periodRange>;
 
 export const COMPARISONS = ["previous_period", "previous_year", "none"] as const;
 export const comparison = z.enum(COMPARISONS).meta({
+  id: "Comparison",
   description:
     "previous_period: the previous calendar unit for calendar ranges (October vs September; to-date ranges compare the same elapsed span), or the same length just before for rolling ranges (last N days, last 12 months). previous_year: the same span one year earlier. none: no comparison.",
 });

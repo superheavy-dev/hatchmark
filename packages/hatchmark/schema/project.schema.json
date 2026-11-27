@@ -3,46 +3,78 @@
   "type": "object",
   "properties": {
     "$schema": {
-      "$ref": "#/$defs/__schema0"
+      "type": "string",
+      "description": "Path or URL of the JSON Schema for this file, for editor completion."
     },
     "version": {
-      "$ref": "#/$defs/__schema1"
+      "type": "number",
+      "const": 1,
+      "description": "Spec format version."
     },
     "name": {
-      "$ref": "#/$defs/__schema2"
+      "type": "string",
+      "minLength": 1,
+      "description": "Project name, shown in page titles."
     },
     "dataDir": {
-      "$ref": "#/$defs/__schema3"
+      "type": "string",
+      "minLength": 1,
+      "description": "Directory holding data files."
     },
     "metricsDir": {
-      "$ref": "#/$defs/__schema5"
+      "type": "string",
+      "minLength": 1,
+      "description": "Directory holding metrics/<name>.json files."
     },
     "dashboardsDir": {
-      "$ref": "#/$defs/__schema6"
+      "type": "string",
+      "minLength": 1,
+      "description": "Directory holding dashboards/<name>.json files."
     },
     "outDir": {
-      "$ref": "#/$defs/__schema7"
+      "type": "string",
+      "minLength": 1,
+      "description": "Build output directory."
     },
     "locale": {
-      "$ref": "#/$defs/__schema8"
+      "type": "string",
+      "description": "Locale for number and date formatting."
     },
     "currency": {
-      "$ref": "#/$defs/__schema9"
+      "type": "string",
+      "description": "Default currency for currency-formatted metrics."
     },
     "timezone": {
-      "$ref": "#/$defs/__schema10"
+      "type": "string",
+      "description": "Time zone that dates are bucketed in."
     },
     "weekStart": {
-      "$ref": "#/$defs/__schema11"
+      "type": "string",
+      "enum": [
+        "monday",
+        "sunday"
+      ],
+      "description": "First day of a week bucket."
     },
     "theme": {
-      "$ref": "#/$defs/__schema12"
+      "type": "string",
+      "pattern": "^[a-z][a-z0-9_]*$",
+      "description": "Theme id."
     },
     "telemetry": {
-      "$ref": "#/$defs/__schema14"
+      "type": "boolean",
+      "description": "Send anonymous usage data. Off unless set true."
     },
     "sources": {
-      "$ref": "#/$defs/__schema15"
+      "type": "object",
+      "propertyNames": {
+        "type": "string",
+        "pattern": "^[a-z][a-z0-9_]*$"
+      },
+      "additionalProperties": {
+        "$ref": "#/$defs/Source"
+      },
+      "description": "Tables by name. Metrics refer to these names in their table field."
     }
   },
   "required": [
@@ -63,173 +95,82 @@
   "additionalProperties": false,
   "title": "Hatchmark project config (hatchmark.json)",
   "$defs": {
-    "__schema0": {
-      "type": "string",
-      "description": "Path or URL of the JSON Schema for this file, for editor completion."
-    },
-    "__schema1": {
-      "type": "number",
-      "const": 1,
-      "description": "Spec format version."
-    },
-    "__schema2": {
-      "type": "string",
-      "minLength": 1,
-      "description": "Project name, shown in page titles."
-    },
-    "__schema3": {
-      "description": "Directory holding data files.",
-      "$ref": "#/$defs/__schema4"
-    },
-    "__schema4": {
-      "type": "string",
-      "minLength": 1
-    },
-    "__schema5": {
-      "description": "Directory holding metrics/<name>.json files.",
-      "$ref": "#/$defs/__schema4"
-    },
-    "__schema6": {
-      "description": "Directory holding dashboards/<name>.json files.",
-      "$ref": "#/$defs/__schema4"
-    },
-    "__schema7": {
-      "description": "Build output directory.",
-      "$ref": "#/$defs/__schema4"
-    },
-    "__schema8": {
-      "type": "string",
-      "description": "Locale for number and date formatting."
-    },
-    "__schema9": {
-      "type": "string",
-      "description": "Default currency for currency-formatted metrics."
-    },
-    "__schema10": {
-      "type": "string",
-      "description": "Time zone that dates are bucketed in."
-    },
-    "__schema11": {
-      "type": "string",
-      "enum": [
-        "monday",
-        "sunday"
-      ],
-      "description": "First day of a week bucket."
-    },
-    "__schema12": {
-      "description": "Theme id.",
-      "$ref": "#/$defs/__schema13"
-    },
-    "__schema13": {
-      "type": "string",
-      "pattern": "^[a-z][a-z0-9_]*$"
-    },
-    "__schema14": {
-      "type": "boolean",
-      "description": "Send anonymous usage data. Off unless set true."
-    },
-    "__schema15": {
-      "type": "object",
-      "propertyNames": {
-        "$ref": "#/$defs/__schema13"
-      },
-      "additionalProperties": {
-        "$ref": "#/$defs/__schema16"
-      },
-      "description": "Tables by name. Metrics refer to these names in their table field."
-    },
-    "__schema16": {
+    "Source": {
       "oneOf": [
         {
-          "$ref": "#/$defs/__schema17"
+          "type": "object",
+          "properties": {
+            "type": {
+              "type": "string",
+              "const": "csv"
+            },
+            "path": {
+              "type": "string",
+              "minLength": 1
+            },
+            "delimiter": {
+              "description": "Field delimiter. Default \",\".",
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 1
+            },
+            "header": {
+              "description": "Whether the first row holds column names. Default true.",
+              "type": "boolean"
+            }
+          },
+          "required": [
+            "type",
+            "path"
+          ],
+          "additionalProperties": false
         },
         {
-          "$ref": "#/$defs/__schema20"
+          "type": "object",
+          "properties": {
+            "type": {
+              "type": "string",
+              "const": "parquet"
+            },
+            "path": {
+              "type": "string",
+              "minLength": 1
+            }
+          },
+          "required": [
+            "type",
+            "path"
+          ],
+          "additionalProperties": false
         },
         {
-          "$ref": "#/$defs/__schema21"
+          "type": "object",
+          "properties": {
+            "type": {
+              "type": "string",
+              "const": "json"
+            },
+            "path": {
+              "type": "string",
+              "minLength": 1
+            },
+            "format": {
+              "description": "An array of objects, or one object per line. Default \"array\".",
+              "type": "string",
+              "enum": [
+                "array",
+                "ndjson"
+              ]
+            }
+          },
+          "required": [
+            "type",
+            "path"
+          ],
+          "additionalProperties": false
         }
       ],
       "description": "A table read from a file in the project."
-    },
-    "__schema17": {
-      "type": "object",
-      "properties": {
-        "type": {
-          "type": "string",
-          "const": "csv"
-        },
-        "path": {
-          "$ref": "#/$defs/__schema4"
-        },
-        "delimiter": {
-          "description": "Field delimiter. Default \",\".",
-          "$ref": "#/$defs/__schema18"
-        },
-        "header": {
-          "description": "Whether the first row holds column names. Default true.",
-          "$ref": "#/$defs/__schema19"
-        }
-      },
-      "required": [
-        "type",
-        "path"
-      ],
-      "additionalProperties": false
-    },
-    "__schema18": {
-      "type": "string",
-      "minLength": 1,
-      "maxLength": 1
-    },
-    "__schema19": {
-      "type": "boolean"
-    },
-    "__schema20": {
-      "type": "object",
-      "properties": {
-        "type": {
-          "type": "string",
-          "const": "parquet"
-        },
-        "path": {
-          "$ref": "#/$defs/__schema4"
-        }
-      },
-      "required": [
-        "type",
-        "path"
-      ],
-      "additionalProperties": false
-    },
-    "__schema21": {
-      "type": "object",
-      "properties": {
-        "type": {
-          "type": "string",
-          "const": "json"
-        },
-        "path": {
-          "$ref": "#/$defs/__schema4"
-        },
-        "format": {
-          "description": "An array of objects, or one object per line. Default \"array\".",
-          "$ref": "#/$defs/__schema22"
-        }
-      },
-      "required": [
-        "type",
-        "path"
-      ],
-      "additionalProperties": false
-    },
-    "__schema22": {
-      "type": "string",
-      "enum": [
-        "array",
-        "ndjson"
-      ]
     }
   }
 }

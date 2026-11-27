@@ -27,20 +27,24 @@ const blockCommon = {
 
 const metricName = identifier.meta({ description: "A metric name, the file name under metrics/." });
 const metricList = z.array(metricName).min(1).max(8);
-const sort = z.strictObject({
-  by: z.string().min(1).meta({ description: "A metric name or a column in by." }),
-  order: z.enum(["asc", "desc"]),
-});
+const sort = z
+  .strictObject({
+    by: z.string().min(1).meta({ description: "A metric name or a column in by." }),
+    order: z.enum(["asc", "desc"]),
+  })
+  .meta({ id: "Sort" });
 
-const kpiBlock = z.strictObject({
-  ...blockCommon,
-  type: z.literal("kpi"),
-  metric: metricName,
-  compare: comparison
-    .optional()
-    .meta({ description: "Defaults to the dashboard period's compare." }),
-  sparkline: z.boolean().optional(),
-});
+const kpiBlock = z
+  .strictObject({
+    ...blockCommon,
+    type: z.literal("kpi"),
+    metric: metricName,
+    compare: comparison
+      .optional()
+      .meta({ description: "Defaults to the dashboard period's compare." }),
+    sparkline: z.boolean().optional(),
+  })
+  .meta({ id: "KpiBlock" });
 
 const timeSeriesFields = {
   ...blockCommon,
@@ -66,11 +70,13 @@ function oneMetricWhenSplit(
 
 const lineBlock = z
   .strictObject({ ...timeSeriesFields, type: z.literal("line") })
-  .superRefine(oneMetricWhenSplit);
+  .superRefine(oneMetricWhenSplit)
+  .meta({ id: "LineBlock" });
 
 const areaBlock = z
   .strictObject({ ...timeSeriesFields, type: z.literal("area"), stack: z.boolean().optional() })
-  .superRefine(oneMetricWhenSplit);
+  .superRefine(oneMetricWhenSplit)
+  .meta({ id: "AreaBlock" });
 
 const barBlock = z
   .strictObject({
@@ -114,82 +120,97 @@ const barBlock = z
       }
     }
     oneMetricWhenSplit(b, ctx);
-  });
+  })
+  .meta({ id: "BarBlock" });
 
-const barListBlock = z.strictObject({
-  ...blockCommon,
-  type: z.literal("bar_list"),
-  metric: metricName,
-  by: columnName,
-  limit: z
-    .number()
-    .int()
-    .min(1)
-    .max(50)
-    .optional()
-    .meta({ description: "Rows shown. Default 10." }),
-  order: z.enum(["asc", "desc"]).optional(),
-});
+const barListBlock = z
+  .strictObject({
+    ...blockCommon,
+    type: z.literal("bar_list"),
+    metric: metricName,
+    by: columnName,
+    limit: z
+      .number()
+      .int()
+      .min(1)
+      .max(50)
+      .optional()
+      .meta({ description: "Rows shown. Default 10." }),
+    order: z.enum(["asc", "desc"]).optional(),
+  })
+  .meta({ id: "BarListBlock" });
 
-const tableBlock = z.strictObject({
-  ...blockCommon,
-  type: z.literal("table"),
-  by: z.array(columnName).min(1).max(3).meta({ description: "Grouping columns, outermost first." }),
-  metrics: z.array(metricName).min(1).max(12),
-  totals: z
-    .boolean()
-    .optional()
-    .meta({ description: "Total row, recomputed from rows (not summed). Default true." }),
-  percentOfTotal: z.array(metricName).optional().meta({
-    description: "Metrics that also show their share of the total. Additive metrics only.",
-  }),
-  sort: sort.optional(),
-  limit: z.number().int().min(1).max(1000).optional(),
-});
+const tableBlock = z
+  .strictObject({
+    ...blockCommon,
+    type: z.literal("table"),
+    by: z
+      .array(columnName)
+      .min(1)
+      .max(3)
+      .meta({ description: "Grouping columns, outermost first." }),
+    metrics: z.array(metricName).min(1).max(12),
+    totals: z
+      .boolean()
+      .optional()
+      .meta({ description: "Total row, recomputed from rows (not summed). Default true." }),
+    percentOfTotal: z.array(metricName).optional().meta({
+      description: "Metrics that also show their share of the total. Additive metrics only.",
+    }),
+    sort: sort.optional(),
+    limit: z.number().int().min(1).max(1000).optional(),
+  })
+  .meta({ id: "TableBlock" });
 
-const textBlock = z.strictObject({
-  ...blockCommon,
-  type: z.literal("text"),
-  markdown: z.string().meta({
-    description:
-      "Markdown. {{metric}} inserts the current value; {{metric.previous}}, {{metric.change}} and {{metric.change_pct}} insert the comparison.",
-  }),
-});
+const textBlock = z
+  .strictObject({
+    ...blockCommon,
+    type: z.literal("text"),
+    markdown: z.string().meta({
+      description:
+        "Markdown. {{metric}} inserts the current value; {{metric.previous}}, {{metric.change}} and {{metric.change_pct}} insert the comparison.",
+    }),
+  })
+  .meta({ id: "TextBlock" });
 
-export const blockSchema = z.discriminatedUnion("type", [
-  kpiBlock,
-  lineBlock,
-  areaBlock,
-  barBlock,
-  barListBlock,
-  tableBlock,
-  textBlock,
-]);
+export const blockSchema = z
+  .discriminatedUnion("type", [
+    kpiBlock,
+    lineBlock,
+    areaBlock,
+    barBlock,
+    barListBlock,
+    tableBlock,
+    textBlock,
+  ])
+  .meta({ id: "Block" });
 export type Block = z.infer<typeof blockSchema>;
 export type BlockType = Block["type"];
 
-export const dashboardFilterSchema = z.discriminatedUnion("type", [
-  z.strictObject({
-    type: z.literal("select"),
-    id: identifier,
-    label: z.string().optional(),
-    column: columnName.meta({
-      description: "Filters every block whose metric table has this column.",
+export const dashboardFilterSchema = z
+  .discriminatedUnion("type", [
+    z.strictObject({
+      type: z.literal("select"),
+      id: identifier,
+      label: z.string().optional(),
+      column: columnName.meta({
+        description: "Filters every block whose metric table has this column.",
+      }),
+      multiple: z.boolean().optional(),
+      default: z
+        .union([scalar, z.array(scalar)])
+        .optional()
+        .meta({ description: "Default: no filter (all)." }),
     }),
-    multiple: z.boolean().optional(),
-    default: z
-      .union([scalar, z.array(scalar)])
-      .optional()
-      .meta({ description: "Default: no filter (all)." }),
-  }),
-  z.strictObject({
-    type: z.literal("period"),
-    id: identifier,
-    label: z.string().optional(),
-    options: z.array(periodRange).min(1),
-    default: periodRange,
-  }),
-]);
+    z.strictObject({
+      type: z.literal("period"),
+      id: identifier,
+      label: z.string().optional(),
+      options: z.array(periodRange).min(1),
+      default: periodRange,
+    }),
+  ])
+  .meta({ id: "DashboardFilter" });
 export type DashboardFilter = z.infer<typeof dashboardFilterSchema>;
 
 export const periodSchema = z
@@ -202,6 +223,7 @@ export const periodSchema = z
     compare: comparison,
   })
   .meta({
+    id: "Period",
     description:
       'Defaults to {"asOf": "latest_data", "range": "last_12_months", "compare": "previous_period"}.',
   });

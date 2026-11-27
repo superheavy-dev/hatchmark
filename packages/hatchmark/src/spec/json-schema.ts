@@ -7,11 +7,14 @@ export const SCHEMA_FILES: Record<SpecKind, string> = {
   dashboard: "dashboard.schema.json",
 };
 
-/** JSON Schema (draft 2020-12) for each spec file, generated from the Zod schemas. */
+/**
+ * JSON Schema (draft 2020-12) for each spec file, generated from the Zod schemas. Only schemas
+ * named with .meta({ id }) go to $defs, under that name; everything else is inlined.
+ */
 export function jsonSchema(kind: SpecKind): Record<string, unknown> {
   return z.toJSONSchema(SPEC_SCHEMAS[kind], {
     io: "input",
     unrepresentable: "any",
-    reused: "ref",
+    reused: "inline",
   }) as Record<string, unknown>;
 }

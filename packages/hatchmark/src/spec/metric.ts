@@ -22,6 +22,7 @@ const betweenFilter = z.strictObject({
 export const filterSchema = z
   .discriminatedUnion("op", [comparisonFilter, setFilter, nullFilter, betweenFilter])
   .meta({
+    id: "Filter",
     description:
       "A row filter. between is inclusive at both ends. A date (YYYY-MM-DD) compared with a timestamp column compares the row's calendar date in the project time zone, so eq matches the whole day and between includes all of its last day. neq and not_in keep rows whose column is null; the other operators never match null.",
   });
@@ -49,7 +50,7 @@ export const formatSchema = z
       })
       .meta({ description: "The value is a fraction: 0.124 shows as 12.4%." }),
   ])
-  .meta({ description: "How values of this metric are shown." });
+  .meta({ id: "Format", description: "How values of this metric are shown." });
 export type Format = z.infer<typeof formatSchema>;
 
 export const AGGREGATES = [
@@ -101,29 +102,34 @@ const aggregateMetric = z
         ),
       );
     }
-  });
+  })
+  .meta({ id: "AggregateMetric" });
 
-const ratioMetric = z.strictObject({
-  ...common,
-  type: z.literal("ratio"),
-  numerator: identifier.meta({ description: "Metric name." }),
-  denominator: identifier.meta({ description: "Metric name." }),
-});
+const ratioMetric = z
+  .strictObject({
+    ...common,
+    type: z.literal("ratio"),
+    numerator: identifier.meta({ description: "Metric name." }),
+    denominator: identifier.meta({ description: "Metric name." }),
+  })
+  .meta({ id: "RatioMetric" });
 
-const sqlMetric = z.strictObject({
-  ...common,
-  type: z.literal("sql"),
-  table: identifier,
-  sql: z.string().min(1).meta({
-    description:
-      "Escape hatch: one SQL aggregate expression over the table, such as sum(amount) - sum(refund).",
-  }),
-  additive: z.boolean().meta({
-    description: "True only if summing the metric over groups gives the metric over all rows.",
-  }),
-  filters: z.array(filterSchema).optional(),
-  time: timeColumn,
-});
+const sqlMetric = z
+  .strictObject({
+    ...common,
+    type: z.literal("sql"),
+    table: identifier,
+    sql: z.string().min(1).meta({
+      description:
+        "Escape hatch: one SQL aggregate expression over the table, such as sum(amount) - sum(refund).",
+    }),
+    additive: z.boolean().meta({
+      description: "True only if summing the metric over groups gives the metric over all rows.",
+    }),
+    filters: z.array(filterSchema).optional(),
+    time: timeColumn,
+  })
+  .meta({ id: "SqlMetric" });
 
 export const metricSchema = z
   .discriminatedUnion("type", [aggregateMetric, ratioMetric, sqlMetric])
