@@ -4,17 +4,20 @@ import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import {
   type DashboardExecutor,
   type ExecutionContext,
+  executionContext,
   type PlannedQuery,
   planDashboard,
+  type QueryPlan,
+  type QueryResult,
   queryBounds,
   runDashboard,
   runDashboardBindings,
 } from "../../src/compiler/index.js";
 import { runPeriodData } from "../../src/compiler/period-build.js";
 import { createDuckDbExecutor } from "../../src/node/index.js";
-import type { Project } from "../../src/spec/index.js";
+import { PROJECT_DEFAULTS, type Project } from "../../src/spec/index.js";
 import { fromYaml, toYaml } from "../yaml.js";
-import { EXAMPLE, loadAt, removeProjects, writeExample } from "./fixture.js";
+import { EXAMPLE, loadAt, metric, removeProjects, writeExample, writeProject } from "./fixture.js";
 
 vi.setConfig({ testTimeout: 60_000, hookTimeout: 60_000 });
 
@@ -196,6 +199,74 @@ describe("period presets run as one batch per query", () => {
     },
   );
 
+  it("keeps each window's own float magnitude in a batch, so HM4004 follows the window", async () => {
+    const rows = [
+      ...Array.from(
+        { length: 5 },
+        (_, i) => `2025-03-0${i + 1}T12:00:00Z,${i % 2 ? "a" : "b"},${(i + 2) * 1e13 + 0.5}`,
+      ),
+      ...Array.from(
+        { length: 5 },
+        (_, i) => `2025-06-2${i + 1}T12:00:00Z,${i % 2 ? "a" : "b"},${i + 1.25}`,
+      ),
+    ];
+    const options = [
+      { last: 7, unit: "day" },
+      { start: "2025-03-01", end: "2025-03-31" },
+      { last: 30, unit: "day" },
+    ];
+    const { root: at, project: large } = await writeProject({
+      "hatchmark.yaml": {
+        ...PROJECT_DEFAULTS,
+        name: "Large",
+        sources: { s: { type: "csv", path: "s.csv" } },
+      },
+      "s.csv": `at,g,v\n${rows.join("\n")}\n`,
+      "metrics/v.yaml": metric({
+        type: "aggregate",
+        table: "s",
+        aggregate: "sum",
+        column: "v",
+        time: "at",
+      }),
+      "dashboards/d.yaml": {
+        title: "D",
+        period: { asOf: "2025-06-25", range: "last_30_days", compare: "none" },
+        filters: [{ type: "period", id: "period", options, default: options[2], custom: false }],
+        blocks: [
+          { type: "kpi", metric: "v" },
+          { type: "bar", metrics: ["v"], by: "g" },
+        ],
+      },
+    });
+    const config = large.config.spec;
+    if (config === undefined) throw new Error("invalid hatchmark.yaml");
+    const own = await createDuckDbExecutor({ root: at, config });
+    try {
+      const sets = options.slice(0, 2).map((option) => ({ period: option }));
+      const together = await runDashboardBindings(large, "d", own, sets);
+      const alone: Awaited<ReturnType<typeof runDashboard>>[] = [];
+      for (const bindings of sets) {
+        alone.push(await runDashboard(large, "d", oneByOne(own), undefined, bindings));
+      }
+      const codes = (runs: typeof alone) => runs.map((run) => run.diagnostics.map((d) => d.code));
+      expect(codes(alone)).toEqual([[], ["HM4004", "HM4004"]]);
+      expect(codes(together)).toEqual(codes(alone));
+      expect(JSON.stringify(together)).toBe(JSON.stringify(alone));
+      const plan = planDashboard(large, "d").plan;
+      const base = (await executionContext(large, plan as QueryPlan, own)).context;
+      if (base === undefined) throw new Error("no context");
+      const contexts = sets.map((bindings) => ({ ...base, bindings }));
+      for (const query of plan?.queries ?? []) {
+        const each: QueryResult[] = [];
+        for (const context of contexts) each.push(await own.execute(query, context));
+        expect(await own.executeMany?.(query, contexts)).toEqual(each);
+      }
+    } finally {
+      await own.close();
+    }
+  });
+
   it("runs raw SQL once per window, never inside a shared statement", async () => {
     const { executor, calls } = counted(db);
     const base = await runDashboard(project, "raw", executor);
@@ -280,8 +351,8 @@ describe("period presets run as one batch per query", () => {
     const elapsed = performance.now() - started;
     const presetStatements = calls.execute + calls.executeMany - baseCalls.execute;
     expect(baseCalls).toEqual({ execute: 14, executeMany: 0, horizon: 1 });
-    expect(presetStatements).toBeLessThanOrEqual(2 * baseCalls.execute);
-    expect(calls.horizon - baseCalls.horizon).toBeLessThanOrEqual(2);
+    expect(presetStatements).toBe(21);
+    expect(calls.horizon - baseCalls.horizon).toBe(2);
     expect(elapsed).toBeLessThan(10_000);
     console.log(`explorer presets: ${JSON.stringify(calls)}, ${elapsed.toFixed(0)} ms`);
   });
