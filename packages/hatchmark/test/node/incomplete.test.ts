@@ -1,12 +1,20 @@
-import { afterAll, describe, expect, it } from "vitest";
+import path from "node:path";
+import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import type { KpiData, LineData } from "../../src/compiler/index.js";
 import { PROJECT_DEFAULTS } from "../../src/spec/index.js";
-import { metric, removeProjects, run, writeProject } from "./fixture.js";
+import { metric, Oracle, removeProjects, run, writeProject } from "./fixture.js";
 
 // Windows ended at each measure's horizon, comparisons over the same elapsed span, and partial
 // buckets (RFC 0001 sections 6.4 and 6.5).
 
-afterAll(removeProjects);
+let oracle: Oracle;
+beforeAll(async () => {
+  oracle = await Oracle.open();
+});
+afterAll(async () => {
+  oracle.close();
+  await removeProjects();
+});
 
 async function dashboard(options: {
   sources: Record<string, string>;
@@ -38,7 +46,7 @@ async function dashboard(options: {
   });
   const { data, diagnostics } = await run(fixture.root, fixture.project, "d");
   const block = <T>(id: string) => data?.blocks.find((b) => b.id === id) as T;
-  return { data, diagnostics, block };
+  return { data, diagnostics, block, root: fixture.root };
 }
 
 const rows = (...pairs: [string, number][]) =>
@@ -182,4 +190,53 @@ describe("partial buckets", () => {
       values: [3],
     });
   });
+});
+
+describe("windows at the horizon against SQL written here", () => {
+  // Hourly rows from Oct 1, 12:30 a.m. to Nov 29, 2:30 p.m. New York time. Each KPI is checked against a query with its bounds spelled out.
+  const at = (hours: number) =>
+    new Date(Date.UTC(2026, 9, 1, 4, 30) + hours * 3_600_000).toISOString();
+  const hourly = (count: number) =>
+    rows(...Array.from({ length: count }, (_, h): [string, number] => [at(h), (h % 7) + 1]));
+  const ranges: [string, unknown, string, string, string, string][] = [
+    [
+      "mtd",
+      "month_to_date",
+      "2026-11-01",
+      "2026-11-29 14:30:00.000001",
+      "2026-10-01",
+      "2026-10-29 14:30:00.000001",
+    ],
+    [
+      "l7",
+      { last: 7, unit: "day" },
+      "2026-11-22 14:30:00.000001",
+      "2026-11-29 14:30:00.000001",
+      "2026-11-15 14:30:00.000001",
+      "2026-11-22 14:30:00.000001",
+    ],
+  ];
+  for (const [id, range, s, e, ps, pe] of ranges) {
+    it(`${id}: value and comparison match SQL with explicit local bounds`, async () => {
+      const count = 59 * 24 + 16;
+      const { block, root } = await dashboard({
+        timezone: "America/New_York",
+        sources: { orders: hourly(count) },
+        period: { asOf: "latest_data", range, compare: "previous_period" },
+        blocks: [{ type: "kpi", id: "k", metric: "orders" }],
+      });
+      const csv = path.join(root, "orders.csv");
+      const sum = async (from: string, to: string) => {
+        const [r] = await oracle.rows(`
+          SELECT coalesce(sum(v), 0) AS v FROM read_csv('${csv}')
+          WHERE timezone('America/New_York', "at") >= TIMESTAMP '${from}'
+            AND timezone('America/New_York', "at") < TIMESTAMP '${to}'`);
+        return Number(r?.v);
+      };
+      const kpi = block<KpiData>("k");
+      expect(kpi.value).toBeGreaterThan(0);
+      expect(kpi.value).toBe(await sum(s, e));
+      expect(kpi.previousValue).toBe(await sum(ps, pe));
+    });
+  }
 });
