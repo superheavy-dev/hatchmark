@@ -97,6 +97,29 @@ describe("SpecDocument", () => {
       expect(text.slice(offset, offset + 3), style).toBe("bad");
     }
   });
+
+  it("maps string indexes past folded lines, kept spaces and indentation", () => {
+    const cases = [
+      "x: >-\n  first  second\n  {{bad}}\n",
+      "x: >\n  a\n\n  b {{bad}}\n",
+      "x: >\n  a\n    more\n  b {{bad}}\n",
+      "x: >\n\n  {{bad}}\n",
+      "x: >2\n    {{bad}}\n",
+      "x: |2\n    a\n   {{bad}}\n",
+      "x: plain  two\n  more {{bad}}\n",
+      "x: 'it''s\n  {{bad}}'\n",
+      'x: "a\\\n   b{{bad}}"\n',
+    ];
+    for (const text of cases) {
+      const doc = new SpecDocument("x.yaml", text);
+      const node = doc.locate("/x")?.node;
+      if (node?.kind !== "string") throw new Error("not a string");
+      const at = node.value.indexOf("{{bad}}");
+      const start = doc.stringOffset(node, at);
+      const end = doc.stringOffset(node, at + "{{bad}}".length);
+      expect(text.slice(start, end), text).toBe("{{bad}}");
+    }
+  });
 });
 
 describe("parseYamlFile diagnostics", () => {
@@ -130,15 +153,30 @@ describe("parseYamlFile diagnostics", () => {
     ]);
   });
 
+  it("points at the anchor or tag itself, not at the same text in a comment", () => {
+    expect(errorsOf("a: &x # &x\n  b: 1\n")).toEqual([
+      { code: "HM1006", message: "anchors (&x) are not allowed in spec files", at: "1:4" },
+    ]);
+    expect(errorsOf("a: !money # !money\n  b: 1\n").map((e) => e.at)).toEqual(["1:4"]);
+  });
+
   it("rejects tags outside the core schema and allows the core ones", () => {
     expect(errorsOf("a: !!str 2026\nb: !!int 3\n")).toEqual([]);
     expect(new SpecDocument("x.yaml", "a: !!str 2026\n").value).toEqual({ a: "2026" });
     expect(errorsOf("a: !money 1\nb: !!timestamp 2026-01-01\n").map((e) => [e.code, e.at])).toEqual(
       [
-        ["HM1006", "1:11"],
-        ["HM1006", "2:16"],
+        ["HM1006", "1:4"],
+        ["HM1006", "2:4"],
       ],
     );
+  });
+
+  it("rejects a core tag that does not fit its value", () => {
+    expect(errorsOf("label: !!int Revenue\nb: !!bool yes\nc: !!null x\n")).toEqual([
+      { code: "HM1006", message: "the tag !!int does not fit this value", at: "1:8" },
+      { code: "HM1006", message: "the tag !!bool does not fit this value", at: "2:4" },
+      { code: "HM1006", message: "the tag !!null does not fit this value", at: "3:4" },
+    ]);
   });
 
   it("rejects keys that are not strings and complex keys", () => {

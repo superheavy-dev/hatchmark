@@ -1,4 +1,13 @@
-import { isAlias, isMap, isScalar, isSeq, type Node, parseAllDocuments, Scalar } from "yaml";
+import {
+  isAlias,
+  isMap,
+  isScalar,
+  isSeq,
+  type Node,
+  Parser,
+  parseAllDocuments,
+  Scalar,
+} from "yaml";
 import type { Frame, Position, Range } from "./diagnostic.js";
 import { parsePointer } from "./pointer.js";
 
@@ -69,10 +78,42 @@ function lowerFirst(text: string): string {
 
 type Built = { node: SpecNode; value: unknown };
 
+type PropToken = { type: "anchor" | "tag"; offset: number; source: string };
+
+function propTokens(text: string): PropToken[] {
+  const found: PropToken[] = [];
+  const walk = (token: unknown): void => {
+    if (Array.isArray(token)) {
+      for (const t of token) walk(t);
+      return;
+    }
+    if (token === null || typeof token !== "object") return;
+    const t = token as Record<string, unknown>;
+    if (
+      (t.type === "anchor" || t.type === "tag") &&
+      typeof t.offset === "number" &&
+      typeof t.source === "string"
+    )
+      found.push({ type: t.type, offset: t.offset, source: t.source });
+    for (const value of Object.values(t)) if (typeof value === "object") walk(value);
+  };
+  for (const token of new Parser().parse(text)) walk(token);
+  return found.sort((a, b) => a.offset - b.offset);
+}
+
 class Builder {
   readonly errors: SpecSyntaxError[] = [];
+  private readonly props: PropToken[];
 
-  constructor(private readonly text: string) {}
+  constructor(private readonly text: string) {
+    this.props = propTokens(text);
+  }
+
+  private propBefore(type: PropToken["type"], at: number, source?: string): PropToken | undefined {
+    return this.props.findLast(
+      (p) => p.type === type && p.offset <= at && (source === undefined || p.source === source),
+    );
+  }
 
   parse(): Built | undefined {
     const docs = parseAllDocuments(this.text, {
@@ -91,6 +132,18 @@ class Builder {
         ...doc.warnings.filter((w) => w.code !== "TAG_RESOLVE_FAILED"),
       ])
       .sort((a, b) => a.pos[0] - b.pos[0]);
+    for (const warning of list.flatMap((doc) => doc.warnings)) {
+      if (warning.code !== "TAG_RESOLVE_FAILED") continue;
+      if (![...CORE_TAGS].some((tag) => warning.message.endsWith(tag))) continue;
+      const [start, end] = warning.pos;
+      const tag = this.text.slice(start, end);
+      this.unsupported(
+        `the tag ${tag} does not fit this value`,
+        start,
+        end,
+        "remove the tag; quote the value if it must stay a string",
+      );
+    }
     const first = syntax[0];
     if (first !== undefined) {
       const help = HELP[first.code];
@@ -136,8 +189,8 @@ class Builder {
 
   private checkNode(node: Node): void {
     if (node.anchor) {
-      const at = this.text.lastIndexOf(`&${node.anchor}`, node.range?.[0] ?? 0);
-      const start = at === -1 ? (node.range?.[0] ?? 0) : at;
+      const at = node.range?.[0] ?? 0;
+      const start = this.propBefore("anchor", at, `&${node.anchor}`)?.offset ?? at;
       this.unsupported(
         `anchors (&${node.anchor}) are not allowed in spec files`,
         start,
@@ -146,11 +199,13 @@ class Builder {
       );
     }
     if (node.tag && !CORE_TAGS.has(node.tag)) {
-      const start = node.range?.[0] ?? 0;
+      const at = node.range?.[0] ?? 0;
+      const token = this.propBefore("tag", at);
+      const start = token?.offset ?? at;
       this.unsupported(
         `the tag ${node.tag} is not allowed in spec files`,
         start,
-        node.range?.[1] ?? start,
+        token ? start + token.source.length : (node.range?.[1] ?? start),
         "remove the tag; quote the value if it must stay a string",
       );
     }
@@ -435,18 +490,57 @@ export class SpecDocument {
       }
       return node.end;
     }
+    const blank = (ch: string | undefined) =>
+      ch === " " || ch === "\t" || ch === "\n" || ch === "\r";
     let pos = node.start;
     if (node.style === "single" || node.style === "double") pos++;
     else if (node.style === "folded" || node.style === "literal") {
       const header = text.slice(node.start).search(/\r\n|\r|\n/);
       pos = header === -1 ? node.end : node.start + header + 1;
     }
-    for (let decoded = 0; decoded < index && pos < node.end; decoded++) {
-      const ch = node.value[decoded] ?? "";
-      const space = /\s/.test(ch);
-      while (pos < node.end && (space ? !/\s/.test(text[pos] ?? "") : text[pos] !== ch)) pos++;
-      if (space) while (pos + 1 < node.end && /\s/.test(text[pos + 1] ?? "")) pos++;
+    let decoded = 0;
+    if (node.style === "folded" || node.style === "literal") {
+      let run = pos;
+      while (run < node.end && blank(text[run])) run++;
+      while (blank(node.value[decoded])) decoded++;
+      let kept = 0;
+      while (kept < decoded && node.value[decoded - 1 - kept] === " ") kept++;
+      pos = run - kept;
+      decoded -= kept;
+    }
+    while (decoded < index && pos < node.end) {
+      if (node.style === "double" && text[pos] === "\\") {
+        const esc = text[pos + 1];
+        if (esc === "\n" || esc === "\r") {
+          pos += text.startsWith("\r\n", pos + 1) ? 3 : 2;
+          while (text[pos] === " " || text[pos] === "\t") pos++;
+          continue;
+        }
+        const length = esc === "x" ? 4 : esc === "u" ? 6 : esc === "U" ? 10 : 2;
+        decoded +=
+          esc === "U" && Number.parseInt(text.slice(pos + 2, pos + 10), 16) > 0xffff ? 2 : 1;
+        pos += length;
+        continue;
+      }
+      if (node.style === "single" && text.startsWith("''", pos)) {
+        pos += 2;
+        decoded++;
+        continue;
+      }
+      if (blank(text[pos])) {
+        let run = pos;
+        while (run < node.end && blank(text[run])) run++;
+        if (!/[\r\n]/.test(text.slice(pos, run))) {
+          pos++;
+          decoded++;
+          continue;
+        }
+        while (decoded < index && blank(node.value[decoded])) decoded++;
+        pos = run;
+        continue;
+      }
       pos++;
+      decoded++;
     }
     return Math.min(pos, node.end);
   }
