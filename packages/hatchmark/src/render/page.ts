@@ -160,10 +160,6 @@ export function blockHeading(
   };
 }
 
-/**
- * What a table's metrics read: the first dated metric's window ("through …" for an all-time
- * period), then each metric that reads another span, over all time, or has an empty window.
- */
 function tableSpan(block: TableData, ctx: RenderContext): string | undefined {
   if (block.empty) return undefined;
   const locale = ctx.data.locale;

@@ -50,6 +50,7 @@ import {
   TABLE_SUBTOTALS_OTHER,
   TABLE_TALL,
   TABLE_TOP_OTHER,
+  TABLE_WINDOWS,
 } from "./tables.js";
 
 /** One gallery entry: a component variant on sample data, wrapped as a one-block dashboard. */
@@ -610,6 +611,12 @@ const TABLES: GalleryVariant[] = [
     "table-other-distinct",
     "Other row on a distinct count: shown as — (check warns HM4063)",
     TABLE_OTHER_DISTINCT,
+  ),
+  one(
+    "table",
+    "table-windows",
+    "Metrics with different horizons: the subtitle names the one that ends earlier",
+    TABLE_WINDOWS,
   ),
   one("table", "table-subtotals", "Subtotals by region, with in-cell bars", TABLE_SUBTOTALS),
   one(

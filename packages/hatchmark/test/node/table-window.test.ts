@@ -1,4 +1,3 @@
-// The table subtitle states what each metric reads, checked against plain SQL over that span.
 import path from "node:path";
 import { afterAll, expect, it } from "vitest";
 import type { TableData } from "../../src/compiler/index.js";
@@ -17,8 +16,6 @@ const METRICS = {
   units: sum("sales", "units", "Units", null),
   stock: sum("sales", "units", "Stock", null),
 };
-// sales runs through Nov 4 19:03 New York (complete days end Nov 3), refunds through Nov 2 13:00
-// (complete days end Nov 1), and old only has October rows (nothing in November).
 const SOURCES = {
   sales:
     "2026-10-29T15:00:00Z,A,300,2\n2026-11-01T15:00:00Z,A,70,1\n2026-11-02T18:00:00Z,B,99,3\n" +
@@ -73,20 +70,18 @@ async function table(
   return { block, subtitle, sql, raw, values };
 }
 
-/** New York midnight starting a day, in UTC (daylight saving time ends on Nov 1, 2026). */
-const midnight = (day: string) =>
+const newYorkMidnight = (day: string) =>
   `TIMESTAMPTZ '${day} ${day < "2026-11-02" ? "04" : "05"}:00:00+00'`;
-/** Whole New York days from first up to, not including, end. */
-const days = (first: string, end: string) =>
-  `FILTER (WHERE "at" >= ${midnight(first)} AND "at" < ${midnight(end)})`;
+const newYorkDays = (first: string, end: string) =>
+  `FILTER (WHERE "at" >= ${newYorkMidnight(first)} AND "at" < ${newYorkMidnight(end)})`;
 
 it("names the metric that ends at an earlier horizon and the untimed one, each matching SQL", async () => {
   const { block, subtitle, sql, raw, values } = await table(["revenue", "refunds", "units"]);
   const expected = await sql(`
     SELECT s.market, s.revenue, r.refunds, s.units FROM
-      (SELECT market, sum(amount) ${days("2026-11-01", "2026-11-04")} AS revenue, sum(units) AS units
+      (SELECT market, sum(amount) ${newYorkDays("2026-11-01", "2026-11-04")} AS revenue, sum(units) AS units
         FROM ${raw("sales")} GROUP BY market) s
-      LEFT JOIN (SELECT market, sum(amount) ${days("2026-11-01", "2026-11-02")} AS refunds
+      LEFT JOIN (SELECT market, sum(amount) ${newYorkDays("2026-11-01", "2026-11-02")} AS refunds
         FROM ${raw("refunds")} GROUP BY market) r USING (market)
     ORDER BY s.market`);
   expect(expected).toEqual([
@@ -117,9 +112,9 @@ it("says through each horizon for an all-time period, matching SQL", async () =>
     "all_time",
   );
   const expected = await sql(`
-    SELECT (SELECT sum(amount) FILTER (WHERE "at" < ${midnight("2026-11-04")}) FROM ${raw("sales")}
+    SELECT (SELECT sum(amount) FILTER (WHERE "at" < ${newYorkMidnight("2026-11-04")}) FROM ${raw("sales")}
         WHERE market = 'A') AS revenue,
-      (SELECT sum(amount) FILTER (WHERE "at" < ${midnight("2026-11-02")}) FROM ${raw("refunds")}
+      (SELECT sum(amount) FILTER (WHERE "at" < ${newYorkMidnight("2026-11-02")}) FROM ${raw("refunds")}
         WHERE market = 'A') AS refunds,
       (SELECT sum(units) FROM ${raw("sales")} WHERE market = 'A') AS units`);
   expect(expected).toEqual([{ revenue: 405, refunds: 16, units: 12 }]);

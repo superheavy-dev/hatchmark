@@ -151,6 +151,14 @@ export const TABLE_TOP_OTHER: TableData = {
   }),
 };
 
+export const TABLE_WINDOWS: TableData = {
+  ...base("windows", "Customers come from a CRM export that lags two days behind orders"),
+  metrics: ["revenue", "orders", "customers"],
+  percentOfTotal: [],
+  windows: { customers: { start: "2026-10-01", end: "2026-10-30" } },
+  ...build(countryParts, { metrics: ["revenue", "orders", "customers"], width: 1, limit: 8 }),
+};
+
 export const TABLE_OTHER_DISTINCT: TableData = {
   ...base("other_distinct", "Customers by country: Other cannot add up distinct customers"),
   metrics: ["revenue", "customers"],
