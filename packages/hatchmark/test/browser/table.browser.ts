@@ -385,3 +385,74 @@ describe("tall tables", () => {
     await desktop.close();
   });
 });
+
+describe("in-cell bar and scrollbar layout", () => {
+  /** Each column's track left and right edges across the body rows that draw one. */
+  const tracks = (page: Page) =>
+    page.$$eval(".hm-table tbody tr", (trs) => {
+      const columns: Record<number, { left: number; right: number }[]> = {};
+      for (const tr of trs)
+        [...tr.children].forEach((cell, i) => {
+          const track = cell.querySelector(".hm-track");
+          if (!track) return;
+          const r = track.getBoundingClientRect();
+          columns[i] = [...(columns[i] ?? []), { left: r.left, right: r.right }];
+        });
+      return Object.values(columns);
+    });
+  const aligned = (columns: { left: number; right: number }[][]) => {
+    expect(columns.length).toBeGreaterThan(0);
+    for (const edges of columns) {
+      expect(edges.length).toBeGreaterThan(1);
+      const lefts = edges.map((e) => e.left);
+      const rights = edges.map((e) => e.right);
+      expect(Math.max(...lefts) - Math.min(...lefts)).toBeLessThan(0.5);
+      expect(Math.max(...rights) - Math.min(...rights)).toBeLessThan(0.5);
+    }
+  };
+
+  for (const name of ["subtotals", "bars", "top"]) {
+    it(`starts and ends every bar track of a column at the same x, before and after a sort (${name})`, async () => {
+      const page = await open(name);
+      aligned(await tracks(page));
+      await page.locator("thead th").last().locator("button").click();
+      aligned(await tracks(page));
+      await page.close();
+    });
+  }
+
+  it("keeps the last column a cell padding clear of the scrollbar, with header, body and total aligned", async () => {
+    const classic = await chromium.launch({ ignoreDefaultArgs: ["--hide-scrollbars"] });
+    const page = await classic.newPage({ viewport: { width: 1280, height: 900 } });
+    await page.goto(urls.tall ?? "");
+    await page.addStyleTag({ content: ".hm-tall::-webkit-scrollbar{width:15px;background:#888}" });
+    const box = await page.$eval(".hm-table-wrap", (node) => {
+      const wrap = node as HTMLElement;
+      const last = (selector: string) => {
+        const cell = wrap.querySelector(selector) as HTMLElement;
+        const range = document.createRange();
+        range.selectNodeContents(cell);
+        return {
+          cell: cell.getBoundingClientRect().right,
+          text: range.getBoundingClientRect().right,
+        };
+      };
+      const r = wrap.getBoundingClientRect();
+      const style = getComputedStyle(wrap);
+      return {
+        scrollbar: wrap.offsetWidth - wrap.clientWidth - wrap.clientLeft * 2,
+        edge: r.left + wrap.clientLeft + wrap.clientWidth,
+        padding: Number.parseFloat(style.paddingRight),
+        head: last("thead tr > :last-child"),
+        body: last("tbody tr > :last-child"),
+        foot: last("tfoot tr > :last-child"),
+      };
+    });
+    expect(box.scrollbar).toBeGreaterThan(0);
+    expect(box.edge - box.body.text).toBeGreaterThanOrEqual(16);
+    expect(Math.abs(box.head.cell - box.body.cell)).toBeLessThan(0.5);
+    expect(Math.abs(box.foot.cell - box.body.cell)).toBeLessThan(0.5);
+    expect(Math.abs(box.foot.text - box.body.text)).toBeLessThan(0.5);
+    await classic.close();
+  });
+});
