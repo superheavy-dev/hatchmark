@@ -229,7 +229,7 @@ describe("hatchmark dev", { timeout: 30_000 }, () => {
       lines[at] = cells.join(",");
       return `${lines.join("\n")}\n`;
     });
-    await hmr.next("hatchmark:update");
+    await hmr.next("hatchmark:update", 15_000, "sales");
     await server.idle();
     const sales = hmr.messages.find(
       (m) => m.event === "hatchmark:update" && m.data?.dashboard === "sales",

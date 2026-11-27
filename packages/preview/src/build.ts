@@ -54,7 +54,16 @@ function buildDashboards(cwd: string, out: string): void {
   const report = JSON.parse(
     execFileSync(
       process.execPath,
-      [join(HATCHMARK, "dist", "cli", "bin.js"), "build", "--cwd", cwd, "--out", out, "--json"],
+      [
+        join(HATCHMARK, "dist", "cli", "bin.js"),
+        "build",
+        "--cwd",
+        cwd,
+        "--out",
+        out,
+        "--no-cache",
+        "--json",
+      ],
       { encoding: "utf8", stdio: ["ignore", "pipe", "inherit"] },
     ),
   );
