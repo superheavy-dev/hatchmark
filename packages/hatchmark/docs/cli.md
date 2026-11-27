@@ -5,15 +5,17 @@ run it the same way a person does. `hatchmark <command> --help` shows a command'
 example. [README.md](README.md) lists every docs page; the files a project holds are described in
 [project.md](project.md), [metrics.md](metrics.md) and [dashboards.md](dashboards.md).
 
-| Command                               | What it does                                                                                                                                                                   |
-| ------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `init [dir]`                          | Creates a project: `hatchmark.json` with every setting written out, sample US orders data, four metrics, a dashboard, and a Hatchmark block in `AGENTS.md`.                    |
-| `check [paths...]`                    | Checks JSON syntax, spec shape, and references between files and to data columns. Paths are relative to `--cwd`. `hatchmark.json` is always checked first, whatever the paths. |
-| `build [--out <dir>]`                 | Checks the project, runs every dashboard's queries and writes static HTML pages to `outDir`. See [build.md](build.md).                                                         |
-| `schema [project\|metric\|dashboard]` | Prints the JSON Schema for a file kind, or all three keyed by kind.                                                                                                            |
-| `explain <code>`                      | Explains a diagnostic code such as `HM2003` and how to fix it.                                                                                                                 |
-| `version`                             | Prints the Hatchmark and Node.js versions.                                                                                                                                     |
-| `doctor`                              | Checks that this machine can run Hatchmark: Node.js, bundled docs and schemas, project config.                                                                                 |
+| Command                                   | What it does                                                                                                                                                                                                          |
+| ----------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `init [dir]`                              | Creates a project: `hatchmark.json` with every setting written out, sample US orders data, four metrics, a dashboard, and a Hatchmark block in `AGENTS.md`.                                                           |
+| `check [paths...]`                        | Checks JSON syntax, spec shape, and references between files and to data columns. Paths are relative to `--cwd`. `hatchmark.json` is always checked first, whatever the paths. `--sql` also prints every block's SQL. |
+| `build [--out <dir>]`                     | Checks the project, runs every dashboard's queries and writes static HTML pages to `outDir`. See [build.md](build.md).                                                                                                |
+| `schema [project\|metric\|dashboard]`     | Prints the JSON Schema for a file kind, or all three keyed by kind.                                                                                                                                                   |
+| `explain <code>`                          | Explains a diagnostic code such as `HM2003` and how to fix it.                                                                                                                                                        |
+| `explain <metric>`                        | Prints the SQL that build runs for a metric. See [Printing the SQL](#printing-the-sql).                                                                                                                               |
+| `explain --dashboard <name> --block <id>` | Prints the SQL of one block. See [Printing the SQL](#printing-the-sql).                                                                                                                                               |
+| `version`                                 | Prints the Hatchmark and Node.js versions.                                                                                                                                                                            |
+| `doctor`                                  | Checks that this machine can run Hatchmark: Node.js, bundled docs and schemas, project config.                                                                                                                        |
 
 ## Output
 
@@ -27,6 +29,48 @@ prints the command's usage, options and example as JSON. Every JSON result has `
 included, use the diagnostic report described in [diagnostics.md](diagnostics.md).
 
 Colour is on in a terminal unless you pass `--no-color` or set `NO_COLOR`.
+
+## Printing the SQL
+
+`hatchmark explain <metric>` prints the SQL that build runs for one metric. It reads the metric by month
+over `last_12_months` as of `latest_data`. The metric's own filters and segments apply, and no
+dashboard filters do. A metric without a time column is read once over all rows.
+
+`hatchmark explain --dashboard <name> --block <id>` prints the queries of one block instead.
+`hatchmark check --sql` prints the queries of every block. In both cases each filter is at its
+default. A grain switch prints one query per grain. A comparison window that doesn't exist, such as
+`all_time`, is left out, the same way build skips it.
+
+The printed SQL is the text the DuckDB executor runs. The same core function builds it with the
+same values. Human output inlines each value as a SQL literal of the type it is bound as.
+Strings are VARCHAR and booleans are BOOLEAN. Whole numbers are INTEGER or BIGINT. Other numbers are
+DOUBLE, such as `CAST(0.1 AS DOUBLE)`, so a comparison with a FLOAT column gives the same rows.
+Quoted identifiers, string literals and comments are left as they are. JSON output keeps the
+`$hm_pN` parameters and gives their values:
+
+```json
+{
+  "format_version": "1",
+  "metric": "revenue",
+  "as_of": "2026-10-31",
+  "queries": [
+    {
+      "id": "q_…",
+      "source": "orders",
+      "sql": "SELECT …",
+      "params": { "hm_p1": "…" }
+    }
+  ],
+  "diagnostics": []
+}
+```
+
+`--dashboard` and `--block` output has `dashboard` and `block` in place of `metric`. `check --json --sql`
+adds `sql: [{ dashboard, block, queries }]` to the diagnostic report. Nothing runs when check finds
+an error. With paths, an error in a file outside them that keeps a dashboard from building is one
+HM2015 error on that dashboard. A block the planner leaves out, such as a metric with segments
+(HM4023), has no queries, and its warning is in `diagnostics`. `"__hm_source_<name>"` is a temporary table that holds the source's rows, in file order.
+`"__hm_ord"` numbers those rows, so floating-point sums always add the values in the same order.
 
 ## Global options
 

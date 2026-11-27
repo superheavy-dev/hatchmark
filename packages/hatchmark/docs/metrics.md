@@ -124,6 +124,8 @@ The escape hatch, for a number no aggregate expresses: one SQL aggregate express
 `additive` is `true` only if summing the metric over groups gives the metric over all rows (a sum
 or a count). Distinct counts, averages and ratios are `false`. Build warns with `HM4003` when a
 table's rows do not add up to its total. `filters` and `time` work as for an aggregate.
+`$hm_p` is reserved for the parameters Hatchmark binds, in any case and anywhere in `sql`, inside
+strings too. check rejects it with `HM3005`.
 
 ## Filters
 

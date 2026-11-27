@@ -3,6 +3,8 @@ import {
   assemble,
   planDashboard,
   planHash,
+  printSql,
+  querySql,
   resolveParams,
   resolveRange,
 } from "../../src/compiler/index.js";
@@ -114,6 +116,27 @@ export default {
       }),
       svg: renderChartSvg(REVENUE_LINE, SALES, { width: 600, mode: "dark" }),
       width: textWidth("Revenue", { size: 12 }),
+      sql:
+        query &&
+        printSql(
+          querySql(
+            {
+              name: "orders",
+              relation: '"__hm_source_orders"',
+              columns: [
+                { name: "ordered_at", type: "DATE" },
+                { name: "amount", type: "BIGINT" },
+              ],
+            },
+            query,
+            {
+              asOf: "2026-10-31",
+              timezone: "UTC",
+              anchors: { ...DEFAULT_ANCHORS, week: "monday" },
+              bindings: {},
+            },
+          ),
+        ),
     });
   },
 };

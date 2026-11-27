@@ -264,6 +264,27 @@ describe("spec schemas", () => {
     ).toEqual([["HM3007", "/blocks/0/grains"]]);
   });
 
+  it("reject the reserved $hm_p prefix anywhere in a sql metric (HM3005)", () => {
+    const sql = (text: string) =>
+      diagnose("metric", {
+        label: "X",
+        type: "sql",
+        table: "orders",
+        additive: true,
+        sql: text,
+        format: { type: "number" },
+        better: "up",
+      }).map((d) => [d.code, d.pointer]);
+    expect(sql("count(*)")).toEqual([]);
+    for (const text of [
+      "count(*) FILTER (WHERE status <> $$hm_p1$)",
+      "count(*) FILTER (WHERE status <> E'\\'$hm_p1')",
+      'sum("cost$HM_P2")',
+    ]) {
+      expect(sql(text), text).toEqual([["HM3005", "/sql"]]);
+    }
+  });
+
   it("reject invalid file names", () => {
     expect(diagnose("metric", METRICS.orders, "Net-Revenue")[0]).toMatchObject({ code: "HM1004" });
     expect(diagnose("dashboard", DASHBOARD, "sales-overview")).toEqual([]);
