@@ -10,7 +10,8 @@ See [CONTRIBUTING.md](CONTRIBUTING.md) for how to report bugs and request featur
 
 ```
 packages/
-└─ hatchmark/   # the published package: spec, compiler, diagnostics, CLI
+├─ hatchmark/   # the published package: spec, compiler, diagnostics, CLI
+└─ preview/     # private: per-pull-request component preview gallery
 ```
 
 Hatchmark ships as one npm package, `hatchmark`, so a user installs one thing and the CLI, the schemas and the bundled docs always share one version. Modules inside it (`spec`, `diagnostics`, `compiler`, `cli`) keep their own directories. The repository is a pnpm workspace so that code which must stay separate later, such as the browser runtime or the agent benchmark, can live beside it as its own package.
@@ -29,6 +30,10 @@ pnpm test        # Vitest
 ```
 
 CI runs lint, typecheck with build, and tests on Node 22 and the current LTS for every pull request.
+
+### Component previews
+
+Every pull request gets a deployed gallery of every component variant, light and dark, desktop and 390 px, on Cloudflare Workers. `preview-build` (`.github/workflows/preview.yml`) builds the static site without secrets and uploads it as an artifact. `preview-deploy` (`.github/workflows/preview-deploy.yml`, triggered by `workflow_run` and always run from main's copy) validates the artifact as data and deploys it. Each pull request gets a stable URL, `https://pr-<number>-hatchmark-preview.hatchmark.workers.dev`, posted as a comment that updates on every push and reported as a `preview-deploy` commit status; main deploys to `https://hatchmark-preview.hatchmark.workers.dev`. Components appear once the renderer registers them in [`packages/preview/src/entries.ts`](packages/preview/src/entries.ts); see [packages/preview/README.md](packages/preview/README.md) for the plug-in point and how deploys work.
 
 ## License
 

@@ -1,0 +1,54 @@
+name: Preview
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+  merge_group:
+  push:
+    branches: [main]
+
+permissions: {}
+
+concurrency:
+  group: preview-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  # Builds the gallery with no secrets and hands it to preview-deploy.yml as an artifact: the site
+  # and preview.json naming the event, pull request and head sha.
+  preview-build:
+    name: preview-build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    env:
+      PREVIEW_PR: ${{ github.event.pull_request.number }}
+      PREVIEW_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
+        with:
+          ref: ${{ env.PREVIEW_SHA }}
+          persist-credentials: false
+      - uses: pnpm/action-setup@fc06bc1257f339d1d5d8b3a19a8cae5388b55320 # v4.4.0
+      - uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5.0.0
+        with:
+          node-version: lts/*
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - name: Build the preview site
+        run: pnpm build && pnpm --filter @hatchmark/preview run site
+      - name: Record what was built
+        if: github.event_name != 'merge_group'
+        run: >-
+          jq -n --arg event "$GITHUB_EVENT_NAME" --arg pr "$PREVIEW_PR" --arg sha "$PREVIEW_SHA"
+          '{event: $event, pr: (if $pr == "" then null else ($pr | tonumber) end), sha: $sha}'
+          > packages/preview/dist/preview.json
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        if: github.event_name != 'merge_group'
+        with:
+          name: preview-site
+          path: |
+            packages/preview/dist/site
+            packages/preview/dist/preview.json
+          if-no-files-found: error
+          retention-days: 7

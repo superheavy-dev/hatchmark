@@ -1,0 +1,214 @@
+name: Preview deploy
+
+# Runs from the default branch's copy of this file after the Preview workflow succeeds, so pull
+# request code cannot change it. It treats the artifact as data: nothing in it is executed, and the
+# Worker config is written here.
+on:
+  workflow_run:
+    workflows: [Preview]
+    types: [completed]
+
+permissions: {}
+
+concurrency:
+  group: preview-deploy-${{ github.event.workflow_run.head_repository.full_name }}-${{ github.event.workflow_run.head_branch }}
+  cancel-in-progress: true
+
+jobs:
+  preview-deploy:
+    name: preview-deploy
+    if: >-
+      github.event.workflow_run.conclusion == 'success' &&
+      github.event.workflow_run.head_repository.full_name == github.repository &&
+      (github.event.workflow_run.event == 'pull_request' ||
+      (github.event.workflow_run.event == 'push' && github.event.workflow_run.head_branch == 'main'))
+    runs-on: ubuntu-latest
+    environment: preview
+    permissions:
+      actions: read
+      pull-requests: write
+      statuses: write
+    env:
+      WRANGLER_VERSION: 4.168.0
+    steps:
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          name: preview-site
+          run-id: ${{ github.event.workflow_run.id }}
+          github-token: ${{ github.token }}
+          path: ${{ runner.temp }}/artifact
+
+      - name: Check the artifact against the triggering run
+        id: meta
+        uses: actions/github-script@ed597411d8f924073f98dfc5c65a23a2325f34cd # v8.0.0
+        with:
+          script: |
+            const fs = require("node:fs");
+            const run = context.payload.workflow_run;
+            const data = JSON.parse(fs.readFileSync(`${process.env.RUNNER_TEMP}/artifact/preview.json`, "utf8"));
+            const sha = typeof data.sha === "string" ? data.sha : "";
+            if (!/^[0-9a-f]{40}$/.test(sha) || sha !== run.head_sha) {
+              return core.setFailed(`preview.json sha "${sha}" is not the run's head sha ${run.head_sha}`);
+            }
+            if (data.event !== run.event) {
+              return core.setFailed(`preview.json event "${data.event}" is not the run's event ${run.event}`);
+            }
+            if (run.event === "pull_request") {
+              const pr = data.pr;
+              if (!Number.isInteger(pr) || pr <= 0) return core.setFailed(`preview.json pr "${pr}" is not a pull request number`);
+              const listed = (run.pull_requests ?? []).map((p) => p.number);
+              if (listed.length > 0 && !listed.includes(pr)) {
+                return core.setFailed(`preview.json pr #${pr} is not among the run's pull requests ${listed.join(", ")}`);
+              }
+              const { owner, repo } = context.repo;
+              const { data: pull } = await github.rest.pulls.get({ owner, repo, pull_number: pr });
+              if (pull.head.repo?.full_name !== `${owner}/${repo}`) return core.setFailed(`#${pr} is not from this repository`);
+              if (pull.head.sha !== sha) {
+                core.notice(`#${pr} has moved on from ${sha}; the run for its new head deploys instead.`);
+                return;
+              }
+              core.setOutput("pr", String(pr));
+            }
+            core.setOutput("sha", sha);
+
+      - name: Mark the deploy as pending
+        if: steps.meta.outputs.sha != ''
+        uses: actions/github-script@ed597411d8f924073f98dfc5c65a23a2325f34cd # v8.0.0
+        env:
+          SHA: ${{ steps.meta.outputs.sha }}
+        with:
+          script: |
+            await github.rest.repos.createCommitStatus({
+              ...context.repo,
+              sha: process.env.SHA,
+              state: "pending",
+              context: "preview-deploy",
+              description: "Deploying the preview",
+              target_url: `${context.serverUrl}/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId}`,
+            });
+
+      - name: Install wrangler outside the artifact
+        if: steps.meta.outputs.sha != ''
+        run: npm install --prefix "$RUNNER_TEMP/tools" --no-save --no-audit --no-fund --ignore-scripts "wrangler@$WRANGLER_VERSION"
+
+      - name: Deploy to Cloudflare Workers
+        id: deploy
+        if: steps.meta.outputs.sha != ''
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          RUN_EVENT: ${{ github.event.workflow_run.event }}
+          RUN_ACTOR: ${{ github.event.workflow_run.actor.login }}
+          PREVIEW_PR: ${{ steps.meta.outputs.pr }}
+          PREVIEW_SHA: ${{ steps.meta.outputs.sha }}
+          ARTIFACT: ${{ runner.temp }}/artifact
+          WRANGLER: ${{ runner.temp }}/tools/node_modules/.bin/wrangler
+        run: |
+          set -euo pipefail
+          fail() { echo "::error::$1"; echo "error=$1" >> "$GITHUB_OUTPUT"; exit 1; }
+          if [ -z "${CLOUDFLARE_API_TOKEN:-}" ] || [ -z "${CLOUDFLARE_ACCOUNT_ID:-}" ]; then
+            if [ "$RUN_EVENT" = pull_request ] && [ "$RUN_ACTOR" = "dependabot[bot]" ]; then
+              echo "::notice::Dependabot runs get no secrets: the preview was built but not deployed."
+              exit 0
+            fi
+            fail "CLOUDFLARE_API_TOKEN or CLOUDFLARE_ACCOUNT_ID is missing, so nothing was deployed."
+          fi
+
+          work=$(mktemp -d)
+          jq -n --arg site "$ARTIFACT/site" '{
+            name: "hatchmark-preview",
+            compatibility_date: "2026-11-23",
+            workers_dev: true,
+            preview_urls: true,
+            assets: { directory: $site, html_handling: "auto-trailing-slash", not_found_handling: "404-page" }
+          }' > "$work/wrangler.json"
+
+          wrangler() {
+            : > "$work/output.ndjson"
+            (cd "$work" && WRANGLER_OUTPUT_FILE_PATH="$work/output.ndjson" WRANGLER_SEND_METRICS=false \
+              "$WRANGLER" "$@" --config "$work/wrangler.json" >&2) || true
+            jq -sc '[.[] | select(.type != "wrangler-session")] | last // {}' "$work/output.ndjson"
+          }
+          message() { jq -r '.message // "no output"' <<<"$1"; }
+
+          if [ "$RUN_EVENT" = push ]; then
+            result=$(wrangler deploy --message "main at $PREVIEW_SHA")
+            [ "$(jq -r .type <<<"$result")" = deploy ] || fail "Deploying main failed: $(message "$result")"
+            url=$(jq -r '.targets[0] // empty' <<<"$result")
+            echo "url=$url" >> "$GITHUB_OUTPUT"
+            echo "Gallery of main at \`$PREVIEW_SHA\`: $url" >> "$GITHUB_STEP_SUMMARY"
+            exit 0
+          fi
+
+          result=$(wrangler versions upload --preview-alias "pr-$PREVIEW_PR" --message "PR #$PREVIEW_PR at $PREVIEW_SHA")
+          if jq -e '.type == "command-failed" and ((.message // "") | contains("Worker that does not yet exist"))' <<<"$result" >/dev/null; then
+            fail "Worker hatchmark-preview does not exist yet; it is created by the first push to main"
+          fi
+          [ "$(jq -r .type <<<"$result")" = version-upload ] || fail "Uploading the preview failed: $(message "$result")"
+          alias_url=$(jq -r '.preview_alias_url // empty' <<<"$result")
+          [ -n "$alias_url" ] || fail "Wrangler returned no preview alias URL; are preview URLs enabled on the Worker?"
+          {
+            echo "url=$alias_url"
+            echo "version_url=$(jq -r '.preview_url // empty' <<<"$result")"
+          } >> "$GITHUB_OUTPUT"
+          echo "Preview of PR #$PREVIEW_PR at \`$PREVIEW_SHA\`: $alias_url" >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Report the deploy on the commit
+        if: always() && steps.meta.outputs.sha != ''
+        uses: actions/github-script@ed597411d8f924073f98dfc5c65a23a2325f34cd # v8.0.0
+        env:
+          SHA: ${{ steps.meta.outputs.sha }}
+          OUTCOME: ${{ steps.deploy.outcome }}
+          URL: ${{ steps.deploy.outputs.url }}
+          ERROR: ${{ steps.deploy.outputs.error }}
+        with:
+          script: |
+            const { SHA, OUTCOME, URL, ERROR } = process.env;
+            const ok = OUTCOME === "success";
+            await github.rest.repos.createCommitStatus({
+              ...context.repo,
+              sha: SHA,
+              state: ok ? "success" : "failure",
+              context: "preview-deploy",
+              description: ok
+                ? URL
+                  ? "Preview deployed"
+                  : "Built, not deployed (no credentials)"
+                : (ERROR || "Deploy failed").slice(0, 140),
+              target_url: URL || `${context.serverUrl}/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId}`,
+            });
+
+      - name: Comment the preview URL on the pull request
+        if: steps.meta.outputs.pr != '' && steps.deploy.outputs.url != ''
+        uses: actions/github-script@ed597411d8f924073f98dfc5c65a23a2325f34cd # v8.0.0
+        env:
+          PR: ${{ steps.meta.outputs.pr }}
+          SHA: ${{ steps.meta.outputs.sha }}
+          URL: ${{ steps.deploy.outputs.url }}
+          VERSION_URL: ${{ steps.deploy.outputs.version_url }}
+        with:
+          script: |
+            const marker = "<!-- hatchmark-preview -->";
+            const { PR, SHA, URL, VERSION_URL } = process.env;
+            const body = [
+              marker,
+              `**Preview:** ${URL}`,
+              "",
+              `Built from ${SHA}.${VERSION_URL ? ` This exact version: ${VERSION_URL}` : ""}`,
+            ].join("\n");
+            const { owner, repo } = context.repo;
+            const issue_number = Number(PR);
+            const comments = await github.paginate(github.rest.issues.listComments, {
+              owner,
+              repo,
+              issue_number,
+              per_page: 100,
+            });
+            const existing = comments.find(
+              (c) => c.user?.login === "github-actions[bot]" && c.body?.includes(marker),
+            );
+            if (existing) {
+              await github.rest.issues.updateComment({ owner, repo, comment_id: existing.id, body });
+            } else {
+              await github.rest.issues.createComment({ owner, repo, issue_number, body });
+            }
