@@ -596,6 +596,18 @@ it("a metric named constructor in a mixed table", async () => {
   ]);
 });
 
+it("all time picks the through most metrics read, not the first", async () => {
+  const { want } = await attack({
+    metrics: ["refunds", "revenue", "web"],
+    range: "all_time",
+    asOf: "latest_data",
+  });
+  expect([want.subtitle, want.notes]).toEqual([
+    "through Nov 3, 2026",
+    { refunds: "Data through Nov 2, 2026 · 1 day behind" },
+  ]);
+});
+
 it("an empty metric next to untimed ones only", async () => {
   const { want } = await attack({
     metrics: ["units", "returns"],
