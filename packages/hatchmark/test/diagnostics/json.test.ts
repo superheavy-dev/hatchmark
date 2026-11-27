@@ -77,18 +77,43 @@ describe("JsonDocument", () => {
 
   it("maps positions in linear time on one long line", () => {
     const item = `{"a":1,"a":2,"v":"${"x".repeat(1000)}"},`;
-    const time = (n: number) => {
+    const methods = [
+      "charCodeAt",
+      "codePointAt",
+      "at",
+      "indexOf",
+      "lastIndexOf",
+      "startsWith",
+    ] as const;
+    const copies = ["slice", "substring", "substr", "split"] as const;
+    const work = (n: number) => {
       const text = `[${item.repeat(n)}0]`;
-      const t0 = performance.now();
-      const { diagnostics } = parseJsonFile("x.json", text);
+      const proto = String.prototype as unknown as Record<string, (...args: unknown[]) => unknown>;
+      const saved = new Map<string, (...args: unknown[]) => unknown>();
+      let steps = 0;
+      for (const name of [...methods, ...copies]) {
+        const original = proto[name] as (...args: unknown[]) => unknown;
+        saved.set(name, original);
+        const copying = (copies as readonly string[]).includes(name);
+        proto[name] = function (this: string, ...args: unknown[]) {
+          const result = original.apply(this, args);
+          steps += copying ? 1 + String(result).length : 1;
+          return result;
+        };
+      }
+      let diagnostics: unknown[];
+      try {
+        diagnostics = parseJsonFile("x.json", text).diagnostics;
+      } finally {
+        for (const [name, original] of saved) proto[name] = original;
+      }
       expect(diagnostics).toHaveLength(n);
-      return performance.now() - t0;
+      return steps;
     };
-    time(200);
-    const small = time(1000);
-    const large = time(4000);
-    expect(large).toBeLessThan(small * 12 + 50);
-    expect(large).toBeLessThan(2000);
+    const small = work(250);
+    const large = work(1000);
+    expect(large).toBeGreaterThan(small);
+    expect(large).toBeLessThanOrEqual(small * 4 * 1.1 + 1000);
   });
 
   it("treats a lone carriage return as a line break", () => {
