@@ -40,6 +40,12 @@ What it draws:
 - Long names wrap to at most two lines and keep the full text in a tooltip. On narrow screens the
   table scrolls sideways with its key column pinned, and bars are hidden (see Narrow screens).
 - Undefined values show `—`; a null group shows "(empty)".
+- The subtitle says what the metrics read. Each metric's window ends at its own last complete day
+  (see numbers.md), so the subtitle gives the first dated metric's window, then names each metric
+  that reads something else: "Nov 1 – Nov 3, 2026, Refunds Nov 1, 2026, Units over all time". An
+  `all_time` period reads "through Nov 3, 2026", a table of metrics without a time column reads
+  "all time", and a metric with no data in the window is named too ("Lapsed no data in this
+  period").
 
 ## Sorting
 

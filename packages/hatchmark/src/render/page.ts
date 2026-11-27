@@ -140,7 +140,7 @@ export function blockHeading(
   let span: string | undefined;
   if (block.type === "table") {
     by = listOf(block.by.map((b) => b.label));
-    span = block.window ? formatSpan(block.window, locale) : undefined;
+    span = tableSpan(block, ctx);
   } else if (block.axis.kind === "time") {
     by = block.axis.grain;
     span = formatSpan(block.axis.window, locale);
@@ -158,6 +158,35 @@ export function blockHeading(
     title: block.title ?? what,
     subtitle: block.title ? subtitle : [span, extra].filter(Boolean).join(", "),
   };
+}
+
+/**
+ * What a table's metrics read: the first dated metric's window ("through …" for an all-time
+ * period), then each metric that reads another span, over all time, or has an empty window.
+ */
+function tableSpan(block: TableData, ctx: RenderContext): string | undefined {
+  if (block.empty) return undefined;
+  const locale = ctx.data.locale;
+  const label = (m: string) => ctx.data.metrics[m]?.label ?? m;
+  const dated = block.window
+    ? formatSpan(block.window, locale)
+    : block.through
+      ? `through ${formatDate(block.through, locale)}`
+      : "all time";
+  return [
+    dated,
+    ...block.metrics.flatMap((m) => {
+      const window = block.windows?.[m];
+      const through = block.throughs?.[m];
+      const empty = block.emptyMetrics?.[m];
+      if (window) return [`${label(m)} ${formatSpan(window, locale)}`];
+      if (through) return [`${label(m)} through ${formatDate(through, locale)}`];
+      if (block.allTime?.includes(m)) return [`${label(m)} over all time`];
+      if (empty === "no_complete_day") return [`${label(m)} no complete day yet`];
+      if (empty === "no_data") return [`${label(m)} no data in this period`];
+      return [];
+    }),
+  ].join(", ");
 }
 
 /**
