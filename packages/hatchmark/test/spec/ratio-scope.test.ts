@@ -136,6 +136,58 @@ describe("parseCsvRecord", () => {
     expect(parseCsvRecord("a,b", ",", true)).toEqual(["a", "b"]);
   });
 
+  it("matches a character-at-a-time RFC 4180 reader on random short records", () => {
+    const oracle = (text: string, delimiter: string, atEnd: boolean) => {
+      const fields: string[] = [];
+      let field = "";
+      let quoted = false;
+      for (let i = 0; i < text.length; i++) {
+        const ch = text[i];
+        if (quoted) {
+          if (ch === '"' && text[i + 1] === '"') {
+            field += '"';
+            i++;
+          } else if (ch === '"') quoted = false;
+          else field += ch;
+        } else if (ch === '"' && field === "") quoted = true;
+        else if (ch === delimiter) {
+          fields.push(field);
+          field = "";
+        } else if (ch === "\n" || ch === "\r") {
+          fields.push(field);
+          return fields;
+        } else field += ch;
+      }
+      if (quoted || !atEnd) return undefined;
+      fields.push(field);
+      return fields;
+    };
+    const alphabet = ["a", "b", ",", ";", '"', '"', "\n", "\r", " "];
+    let seed = 7;
+    const random = (n: number) => {
+      seed = (seed * 1103515245 + 12345) % 2147483648;
+      return Math.floor((seed / 2147483648) * n);
+    };
+    const mismatches: string[] = [];
+    for (let k = 0; k < 20_000; k++) {
+      const text = Array.from({ length: random(13) }, () => alphabet[random(alphabet.length)]).join(
+        "",
+      );
+      for (const delimiter of [",", ";"]) {
+        for (const atEnd of [false, true]) {
+          const got = parseCsvRecord(text, delimiter, atEnd);
+          const want = oracle(text, delimiter, atEnd);
+          if (JSON.stringify(got) !== JSON.stringify(want)) {
+            mismatches.push(
+              `${JSON.stringify(text)} ${delimiter} ${atEnd}: got ${JSON.stringify(got)} want ${JSON.stringify(want)}`,
+            );
+          }
+        }
+      }
+    }
+    expect(mismatches.slice(0, 5)).toEqual([]);
+  });
+
   it("reads a CSV header longer than one read, so HM2013 sees every column", async () => {
     const head = `${"x".repeat(65535)},region\n1,West\n`;
     const files: Record<string, string> = {
