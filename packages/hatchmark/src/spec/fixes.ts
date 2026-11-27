@@ -78,10 +78,10 @@ export function addPropertyFix(
     const rest = /^[^\r\n]*(?:\r\n|\r|\n)(?:[ \t]*(?:\r\n|\r|\n))*/.exec(document.text.slice(end));
     if (rest === null) {
       return {
-        range: document.rangeAt(last.keyStart, last.keyStart),
-        text: `${property}\n${" ".repeat(indent)}`,
-        applicability,
-        description,
+        range: document.rangeAt(end, end),
+        text: `\n${" ".repeat(indent)}${property}`,
+        applicability: "unsafe",
+        description: `${description}; review it first, because it adds a line break to the kept block scalar before it`,
       };
     }
     const at = end + rest[0].length;

@@ -270,12 +270,15 @@ describe("fixes read back as exactly the value they write", () => {
         for (const value of VALUES) {
           const fix = addPropertyFix(doc, pointer, "newkey", value, "safe", "add");
           const fixed = new SpecDocument("x.yaml", applyFix(text, fix));
-          const { b, ...rest } = parent;
-          const added =
-            /[\r\n]$/.test(text) || !last.startsWith("|+")
+          if (!/[\r\n]$/.test(text) && last.startsWith("|+")) {
+            if (fix?.applicability !== "unsafe")
+              failures.push(`${objectName} after ${lastName}: safe`);
+            continue;
+          }
+          const want =
+            pointer === ""
               ? { ...parent, newkey: value }
-              : { ...rest, newkey: value, b };
-          const want = pointer === "" ? added : withValue(doc.value, pointer, added);
+              : withValue(doc.value, pointer, { ...parent, newkey: value });
           if (fixed.errors.length > 0 || !same(fixed.value, want))
             failures.push(
               `${objectName} after ${lastName}: ${JSON.stringify(value)} gives ${JSON.stringify(applyFix(text, fix))}`,
@@ -293,5 +296,18 @@ describe("fixes read back as exactly the value they write", () => {
       }
     }
     expect(failures.slice(0, 10)).toEqual([]);
+  });
+
+  it("offers the add fix as unsafe after a kept block that ends the file", () => {
+    for (const text of [
+      "version: 1\nname: |+\n  Shop",
+      "version: 1\n? name\n: |+\n  Shop",
+      "version: 1\nname: >+\n  Shop",
+    ]) {
+      const doc = new SpecDocument("x.yaml", text);
+      const fix = addPropertyFix(doc, "", "locale", "en-US", "safe", "add locale");
+      expect(fix?.applicability, text).toBe("unsafe");
+      expect(fix?.description, text).toContain("kept block scalar");
+    }
   });
 });
