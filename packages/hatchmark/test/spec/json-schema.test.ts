@@ -36,6 +36,7 @@ const DEFINITIONS: Record<SpecKind, string[]> = {
     "Period",
     "PeriodRange",
     "Range",
+    "ScatterBlock",
     "Sort",
     "TableBlock",
     "TextBlock",

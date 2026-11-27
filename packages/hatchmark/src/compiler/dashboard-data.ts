@@ -278,7 +278,50 @@ export interface TableData extends BlockCommon {
   empty?: EmptyWindow;
 }
 
-export type BlockData = KpiData | LineData | BarData | PieData | TableData;
+/** One category of a scatter block, at its x and y values. */
+export interface ScatterPoint {
+  /** The by column's value. null is a real group (labelled "(empty)"). */
+  key: string | number | boolean | null;
+  /** The key as text. */
+  label: string;
+  x: Value;
+  y: Value;
+  /** Present when the block sets size. */
+  size?: Value;
+}
+
+export interface ScatterData extends BlockCommon {
+  type: "scatter";
+  /** Metric names. */
+  x: string;
+  y: string;
+  size?: string;
+  /** The by column. */
+  column: string;
+  /**
+   * Points with a defined x and y, each metric evaluated per category from rows (a ratio divides
+   * the category's sums). Ordered by size descending when the block sets size, else by y
+   * descending, then by key; limit keeps the first ones.
+   */
+  points: ScatterPoint[];
+  /** Categories left out because x or y is null (HM4070). */
+  omittedPoints?: number;
+  /** Categories with x and y that limit (or the 500-point cap, HM5022) left out. */
+  omittedCategories?: number;
+  /** The window x, y and size all read: through the earliest horizon among them. */
+  window?: DateSpan;
+  /**
+   * Set instead of window when the period has no start (all time): the last day, inclusive, that the
+   * dated metrics read.
+   */
+  through?: string;
+  /** Metrics without a time column, read over all their rows while the others read window. */
+  allTime?: string[];
+  /** Set when x's or y's window is empty (no complete day yet, or no data): no points. */
+  empty?: EmptyWindow;
+}
+
+export type BlockData = KpiData | LineData | BarData | PieData | TableData | ScatterData;
 
 export interface DashboardData {
   version: typeof DASHBOARD_DATA_VERSION;

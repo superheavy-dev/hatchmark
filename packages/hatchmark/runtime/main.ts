@@ -1,6 +1,6 @@
 /**
  * The Hatchmark browser runtime: tooltips, the line crosshair (KPI sparklines included) and the bar
- * highlight, plus keyboard stepping through points, announced through a polite live region. Charts
+ * highlight, the scatter point ring, plus keyboard stepping through points, announced through a polite live region. Charts
  * are already drawn on the server, so this only reads the chart geometry from data-hm-* attributes
  * and the formatted values from the JSON each chart's figure carries. One pointer listener per
  * chart, no dependencies. Arrow keys scroll a focused, clipped table sideways, which WebKit does
@@ -26,7 +26,7 @@ interface RuntimeSeries {
 }
 
 interface RuntimeChart {
-  kind: "line" | "bar" | "pie";
+  kind: "line" | "bar" | "pie" | "scatter";
   swatch: "line" | "square";
   colors?: number[];
   cuts?: number[];
@@ -40,6 +40,16 @@ const SVG_NS = "http://www.w3.org/2000/svg";
 
 const numbers = (svg: Element, name: string): number[] =>
   (svg.getAttribute(`data-hm-${name}`) ?? "").split(",").map(Number);
+
+/** A scatter chart's points as [x, y, radius], in the order of the chart's headers. */
+const scatterPoints = (svg: Element): number[][] =>
+  (svg.getAttribute("data-hm-pts") ?? "")
+    .split(",")
+    .filter((p) => p !== "")
+    .map((p) => p.split(" ").map(Number));
+
+/** How near, in CSS pixels, the pointer must come to a scatter point to pick it. */
+const SCATTER_PICK = 24;
 
 /** A start and end attribute pair as start and step, so rounding never accumulates over buckets. */
 const span = (svg: Element, name: string, parts: number): [number, number] => {
@@ -113,8 +123,9 @@ function attach(figure: HTMLElement, chart: RuntimeChart): void {
       figure.append(tip);
     }
     tip.replaceChildren(element("div", "hm-tip-h", chart.headers[index] ?? ""));
+    const scatter = chart.kind === "scatter";
     const rows = chart.series.map((s, k) => ({ s, k, v: s.v[index] ?? null }));
-    if (rows.length > 1) {
+    if (rows.length > 1 && !scatter) {
       rows.sort(
         (a, b) =>
           (b.v ?? Number.NEGATIVE_INFINITY) - (a.v ?? Number.NEGATIVE_INFINITY) || a.k - b.k,
@@ -124,7 +135,8 @@ function attach(figure: HTMLElement, chart: RuntimeChart): void {
       const row = element("div", "hm-tip-r");
       const name = element("span", "hm-tip-n");
       const slot = chart.colors ? chart.colors[index] : s.color;
-      if (rows.length > 1) name.append(element("i", slot === 0 ? "hm-b-context" : `hm-b-c${slot}`));
+      if (rows.length > 1 && !scatter)
+        name.append(element("i", slot === 0 ? "hm-b-context" : `hm-b-c${slot}`));
       name.append(s.label);
       const value = element("span", "hm-tip-v", s.text[index] ?? "");
       if (s.pct) value.append(element("span", "hm-tip-p", s.pct[index] ?? ""));
@@ -185,6 +197,30 @@ function attach(figure: HTMLElement, chart: RuntimeChart): void {
     overlay?.remove();
     current = { svg, index };
     const [left = 0, top = 0, right = 0, bottom = 0] = numbers(svg, "plot");
+    if (chart.kind === "scatter") {
+      const [cx = 0, cy = 0, radius = 0] = scatterPoints(svg)[index] ?? [];
+      overlay = svgElement("g", { class: "hm-hover", "pointer-events": "none" });
+      for (const [grow, width, color] of [
+        [2, 3, "card"],
+        [4, 2, "c1"],
+      ] as const) {
+        overlay.append(
+          svgElement("circle", {
+            cx,
+            cy,
+            r: radius + grow,
+            fill: "none",
+            "stroke-width": width,
+            "vector-effect": "non-scaling-stroke",
+            class: `hm-ring hm-s-${color}`,
+          }),
+        );
+      }
+      svg.append(overlay);
+      tooltip(index);
+      place(svg, cx + radius, cy - radius);
+      return;
+    }
     if (chart.kind === "line") {
       const [x0, step] = span(svg, "x", n - 1);
       const [d0 = 0, d1 = 1, r0 = 0, r1 = 0] = numbers(svg, "y");
@@ -270,6 +306,32 @@ function attach(figure: HTMLElement, chart: RuntimeChart): void {
     const box = svg.getBoundingClientRect();
     const x = ((event.clientX - box.left) * svg.viewBox.baseVal.width) / box.width;
     const y = ((event.clientY - box.top) * svg.viewBox.baseVal.height) / box.height;
+    if (chart.kind === "scatter") {
+      const reach = (SCATTER_PICK * svg.viewBox.baseVal.width) / box.width;
+      const points = scatterPoints(svg);
+      let best = -1;
+      let smallest = Number.POSITIVE_INFINITY;
+      let top = Number.NEGATIVE_INFINITY;
+      points.forEach(([cx = 0, cy = 0, radius = 0, z], i) => {
+        if (Math.hypot(x - cx, y - cy) > radius) return;
+        const drawn = z ?? i;
+        if (radius < smallest || (radius === smallest && drawn > top)) {
+          smallest = radius;
+          top = drawn;
+          best = i;
+        }
+      });
+      if (best >= 0) return best;
+      let nearest = Number.POSITIVE_INFINITY;
+      points.forEach(([cx = 0, cy = 0, radius = 0], i) => {
+        const distance = Math.hypot(x - cx, y - cy) - radius;
+        if (distance <= reach && distance < nearest) {
+          nearest = distance;
+          best = i;
+        }
+      });
+      return best;
+    }
     if (chart.kind === "line") {
       const [x0, step] = span(svg, "x", n - 1);
       return n > 1 ? Math.max(0, Math.min(n - 1, Math.round((x - x0) / step))) : 0;

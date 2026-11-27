@@ -71,21 +71,22 @@ Windows are calendar dates in the project time zone; [numbers.md](numbers.md#tim
 
 ## Blocks
 
-| `type`             | Shows                                                                  | Docs                                       |
-| ------------------ | ---------------------------------------------------------------------- | ------------------------------------------ |
-| `kpi`              | One metric with its change. Consecutive KPIs share one strip.          | [components/kpi.md](components/kpi.md)     |
-| `line`, `area`     | Metrics over time.                                                     | [components/line.md](components/line.md)   |
-| `bar`              | Metrics by category (`by`) or time bucket (`grain`).                   | [components/bar.md](components/bar.md)     |
-| `table`            | Metrics by one to three columns, with a total row.                     | [components/table.md](components/table.md) |
-| `bar_list`, `text` | Valid, but not built yet: build leaves them out with warning `HM4002`. |                                            |
+| `type`             | Shows                                                                  | Docs                                           |
+| ------------------ | ---------------------------------------------------------------------- | ---------------------------------------------- |
+| `kpi`              | One metric with its change. Consecutive KPIs share one strip.          | [components/kpi.md](components/kpi.md)         |
+| `line`, `area`     | Metrics over time.                                                     | [components/line.md](components/line.md)       |
+| `bar`              | Metrics by category (`by`) or time bucket (`grain`).                   | [components/bar.md](components/bar.md)         |
+| `table`            | Metrics by one to three columns, with a total row.                     | [components/table.md](components/table.md)     |
+| `scatter`          | Two metrics per category as points, optionally sized by a third.       | [components/scatter.md](components/scatter.md) |
+| `bar_list`, `text` | Valid, but not built yet: build leaves them out with warning `HM4002`. |                                                |
 
 Fields every block takes:
 
-| Field   | Meaning                                                                                                                                                                                                                                                |
-| ------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `id`    | Optional stable id, lowercase snake_case. Defaults to `<type>_<index>`.                                                                                                                                                                                |
-| `title` | Optional card title. State the finding ("Revenue reached a record in October"); the subtitle Hatchmark adds says what is measured.                                                                                                                     |
-| `span`  | Width in the 12-column grid, 1–12. Default 3 for `kpi` (four to a row) and 12 for the rest. Line, area and bar charts take at least 3 columns; a smaller span gets warning HM2024 and is drawn 3 wide. Below 1024 px every block takes the full width. |
+| Field   | Meaning                                                                                                                                                                                                                                                         |
+| ------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `id`    | Optional stable id, lowercase snake_case. Defaults to `<type>_<index>`.                                                                                                                                                                                         |
+| `title` | Optional card title. State the finding ("Revenue reached a record in October"); the subtitle Hatchmark adds says what is measured.                                                                                                                              |
+| `span`  | Width in the 12-column grid, 1–12. Default 3 for `kpi` (four to a row) and 12 for the rest. Line, area, bar and scatter charts take at least 3 columns; a smaller span gets warning HM2024 and is drawn 3 wide. Below 1024 px every block takes the full width. |
 
 Metric names in blocks are metric file names (see [metrics.md](metrics.md)); columns in `by` and
 `split` are source columns.

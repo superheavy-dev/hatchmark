@@ -26,6 +26,8 @@ import {
   type PartialBucket,
   type PieData,
   type PieSlice,
+  type ScatterData,
+  type ScatterPoint,
   type Series,
   type StackTotals,
   type TableData,
@@ -866,6 +868,119 @@ class Assembler {
     };
   }
 
+  /**
+   * A scatter block: x, y and size per category of the by column, each evaluated from that
+   * category's rows. Points without an x or y are counted (HM4070), never drawn at 0; negative sizes
+   * get HM4071; past MAX_SCATTER_POINTS without an explicit limit, HM5022.
+   */
+  scatter(block: Block & { type: "scatter" }, plan: BlockPlan, common: Common): ScatterData {
+    const expressions = [block.x, block.y, block.size].flatMap((m) =>
+      m === undefined ? [] : [plan.measures[m]],
+    );
+    const emptyOf = new Map(
+      [block.x, block.y, block.size].flatMap((m) =>
+        m === undefined ? [] : [[m, this.empty(plan.measures[m])] as const],
+      ),
+    );
+    const value = (metric: string, key: Key) =>
+      emptyOf.get(metric) === undefined ? this.evaluate(plan.measures[metric], 0, [key]) : null;
+    const empty = emptyOf.get(block.x) ?? emptyOf.get(block.y);
+    const all: ScatterPoint[] = this.keys(expressions, 0).map(([key = null]) => ({
+      key,
+      label: key === null ? "(empty)" : String(key),
+      x: value(block.x, key),
+      y: value(block.y, key),
+      ...(block.size === undefined ? {} : { size: value(block.size, key) }),
+    }));
+    const placed = all.filter((p) => p.x !== null && p.y !== null);
+    const rank = (p: ScatterPoint) => (block.size === undefined ? p.y : (p.size ?? null));
+    placed.sort((a, b) => compareValues(rank(a), rank(b), "desc") || compareKey(a.key, b.key));
+    const limit = block.limit ?? MAX_SCATTER_POINTS;
+    const points = placed.slice(0, limit);
+    const omittedPoints = all.length - placed.length;
+    const omittedCategories = placed.length - points.length;
+    const warn = (
+      code: "HM4070" | "HM4071" | "HM5022",
+      key: string,
+      message: string,
+      help: string,
+    ) => {
+      const file = this.project.dashboards.get(this.plan.dashboard);
+      const pointer = `${plan.pointer}${key}`;
+      this.diagnostics.push({
+        code,
+        severity: "warning",
+        message,
+        ...(file ? { file: file.file, pointer, ...file.document.locationOf(pointer) } : {}),
+        help,
+        docs: docsCommand(code),
+      });
+    };
+    if (omittedPoints > 0) {
+      warn(
+        "HM4070",
+        "",
+        `block "${plan.blockId}" leaves out ${omittedPoints} of ${all.length} ${all.length === 1 ? "category" : "categories"}, whose x or y has no value`,
+        "pick metrics defined for every category, or narrow by to categories with data",
+      );
+    }
+    if (
+      block.size !== undefined &&
+      points.some((p) => p.size !== undefined && p.size !== null && p.size < 0)
+    ) {
+      warn(
+        "HM4071",
+        "/size",
+        `block "${plan.blockId}" sizes points by "${block.size}", which has negative values; they are drawn at the smallest size`,
+        "size by a metric that is zero or more, or show the signed metric on an axis",
+      );
+    }
+    if (block.limit === undefined && omittedCategories > 0) {
+      warn(
+        "HM5022",
+        "/by",
+        `block "${plan.blockId}" has ${placed.length} points; the ${MAX_SCATTER_POINTS} largest are drawn and ${omittedCategories} left out`,
+        'set "limit" to keep fewer, or plot a coarser column',
+      );
+    }
+    const bounds = [block.x, block.y, block.size].flatMap((m) =>
+      m === undefined ? [] : [[m, this.bounds(plan.measures[m])] as const],
+    );
+    const endOf = (b: WindowBounds | undefined) =>
+      b?.kind === "bounded" ? b.end : b?.kind === "unbounded" ? b.end : undefined;
+    const window = bounds
+      .map(([, b]) => span(b, this.context.timezone))
+      .find((s) => s !== undefined);
+    const openEnd = window
+      ? undefined
+      : bounds.map(([, b]) => endOf(b)).find((e) => e !== undefined);
+    const before =
+      openEnd === undefined
+        ? undefined
+        : span({ kind: "bounded", start: openEnd, end: openEnd }, this.context.timezone)?.end;
+    const through =
+      before === undefined
+        ? undefined
+        : new Date(Date.parse(`${before}T00:00:00Z`) - 86_400_000).toISOString().slice(0, 10);
+    const allTime =
+      window || through ? bounds.filter(([, b]) => endOf(b) === undefined).map(([m]) => m) : [];
+    return {
+      ...common,
+      type: "scatter",
+      x: block.x,
+      y: block.y,
+      ...(block.size === undefined ? {} : { size: block.size }),
+      column: block.by,
+      points,
+      ...(omittedPoints > 0 ? { omittedPoints } : {}),
+      ...(omittedCategories > 0 ? { omittedCategories } : {}),
+      ...(window && !empty ? { window } : {}),
+      ...(through && !empty ? { through } : {}),
+      ...(allTime.length > 0 && !empty ? { allTime } : {}),
+      ...(empty ? { empty } : {}),
+    };
+  }
+
   /** HM4003: a SQL metric declared additive whose rows do not add up to the recomputed total. */
   private checkAdditive(
     block: Block & { type: "table" },
@@ -908,6 +1023,7 @@ type Common = { id: string; title?: string; span: number };
 
 /** A column's header text: underscores as spaces, first letter capitalized ("ship_country"). */
 const MAX_POINTS = 1000;
+const MAX_SCATTER_POINTS = 500;
 
 const UNIT_LABELS = { day: "Day", week: "Week", month: "Month", quarter: "Quarter", year: "Year" };
 const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
@@ -998,6 +1114,10 @@ export function assemble(
     } else if (block.type === "table") {
       for (const m of block.metrics) shown.add(m);
       blocks.push(assembler.table(block, blockPlan, common));
+    } else if (block.type === "scatter") {
+      shown.add(block.x).add(block.y);
+      if (block.size !== undefined) shown.add(block.size);
+      blocks.push(assembler.scatter(block, blockPlan, common));
     }
   }
 

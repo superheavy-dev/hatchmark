@@ -168,7 +168,7 @@ export const CODES = {
   HM2024: {
     title: "chart narrower than 3 columns",
     explanation:
-      'A line, area, bar, pie or donut block has "span" 1 or 2. At that width the axis labels, the key and the plot cannot all fit, so Hatchmark draws the chart 3 columns wide anyway and the grid row reflows around it. Set "span" to 3 or more to say what the page will show; the fix sets it to 3 and is safe. Use a kpi block (with "sparkline": true for a trend) when the space is meant for one number.',
+      'A line, area, bar, pie, donut or scatter block has "span" 1 or 2. At that width the axis labels, the key and the plot cannot all fit, so Hatchmark draws the chart 3 columns wide anyway and the grid row reflows around it. Set "span" to 3 or more to say what the page will show; the fix sets it to 3 and is safe. Use a kpi block (with "sparkline": true for a trend) when the space is meant for one number.',
   },
   HM3001: {
     title: "missing required property",
@@ -222,7 +222,7 @@ export const CODES = {
   HM4002: {
     title: "block type not built yet",
     explanation:
-      "This version of Hatchmark builds kpi, line, area, bar, pie, donut and table blocks. bar_list and text blocks are valid specs but are not built yet, so the dashboard is built without them and they do not appear on the page. Use a bar block with by and a limit instead of bar_list, or keep the block and it will appear once its type is built.",
+      "This version of Hatchmark builds kpi, line, area, bar, pie, donut, table and scatter blocks. bar_list and text blocks are valid specs but are not built yet, so the dashboard is built without them and they do not appear on the page. Use a bar block with by and a limit instead of bar_list, or keep the block and it will appear once its type is built.",
   },
   HM4003: {
     title: "additive metric does not add up",
@@ -329,10 +329,35 @@ export const CODES = {
     explanation:
       'A table with "other": true folds the rows past its limit into one Other row, recomputed from the parts of those rows: sums and counts add up, min and max take the extreme, averages divide the summed sum by the summed count, and ratios divide two such metrics. Distinct counts, medians, SQL metrics declared additive: false and sums read with over_time min or max cannot be folded without the rows themselves (two rows can share a customer), so the Other row shows "—" for the metric. The total and subtotals are still recomputed from all rows and stay right. Remove "other" to show the rows past the limit as a count in the note instead, or show a foldable metric in this table.',
   },
+  HM4070: {
+    title: "scatter points left out for a missing value",
+    explanation:
+      "A scatter block draws one point per category at its x and y values. A category whose x or y is undefined (no rows in the window for a ratio's denominator, a division by zero, a SQL metric's NULL) has no position, so it is left out of the plot; the warning says how many, and the card subtitle repeats it. The numbers of the other points are unaffected. Pick metrics defined for every category (a sum or count is 0, never undefined), narrow \"by\" to categories that have the data, or accept the gap.",
+  },
+  HM4071: {
+    title: "negative bubble sizes",
+    explanation:
+      'A scatter block\'s "size" metric sets each point\'s area, which cannot be negative. Points whose size is negative (or undefined) are drawn at the smallest size, so they look like small positive values; the tooltip still shows the real number. Size by a metric that is zero or more, such as gross revenue or orders instead of net revenue or growth, or remove "size" and show the signed metric on an axis.',
+  },
   HM5001: {
     title: "too many points per series",
     explanation:
       "A time-series block draws more than 1,000 buckets per series at one of its grains, such as day grain over several years. The chart stays correct, but the points are too dense to read and the page gets heavy. Use a coarser grain, list it in grains, or shorten the range.",
+  },
+  HM5020: {
+    title: "both scatter axes show the same metric",
+    explanation:
+      'A scatter block with the same metric on "x" and "y" puts every point on one diagonal line, which shows nothing a bar chart would not. A scatter plot compares two different measures per category, such as orders against average order value. Put another metric on one of the axes, or use a bar block for one metric by category.',
+  },
+  HM5021: {
+    title: "bubble size repeats an axis",
+    explanation:
+      'A scatter block\'s "size" names the same metric as "x" or "y", so the bubble area encodes a number the point\'s position already shows, and the larger points draw the eye to the same thing twice. Size by a third metric (revenue against orders and average order value), or remove "size" to draw plain dots.',
+  },
+  HM5022: {
+    title: "too many scatter points",
+    explanation:
+      'A scatter block draws at most 500 points: past that the dots merge into a blot and the page gets heavy. The block\'s "by" column has more categories, so Hatchmark kept the 500 largest (by size, else by y) and left the rest out; the warning says how many. Set "limit" to keep fewer on purpose (no warning then), filter the dashboard, or plot a coarser column, such as country instead of city.',
   },
   HM9001: {
     title: "internal error",

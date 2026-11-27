@@ -411,6 +411,9 @@
           "$ref": "#/$defs/TableBlock"
         },
         {
+          "$ref": "#/$defs/ScatterBlock"
+        },
+        {
           "$ref": "#/$defs/TextBlock"
         }
       ]
@@ -927,6 +930,63 @@
         "type",
         "by",
         "metrics"
+      ],
+      "additionalProperties": false
+    },
+    "ScatterBlock": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "description": "Stable block id. Defaults to <type>_<index>; set it to keep links and caches across reorders.",
+          "type": "string",
+          "pattern": "^[a-z][a-z0-9_]*$"
+        },
+        "title": {
+          "description": "Card title; state the finding.",
+          "type": "string"
+        },
+        "span": {
+          "description": "Width in a 12-column grid.",
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 12
+        },
+        "type": {
+          "type": "string",
+          "const": "scatter"
+        },
+        "x": {
+          "type": "string",
+          "pattern": "^[a-z][a-z0-9_]*$",
+          "description": "Metric on the horizontal axis."
+        },
+        "y": {
+          "type": "string",
+          "pattern": "^[a-z][a-z0-9_]*$",
+          "description": "Metric on the vertical axis."
+        },
+        "by": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Category column: one point per value."
+        },
+        "size": {
+          "description": "Metric drawn as the point's area (a bubble chart). Omit for dots.",
+          "type": "string",
+          "pattern": "^[a-z][a-z0-9_]*$"
+        },
+        "limit": {
+          "description": "Points kept, largest first (by size, else by y). Default: every category, up to 500.",
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 500
+        }
+      },
+      "required": [
+        "type",
+        "x",
+        "y",
+        "by"
       ],
       "additionalProperties": false
     },

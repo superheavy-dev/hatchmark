@@ -8,5 +8,6 @@ export * from "./labels.js";
 export * from "./line.js";
 export * from "./measure.js";
 export * from "./page.js";
+export * from "./scatter.js";
 export * from "./table.js";
 export * from "./theme.js";

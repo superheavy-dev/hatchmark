@@ -898,6 +898,12 @@ function blockMetricRefs(block: Block): { pointer: string; name: string }[] {
     case "bar":
     case "table":
       return block.metrics.map((name, i) => ({ pointer: `/metrics/${i}`, name }));
+    case "scatter":
+      return [
+        { pointer: "/x", name: block.x },
+        { pointer: "/y", name: block.y },
+        ...(block.size === undefined ? [] : [{ pointer: "/size", name: block.size }]),
+      ];
     case "text":
       return [];
   }
@@ -1053,6 +1059,36 @@ function checkStack(
   }
 }
 
+/**
+ * A scatter block: both axes on one metric draw a diagonal line (HM5020), and a size on an axis
+ * metric encodes the same number twice (HM5021).
+ */
+function checkScatter(r: Reporter, block: Block & { type: "scatter" }, base: string): void {
+  if (block.x === block.y) {
+    r.report(
+      "HM5020",
+      `${base}/y`,
+      `both axes show "${block.x}", so every point sits on one diagonal`,
+      {
+        severity: "warning",
+        help: "put a different metric on y, such as a ratio or average that may move with x",
+      },
+    );
+  }
+  if (block.size !== undefined && (block.size === block.x || block.size === block.y)) {
+    const axis = block.size === block.x ? "x" : "y";
+    r.report(
+      "HM5021",
+      `${base}/size`,
+      `size repeats the ${axis} metric "${block.size}", so bubble size adds nothing`,
+      {
+        severity: "warning",
+        help: 'size a third metric, such as revenue, or remove "size" to draw plain dots',
+      },
+    );
+  }
+}
+
 function checkDashboard(project: Project, file: SpecFile<"dashboard">, out: Diagnostic[]): void {
   const dashboard = file.spec;
   if (dashboard === undefined) return;
@@ -1088,7 +1124,8 @@ function checkDashboard(project: Project, file: SpecFile<"dashboard">, out: Diag
         block.type === "area" ||
         block.type === "bar" ||
         block.type === "pie" ||
-        block.type === "donut") &&
+        block.type === "donut" ||
+        block.type === "scatter") &&
       block.span !== undefined &&
       block.span < MIN_CHART_SPAN
     ) {
@@ -1196,6 +1233,8 @@ function checkDashboard(project: Project, file: SpecFile<"dashboard">, out: Diag
     if ((block.type === "bar" || block.type === "area") && block.stack) {
       checkStack(r, file, block, base, metrics, project.config.spec?.currency ?? "USD");
     }
+
+    if (block.type === "scatter") checkScatter(r, block, base);
 
     if ((block.type === "table" || block.type === "bar") && block.sort) {
       const allowed = [

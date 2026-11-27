@@ -19,7 +19,37 @@ export function yTicks(
   let max = Math.max(0, ...values);
   if (min === max) max = 1;
   if (!Number.isFinite(min) || !Number.isFinite(max)) [min, max] = [0, 1];
-  const wanted = Math.max(3, Math.min(6, Math.floor(plotHeight / 48)));
+  return niceTicks(min, max, Math.max(3, Math.min(6, Math.floor(plotHeight / 48))));
+}
+
+/**
+ * A scatter axis: a nice domain around the data that starts at zero only when zero is close (the
+ * smallest value under a third of the largest, all on one side of zero), with 3 to 6 ticks, one per
+ * 48 px of length on y or per 96 px on x. One distinct value gets a span around it.
+ */
+export function scatterTicks(
+  values: readonly number[],
+  length: number,
+  spacing: number,
+): { domain: [number, number]; ticks: number[] } {
+  const finite = values.filter(Number.isFinite);
+  let min = finite.length > 0 ? Math.min(...finite) : 0;
+  let max = finite.length > 0 ? Math.max(...finite) : 1;
+  if (min >= 0 && min <= max / 3) min = 0;
+  if (max <= 0 && max >= min / 3) max = 0;
+  if (min === max) {
+    const pad = min === 0 ? 1 : Math.abs(min) / 2;
+    [min, max] = [min - pad, max + pad];
+    if (min < 0 && values.every((v) => v >= 0)) min = 0;
+  }
+  return niceTicks(min, max, Math.max(3, Math.min(6, Math.floor(length / spacing))));
+}
+
+function niceTicks(
+  min: number,
+  max: number,
+  wanted: number,
+): { domain: [number, number]; ticks: number[] } {
   const half = Number.isFinite(max - min) ? 1 : 2;
   let best: { domain: [number, number]; ticks: number[] } | undefined;
   for (const count of [wanted, wanted - 1, wanted + 1, wanted - 2, wanted + 2, 3, 4, 5, 6]) {

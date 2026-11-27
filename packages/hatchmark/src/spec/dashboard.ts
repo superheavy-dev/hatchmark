@@ -265,6 +265,23 @@ const tableBlock = z
   })
   .meta({ id: "TableBlock" });
 
+const scatterBlock = z
+  .strictObject({
+    ...blockCommon,
+    type: z.literal("scatter"),
+    x: metricName.meta({ description: "Metric on the horizontal axis." }),
+    y: metricName.meta({ description: "Metric on the vertical axis." }),
+    by: columnName.meta({ description: "Category column: one point per value." }),
+    size: metricName
+      .optional()
+      .meta({ description: "Metric drawn as the point's area (a bubble chart). Omit for dots." }),
+    limit: z.number().int().min(1).max(500).optional().meta({
+      description:
+        "Points kept, largest first (by size, else by y). Default: every category, up to 500.",
+    }),
+  })
+  .meta({ id: "ScatterBlock" });
+
 const textBlock = z
   .strictObject({
     ...blockCommon,
@@ -286,6 +303,7 @@ export const blockSchema = z
     donutBlock,
     barListBlock,
     tableBlock,
+    scatterBlock,
     textBlock,
   ])
   .meta({ id: "Block" });
