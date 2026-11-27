@@ -77,7 +77,7 @@ describe("period control", () => {
     await page.keyboard.press("End");
     await page.keyboard.press("ArrowDown");
     const focused = await page.evaluate(
-      () => (document.activeElement as HTMLElement).dataset.hmRange,
+      () => (document.activeElement as HTMLElement).dataset.hmPreset,
     );
     expect(focused).toBe("last_7_days");
     await page.keyboard.press("Enter");
@@ -93,7 +93,7 @@ describe("period control", () => {
     await page.reload();
     await settled(page);
     expect(await caption(page)).toContain("Oct 25 – Oct 31, 2026");
-    expect(await page.locator("[data-hm-range=last_7_days]").getAttribute("aria-checked")).toBe(
+    expect(await page.locator("[data-hm-preset=last_7_days]").getAttribute("aria-checked")).toBe(
       "true",
     );
     expect(errors).toEqual([]);
@@ -177,7 +177,7 @@ describe("period control", () => {
     await page.locator("[data-hm-grain-filter]").getByRole("radio", { name: "Day" }).click();
     expect(new URL(page.url()).searchParams.get("grain")).toBe("day");
     await page.locator(".hm-period-button").click();
-    await page.locator("[data-hm-range=last_7_days]").click();
+    await page.locator("[data-hm-preset=last_7_days]").click();
     await settled(page);
     expect(await shown()).toBe("day");
     const names = await page

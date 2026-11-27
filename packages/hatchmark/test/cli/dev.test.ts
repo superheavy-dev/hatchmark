@@ -14,6 +14,7 @@ interface HmrMessage {
   data?: {
     dashboard?: string;
     cards?: { index: number; kpi?: number; html: string }[];
+    periods?: string;
     overlay?: string;
     diagnostics?: { code: string }[];
   };
@@ -39,10 +40,15 @@ async function connect(server: DevServer) {
     messages,
     clear: () => messages.splice(0),
     /** The first custom event with this name, waiting for it when needed. */
-    async next(name: string, timeout = 15_000): Promise<HmrMessage> {
+    async next(name: string, timeout = 15_000, dashboard?: string): Promise<HmrMessage> {
       const end = Date.now() + timeout;
       for (;;) {
-        const found = messages.find((m) => m.type === "custom" && m.event === name);
+        const found = messages.find(
+          (m) =>
+            m.type === "custom" &&
+            m.event === name &&
+            (dashboard === undefined || m.data?.dashboard === dashboard),
+        );
         if (found) return found;
         if (Date.now() > end) {
           throw new Error(
@@ -183,7 +189,7 @@ describe("hatchmark dev", { timeout: 30_000 }, () => {
     expect(sales.map((c) => c.index).sort()).toEqual([0, 3]);
   });
 
-  it("re-runs the dashboards that read a data file when it changes", async () => {
+  it("re-runs the dashboards that read a data file when it changes, period data included", async () => {
     hmr.clear();
     await edit("data/orders.csv", (t) => {
       const lines = t.trimEnd().split("\n");
@@ -193,7 +199,9 @@ describe("hatchmark dev", { timeout: 30_000 }, () => {
       lines[at] = cells.join(",");
       return `${lines.join("\n")}\n`;
     });
-    const update = await hmr.next("hatchmark:update");
+    const update = await hmr.next("hatchmark:update", 15_000, "sales");
+    const explorer = await hmr.next("hatchmark:update", 15_000, "explorer");
+    expect(JSON.parse(explorer.data?.periods ?? "{}").presets).toBeDefined();
     await server.idle();
     expect(custom().every((e) => e === "hatchmark:update")).toBe(true);
     const sales = hmr.messages.find(
@@ -409,7 +417,7 @@ describe("hatchmark build output", () => {
       const text = await readFile(file, "utf8");
       expect(text, file).not.toMatch(/vite|import\.meta|__hmr|hmr|hm-dev|hatchmark:|dev-client/i);
     }
-    const runtime = files.find((f) => f.endsWith(".js")) ?? "";
+    const runtime = files.find((f) => /[/\\]hatchmark\.[0-9a-f]+\.js$/.test(f)) ?? "";
     expect(await readFile(runtime, "utf8")).toContain("window.hatchmark={mount:");
     await rm(dir, { recursive: true, force: true });
   }, 60_000);

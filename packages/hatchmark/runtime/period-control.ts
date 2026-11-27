@@ -74,16 +74,20 @@ function loadEngine(src: string): Promise<Engine> {
   return engine;
 }
 
-export function mountPeriod(root: HTMLElement, redraw: (view: PeriodView) => void): void {
+/**
+ * Wires one period control. Returns a refresh that draws the shown range again from the page's
+ * current payload, which hatchmark dev replaces after a change; the default range needs nothing.
+ */
+export function mountPeriod(root: HTMLElement, redraw: (view: PeriodView) => void): () => void {
   const filter = root.dataset.hmPeriod ?? "period";
   const locale = root.dataset.hmLocale ?? "en-US";
   const button = root.querySelector<HTMLButtonElement>(".hm-period-button");
   const panel = root.querySelector<HTMLElement>(".hm-period-panel");
-  const presets = [...root.querySelectorAll<HTMLButtonElement>("[data-hm-range]")];
+  const presets = [...root.querySelectorAll<HTMLButtonElement>("[data-hm-preset]")];
   const cal = root.querySelector<HTMLElement>(".hm-cal");
-  if (!button || !panel) return;
-  const initial = presets.find((b) => b.getAttribute("aria-checked") === "true")?.dataset.hmRange;
-  const fallback = initial ?? presets[0]?.dataset.hmRange ?? "";
+  if (!button || !panel) return () => {};
+  const initial = presets.find((b) => b.getAttribute("aria-checked") === "true")?.dataset.hmPreset;
+  const fallback = initial ?? presets[0]?.dataset.hmPreset ?? "";
   let shown = fallback;
   const live = document.createElement("p");
   live.className = "hm-sr";
@@ -235,15 +239,15 @@ export function mountPeriod(root: HTMLElement, redraw: (view: PeriodView) => voi
 
   const check = (key: string) => {
     for (const b of presets) {
-      const on = b.dataset.hmRange === key;
+      const on = b.dataset.hmPreset === key;
       b.setAttribute("aria-checked", String(on));
       b.tabIndex = on ? 0 : -1;
     }
     if (!presets.some((b) => b.tabIndex === 0) && presets[0]) presets[0].tabIndex = 0;
   };
 
-  const choose = async (key: string, announce: boolean) => {
-    if (key === shown) {
+  const choose = async (key: string, announce: boolean, again = false) => {
+    if (key === shown && !again) {
       close(announce);
       return;
     }
@@ -308,7 +312,8 @@ export function mountPeriod(root: HTMLElement, redraw: (view: PeriodView) => voi
 
   const group = root.querySelector<HTMLElement>(".hm-period-presets");
   group?.addEventListener("click", (event) => {
-    const key = (event.target as Element).closest<HTMLElement>("[data-hm-range]")?.dataset.hmRange;
+    const key = (event.target as Element).closest<HTMLElement>("[data-hm-preset]")?.dataset
+      .hmPreset;
     if (key !== undefined) void choose(key, true);
   });
   group?.addEventListener("keydown", (event) => {
@@ -393,4 +398,7 @@ export function mountPeriod(root: HTMLElement, redraw: (view: PeriodView) => voi
 
   const requested = new URLSearchParams(location.search).get(filter);
   if (requested && requested !== shown) void choose(requested, false);
+  return () => {
+    if (shown !== fallback) void choose(shown, false, true);
+  };
 }

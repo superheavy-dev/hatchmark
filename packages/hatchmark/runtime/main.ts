@@ -556,16 +556,26 @@ function start(): void {
   }
   mount(document);
   for (const root of document.querySelectorAll<HTMLElement>("[data-hm-period]")) {
-    mountPeriod(root, redraw);
+    refreshers.push(mountPeriod(root, redraw));
   }
+}
+
+const refreshers: (() => void)[] = [];
+
+/** Draws the chosen periods again after hatchmark dev replaced the period data. */
+function refresh(): void {
+  for (const again of refreshers) again();
 }
 
 declare global {
   interface Window {
-    /** The one hook hatchmark dev uses, to attach the runtime to a card it swapped in. */
-    hatchmark?: { mount(root: ParentNode): void };
+    /**
+     * The hooks hatchmark dev uses: mount attaches the runtime to a card it swapped in, refresh
+     * redraws the chosen period after it replaced the period data.
+     */
+    hatchmark?: { mount(root: ParentNode): void; refresh(): void };
   }
 }
 
-window.hatchmark = { mount };
+window.hatchmark = { mount, refresh };
 start();

@@ -53,7 +53,7 @@ export function periodControl(
     .map((o) => {
       const label = o.label ?? (o.current ? formatSpan(o.current, locale) : o.key);
       const span = o.label !== undefined && o.current ? formatSpan(o.current, locale) : "";
-      return `<button type="button" role="radio" aria-checked="${o.key === filter.selected}" tabindex="${o.key === filter.selected ? 0 : -1}" data-hm-range="${esc(o.key)}"><span>${esc(label)}</span>${span ? `<span class="hm-period-dates">${esc(span)}</span>` : ""}</button>`;
+      return `<button type="button" role="radio" aria-checked="${o.key === filter.selected}" tabindex="${o.key === filter.selected ? 0 : -1}" data-hm-preset="${esc(o.key)}"><span>${esc(label)}</span>${span ? `<span class="hm-period-dates">${esc(span)}</span>` : ""}</button>`;
     })
     .join("");
   const custom = filter.custom

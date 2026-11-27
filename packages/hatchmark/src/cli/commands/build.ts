@@ -85,7 +85,7 @@ export interface BuildDeps {
 
 const defaultDeps: BuildDeps = { createExecutor: createDuckDbExecutor, runDashboard };
 
-interface Page {
+export interface Page {
   data: DashboardData;
   periods?: PeriodData;
 }
@@ -433,6 +433,29 @@ export function sourceNames(config: ProjectConfig): string[] {
   ].sort();
 }
 
+/**
+ * A dashboard's page with its period filter's data: every preset run exactly and the day cubes for
+ * custom ranges. hatchmark dev renders the same page.
+ */
+export async function periodPage(
+  project: Project,
+  name: string,
+  executor: DashboardExecutor,
+  data: DashboardData,
+  now: Date,
+): Promise<{ page: Page; diagnostics: Diagnostic[] }> {
+  const periods = await runPeriodData(project, name, executor, data, now);
+  const span = periods.data?.custom?.span;
+  const shown =
+    span && data.periodFilter
+      ? { ...data, periodFilter: { ...data.periodFilter, custom: span } }
+      : data;
+  return {
+    page: { data: shown, ...(periods.data ? { periods: periods.data } : {}) },
+    diagnostics: periods.diagnostics,
+  };
+}
+
 async function runAll(
   root: string,
   project: Project,
@@ -460,14 +483,9 @@ async function runAll(
       const result = await deps.runDashboard(project, name, executor, now);
       for (const d of result.diagnostics) diagnostics.set(JSON.stringify(d), d);
       if (result.data === undefined) continue;
-      const periods = await runPeriodData(project, name, executor, result.data, now);
-      for (const d of periods.diagnostics) diagnostics.set(JSON.stringify(d), d);
-      const span = periods.data?.custom?.span;
-      const data =
-        span && result.data.periodFilter
-          ? { ...result.data, periodFilter: { ...result.data.periodFilter, custom: span } }
-          : result.data;
-      pages.push({ data, ...(periods.data ? { periods: periods.data } : {}) });
+      const page = await periodPage(project, name, executor, result.data, now);
+      for (const d of page.diagnostics) diagnostics.set(JSON.stringify(d), d);
+      pages.push(page.page);
     }
   } finally {
     await executor.close();
