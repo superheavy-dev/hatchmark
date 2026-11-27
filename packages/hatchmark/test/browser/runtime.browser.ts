@@ -14,6 +14,7 @@ import type {
   ScatterData,
 } from "../../src/compiler/dashboard-data.js";
 import { FONT_FILES, renderDashboardPage } from "../../src/render/index.js";
+import tokens from "../../src/render/themes/default.json" with { type: "json" };
 
 let browser: Browser;
 let dir: string;
@@ -175,6 +176,13 @@ describe("browser runtime", () => {
     const tip = page.locator(".hm-line .hm-tip");
     expect(await tip.locator(".hm-tip-h").textContent()).toBe("Sep 21–23");
     expect(await tip.locator(".hm-tip-s").textContent()).toBe("In progress · 3 of 7 days");
+    const fill = tokens.data.light.categoricalFill[0] as string;
+    expect(
+      await tip
+        .locator(".hm-tip-r i.hm-tip-hatch")
+        .first()
+        .evaluate((i) => getComputedStyle(i).color),
+    ).toBe(`rgb(${[1, 3, 5].map((k) => Number.parseInt(fill.slice(k, k + 2), 16)).join(", ")})`);
     await page.keyboard.press("Home");
     expect(await tip.locator(".hm-tip-s").count()).toBe(0);
     await page.keyboard.press("End");
