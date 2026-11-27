@@ -163,8 +163,8 @@ describe("preview shell deep links", () => {
     );
 
     await page.goto(`${origin}/#view=dashboard&locale=fr-FR`);
-    await expect.poll(() => page.locator("#frame").getAttribute("src")).toBe("dashboard/sales/");
-    expect(hash(page)).not.toHaveProperty("locale");
+    await expect.poll(() => "locale" in hash(page)).toBe(false);
+    expect(await page.locator("#frame").getAttribute("src")).toBe("dashboard/sales/");
     expect(await page.getByRole("button", { name: "en-US" }).getAttribute("aria-pressed")).toBe(
       "true",
     );
