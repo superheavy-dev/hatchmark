@@ -562,7 +562,6 @@ function start(): void {
 
 const refreshers: (() => void)[] = [];
 
-/** Draws the chosen periods again after hatchmark dev replaced the period data. */
 function refresh(): void {
   for (const again of refreshers) again();
 }

@@ -246,6 +246,52 @@ describe("period control", () => {
     expect(errors).toEqual([]);
   });
 
+  it("labels a KPI with its own dates when they differ from the caption (HAT-73 round 2)", async () => {
+    const probe = await open();
+    const end = await probe.page.locator(".hm-cal").getAttribute("data-hm-end");
+    await probe.page.close();
+    const day = (back: number) =>
+      new Date(Date.parse(`${end}T00:00:00Z`) - back * 86_400_000).toISOString().slice(0, 10);
+    const read = async (key: string) => {
+      const { page, errors } = await open(`?period=${key}`);
+      await settled(page);
+      const result = {
+        caption: await caption(page),
+        revenue: await kpi(page, "Revenue"),
+        note: await page.locator(".hm-kpi", { hasText: "Revenue" }).innerText(),
+        errors,
+      };
+      await page.close();
+      return result;
+    };
+    const preset = await read("last_7_days");
+    const sameLabel = await read(`${day(7)}..${day(1)}`);
+    const sameDays = await read(`${day(8)}..${day(2)}`);
+    expect(preset.revenue).toBe(sameDays.revenue);
+    expect(sameLabel.caption).toBe(preset.caption);
+    if (sameLabel.revenue !== preset.revenue) expect(sameLabel.note).not.toBe(preset.note);
+    for (const r of [preset, sameLabel, sameDays]) expect(r.errors).toEqual([]);
+  });
+
+  it("clears the invalid mark when the calendar corrects a typed day (HAT-73 round 2)", async () => {
+    const { page, errors } = await open();
+    await page.locator(".hm-period-button").click();
+    const end = page.locator("[data-hm-edge=end]");
+    const max = (await end.getAttribute("max")) ?? "";
+    const before = new Date(Date.parse(`${max}T00:00:00Z`) - 2 * 86_400_000)
+      .toISOString()
+      .slice(0, 10);
+    await page.locator("[data-hm-edge=start]").fill(before);
+    await end.fill(`${Number(max.slice(0, 4)) + 1}-01-24`);
+    expect(await end.getAttribute("aria-invalid")).toBe("true");
+    await page.locator(`[data-day="${max}"]`).click();
+    expect(await end.inputValue()).toBe(max);
+    expect(await end.getAttribute("aria-invalid")).toBeNull();
+    expect(await page.locator(".hm-cal-status").textContent()).not.toContain("Pick a day from");
+    expect(await page.locator("[data-hm-cal=apply]").isEnabled()).toBe(true);
+    expect(errors).toEqual([]);
+  });
+
   it("fits a 390 px phone with the dialog open", async () => {
     const { page } = await open("", 390);
     await page.locator(".hm-period-button").click();

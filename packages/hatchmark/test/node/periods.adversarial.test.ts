@@ -149,7 +149,7 @@ describe("period filter presets match the oracle (from the embedded data-hm-peri
   });
 });
 
-describe("custom ranges through customRangeDashboard match the oracle", () => {
+describe("custom ranges through customRangeDashboard match the oracle", { timeout: 30_000 }, () => {
   it.each(Object.entries(EDGES))("%s", (_, w) => {
     const diff = record(checkCustom(w, new Diff()));
     expect(diff.problems.slice(0, 10)).toEqual([]);

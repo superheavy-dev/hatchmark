@@ -180,8 +180,11 @@ export function mountPeriod(root: HTMLElement, redraw: (view: PeriodView) => voi
     if (prev) prev.disabled = monthStart(state.view) <= monthStart(min);
     if (next)
       next.disabled = monthStart(addMonths(state.view, visibleMonths() - 1)) >= monthStart(max);
-    if (inputs.start) inputs.start.value = state.start ?? "";
-    if (inputs.end) inputs.end.value = state.end ?? "";
+    for (const [edge, input] of Object.entries(inputs)) {
+      if (!input) continue;
+      input.value = state[edge as "start" | "end"] ?? "";
+      input.removeAttribute("aria-invalid");
+    }
     if (apply) apply.disabled = !(state.start && state.end);
     if (status) {
       status.textContent =
