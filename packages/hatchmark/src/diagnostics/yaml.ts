@@ -452,7 +452,11 @@ export class SpecDocument {
   }
 
   /** Maps an index in a string node's decoded value to its offset in the source text. */
-  stringOffset(node: Extract<SpecNode, { kind: "string" }>, index: number): number {
+  stringOffset(
+    node: Extract<SpecNode, { kind: "string" }>,
+    index: number,
+    side: "start" | "end" = "start",
+  ): number {
     const text = this.text;
     const raw = text.slice(node.start, node.end);
     if (node.style === "plain" && !/[\r\n]/.test(raw))
@@ -508,14 +512,22 @@ export class SpecDocument {
       pos = run - kept;
       decoded -= kept;
     }
+    const continuation = (at: number): number | undefined => {
+      if (node.style !== "double" || text[at] !== "\\") return undefined;
+      const esc = text[at + 1];
+      if (esc !== "\n" && esc !== "\r") return undefined;
+      let next = at + (text.startsWith("\r\n", at + 1) ? 3 : 2);
+      while (text[next] === " " || text[next] === "\t") next++;
+      return next;
+    };
     while (decoded < index && pos < node.end) {
+      const next = continuation(pos);
+      if (next !== undefined) {
+        pos = next;
+        continue;
+      }
       if (node.style === "double" && text[pos] === "\\") {
         const esc = text[pos + 1];
-        if (esc === "\n" || esc === "\r") {
-          pos += text.startsWith("\r\n", pos + 1) ? 3 : 2;
-          while (text[pos] === " " || text[pos] === "\t") pos++;
-          continue;
-        }
         const length = esc === "x" ? 4 : esc === "u" ? 6 : esc === "U" ? 10 : 2;
         decoded +=
           esc === "U" && Number.parseInt(text.slice(pos + 2, pos + 10), 16) > 0xffff ? 2 : 1;
@@ -541,6 +553,10 @@ export class SpecDocument {
       }
       pos++;
       decoded++;
+    }
+    for (let next = continuation(pos); side === "start" && next !== undefined; ) {
+      pos = next;
+      next = continuation(pos);
     }
     return Math.min(pos, node.end);
   }

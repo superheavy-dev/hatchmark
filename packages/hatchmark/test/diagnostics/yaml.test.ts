@@ -109,6 +109,8 @@ describe("SpecDocument", () => {
       "x: plain  two\n  more {{bad}}\n",
       "x: 'it''s\n  {{bad}}'\n",
       'x: "a\\\n   b{{bad}}"\n',
+      'x: "hello\\\n      {{bad}}"\n',
+      'x: "{{bad}}\\\n  after"\n',
     ];
     for (const text of cases) {
       const doc = new SpecDocument("x.yaml", text);
@@ -116,7 +118,7 @@ describe("SpecDocument", () => {
       if (node?.kind !== "string") throw new Error("not a string");
       const at = node.value.indexOf("{{bad}}");
       const start = doc.stringOffset(node, at);
-      const end = doc.stringOffset(node, at + "{{bad}}".length);
+      const end = doc.stringOffset(node, at + "{{bad}}".length, "end");
       expect(text.slice(start, end), text).toBe("{{bad}}");
     }
   });

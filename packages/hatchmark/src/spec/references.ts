@@ -138,7 +138,7 @@ function expressionRange(
   return {
     range: file.document.rangeAt(
       file.document.stringOffset(node, start),
-      file.document.stringOffset(node, Math.max(end, start + 1)),
+      file.document.stringOffset(node, Math.max(end, start + 1), "end"),
     ),
   };
 }
@@ -1277,7 +1277,7 @@ function checkDashboard(project: Project, file: SpecFile<"dashboard">, out: Diag
           node && node.kind === "string"
             ? file.document.rangeAt(
                 file.document.stringOffset(node, index),
-                file.document.stringOffset(node, index + match[0].length),
+                file.document.stringOffset(node, index + match[0].length, "end"),
               )
             : undefined;
         const at = range ? { range } : {};
