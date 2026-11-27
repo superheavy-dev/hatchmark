@@ -200,6 +200,25 @@ describe("compact numbers never round without a unit", () => {
     expect(formatValue(257_123, usd, "en-US", "headline")).toBe("$257K");
   });
 
+  it("never prints a minus sign on a value that rounds to zero", () => {
+    const usd = { format: { type: "currency", currency: "USD" } } as const;
+    const two = { format: { type: "number", decimals: 2 } } as const;
+    const pct = { format: { type: "percent" } } as const;
+    for (const style of ["compact", "headline", "full", "axis"] as const) {
+      expect(formatValue(-0.04, usd, "en-US", style), style).toBe("$0");
+      expect(formatValue(-0, usd, "de-DE", style), style).toBe("0\u00a0$");
+      expect(formatValue(-0.0004, two, "en-US", style), style).toBe(
+        style === "axis" ? "0" : "0.00",
+      );
+      expect(formatValue(-0.00001, pct, "fr-FR", style), style).toBe(
+        style === "axis" ? "0\u00a0%" : "0,0\u00a0%",
+      );
+      expect(formatValue(-1.6, usd, "en-US", style), style).toBe(
+        style === "axis" ? "\u2212$1.6" : "\u2212$2",
+      );
+    }
+  });
+
   it("shows the exact value of every KPI and chart point on a de-DE page", () => {
     const data = structuredClone(SALES);
     data.locale = "de-DE";

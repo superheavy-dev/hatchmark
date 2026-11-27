@@ -31,12 +31,16 @@ export function formatValue(
     return minus(
       numberFormat(locale, {
         style: "percent",
+        signDisplay: "negative",
         minimumFractionDigits: style === "axis" ? 0 : digits,
         maximumFractionDigits: digits,
       }).format(value),
     );
   }
-  const currency = f.type === "currency" ? { style: "currency", currency: f.currency } : {};
+  const currency = {
+    signDisplay: "negative",
+    ...(f.type === "currency" ? { style: "currency", currency: f.currency } : {}),
+  };
   const threshold = f.type === "currency" ? 1e5 : 1e6;
   const compact =
     style === "compact" ||
