@@ -2,10 +2,9 @@ import { describe, expect, it } from "vitest";
 import { GALLERY } from "../../gallery/variants.js";
 import type { DashboardData, LineData } from "../../src/compiler/dashboard-data.js";
 import { chartRuntimeData, chartTable, describeChart } from "../../src/render/describe.js";
+import { renderFragment } from "../../src/render/page.js";
 import { partialPositions } from "../../src/render/partial.js";
 import { DEFAULT_THEME } from "../../src/render/theme.js";
-
-/** Partial buckets as text (RFC 0001 section 6.6, HAT-29's wording): tooltip, readout, table, description. */
 
 function variant(name: string): { block: LineData; data: DashboardData } {
   const data = GALLERY.find((v) => v.variant === name)?.data;
@@ -82,5 +81,57 @@ describe("partial buckets", () => {
   it("adds no status line when nothing is partial", () => {
     const { block, data } = variant("line-incomplete-hide");
     expect(chartRuntimeData(block, ctx(data)).status).toBeUndefined();
+  });
+});
+
+describe("partial buckets drawn (option B)", () => {
+  const svg = (name: string) => {
+    const data = GALLERY.find((v) => v.variant === name)?.data;
+    if (!data) throw new Error(`no gallery variant ${name}`);
+    return renderFragment(data);
+  };
+  const count = (html: string, re: RegExp) => html.match(re)?.length ?? 0;
+  const charts = (html: string) => count(html, /<svg/g);
+
+  it("hatches the slot behind a partial line point and draws the point hollow", () => {
+    const html = svg("line-incomplete-mark");
+    expect(count(html, /<pattern id="hm-p-/g)).toBeGreaterThan(0);
+    expect(count(html, /class="hm-pr"/g)).toBe(charts(html));
+    expect(count(html, /<circle[^>]* r="3.5"[^>]*stroke-width="1.75"/g)).toBe(charts(html));
+    expect(html).not.toMatch(/stroke-dasharray/);
+  });
+
+  it("hatches a partial area slice in the series colour, with no flat fill there", () => {
+    const html = svg("area-incomplete-mark");
+    expect(count(html, /clip-path="url\(#hm-p-[^)]*-whole\)"/g)).toBe(charts(html));
+    expect(
+      count(html, /fill="url\(#hm-p-[^)]*-c1\)"[^>]*clip-path="url\(#hm-p-[^)]*-part\)"/g),
+    ).toBe(charts(html));
+  });
+
+  it("tints, hatches and outlines every part of a partial stack, square-cornered", () => {
+    const html = svg("bar-incomplete-stacked");
+    for (const c of ["c1", "c2", "c3"]) {
+      expect(count(html, new RegExp(`fill="url\\(#hm-p-[^)]*-${c}\\)"`, "g")), c).toBe(
+        charts(html),
+      );
+    }
+    expect(count(html, /fill-opacity="0.1"/g)).toBe(3 * charts(html));
+    expect(html).not.toMatch(/<rect[^>]*fill-opacity="0.1"[^>]*rx=/);
+  });
+
+  it("keeps a point-in-time bar solid and marks it with a hollow point, no hatch", () => {
+    const html = svg("bar-incomplete-point");
+    expect(html).not.toMatch(/url\(#hm-p-/);
+    expect(count(html, /<circle[^>]* r="3.5"[^>]*stroke-width="1.75"/g)).toBe(charts(html));
+  });
+
+  it("gives a sparkline only a hollow end point when its last bucket is partial", () => {
+    const partial = svg("kpi-sparkline-partial");
+    const sparks = count(partial, /class="hm-spark"/g);
+    expect(sparks).toBeGreaterThan(0);
+    expect(count(partial, /h0"[^>]*stroke-linecap="round"/g)).toBe(2 * sparks);
+    expect(partial).not.toMatch(/url\(#hm-p-/);
+    expect(count(svg("kpi-sparkline"), /h0"/g)).toBe(0);
   });
 });

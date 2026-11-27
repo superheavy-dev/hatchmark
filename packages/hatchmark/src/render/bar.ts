@@ -19,7 +19,7 @@ import {
 import { formatBucket, formatKey, formatValue } from "./format.js";
 import { thinTicks } from "./labels.js";
 import { textWidth, truncateEnd, wrapLines } from "./measure.js";
-import { hatchDefs, partialBar, partialId } from "./partial.js";
+import { hatchDefs, hollowPoint, partialBar, partialId } from "./partial.js";
 import { r, svgLine, svgText } from "./svg.js";
 import { type Paint, seriesColor } from "./theme.js";
 
@@ -204,6 +204,12 @@ export function renderBar(
       ? new Set<number>()
       : new Set((s.partial ?? []).map((p) => p.index)),
   );
+  const markers = series.map((s) =>
+    ctx.data.metrics[s.metric]?.nature === "point"
+      ? new Set((s.partial ?? []).map((p) => p.index))
+      : new Set<number>(),
+  );
+  const marks: string[] = [];
   const hatch = partialId(block, size.width);
   const anyPartial = !empty && partial.some((p) => p.size > 0);
   const defs = (x: number, y: number) =>
@@ -278,6 +284,7 @@ export function renderBar(
             ? partialBar(ctx, hatch, seriesColor(k), x0, cy + offset - thick / 2, w, thick, w)
             : `<rect x="${r(x0)}" y="${r(cy + offset - thick / 2)}" width="${r(w)}" height="${thick}" rx="${ctx.theme.radius.bar}"${paint.attrs(seriesColor(k))}/>`,
         );
+        if (markers[k]?.has(i)) marks.push(hollowPoint(ctx, seriesColor(k), scale(b), cy + offset));
         if (grouped) {
           const text = (valueTexts[k] as string[])[i] as string;
           const neg = b < 0;
@@ -316,6 +323,7 @@ export function renderBar(
     if (hasNegative) {
       parts.push(svgLine(paint, zero, top, zero, top + n * rowH, "baseline"));
     }
+    parts.push(...marks);
     if (empty) parts.push(emptyNote(paint, series, ctx, size.width / 2, top + (n * rowH) / 2));
     return svgRoot(
       size,
@@ -378,6 +386,7 @@ export function renderBar(
           ? partialBar(ctx, hatch, seriesColor(k), x, top1, w, h, h)
           : `<rect x="${r(x)}" y="${r(top1)}" width="${r(w)}" height="${r(h)}" rx="${ctx.theme.radius.bar}"${paint.attrs(seriesColor(k))}/>`,
       );
+      if (markers[k]?.has(i)) marks.push(hollowPoint(ctx, seriesColor(k), x + w / 2, y(b)));
     });
     if (showValues) {
       const total = totals?.[i];
@@ -399,6 +408,7 @@ export function renderBar(
     }
   });
 
+  parts.push(...marks);
   const centre = (i: number) => (band(i) as number) + bw / 2;
   if (block.axis.kind === "time") {
     parts.push(

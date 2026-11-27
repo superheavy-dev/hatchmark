@@ -203,6 +203,8 @@ export interface ChartRuntimeData {
     y?: Value[];
     /** Share of the position's total, as text, for stacked charts. */
     pct?: string[];
+    /** Positions where this flow series is partial: its tooltip row takes the hatched swatch. */
+    partial?: number[];
   }[];
   /** Total text per position, for stacked charts. */
   total?: string[];
@@ -251,6 +253,9 @@ export function chartRuntimeData(
           : s.values.map((_, i) => readoutValue(block, k, i, ctx)),
       ...(plotted && stacked ? { y: plotted[k] as Value[] } : {}),
       ...(stacked && s.share ? { pct: s.share.map((v) => share(ctx, v)) } : {}),
+      ...(s.partial?.length && ctx.data.metrics[s.metric]?.nature !== "point"
+        ? { partial: s.partial.map((p) => p.index) }
+        : {}),
     })),
     ...(stacked && block.totals
       ? { total: block.totals.map((v) => full(ctx, block.series[0]?.metric ?? "", v)) }

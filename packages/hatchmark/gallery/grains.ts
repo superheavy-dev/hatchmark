@@ -252,7 +252,35 @@ export function incompleteBars(id: string, title: string, options: { hide?: bool
   };
 }
 
-/** The same months split by channel, each part carrying the partial September. */
+export function incompletePointBars(id: string, title: string): BarData {
+  const {
+    axis,
+    series: [total],
+  } = incompleteSeries(MONTH, {}) as {
+    axis: LineData["axis"];
+    series: [Series];
+  };
+  return {
+    type: "bar",
+    id,
+    title,
+    span: 6,
+    orientation: "vertical",
+    stack: false,
+    axis,
+    series: [
+      {
+        ...series(
+          "active_customers",
+          "Active customers",
+          total.values.map((_, i) => 18_240 + i * 410),
+        ),
+        ...(total.partial ? { partial: total.partial } : {}),
+      },
+    ],
+  };
+}
+
 export function incompleteChannelBars(id: string, title: string): BarData {
   const {
     axis,

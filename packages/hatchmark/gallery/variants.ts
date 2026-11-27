@@ -36,6 +36,7 @@ import {
   incompleteBars,
   incompleteChannelBars,
   incompleteLine,
+  incompletePointBars,
   MONTH,
   QUARTER_BARS,
   REGION_SWITCH,
@@ -121,6 +122,14 @@ const KPIS: GalleryVariant[] = [
     "kpi-sparkline",
     "With sparkline",
     kpi("revenue", "revenue", 1_843_210, 1_679_402, { sparkline }),
+  ),
+  one(
+    "kpi",
+    "kpi-sparkline-partial",
+    "Sparkline whose last month is in progress: a hollow end point, no hatch",
+    kpi("revenue", "revenue", 1_843_210, 1_679_402, {
+      sparkline: { ...sparkline, partial: [{ index: sparkline.values.length - 1, elapsed: 0.84 }] },
+    }),
   ),
   one("kpi", "kpi-strip", "Strip of four (example dashboard)", ...SALES.blocks.slice(0, 4)),
 ];
@@ -745,6 +754,29 @@ const INCOMPLETE_BARS: GalleryVariant[] = [
     "bar-incomplete-stacked",
     "Stacked by channel: every part of the partial September is tinted, hatched and outlined",
     stacked(incompleteChannelBars("months_stacked", "Monthly revenue by channel, third quarter")),
+  ),
+  ((v: GalleryVariant): GalleryVariant => ({
+    ...v,
+    data: {
+      ...v.data,
+      metrics: {
+        ...v.data.metrics,
+        active_customers: {
+          name: "active_customers",
+          label: "Active customers",
+          format: { type: "number" },
+          better: "up",
+          nature: "point",
+        },
+      },
+    },
+  }))(
+    one(
+      "bar",
+      "bar-incomplete-point",
+      "A point-in-time metric: September is as of the horizon, so the bar stays solid with a hollow marker",
+      incompletePointBars("months_point", "Active customers at month end, third quarter"),
+    ),
   ),
 ];
 

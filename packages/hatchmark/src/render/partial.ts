@@ -25,11 +25,6 @@ const plusDays = (date: string, days: number) =>
   iso(new Date(parseDate(date).getTime() + days * DAY_MS));
 const MONTHS = { month: 1, quarter: 3, year: 12 } as const;
 
-/**
- * The partial buckets of a time-series block by position: the hook line and bar read for the partial
- * treatment, and the source of every text that names a partial bucket (tooltip, readout, data
- * table, description). Where series disagree, the one with the least data elapsed wins.
- */
 export function partialPositions(
   block: ChartBlock,
   ctx: RenderContext,
@@ -72,11 +67,6 @@ export function partialPositions(
   return out;
 }
 
-/**
- * The days a partial bucket covers, as the partial wording names them (HAT-29's tokens): "Nov 26",
- * "Nov 1–26", "Oct 30 – Nov 2", "Dec 29, 2025 – Jan 2, 2026"; a one-year label adds its year only
- * when it isn't the dashboard's as-of year.
- */
 function coveredLabel(from: string, to: string, asOf: string, locale: string): string {
   const start = parseDate(from);
   const end = parseDate(plusDays(to, -1));
@@ -98,13 +88,6 @@ const timeOf = (endAt: string, locale: string) =>
     new Date(`${endAt.slice(0, 19)}Z`),
   );
 
-/**
- * A bucket as text, from HAT-29's partial wording: the tooltip's two lines (date, and for a partial
- * bucket its status) and the one-line form for the readout, the data table and the description.
- * In progress: "Nov 1–26", "In progress · 26 of 30 days" (day grain: "In progress · through
- * 2:03 PM"); a clipped first bucket: "Aug 29–30", "Partial week · 2 of 7 days". A point-in-time
- * metric keeps the bucket's own name and reads "As of Nov 26, 2:03 PM".
- */
 export function bucketLines(
   block: ChartBlock,
   i: number,
@@ -155,7 +138,6 @@ export function bucketLines(
   };
 }
 
-/** The one-line form: the readout, the data table and the description. */
 export function bucketName(
   block: ChartBlock,
   i: number,
@@ -165,17 +147,12 @@ export function bucketName(
   return bucketLines(block, i, ctx, partial).line;
 }
 
-/** An id for the partial treatment's defs, unique per rendered SVG (grain panels and layouts included). */
 export function partialId(block: ChartBlock, width: number): string {
   const first =
     block.axis.kind === "time" ? `${block.axis.grain}-${block.axis.buckets[0] ?? ""}` : "c";
   return `hm-p-${block.id}-${first}-${Math.round(width)}`.replace(/[^A-Za-z0-9_-]/g, "_");
 }
 
-/**
- * Hatch patterns, one per colour: 1 px lines at 45° (lower left to upper right), spacing px apart
- * along x + y, anchored at the plot origin so neighbouring hatched shapes line up.
- */
 export function hatchDefs(
   paint: Paint,
   id: string,
@@ -197,7 +174,6 @@ export function hatchDefs(
   return `<defs>${patterns.join("")}${clipPaths.join("")}</defs>`;
 }
 
-/** The hatched slot behind a partial bucket on a line or area chart: card-alt ground, subtle hatch. */
 export function partialRegion(
   ctx: RenderContext,
   id: string,
@@ -214,7 +190,6 @@ export function partialRegion(
   return `<rect ${box}${paint.attrs("cardAlt")}/><rect ${box} fill="url(#${id}-textSubtle)"${opacity}/>`;
 }
 
-/** A bar part in the partial treatment: series tint, series hatch (dropped below barHatchMin), 1 px outline. */
 export function partialBar(
   ctx: RenderContext,
   id: string,
@@ -226,16 +201,14 @@ export function partialBar(
   length: number,
 ): string {
   const { paint, theme } = ctx;
-  const rx = ` rx="${theme.radius.bar}"`;
-  const box = `x="${r(x)}" y="${r(y)}" width="${r(w)}" height="${r(h)}"${rx}`;
+  const box = `x="${r(x)}" y="${r(y)}" width="${r(w)}" height="${r(h)}"`;
   const hatch =
     length >= theme.partial.barHatchMin
       ? `<rect ${box} fill="url(#${id}-${color})" opacity="${theme.partial.barHatchOpacity}"/>`
       : "";
-  return `<rect ${box}${paint.attrs(color)} fill-opacity="${theme.partial.barTint}"/>${hatch}<rect x="${r(x + 0.5)}" y="${r(y + 0.5)}" width="${r(Math.max(0, w - 1))}" height="${r(Math.max(0, h - 1))}"${rx}${paint.attrs("none", color)} stroke-width="1"/>`;
+  return `<rect ${box}${paint.attrs(color)} fill-opacity="${theme.partial.barTint}"/>${hatch}<rect x="${r(x + 0.5)}" y="${r(y + 0.5)}" width="${r(Math.max(0, w - 1))}" height="${r(Math.max(0, h - 1))}"${paint.attrs("none", color)} stroke-width="1"/>`;
 }
 
-/** The hollow point on a partial bucket's value: card fill, series ring. */
 export function hollowPoint(ctx: RenderContext, color: ColorKey, x: number, y: number): string {
   const { paint, theme } = ctx;
   return `<circle cx="${r(x)}" cy="${r(y)}" r="${theme.partial.pointRadius}"${paint.attrs("card", color)} stroke-width="${theme.partial.pointRing}"/>`;

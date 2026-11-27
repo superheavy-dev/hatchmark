@@ -196,7 +196,9 @@ describe("browser runtime", () => {
       .locator("i.hm-tip-hatch")
       .evaluate((i) => [getComputedStyle(i).backgroundImage, i.getBoundingClientRect().height]);
     expect(swatch[0]).toContain("repeating-linear-gradient");
-    expect(swatch[1]).toBe(8);
+    expect(swatch[1]).toBe(10);
+    expect(await tip.locator(".hm-tip-s").first().locator("i.hm-tip-hatch").count()).toBe(1);
+    expect(await tip.locator(".hm-tip-r:not(.hm-tip-t) i.hm-tip-hatch").count()).toBe(3);
     expect(await tip.locator(".hm-tip-ts").textContent()).toBe("In progress · 23 of 30 days");
     await expect
       .poll(() => page.locator(".hm-bar [aria-live]").first().textContent())
@@ -204,6 +206,7 @@ describe("browser runtime", () => {
     await page.keyboard.press("Home");
     expect(await total.locator("i.hm-tip-hatch").count()).toBe(0);
     expect(await tip.locator(".hm-tip-ts").count()).toBe(0);
+    expect(await tip.locator("i.hm-tip-hatch").count()).toBe(0);
     await page.close();
   });
 

@@ -76,11 +76,20 @@ export function renderKpi(block: KpiData, ctx: RenderContext): string {
       pen = true;
     });
     const sparkline = block.sparkline as NonNullable<KpiData["sparkline"]>;
+    const end = values.length - 1;
+    const last = values[end];
+    const { pointRadius, pointRing } = ctx.theme.partial;
+    const dot = (color: "c1" | "card", width: number) =>
+      `<path d="M${r(x(end))},${r(y(last as number))}h0"${ctx.paint.attrs("none", color)} stroke-width="${width}" stroke-linecap="round" vector-effect="non-scaling-stroke"/>`;
+    const sparkEnd =
+      isNumber(last) && sparkline.partial?.some((p) => p.index === end)
+        ? dot("c1", 2 * pointRadius + pointRing) + dot("card", 2 * pointRadius - pointRing)
+        : "";
     const headers = sparkline.buckets.map((b) => formatBucket(b, sparkline.grain, locale));
     const text = values.map((v) => formatValue(v, metric, locale, "full"));
     table = `<div class="hm-sr"><table><caption>${esc(`${label} by ${sparkline.grain}`)}</caption><thead><tr><th scope="col">Period</th><th scope="col">${esc(label)}</th></tr></thead><tbody>${headers.map((h, i) => `<tr><th scope="row">${esc(h)}</th><td>${esc(text[i] as string)}</td></tr>`).join("")}</tbody></table></div>`;
     const geometry = `data-hm-kind="line" data-hm-x="0,100,${values.length}" data-hm-y="${hi === lo ? `${lo},${lo + 1},12,12` : `${lo},${hi},22,2`}" data-hm-plot="0,0,100,24"`;
-    spark = `<svg class="hm-spark" viewBox="0 0 100 24" preserveAspectRatio="none" overflow="visible" tabindex="0" role="img" aria-label="${esc(`${label} by ${sparkline.grain}, ${headers[0]} to ${headers.at(-1)}`)}" ${geometry}><path d="${d}"${ctx.paint.attrs("none", "c1")} stroke-width="1.5" vector-effect="non-scaling-stroke" stroke-linejoin="round"/></svg>`;
+    spark = `<svg class="hm-spark" viewBox="0 0 100 24" preserveAspectRatio="none" overflow="visible" tabindex="0" role="img" aria-label="${esc(`${label} by ${sparkline.grain}, ${headers[0]} to ${headers.at(-1)}`)}" ${geometry}><path d="${d}"${ctx.paint.attrs("none", "c1")} stroke-width="1.5" vector-effect="non-scaling-stroke" stroke-linejoin="round"/>${sparkEnd}</svg>`;
     runtime = `<script type="application/json">${scriptJson({
       kind: "line",
       headers,

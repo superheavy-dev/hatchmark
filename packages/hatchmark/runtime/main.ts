@@ -23,6 +23,7 @@ interface RuntimeSeries {
   short: string[];
   y?: (number | null)[];
   pct?: string[];
+  partial?: number[];
 }
 
 interface RuntimeChart {
@@ -127,7 +128,13 @@ function attach(figure: HTMLElement, chart: RuntimeChart): void {
     tip.replaceChildren(element("div", "hm-tip-h", chart.headers[index] ?? ""));
     const scatter = chart.kind === "scatter";
     const status = chart.status?.[index];
-    if (status) tip.append(element("div", "hm-tip-s", status));
+    const hatched = chart.series.some((s) => s.partial?.includes(index));
+    if (status) {
+      const line = element("div", "hm-tip-s");
+      if (hatched) line.append(element("i", "hm-tip-hatch"));
+      line.append(status);
+      tip.append(line);
+    }
     const rows = chart.series.map((s, k) => ({ s, k, v: s.v[index] ?? null }));
     if (rows.length > 1 && !scatter) {
       rows.sort(
@@ -139,7 +146,8 @@ function attach(figure: HTMLElement, chart: RuntimeChart): void {
       const row = element("div", "hm-tip-r");
       const name = element("span", "hm-tip-n");
       const slot = chart.colors ? chart.colors[index] : s.color;
-      if (rows.length > 1 && !scatter)
+      if (s.partial?.includes(index)) name.append(element("i", `hm-tip-hatch hm-h-c${slot}`));
+      else if (rows.length > 1 && !scatter)
         name.append(element("i", slot === 0 ? "hm-b-context" : `hm-b-c${slot}`));
       name.append(s.label);
       const value = element("span", "hm-tip-v", s.text[index] ?? "");
@@ -152,8 +160,8 @@ function attach(figure: HTMLElement, chart: RuntimeChart): void {
       const value = element("span", "hm-tip-v", chart.total[index] ?? "");
       if (chart.series.some((s) => s.pct)) value.append(element("span", "hm-tip-p"));
       const status = chart.totalStatus?.[index];
-      const name = element("span", status ? "hm-tip-n" : "", status ? "" : "Total");
-      if (status) name.append(element("i", "hm-tip-hatch"), "Total");
+      const name = element("span", hatched ? "hm-tip-n" : "", hatched ? "" : "Total");
+      if (hatched) name.append(element("i", "hm-tip-hatch"), "Total");
       row.append(name, value);
       tip.append(row);
       if (status) tip.append(element("div", "hm-tip-s hm-tip-ts", status));
