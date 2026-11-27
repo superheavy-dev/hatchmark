@@ -682,7 +682,8 @@ class Assembler {
   pie(block: Block & { type: "pie" | "donut" }, plan: BlockPlan, common: Common): PieData {
     const expression = plan.measures[block.metric];
     const limit = block.limit ?? PIE_DEFAULT_LIMIT;
-    const rows = this.keys([expression], 0).map((keys) => {
+    const emptyWindow = this.empty(expression);
+    const rows = (emptyWindow ? [] : this.keys([expression], 0)).map((keys) => {
       const key = keys[0] ?? null;
       return {
         key,
@@ -705,7 +706,17 @@ class Assembler {
     const rest = positive.slice(limit);
     const otherValue = rest.reduce((sum, r) => sum + r.value, 0);
     if (negative.length > 0) {
-      this.negativeShare(plan, `${plan.pointer}/metric`, negative.map((r) => r.label).join(", "));
+      const file = this.project.dashboards.get(this.plan.dashboard);
+      const pointer = `${plan.pointer}/metric`;
+      const names = negative.map((r) => `"${r.label}"`).join(", ");
+      this.diagnostics.push({
+        code: "HM4061",
+        severity: "warning",
+        message: `block "${plan.blockId}" leaves out ${negative.length === 1 ? "a negative category" : `${negative.length} negative categories`} (${names}): a ${block.type} shows parts of a whole, so its shares divide the positive categories only and the stated total still includes them`,
+        ...(file ? { file: file.file, pointer, ...file.document.locationOf(pointer) } : {}),
+        help: "show the categories as a bar chart, which draws negative values, or use a metric that cannot be negative",
+        docs: docsCommand("HM4061"),
+      });
     }
     if (rest.length > 0 && slices.every((s) => s.value < otherValue)) {
       const file = this.project.dashboards.get(this.plan.dashboard);
@@ -729,7 +740,7 @@ class Assembler {
       ...(rest.length > 0
         ? { other: { count: rest.length, value: otherValue, share: share(otherValue) } }
         : {}),
-      total: this.evaluate(expression, 1, [null]),
+      total: emptyWindow ? null : this.evaluate(expression, 1, [null]),
       whole,
       ...(negative.length > 0 || empty > 0
         ? {
@@ -739,7 +750,8 @@ class Assembler {
             },
           }
         : {}),
-      ...(window ? { window } : {}),
+      ...(window && !emptyWindow ? { window } : {}),
+      ...(emptyWindow ? { empty: emptyWindow } : {}),
     };
   }
 

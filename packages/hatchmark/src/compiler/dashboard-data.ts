@@ -216,6 +216,8 @@ export interface PieData extends BlockCommon {
     empty: number;
   };
   window?: DateSpan;
+  /** Set when the window is empty: no slices, and the total is null. */
+  empty?: EmptyWindow;
 }
 
 export interface TableRow {

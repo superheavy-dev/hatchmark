@@ -3,7 +3,7 @@ import { barCategories } from "./bar.js";
 import { isNumber, metricOf, type RenderContext, SHARE } from "./chart.js";
 import { formatBucket, formatSpan, formatValue } from "./format.js";
 import { plottedValues, readoutHead, readoutValue } from "./line.js";
-import { isPie, pieCuts, pieItems, pieNote } from "./pie.js";
+import { isPie, pieCuts, pieEmptyText, pieItems, pieNote } from "./pie.js";
 import { esc } from "./svg.js";
 
 type ChartBlock = LineData | BarData;
@@ -176,7 +176,12 @@ function describePie(block: PieData, ctx: RenderContext): string {
   const kind = block.type === "donut" ? "Donut chart" : "Pie chart";
   const by = block.column.replaceAll("_", " ");
   if (items.length === 0 || block.whole === 0) {
-    return `${kind} of ${metric.label} by ${by}: no data in this period.`;
+    const note = pieNote(block, ctx);
+    const total = isNumber(block.total) ? `, total ${full(ctx, block.metric, block.total)}` : "";
+    return [
+      `${kind} of ${metric.label} by ${by}: ${pieEmptyText(block, ctx).toLowerCase()}${total}.`,
+      ...(note ? [note] : []),
+    ].join(" ");
   }
   const slices = items
     .map((i) => `${i.label} ${share(ctx, i.share)} (${full(ctx, block.metric, i.value)})`)

@@ -40,13 +40,16 @@ categories are many, similar in size, or not parts of one whole.
 
 - Slices start at 12 o'clock and run clockwise, largest first, in the theme's series colours. Other
   is always last, in the muted context colour.
-- The key beside the pie names each slice with its value and share. Long names wrap instead of being
-  shortened. On cards narrower than 440 px the key goes under the pie.
+- The key beside the pie names each slice with its value and share. Long names wrap, up to four
+  lines, instead of being shortened. On cards narrower than 440 px the key goes under the pie.
 - A donut prints the total and the metric's name in the hole.
 - Hover, tap or the arrow keys highlight one slice, dim the rest, and show its value and share in a
   tooltip. Screen readers get the same numbers in a hidden table and hear each step through a live
   region.
-- No data, or a whole of 0, draws an empty ring with "No <metric> in this period".
+- With nothing to divide the chart draws an empty ring that says why: "No <metric> in this period"
+  when there is no data, "No complete day yet" when the window has no complete day (the total is
+  then empty too), or the real total over "No positive values to divide" when every category is
+  negative or empty, with the left-out categories listed under the key.
 
 ## Checks
 

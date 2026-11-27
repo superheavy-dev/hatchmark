@@ -53,6 +53,17 @@ export function pieItems(block: PieData): PieItem[] {
   return items;
 }
 
+/**
+ * Why a pie has nothing to draw: its window has no complete day yet, every category is negative or
+ * empty (the total is still stated), or there is no data.
+ */
+export function pieEmptyText(block: PieData, ctx: RenderContext): string {
+  if (block.empty === "no_complete_day") return "No complete day yet";
+  if (isNumber(block.total) && block.excluded !== undefined) return "No positive values to divide";
+  const metric = metricOf(ctx, block.metric);
+  return `No ${metric.label.replace(/^[A-Z][a-z]/, (s) => s.toLowerCase())} in this period`;
+}
+
 /** "Leaves out ..." under the key, when categories were negative, zero or undefined. */
 export function pieNote(block: PieData, ctx: RenderContext): string | undefined {
   const excluded = block.excluded;
@@ -79,6 +90,8 @@ interface KeyLayout {
 }
 
 const NAME_STYLE = { size: BODY } as const;
+/** Key names wrap rather than shorten; only a name longer than this many lines is cut. */
+const NAME_MAX_LINES = 4;
 const VALUE_STYLE = { size: BODY, weight: 500 } as const;
 
 function keyLayout(block: PieData, ctx: RenderContext, width: number): KeyLayout {
@@ -93,7 +106,7 @@ function keyLayout(block: PieData, ctx: RenderContext, width: number): KeyLayout
   const nameWidth = Math.max(40, width - DOT - 8 - VALUE_GAP - valueWidth - SHARE_WIDTH);
   let y = 0;
   const rows = items.map((item) => {
-    const { lines, cut } = wrapLines(item.label, nameWidth, NAME_STYLE, 2);
+    const { lines, cut } = wrapLines(item.label, nameWidth, NAME_STYLE, NAME_MAX_LINES);
     const height = Math.max(ROW, lines.length * NAME_LINE + 7);
     const row = { lines, cut, y, height };
     y += height;
@@ -192,19 +205,23 @@ export function renderPie(
   const empty = items.length === 0 || block.whole === 0;
 
   if (empty) {
+    const withTotal = isNumber(block.total);
     parts.push(
       `<path d="${slicePath(g.cx, g.cy, block.type === "donut" ? inner : outer - 1, outer, 0, 1)}"${paint.attrs("grid")}/>`,
-      svgText(
-        paint,
-        g.cx,
-        g.cy,
-        `No ${metric.label.replace(/^[A-Z][a-z]/, (s) => s.toLowerCase())} in this period`,
-        {
-          size: BODY,
-          anchor: "middle",
-          color: "textMuted",
-        },
-      ),
+      ...(withTotal
+        ? [
+            svgText(paint, g.cx, g.cy - 10, formatValue(block.total, metric, locale, "headline"), {
+              size: 20,
+              anchor: "middle",
+              color: "text",
+            }),
+          ]
+        : []),
+      svgText(paint, g.cx, withTotal ? g.cy + 12 : g.cy, pieEmptyText(block, ctx), {
+        size: withTotal ? CAPTION : BODY,
+        anchor: "middle",
+        color: "textMuted",
+      }),
     );
   } else {
     items.forEach((item, k) => {
