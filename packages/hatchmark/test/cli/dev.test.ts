@@ -1,14 +1,12 @@
-import { cp, mkdtemp, readdir, readFile, rename, rm, writeFile } from "node:fs/promises";
+import { mkdtemp, readdir, readFile, rename, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
-import { fileURLToPath } from "node:url";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { dev } from "../../src/cli/commands/dev.js";
 import type { CommandContext } from "../../src/cli/io.js";
 import { run } from "../../src/cli/main.js";
 import { type DevServer, startDevServer } from "../../src/dev/server.js";
-
-const EXAMPLE = fileURLToPath(new URL("../../examples/global-sales/", import.meta.url));
+import { copyProject, EXAMPLE } from "../node/fixture.js";
 
 interface HmrMessage {
   type: string;
@@ -21,14 +19,7 @@ interface HmrMessage {
   };
 }
 
-async function copyExample(): Promise<string> {
-  const dir = await mkdtemp(path.join(tmpdir(), "hatchmark-dev-"));
-  await cp(EXAMPLE, dir, {
-    recursive: true,
-    filter: (src) => !src.split(path.sep).includes("dist"),
-  });
-  return dir;
-}
+const copyExample = () => copyProject(EXAMPLE, "hatchmark-dev-");
 
 /** A client on Vite's HMR websocket, the connection the dev client in the page uses. */
 async function connect(server: DevServer) {

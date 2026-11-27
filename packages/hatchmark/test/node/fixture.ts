@@ -31,6 +31,21 @@ export async function writeProject(files: Record<string, unknown>): Promise<{
 
 export const EXAMPLE = fileURLToPath(new URL("../../examples/global-sales/", import.meta.url));
 
+const LEFT_OUT = new Set([".hatchmark", "dist"]);
+
+/**
+ * Copies a project into a fresh temporary directory named after prefix, without its build cache or
+ * build output, and returns the copy. The caller removes it.
+ */
+export async function copyProject(from: string, prefix: string): Promise<string> {
+  const root = await mkdtemp(path.join(tmpdir(), prefix));
+  await cp(from, root, {
+    recursive: true,
+    filter: (src) => !LEFT_OUT.has(path.relative(from, src).split(path.sep)[0] ?? ""),
+  });
+  return root;
+}
+
 /**
  * Copies examples/global-sales into a fresh temporary directory, with hatchmark.json merged with
  * config (undefined drops a key) and its dashboards replaced by the given ones.

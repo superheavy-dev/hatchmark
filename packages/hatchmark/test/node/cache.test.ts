@@ -2,7 +2,6 @@ import { createHash } from "node:crypto";
 import {
   appendFile,
   chmod,
-  cp,
   mkdir,
   mkdtemp,
   readdir,
@@ -26,7 +25,7 @@ import {
 } from "../../src/compiler/index.js";
 import { createCachedExecutor, createDuckDbExecutor } from "../../src/node/index.js";
 import { PROJECT_DEFAULTS, type ProjectConfig } from "../../src/spec/index.js";
-import { EXAMPLE, removeProjects } from "./fixture.js";
+import { copyProject, EXAMPLE, removeProjects } from "./fixture.js";
 
 /**
  * The build cache (src/node/cache.ts). The oracle for every attack is the same build with
@@ -41,11 +40,8 @@ afterAll(async () => {
 });
 
 async function example(): Promise<string> {
-  const root = await mkdtemp(path.join(tmpdir(), "hatchmark-cache-"));
+  const root = await copyProject(EXAMPLE, "hatchmark-cache-");
   roots.push(root);
-  await cp(EXAMPLE, root, { recursive: true });
-  await rm(path.join(root, "dist"), { recursive: true, force: true });
-  await rm(path.join(root, ".hatchmark"), { recursive: true, force: true });
   return root;
 }
 

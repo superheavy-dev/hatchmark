@@ -11,13 +11,13 @@ import {
 } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
-import { fileURLToPath } from "node:url";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { SALES } from "../../gallery/fixtures.js";
 import { type BuildDeps, build } from "../../src/cli/commands/build.js";
 import type { CommandContext } from "../../src/cli/io.js";
 import { run } from "../../src/cli/main.js";
 import { runDashboard } from "../../src/compiler/index.js";
+import { copyProject, EXAMPLE } from "../node/fixture.js";
 
 const dirs: string[] = [];
 afterEach(async () => {
@@ -335,7 +335,8 @@ describe("hatchmark build", () => {
   });
 
   it("builds the global-sales example end to end with DuckDB", async () => {
-    const example = fileURLToPath(new URL("../../examples/global-sales/", import.meta.url));
+    const example = await copyProject(EXAMPLE, "hatchmark-example-");
+    dirs.push(example);
     const out = await mkdtemp(path.join(tmpdir(), "hatchmark-example-"));
     dirs.push(out);
     const target = path.join(out, "site");
