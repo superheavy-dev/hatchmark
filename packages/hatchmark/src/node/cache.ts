@@ -1,6 +1,6 @@
 import { createHash, randomUUID } from "node:crypto";
-import { createReadStream } from "node:fs";
-import { lstat, mkdir, readdir, readFile, rename, rm } from "node:fs/promises";
+import { constants, createReadStream } from "node:fs";
+import { copyFile, lstat, mkdir, readdir, readFile, rename, rm } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { DuckDBInstance } from "@duckdb/node-api";
@@ -30,10 +30,14 @@ import { VERSION } from "../version.js";
  * file source, and every file source of the project otherwise. File contents are hashed, never
  * trusted by size or modification time, so any changed byte invalidates.
  *
- * Writes. A miss runs the inner executor and keeps the result in memory. close() hashes every
- * file those results read again and writes only the entries whose files still have the
- * fingerprint they were keyed with, so a file that changed during the build is never stored under
- * its old fingerprint. Each entry is written to a fresh temporary name and renamed into place.
+ * Snapshots. The first time a build needs a data file, the file is copied into a private
+ * snapshot directory (.hatchmark/tmp/<random>/, a copy-on-write clone where the file system has
+ * them) and the copy is hashed; the executor then reads only the snapshot. So the bytes a result
+ * was computed from are exactly the bytes its key fingerprints, whatever happens to the project's
+ * files during the build (an edit, or an edit and its undo). close() removes the snapshot.
+ *
+ * Writes. A miss runs the executor on the snapshot and keeps the result in memory; close() writes
+ * the entries. Each entry is written to a fresh temporary name and renamed into place.
  * With sweep (hatchmark build, which runs every dashboard), close() then removes every entry the
  * build neither read nor wrote, so the cache holds exactly the last build's results.
  *
@@ -46,8 +50,9 @@ import { VERSION } from "../version.js";
  * Raw SQL metrics (type "sql") are never cached: their SQL can read the clock, other files or
  * anything else DuckDB reaches, which no key can fingerprint, so their queries always run.
  *
- * The cache is skipped (every query runs) when its directory or any directory above it inside the
- * project is a symbolic link, or a data file cannot be read. Failing to write or sweep entries
+ * The cache is skipped (every query runs on the project's own files) when .hatchmark, or any
+ * directory under it that the cache uses, is a symbolic link or not a directory, or when a data
+ * file cannot be copied (it is missing, or outside the project). Failing to write or sweep entries
  * (a read-only directory, a full disk) never fails the build; those entries are just not kept.
  */
 
@@ -156,10 +161,22 @@ async function hashFile(file: string): Promise<{ bytes: number; sha256: string }
   return { bytes, sha256: hash.digest("hex") };
 }
 
-/** Why the cache directory cannot be used, or undefined: every existing step must be a real directory. */
-async function unsafeDir(root: string): Promise<string | undefined> {
+/** Where each kind of entry lives, under .hatchmark. */
+const KIND_DIR = {
+  query: `cache/v${CACHE_FORMAT}/q`,
+  horizon: `cache/v${CACHE_FORMAT}/h`,
+} as const;
+
+/** The directories under .hatchmark the cache writes into. */
+const CACHE_DIRS = [KIND_DIR.query, KIND_DIR.horizon, "tmp"];
+
+/**
+ * Why a directory under .hatchmark cannot be used, or undefined: .hatchmark and every existing
+ * step down to it must be a real directory, never a symbolic link.
+ */
+async function unsafeDir(root: string, under: string): Promise<string | undefined> {
   let at = root;
-  for (const part of CACHE_DIR.split("/")) {
+  for (const part of [".hatchmark", ...under.split("/")]) {
     at = path.join(at, part);
     const info = await lstat(at).catch(() => undefined);
     if (info === undefined) return undefined;
@@ -202,14 +219,15 @@ const SQL_TYPE: Record<Storage, string> = {
 export async function createCachedExecutor(options: {
   root: string;
   config: ProjectConfig;
-  inner: InnerExecutor;
+  /** Makes the executor, rooted at the project or at a snapshot of its data files. */
+  createInner(root: string): Promise<InnerExecutor>;
   readOnly?: boolean;
   sweep?: boolean;
 }): Promise<CachedExecutor> {
-  const { root, config, inner } = options;
-  const dir = path.join(root, ...CACHE_DIR.split("/"), `v${CACHE_FORMAT}`);
+  const { root, config } = options;
   const stats: CacheStats = { enabled: true, dir: CACHE_DIR, hits: 0, misses: 0, written: 0 };
-  const off = await unsafeDir(root);
+  let off: string | undefined;
+  for (const under of CACHE_DIRS) off ??= await unsafeDir(root, under);
   if (off !== undefined) {
     stats.enabled = false;
     stats.reason = off;
@@ -226,11 +244,31 @@ export async function createCachedExecutor(options: {
     .join(" ");
   const engine = await engineFingerprint(version ?? "unknown");
 
+  const lazy = <T>(make: () => Promise<T>) => {
+    let made: Promise<T> | undefined;
+    return { get: () => (made ??= make()), made: () => made };
+  };
+  /** Explain reads the project's files directly: it writes nothing, so nothing can be stored stale. */
+  const snapshotting = stats.enabled && !options.readOnly;
+  const snapshot = path.join(root, ".hatchmark", "tmp", randomUUID());
+  const projectExecutor = lazy(() => options.createInner(root));
+  const snapshotExecutor = lazy(() => options.createInner(snapshot));
+
   const fingerprints = new Map<string, Promise<DataFile>>();
   const fingerprint = (source: string, file: string): Promise<DataFile> => {
     let found = fingerprints.get(file);
     if (found === undefined) {
-      found = hashFile(path.join(root, ...file.split("/"))).then((h) => ({ source, file, ...h }));
+      found = (async () => {
+        if (file.startsWith("../") || path.posix.isAbsolute(file)) {
+          throw new Error(`${file} is outside the project`);
+        }
+        const original = path.join(root, ...file.split("/"));
+        if (!snapshotting) return { source, file, ...(await hashFile(original)) };
+        const copy = path.join(snapshot, ...file.split("/"));
+        await mkdir(path.dirname(copy), { recursive: true });
+        await copyFile(original, copy, constants.COPYFILE_FICLONE | constants.COPYFILE_EXCL);
+        return { source, file, ...(await hashFile(copy)) };
+      })();
       fingerprints.set(file, found);
     }
     return found;
@@ -271,7 +309,8 @@ export async function createCachedExecutor(options: {
     };
   };
 
-  const entryDir = (kind: KeyParts["kind"]) => path.join(dir, kind === "query" ? "q" : "h");
+  const entryDir = (kind: KeyParts["kind"]) =>
+    path.join(root, ".hatchmark", ...KIND_DIR[kind].split("/"));
   const entryName = (id: string, key: string) => `${id}.${key.slice(0, 32)}.parquet`;
 
   const readHeader = async (file: string): Promise<Header | undefined> => {
@@ -381,7 +420,7 @@ export async function createCachedExecutor(options: {
       });
       appender.closeSync();
       await mkdir(target, { recursive: true });
-      if ((await unsafeDir(root)) !== undefined) return;
+      if ((await unsafeDir(root, KIND_DIR[entry.kind])) !== undefined) return;
       const final = path.join(target, entryName(entry.id, entry.key));
       const fresh = `${final}.${randomUUID()}.tmp`;
       await connection.run(
@@ -415,7 +454,8 @@ export async function createCachedExecutor(options: {
           : undefined;
       if (parts === undefined || !stats.enabled) {
         stats.misses++;
-        return inner.execute(query, context);
+        const copied = snapshotting && (await dataFiles(query.source)) !== undefined;
+        return (await (copied ? snapshotExecutor : projectExecutor).get()).execute(query, context);
       }
       const key = sha256(canonicalJson(parts));
       const hit = await read("query", query.id, key);
@@ -433,7 +473,9 @@ export async function createCachedExecutor(options: {
         };
       }
       stats.misses++;
-      const result = await inner.execute(query, context);
+      const result = await (snapshotting ? snapshotExecutor : projectExecutor)
+        .get()
+        .then((executor) => executor.execute(query, context));
       const { rows, groupingSet, ...meta } = result;
       pending.push({
         kind: "query",
@@ -449,21 +491,26 @@ export async function createCachedExecutor(options: {
     async horizon(column) {
       const source = config.sources[column.source];
       const parts = await keyParts("horizon", column.source, { column, source }, null);
-      if (parts === undefined || !stats.enabled) return inner.horizon(column);
+      if (parts === undefined || !stats.enabled) {
+        return (await projectExecutor.get()).horizon(column);
+      }
       const key = sha256(canonicalJson(parts));
       const id = horizonId(column);
       const hit = await read("horizon", id, key);
       if (hit !== undefined) {
         return hit.header.meta as unknown as Awaited<ReturnType<DashboardExecutor["horizon"]>>;
       }
-      const result = await inner.horizon(column);
+      const result = await (snapshotting ? snapshotExecutor : projectExecutor)
+        .get()
+        .then((executor) => executor.horizon(column));
       pending.push({ kind: "horizon", id, key, parts, meta: { ...result }, rows: [] });
       return result;
     },
     async sql(query, context) {
-      if (inner.sql === undefined) throw new Error("this executor cannot print SQL");
+      const executor = await projectExecutor.get();
+      if (executor.sql === undefined) throw new Error("this executor cannot print SQL");
       explained.set(query.id, { query, context });
-      return inner.sql(query, context);
+      return executor.sql(query, context);
     },
     async probe(queryId) {
       const seen = explained.get(queryId);
@@ -511,24 +558,12 @@ export async function createCachedExecutor(options: {
     stats: () => ({ ...stats }),
     async close() {
       try {
-        if (!options.readOnly && stats.enabled && pending.length > 0) {
-          const current = new Map<string, string | undefined>();
-          for (const file of new Set(pending.flatMap((e) => e.parts.data.map((d) => d.file)))) {
-            current.set(
-              file,
-              await hashFile(path.join(root, ...file.split("/"))).then(
-                (h) => h.sha256,
-                () => undefined,
-              ),
-            );
-          }
-          for (const entry of pending) {
-            if (entry.parts.data.some((d) => current.get(d.file) !== d.sha256)) continue;
-            await write(entry).catch(() => {});
-          }
+        if (!options.readOnly && stats.enabled) {
+          for (const entry of pending) await write(entry).catch(() => {});
         }
         if (!options.readOnly && options.sweep && stats.enabled) {
           for (const kind of ["query", "horizon"] as const) {
+            if ((await unsafeDir(root, KIND_DIR[kind])) !== undefined) continue;
             const target = entryDir(kind);
             for (const name of await readdir(target).catch(() => [] as string[])) {
               const file = path.join(target, name);
@@ -541,7 +576,10 @@ export async function createCachedExecutor(options: {
       } finally {
         connection.closeSync();
         instance.closeSync();
-        await inner.close();
+        for (const executor of [projectExecutor.made(), snapshotExecutor.made()]) {
+          if (executor !== undefined) await (await executor).close();
+        }
+        await rm(snapshot, { recursive: true, force: true });
       }
     },
   };

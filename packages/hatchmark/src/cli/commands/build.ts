@@ -391,11 +391,15 @@ async function runAll(
   for (const d of [...parseDiagnostics(project), ...checkReferences(project)]) {
     if (d.severity === "warning") diagnostics.set(JSON.stringify(d), d);
   }
-  const inner = await deps.createExecutor({ root, config });
   const cached = useCache
-    ? await createCachedExecutor({ root, config, inner, sweep: true })
+    ? await createCachedExecutor({
+        root,
+        config,
+        createInner: (at) => deps.createExecutor({ root: at, config }),
+        sweep: true,
+      })
     : undefined;
-  const executor = cached ?? inner;
+  const executor = cached ?? (await deps.createExecutor({ root, config }));
   try {
     for (const name of [...project.dashboards.keys()].sort()) {
       const result = await deps.runDashboard(project, name, executor, new Date());

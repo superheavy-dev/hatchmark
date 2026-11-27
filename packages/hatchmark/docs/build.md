@@ -99,16 +99,18 @@ changed. `hatchmark init` adds `.hatchmark/` to `.gitignore`.
   time zone, week and year anchors and filter defaults, the contents of the data files it reads,
   and the engine (the Hatchmark version, its query and executor code, and the DuckDB version).
 - Data files are compared by the SHA-256 of their contents, never by size or modification time,
-  so any changed byte runs the query again. A file that changes while a build runs is read again
-  at the end, and results read from it are not stored.
+  so any changed byte runs the query again. Build first copies each data file it reads into
+  `.hatchmark/tmp/` (a copy-on-write clone where the file system supports it), hashes the copy and
+  runs the queries on the copy, so a file edited while a build runs can never be stored under the
+  wrong fingerprint. The copy is removed when the build ends.
 - Queries of raw SQL metrics (`"type": "sql"`) always run and are never cached: their SQL can
   read the clock or other files, which no cache key can see.
 - A cached build writes the same bytes as `hatchmark build --no-cache`. A damaged or unreadable
   entry is ignored and rewritten.
 - Each build removes the entries it did not use, so the cache holds the last build's results.
   Deleting `.hatchmark/cache/` is always safe.
-- The cache turns itself off (and says why in `cache.reason`) when `.hatchmark` or a directory
-  under it is a symbolic link. When an entry cannot be written or removed (a read-only directory,
+- The cache turns itself off (and says why in `cache.reason`) when `.hatchmark` or any
+  directory under it that the cache uses is a symbolic link. When an entry cannot be written or removed (a read-only directory,
   a full disk), build still succeeds and simply keeps fewer entries.
 
 `hatchmark explain --dashboard <name> --block <id>` lists each query's cache status after its SQL:

@@ -16,9 +16,15 @@ import {
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { afterAll, describe, expect, it } from "vitest";
+import { build as buildCommand } from "../../src/cli/commands/build.js";
 import { run as cli } from "../../src/cli/main.js";
-import type { ExecutionContext, PlannedQuery, QueryResult } from "../../src/compiler/index.js";
-import { createCachedExecutor } from "../../src/node/index.js";
+import {
+  type ExecutionContext,
+  type PlannedQuery,
+  type QueryResult,
+  runDashboard,
+} from "../../src/compiler/index.js";
+import { createCachedExecutor, createDuckDbExecutor } from "../../src/node/index.js";
 import { PROJECT_DEFAULTS, type ProjectConfig } from "../../src/spec/index.js";
 import { EXAMPLE, removeProjects } from "./fixture.js";
 
@@ -101,6 +107,15 @@ async function entries(root: string): Promise<string[]> {
     }
   }
   return out.sort();
+}
+
+async function editJson(
+  root: string,
+  file: string,
+  edit: (value: Record<string, any>) => Record<string, unknown>,
+): Promise<void> {
+  const at = path.join(root, file);
+  await writeFile(at, JSON.stringify(edit(JSON.parse(await readFile(at, "utf8"))), null, 2));
 }
 
 /** The example's last order, the newest row. */
@@ -278,6 +293,134 @@ describe("build cache", () => {
     }
   });
 
+  it("stores what DuckDB read even when the data changes and changes back mid-build (HAT-53 ABA)", async () => {
+    const root = await example();
+    const file = path.join(root, "data", "orders.csv");
+    const original = await readFile(file, "utf8");
+    const other = original.replaceAll(",paid,", ",void,");
+    let swapped = false;
+    const io = {
+      stdout: () => {},
+      stderr: () => {},
+      cwd: "/",
+      env: {},
+      stdoutIsTTY: false,
+      isAgent: async () => false,
+    };
+    const result = await buildCommand(
+      { io, root, mode: "json", color: false, quiet: false },
+      { out: path.join(root, "out-aba") },
+      {
+        runDashboard,
+        createExecutor: async (options) => {
+          const inner = await createDuckDbExecutor(options);
+          return {
+            ...inner,
+            async execute(query, context) {
+              if (!swapped) {
+                swapped = true;
+                await writeFile(file, other);
+              }
+              return inner.execute(query, context);
+            },
+            async close() {
+              await writeFile(file, original);
+              await inner.close();
+            },
+          };
+        },
+      },
+    );
+    expect(result.exitCode).toBe(0);
+    expect(swapped).toBe(true);
+    expect(await readFile(file, "utf8")).toBe(original);
+    const warm = await build(root, true);
+    expect(warm.report.cache?.misses).toBe(0);
+    expect(warm.files).toEqual((await build(root, false)).files);
+  });
+
+  it("never writes or sweeps through a symbolic link anywhere under .hatchmark (HAT-53)", async () => {
+    for (const under of ["cache/v1/q", "cache/v1/h", "cache/v1", "tmp"]) {
+      const root = await example();
+      const victim = await mkdtemp(path.join(tmpdir(), "hatchmark-cache-victim-"));
+      roots.push(victim);
+      await writeFile(path.join(victim, "precious.parquet"), "not a cache entry\n");
+      const link = path.join(root, ".hatchmark", ...under.split("/"));
+      await mkdir(path.dirname(link), { recursive: true });
+      await symlink(victim, link);
+      const oracle = await build(root, false);
+      const linked = await build(root, true);
+      expect(linked.report.cache, under).toMatchObject({ enabled: false });
+      expect(linked.files).toEqual(oracle.files);
+      expect(await readdir(victim), under).toEqual(["precious.parquet"]);
+    }
+  });
+
+  const edits: [string, (root: string) => Promise<void>][] = [
+    [
+      "weekStart",
+      (root) => editJson(root, "hatchmark.json", (c) => ({ ...c, weekStart: "monday" })),
+    ],
+    [
+      "source timezone",
+      (root) =>
+        editJson(root, "hatchmark.json", (c) => {
+          c.sources.orders.timezone = "Asia/Tokyo";
+          return c;
+        }),
+    ],
+    [
+      "freshness lag",
+      (root) =>
+        editJson(root, "hatchmark.json", (c) => {
+          c.sources.orders.freshness = { lag: { days: 40 } };
+          return c;
+        }),
+    ],
+    [
+      "freshness through",
+      (root) =>
+        editJson(root, "hatchmark.json", (c) => {
+          c.sources.orders.freshness = { through: "2025-06-30" };
+          return c;
+        }),
+    ],
+    [
+      "csv delimiter",
+      async (root) => {
+        const file = path.join(root, "data", "orders.csv");
+        await writeFile(file, (await readFile(file, "utf8")).replaceAll(",", ";"));
+        await editJson(root, "hatchmark.json", (c) => {
+          c.sources.orders.delimiter = ";";
+          return c;
+        });
+      },
+    ],
+    [
+      "data symlink retargeted",
+      async (root) => {
+        const file = path.join(root, "data", "orders.csv");
+        const text = await readFile(file, "utf8");
+        await writeFile(path.join(root, "data", "b.csv"), text.replaceAll(",paid,", ",void,"));
+        await rm(file);
+        await symlink("b.csv", file);
+      },
+    ],
+  ];
+  it.each(edits)("matches --no-cache after a change to %s (HAT-53 harness)", async (_, edit) => {
+    const root = await example();
+    const file = path.join(root, "data", "orders.csv");
+    await writeFile(path.join(root, "data", "a.csv"), await readFile(file));
+    await rm(file);
+    await symlink("a.csv", file);
+    await build(root, true);
+    await edit(root);
+    const cached = await build(root, true);
+    expect(cached.code).toBe(0);
+    expect(cached.report.cache?.hits).toBe(0);
+    expect(cached.files).toEqual((await build(root, false)).files);
+  });
+
   it("treats corrupted, truncated and swapped entries as misses and rewrites them", async () => {
     const root = await example();
     const oracle = await build(root, false);
@@ -400,13 +543,17 @@ describe("cached executor", () => {
   });
 
   const roundTrip = async (root: string, result: QueryResult): Promise<QueryResult> => {
-    const writer = await createCachedExecutor({ root, config, inner: fake(result) });
+    const writer = await createCachedExecutor({
+      root,
+      config,
+      createInner: async () => fake(result),
+    });
     await writer.execute(query, context);
     await writer.close();
     const reader = await createCachedExecutor({
       root,
       config,
-      inner: fake({ columns: [], rows: [] }),
+      createInner: async () => fake({ columns: [], rows: [] }),
     });
     const back = await reader.execute(query, context);
     expect(reader.stats().hits).toBe(1);
@@ -455,27 +602,47 @@ describe("cached executor", () => {
     expect(await roundTrip(root2, none)).toEqual(none);
   });
 
-  it("never stores a result when its data file changes during the build", async () => {
+  it("computes from a snapshot, so an edit and its undo during the build store nothing wrong (HAT-53 ABA)", async () => {
     const root = await project();
     const file = path.join(root, "data", "t.csv");
+    const value = async (at: string) =>
+      Number((await readFile(path.join(at, "data", "t.csv"), "utf8")).split("\n")[1]);
     const executor = await createCachedExecutor({
       root,
       config,
-      inner: fake({ columns: [{ name: "v", type: "number" }], rows: [[1]] }, async () => {
-        await writeFile(file, "a\n2\n");
+      createInner: async (at) => ({
+        execute: async () => {
+          await writeFile(file, "a\n2\n");
+          const v = await value(at);
+          await writeFile(file, "a\n1\n");
+          return { columns: [{ name: "v", type: "number" }], rows: [[v]] };
+        },
+        horizon: async () => ({ date: true, naive: false }),
+        close: async () => {},
       }),
     });
-    await executor.execute(query, context);
+    expect((await executor.execute(query, context)).rows).toEqual([[1]]);
     await executor.close();
-    expect(executor.stats().written).toBe(0);
-    expect(await entries(root)).toEqual([]);
+    expect(await readdir(path.join(root, ".hatchmark", "tmp"))).toEqual([]);
+    const reader = await createCachedExecutor({
+      root,
+      config,
+      createInner: async () => fake({ columns: [], rows: [] }),
+    });
+    expect((await reader.execute(query, context)).rows).toEqual([[1]]);
+    expect(reader.stats().hits).toBe(1);
+    await reader.close();
   });
 
   it("keys on the execution context: another as-of date is a miss", async () => {
     const root = await project();
     const result: QueryResult = { columns: [{ name: "v", type: "number" }], rows: [[1]] };
     await roundTrip(root, result);
-    const executor = await createCachedExecutor({ root, config, inner: fake(result) });
+    const executor = await createCachedExecutor({
+      root,
+      config,
+      createInner: async () => fake(result),
+    });
     await executor.execute(query, { ...context, asOf: "2026-11-01" });
     await executor.execute(query, { ...context, bindings: { region: ["EMEA"] } });
     expect(executor.stats()).toMatchObject({ hits: 0, misses: 2 });
@@ -487,7 +654,11 @@ describe("cached executor", () => {
     const result: QueryResult = { columns: [{ name: "v", type: "number" }], rows: [[1]] };
     await roundTrip(root, result);
     const other = { ...query, input: { type: "csv", path: "data/t.csv", delimiter: ";" } };
-    const executor = await createCachedExecutor({ root, config, inner: fake(result) });
+    const executor = await createCachedExecutor({
+      root,
+      config,
+      createInner: async () => fake(result),
+    });
     await executor.execute(other as PlannedQuery, context);
     expect(executor.stats()).toMatchObject({ hits: 0, misses: 1 });
     await executor.close();

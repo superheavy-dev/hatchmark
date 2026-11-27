@@ -143,10 +143,11 @@ export async function explain(
       });
     }
   }
+  const config = project.config.spec;
   const executor = await createCachedExecutor({
     root: ctx.root,
-    config: project.config.spec,
-    inner: await createExecutor({ root: ctx.root, config: project.config.spec }),
+    config,
+    createInner: (root) => createExecutor({ root, config }),
     readOnly: true,
   });
   try {
