@@ -172,6 +172,10 @@ export interface BlockPlan {
   queryIds: string[];
   /** Every metric the block shows, by name, resolved to query results. */
   measures: Record<string, MeasureExpression>;
+  /** A KPI's metric over the comparison window, when the block compares. */
+  previous?: Record<string, MeasureExpression>;
+  /** A KPI's metric by month over the current window, when the block asks for a sparkline. */
+  sparkline?: Record<string, MeasureExpression>;
 }
 
 export interface QueryPlan {
@@ -226,6 +230,12 @@ export interface ExecutionContext {
  */
 export type ParamBindings = Readonly<Record<string, unknown>>;
 
+/**
+ * One query's rows. Columns are the query's dimensions in order, each named by its column, then
+ * every measure component, named by its id. Time dimensions hold bucket start dates and date
+ * columns hold dates, both as YYYY-MM-DD strings in the plan's time zone; components are numbers
+ * or null. Rows are sorted by grouping set, then by dimension values.
+ */
 export interface QueryResult {
   columns: {
     name: string;

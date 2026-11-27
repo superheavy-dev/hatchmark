@@ -1,10 +1,11 @@
-import { dashboardDependencies, type Metric, type Project } from "../spec/index.js";
-import type { PlannedParam, PlanParam } from "./plan.js";
+import { dashboardDependencies, hasColumn, type Metric, type Project } from "../spec/index.js";
+import type { ParamBindings, PlannedParam, PlanParam } from "./plan.js";
 
 /**
  * Resolves a dashboard's filters into self-contained plan parameters. A select filter binds to
  * every source the dashboard reads whose columns include it, or whose columns are unknown (check
- * reports multi-source blocks it cannot confirm, HM2013). A period filter windows every time
+ * reports multi-source blocks it cannot confirm, HM2013). Columns match case-insensitively, as DuckDB
+ * resolves identifiers. A period filter windows every time
  * column the dashboard's metrics use. Pure and deterministic: sources and columns are sorted.
  */
 export function resolveParams(project: Project, dashboard: string): PlanParam[] {
@@ -40,7 +41,7 @@ export function resolveParams(project: Project, dashboard: string): PlanParam[] 
       operator: "in",
       multiple: filter.multiple === true,
       default: fallback === undefined ? [] : Array.isArray(fallback) ? fallback : [fallback],
-      sources: sources.filter((s) => project.columns.get(s)?.includes(filter.column) !== false),
+      sources: sources.filter((s) => hasColumn(project.columns.get(s), filter.column) !== false),
     };
   });
 }
@@ -63,4 +64,33 @@ export function paramsForQuery(
     if (timeColumn === undefined || param.columns[source]?.includes(timeColumn) !== true) return [];
     return [{ id: param.id, kind: "period", source, column: timeColumn, default: param.default }];
   });
+}
+
+/**
+ * The values a select filter keeps rows for in one execution: the bound value or values, else the
+ * default. Empty means no filter (every row), whether bound as [] or defaulted. Throws when the
+ * binding is not a scalar or an array of scalars, or binds several values to a single select.
+ */
+export function selectValues(
+  param: PlannedParam & { kind: "select" },
+  bindings: ParamBindings,
+): (string | number | boolean)[] {
+  const bound = bindings[param.id];
+  if (bound === undefined) return param.default;
+  const values = Array.isArray(bound) ? bound : [bound];
+  const scalar = (v: unknown): v is string | number | boolean =>
+    typeof v === "string" ||
+    typeof v === "boolean" ||
+    (typeof v === "number" && Number.isFinite(v));
+  if (!values.every(scalar)) {
+    throw new TypeError(
+      `select filter "${param.id}" is bound to ${JSON.stringify(bound)}, not scalar values`,
+    );
+  }
+  if (!param.multiple && values.length > 1) {
+    throw new TypeError(
+      `select filter "${param.id}" takes one value, but ${values.length} are bound`,
+    );
+  }
+  return values;
 }

@@ -1,4 +1,5 @@
-import type { Comparison, PeriodRange } from "../spec/index.js";
+import { type Comparison, PERIOD_RANGES, type PeriodRange, type TimeGrain } from "../spec/index.js";
+import type { ExecutionContext, PlannedQuery } from "./plan.js";
 
 /**
  * A window as calendar dates in the project time zone: start inclusive, end exclusive, both
@@ -137,4 +138,88 @@ export function windowBounds(
   const start =
     shift === "none" ? current : addMonths(current, shift === "previous_period" ? -months : -12);
   return result(start, addMonths(start, months));
+}
+
+/**
+ * The dates one execution of a planned query reads: its window's range, or the range a period
+ * filter binds (its default when nothing is bound) when that filter windows the query's time
+ * column, shifted by the window's comparison. Undefined when the shift has no window (all_time
+ * compared); unbounded for all_time and for queries without a time column. Executors and assembly
+ * both call this, so the numbers and the spans shown next to them always agree.
+ */
+export function queryBounds(
+  query: PlannedQuery,
+  context: Pick<ExecutionContext, "asOf" | "bindings">,
+): WindowBounds | undefined {
+  const { window } = query;
+  if (window.column === undefined) return { kind: "unbounded" };
+  let range = window.range;
+  for (const param of query.params) {
+    if (param.kind !== "period" || param.column !== window.column) continue;
+    const bound = context.bindings[param.id];
+    if (bound === undefined) range = param.default;
+    else if (typeof bound === "string" && (PERIOD_RANGES as readonly string[]).includes(bound)) {
+      range = bound as PeriodRange;
+    } else {
+      throw new TypeError(
+        `period filter "${param.id}" is bound to ${JSON.stringify(bound)}, not a period range`,
+      );
+    }
+  }
+  return windowBounds(range, window.shift, context.asOf);
+}
+
+/** The first day of the time bucket a date falls in; weeks start on weekStart. */
+export function bucketStart(
+  date: string,
+  grain: TimeGrain,
+  weekStart: "monday" | "sunday",
+): string {
+  const day = parse(date);
+  switch (grain) {
+    case "day":
+      return format(day);
+    case "week": {
+      const weekday = new Date(Date.UTC(day.y, day.m - 1, day.d)).getUTCDay();
+      return format(addDays(day, -(weekStart === "monday" ? (weekday + 6) % 7 : weekday)));
+    }
+    default:
+      return format(unitStart(day, grain));
+  }
+}
+
+const GRAIN_STEP: Record<TimeGrain, { days: number } | { months: number }> = {
+  day: { days: 1 },
+  week: { days: 7 },
+  month: { months: 1 },
+  quarter: { months: 3 },
+  year: { months: 12 },
+};
+
+/**
+ * Every bucket start of a span (start inclusive, end exclusive): a complete spine from the bucket
+ * holding start through the bucket holding the last day, so empty buckets are listed too. The
+ * first and last buckets may begin before or end after the span. Empty when the span is empty.
+ */
+export function timeBuckets(
+  start: string,
+  end: string,
+  grain: TimeGrain,
+  weekStart: "monday" | "sunday",
+): string[] {
+  if (start >= end) return [];
+  const last = bucketStart(format(addDays(parse(end), -1)), grain, weekStart);
+  const step = GRAIN_STEP[grain];
+  const out: string[] = [];
+  for (let bucket = bucketStart(start, grain, weekStart); bucket <= last; ) {
+    out.push(bucket);
+    const day = parse(bucket);
+    bucket = format("days" in step ? addDays(day, step.days) : addMonths(day, step.months));
+  }
+  return out;
+}
+
+/** The day after a date: the exclusive end of a span that ends with it. */
+export function nextDay(date: string): string {
+  return format(addDays(parse(date), 1));
 }

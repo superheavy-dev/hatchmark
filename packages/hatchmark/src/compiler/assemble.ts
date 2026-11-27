@@ -1,0 +1,535 @@
+import { type Diagnostic, docsCommand } from "../diagnostics/index.js";
+import {
+  type Block,
+  blockId,
+  type Metric,
+  PERIOD_RANGES,
+  type PeriodRange,
+  type Project,
+  type TimeGrain,
+} from "../spec/index.js";
+import {
+  type BarData,
+  type BlockData,
+  type CategoryAxis,
+  DASHBOARD_DATA_VERSION,
+  type DashboardData,
+  type DateSpan,
+  type KpiData,
+  type LineData,
+  type MetricInfo,
+  type Series,
+  type TableData,
+  type TableRow,
+  type TimeAxis,
+  type Value,
+} from "./dashboard-data.js";
+import type {
+  BlockPlan,
+  ExecutionContext,
+  MeasureExpression,
+  PlannedQuery,
+  QueryPlan,
+  QueryResult,
+} from "./plan.js";
+import { nextDay, queryBounds, timeBuckets, type WindowBounds, windowBounds } from "./windows.js";
+
+type Key = string | number | boolean | null;
+
+interface IndexedQuery {
+  query: PlannedQuery;
+  /** Rows by grouping set and dimension values: rowKey(). */
+  rows: Map<string, unknown[]>;
+  /** Distinct dimension values by grouping set, in result order. */
+  keys: Map<number, Key[][]>;
+  components: Map<string, number>;
+}
+
+/** Null-safe row identity: the grouping set plus every dimension value, null included. */
+function rowKey(set: number, keys: readonly Key[]): string {
+  return JSON.stringify([set, keys]);
+}
+
+function toKey(value: unknown): Key {
+  return typeof value === "string" || typeof value === "number" || typeof value === "boolean"
+    ? value
+    : null;
+}
+
+function index(query: PlannedQuery, result: QueryResult): IndexedQuery {
+  const dims = query.dimensions.length;
+  const rows = new Map<string, unknown[]>();
+  const keys = new Map<number, Key[][]>();
+  result.rows.forEach((row, i) => {
+    const set = result.groupingSet?.[i] ?? 0;
+    const values = row.slice(0, dims).map(toKey);
+    rows.set(rowKey(set, values), row);
+    keys.set(set, [...(keys.get(set) ?? []), values]);
+  });
+  const components = new Map(result.columns.map((c, i) => [c.name, i]));
+  return { query, rows, keys, components };
+}
+
+function divide(a: Value, b: Value): Value {
+  return a === null || b === null || b === 0 ? null : a / b;
+}
+
+const TYPE_RANK = { boolean: 0, number: 1, string: 2 } as const;
+
+/** Orders keys: booleans, numbers, strings, then null last; strings by UTF-16 code unit. */
+function compareKey(a: Key, b: Key): number {
+  if (a === b) return 0;
+  if (a === null) return 1;
+  if (b === null) return -1;
+  const ta = TYPE_RANK[typeof a as keyof typeof TYPE_RANK];
+  const tb = TYPE_RANK[typeof b as keyof typeof TYPE_RANK];
+  if (ta !== tb) return ta - tb;
+  return a < b ? -1 : 1;
+}
+
+function compareKeys(a: readonly Key[], b: readonly Key[]): number {
+  for (let i = 0; i < Math.max(a.length, b.length); i++) {
+    const c = compareKey(a[i] ?? null, b[i] ?? null);
+    if (c !== 0) return c;
+  }
+  return 0;
+}
+
+/** Orders keys in either direction, null last in both. */
+function compareKeyOrdered(a: Key, b: Key, order: "asc" | "desc"): number {
+  if (a === null || b === null) return compareKey(a, b);
+  return order === "asc" ? compareKey(a, b) : compareKey(b, a);
+}
+
+/** Orders values, null last in both directions. */
+function compareValues(a: Value, b: Value, order: "asc" | "desc"): number {
+  if (a === b) return 0;
+  if (a === null) return 1;
+  if (b === null) return -1;
+  return order === "asc" ? a - b : b - a;
+}
+
+function span(bounds: WindowBounds | undefined): DateSpan | undefined {
+  return bounds?.kind === "bounded" ? { start: bounds.start, end: bounds.end } : undefined;
+}
+
+function refs(expression: MeasureExpression): string[] {
+  return expression.op === "ref"
+    ? [expression.queryId]
+    : [...refs(expression.numerator), ...refs(expression.denominator)];
+}
+
+class Assembler {
+  readonly diagnostics: Diagnostic[] = [];
+  private readonly queries = new Map<string, IndexedQuery>();
+
+  constructor(
+    private readonly project: Project,
+    private readonly plan: QueryPlan,
+    results: ReadonlyMap<string, QueryResult>,
+    private readonly context: ExecutionContext,
+  ) {
+    for (const query of plan.queries) {
+      const result = results.get(query.id);
+      if (result) this.queries.set(query.id, index(query, result));
+    }
+  }
+
+  metric(name: string): Metric | undefined {
+    return this.project.metrics.get(name)?.spec;
+  }
+
+  /**
+   * A measure's value in one row. A row a query does not have reads as no rows: 0 for additive
+   * components (sum, count, additive SQL), null for the others, so empty groups and empty time
+   * buckets are zero-filled exactly where the metric adds up.
+   */
+  private measure(queryId: string, metric: string, key: string): Value {
+    const indexed = this.queries.get(queryId);
+    const measure = indexed?.query.measures.find((m) => m.metric === metric);
+    if (indexed === undefined || measure === undefined) return null;
+    const row = indexed.rows.get(key);
+    const component = (id: string): Value => {
+      const at = indexed.components.get(id);
+      const raw = row === undefined || at === undefined ? null : row[at];
+      const value = typeof raw === "number" ? raw : null;
+      const additive = measure.components.find((c) => c.id === id)?.reaggregate === "sum";
+      return value === null && additive ? 0 : value;
+    };
+    const { combine } = measure;
+    return combine.op === "identity"
+      ? component(combine.component)
+      : divide(component(combine.numerator), component(combine.denominator));
+  }
+
+  evaluate(expression: MeasureExpression | undefined, set: number, keys: readonly Key[]): Value {
+    if (expression === undefined) return null;
+    if (expression.op === "ref") {
+      return this.measure(expression.queryId, expression.metric, rowKey(set, keys));
+    }
+    return divide(
+      this.evaluate(expression.numerator, set, keys),
+      this.evaluate(expression.denominator, set, keys),
+    );
+  }
+
+  /** The window the queries behind an expression read (they all read the same span). */
+  bounds(expression: MeasureExpression | undefined): WindowBounds | undefined {
+    const query = expression && this.queries.get(refs(expression)[0] ?? "")?.query;
+    return query && queryBounds(query, this.context);
+  }
+
+  /** Distinct dimension values of a grouping set across queries, sorted by key. */
+  keys(expressions: (MeasureExpression | undefined)[], set: number): Key[][] {
+    const seen = new Map<string, Key[]>();
+    for (const id of new Set(expressions.flatMap((e) => (e ? refs(e) : [])))) {
+      for (const keys of this.queries.get(id)?.keys.get(set) ?? []) {
+        seen.set(JSON.stringify(keys), keys);
+      }
+    }
+    return [...seen.values()].sort(compareKeys);
+  }
+
+  timeAxis(expressions: (MeasureExpression | undefined)[], grain: TimeGrain): TimeAxis {
+    const bounds = this.bounds(expressions[0]);
+    const { weekStart } = this.plan;
+    if (bounds?.kind === "bounded") {
+      const window = { start: bounds.start, end: bounds.end };
+      return {
+        kind: "time",
+        grain,
+        buckets: timeBuckets(bounds.start, bounds.end, grain, weekStart),
+        window,
+      };
+    }
+    const observed = this.keys(expressions, 0)
+      .map((keys) => keys[0])
+      .filter((k): k is string => typeof k === "string");
+    const last = [this.context.asOf, ...observed].sort().at(-1) ?? this.context.asOf;
+    const end = nextDay(last);
+    const start = observed[0] ?? end;
+    const buckets = timeBuckets(start, end, grain, weekStart);
+    return { kind: "time", grain, buckets, window: { start: buckets[0] ?? start, end } };
+  }
+
+  splitSeries(
+    metric: string,
+    expression: MeasureExpression | undefined,
+    positions: Key[],
+    totalsSet: number,
+    dims: number,
+  ): Series[] {
+    const splitAt = dims - 1;
+    const values = this.keys([expression], 0).map((keys) => keys[splitAt] ?? null);
+    const unique = [...new Map(values.map((v) => [JSON.stringify(v), v])).values()];
+    const total = (v: Key): Value => {
+      const keys: Key[] = Array.from({ length: dims }, () => null);
+      keys[splitAt] = v;
+      return this.evaluate(expression, totalsSet, keys);
+    };
+    const ordered = unique
+      .map((value) => ({ value, total: total(value) }))
+      .sort((a, b) => compareValues(a.total, b.total, "desc") || compareKey(a.value, b.value));
+    const used = new Set<string>();
+    return ordered.map(({ value }) => {
+      const label = value === null ? "(empty)" : String(value);
+      let key = `${metric}:${label}`;
+      for (let n = 2; used.has(key); n++) key = `${metric}:${label}~${n}`;
+      used.add(key);
+      return {
+        key,
+        metric,
+        label,
+        splitValue: value,
+        values: positions.map((p) =>
+          this.evaluate(expression, 0, dims === 2 ? [p, value] : [value]),
+        ),
+      };
+    });
+  }
+
+  metricSeries(
+    names: string[],
+    measures: Record<string, MeasureExpression>,
+    positions: Key[],
+  ): Series[] {
+    return names.map((name) => ({
+      key: name,
+      metric: name,
+      label: this.metric(name)?.label ?? name,
+      values: positions.map((p) => this.evaluate(measures[name], 0, [p])),
+    }));
+  }
+
+  kpi(block: Block & { type: "kpi" }, plan: BlockPlan, common: Common): KpiData {
+    const name = block.metric;
+    const compare = block.compare ?? this.plan.period.compare;
+    const current = this.evaluate(plan.measures[name], 0, []);
+    const data: KpiData = { ...common, type: "kpi", metric: name, value: current, compare };
+    const currentSpan = span(this.bounds(plan.measures[name]));
+    if (currentSpan) data.current = currentSpan;
+    const previousExpression = plan.previous?.[name];
+    if (previousExpression && this.bounds(previousExpression) !== undefined) {
+      const previousSpan = span(this.bounds(previousExpression));
+      if (previousSpan) data.previous = previousSpan;
+      const previous = this.evaluate(previousExpression, 0, []);
+      const change = current === null || previous === null ? null : current - previous;
+      const points = this.metric(name)?.format.type === "percent";
+      data.previousValue = previous;
+      data.change = change;
+      data.changePct = points
+        ? change
+        : change === null || previous === null || previous === 0
+          ? null
+          : change / Math.abs(previous);
+      data.changeKind = points ? "points" : "relative";
+    }
+    const sparkline = plan.sparkline?.[name];
+    if (sparkline) {
+      const axis = this.timeAxis([sparkline], "month");
+      data.sparkline = {
+        grain: "month",
+        buckets: axis.buckets,
+        values: axis.buckets.map((b) => this.evaluate(sparkline, 0, [b])),
+      };
+    }
+    return data;
+  }
+
+  line(block: Block & { type: "line" | "area" }, plan: BlockPlan, common: Common): LineData {
+    const expressions = block.metrics.map((m) => plan.measures[m]);
+    const axis = this.timeAxis(expressions, block.grain);
+    const [first = ""] = block.metrics;
+    const series =
+      block.split === undefined
+        ? this.metricSeries(block.metrics, plan.measures, axis.buckets)
+        : this.splitSeries(first, plan.measures[first], axis.buckets, 1, 2);
+    return {
+      ...common,
+      type: block.type,
+      ...(block.type === "area" ? { stack: block.stack ?? false } : {}),
+      axis,
+      series,
+    };
+  }
+
+  bar(block: Block & { type: "bar" }, plan: BlockPlan, common: Common): BarData {
+    const expressions = block.metrics.map((m) => plan.measures[m]);
+    const [first = ""] = block.metrics;
+    const split = block.split !== undefined;
+    const base = {
+      ...common,
+      type: "bar" as const,
+      orientation: block.orientation ?? "vertical",
+      stack: block.stack ?? false,
+    };
+    if (block.grain !== undefined) {
+      const axis = this.timeAxis(expressions, block.grain);
+      const series = split
+        ? this.splitSeries(first, plan.measures[first], axis.buckets, 2, 2)
+        : this.metricSeries(block.metrics, plan.measures, axis.buckets);
+      return { ...base, axis, series };
+    }
+    const column = block.by ?? "";
+    const all = this.keys(expressions, 0).map((keys) => keys[0] ?? null);
+    const categories = [...new Map(all.map((v) => [JSON.stringify(v), v])).values()];
+    const sort = block.sort ?? { by: first, order: "desc" as const };
+    const value = (c: Key): Value =>
+      split
+        ? this.evaluate(plan.measures[sort.by], 1, [c, null])
+        : this.evaluate(plan.measures[sort.by], 0, [c]);
+    const sorted =
+      sort.by === column || plan.measures[sort.by] === undefined
+        ? categories.sort((a, b) => compareKeyOrdered(a, b, sort.order))
+        : categories
+            .map((c) => ({ c, v: value(c) }))
+            .sort((a, b) => compareValues(a.v, b.v, sort.order) || compareKey(a.c, b.c))
+            .map(({ c }) => c);
+    const shown = block.limit === undefined ? sorted : sorted.slice(0, block.limit);
+    const axis: CategoryAxis = { kind: "category", column, categories: shown };
+    const series = split
+      ? this.splitSeries(first, plan.measures[first], shown, 2, 2)
+      : this.metricSeries(block.metrics, plan.measures, shown);
+    const omitted = sorted.length - shown.length;
+    return { ...base, axis, series, ...(omitted > 0 ? { omittedCategories: omitted } : {}) };
+  }
+
+  table(block: Block & { type: "table" }, plan: BlockPlan, common: Common): TableData {
+    const expressions = block.metrics.map((m) => plan.measures[m]);
+    const percent = block.percentOfTotal ?? [];
+    const hasTotal = block.totals !== false || percent.length > 0;
+    const blank: Key[] = block.by.map(() => null);
+    const totals: Record<string, Value> = {};
+    if (hasTotal)
+      for (const m of block.metrics) totals[m] = this.evaluate(plan.measures[m], 1, blank);
+    const shares = (values: Record<string, Value>): Record<string, Value> =>
+      Object.fromEntries(percent.map((m) => [m, divide(values[m] ?? null, totals[m] ?? null)]));
+    const rows: TableRow[] = this.keys(expressions, 0).map((keys) => {
+      const values: Record<string, Value> = {};
+      for (const m of block.metrics) values[m] = this.evaluate(plan.measures[m], 0, keys);
+      return { keys, values, ...(percent.length > 0 ? { share: shares(values) } : {}) };
+    });
+    if (hasTotal) this.checkAdditive(block, common.id, rows, totals);
+
+    const sort = block.sort ?? { by: block.metrics[0] ?? "", order: "desc" as const };
+    const column = block.by.indexOf(sort.by);
+    rows.sort((a, b) => {
+      if (column >= 0) {
+        const c = compareKeyOrdered(a.keys[column] ?? null, b.keys[column] ?? null, sort.order);
+        return c || compareKeys(a.keys, b.keys);
+      }
+      return (
+        compareValues(a.values[sort.by] ?? null, b.values[sort.by] ?? null, sort.order) ||
+        compareKeys(a.keys, b.keys)
+      );
+    });
+    const window = span(this.bounds(expressions[0]));
+    return {
+      ...common,
+      type: "table",
+      by: block.by.map((c) => ({ column: c, label: columnLabel(c) })),
+      metrics: block.metrics,
+      percentOfTotal: percent,
+      rows: block.limit === undefined ? rows : rows.slice(0, block.limit),
+      rowCount: rows.length,
+      ...(block.totals !== false
+        ? { total: { values: totals, ...(percent.length > 0 ? { share: shares(totals) } : {}) } }
+        : {}),
+      ...(window ? { window } : {}),
+    };
+  }
+
+  /** HM4003: a SQL metric declared additive whose rows do not add up to the recomputed total. */
+  private checkAdditive(
+    block: Block & { type: "table" },
+    id: string,
+    rows: TableRow[],
+    totals: Record<string, Value>,
+  ): void {
+    for (const name of block.metrics) {
+      const file = this.project.metrics.get(name);
+      if (file?.spec?.type !== "sql" || !file.spec.additive) continue;
+      const total = totals[name] ?? null;
+      const sum = rows.reduce((acc, row) => acc + (row.values[name] ?? 0), 0);
+      if (total === null || Math.abs(sum - total) <= 1e-9 * Math.max(1, Math.abs(total))) continue;
+      const pointer = "/additive";
+      this.diagnostics.push({
+        code: "HM4003",
+        severity: "warning",
+        message: `metric "${name}" is declared additive, but the rows of table "${id}" add up to ${sum}, not the total ${total}`,
+        file: file.file,
+        pointer,
+        ...file.document.locationOf(pointer),
+        help: 'set "additive": false unless the SQL is a sum or a count',
+        docs: docsCommand("HM4003"),
+      });
+    }
+  }
+
+  dashboardPeriod(): { range: PeriodRange; compare: QueryPlan["period"]["compare"] } {
+    const param = this.plan.params.find((p) => p.kind === "period");
+    const bound = param && this.context.bindings[param.id];
+    const range =
+      typeof bound === "string" && (PERIOD_RANGES as readonly string[]).includes(bound)
+        ? (bound as PeriodRange)
+        : param?.kind === "period"
+          ? param.default
+          : this.plan.period.range;
+    return { range, compare: this.plan.period.compare };
+  }
+}
+
+type Common = { id: string; title?: string; span: number };
+
+/** A column's header text: underscores as spaces, first letter capitalized ("ship_country"). */
+function columnLabel(column: string): string {
+  const text = column.replaceAll("_", " ");
+  return text.charAt(0).toUpperCase() + text.slice(1);
+}
+
+/**
+ * Turns a plan and its query results into DashboardData. Pure and deterministic: the same plan,
+ * results and context give the same data, byte for byte. Totals come from each query's grand
+ * total grouping set, never from summing rows; ratio rows match on grouping set and dimension
+ * values with null as a real value; limit cuts leaf rows only.
+ */
+export function assemble(
+  project: Project,
+  plan: QueryPlan,
+  results: ReadonlyMap<string, QueryResult>,
+  context: ExecutionContext,
+): { data?: DashboardData; diagnostics: Diagnostic[] } {
+  const spec = project.dashboards.get(plan.dashboard)?.spec;
+  const config = project.config.spec;
+  if (spec === undefined || config === undefined) return { diagnostics: [] };
+  const assembler = new Assembler(project, plan, results, context);
+  const period = assembler.dashboardPeriod();
+  const blocks: BlockData[] = [];
+  const shown = new Set<string>();
+  for (const blockPlan of plan.blocks) {
+    const at = spec.blocks.findIndex((b, i) => blockId(b, i) === blockPlan.blockId);
+    const block = spec.blocks[at];
+    if (block === undefined) continue;
+    const common: Common = {
+      id: blockPlan.blockId,
+      ...(block.title === undefined ? {} : { title: block.title }),
+      span: block.span ?? (block.type === "kpi" ? 3 : 12),
+    };
+    if (block.type === "kpi") {
+      shown.add(block.metric);
+      blocks.push(assembler.kpi(block, blockPlan, common));
+    } else if (block.type === "line" || block.type === "area") {
+      for (const m of block.metrics) shown.add(m);
+      blocks.push(assembler.line(block, blockPlan, common));
+    } else if (block.type === "bar") {
+      for (const m of block.metrics) shown.add(m);
+      blocks.push(assembler.bar(block, blockPlan, common));
+    } else if (block.type === "table") {
+      for (const m of block.metrics) shown.add(m);
+      blocks.push(assembler.table(block, blockPlan, common));
+    }
+  }
+
+  const metrics: Record<string, MetricInfo> = {};
+  for (const name of [...shown].sort()) {
+    const metric = assembler.metric(name);
+    if (metric === undefined) continue;
+    metrics[name] = {
+      name,
+      label: metric.label,
+      ...(metric.description === undefined ? {} : { description: metric.description }),
+      format:
+        metric.format.type === "currency"
+          ? { ...metric.format, currency: metric.format.currency ?? config.currency }
+          : metric.format,
+      better: metric.better,
+    };
+  }
+
+  const current = span(windowBounds(period.range, "none", context.asOf));
+  const previous =
+    period.compare === "none"
+      ? undefined
+      : span(windowBounds(period.range, period.compare, context.asOf));
+  const data: DashboardData = {
+    version: DASHBOARD_DATA_VERSION,
+    name: plan.dashboard,
+    title: spec.title,
+    ...(spec.description === undefined ? {} : { description: spec.description }),
+    project: config.name,
+    asOf: context.asOf,
+    period: {
+      range: period.range,
+      compare: period.compare,
+      ...(current ? { current } : {}),
+      ...(previous ? { previous } : {}),
+    },
+    locale: config.locale,
+    currency: config.currency,
+    timezone: plan.timezone,
+    weekStart: plan.weekStart,
+    metrics,
+    blocks,
+  };
+  return { data, diagnostics: assembler.diagnostics };
+}

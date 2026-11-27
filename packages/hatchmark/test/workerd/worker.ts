@@ -1,4 +1,10 @@
-import { planHash, resolveParams, windowBounds } from "../../src/compiler/index.js";
+import {
+  assemble,
+  planDashboard,
+  planHash,
+  resolveParams,
+  windowBounds,
+} from "../../src/compiler/index.js";
 import { createReport, renderHuman } from "../../src/diagnostics/index.js";
 import {
   checkReferences,
@@ -28,6 +34,11 @@ const files: Record<string, string> = {
   }),
   "dashboards/sales.json":
     '{\n  "title": "Sales",\n  "blocks": [{"type": "kpi", "metric": "revenu"}]\n}\n',
+  "dashboards/ok.json": JSON.stringify({
+    title: "OK",
+    period: { asOf: "2026-10-31", range: "last_complete_month", compare: "none" },
+    blocks: [{ type: "kpi", metric: "revenue" }],
+  }),
 };
 
 const host: ProjectHost = {
@@ -55,8 +66,25 @@ export default {
       ...diagnostics,
       ...checkReferences(project),
     ]);
+    const { plan } = planDashboard(project, "ok");
+    const query = plan?.queries[0];
+    const assembled =
+      plan &&
+      query &&
+      assemble(
+        project,
+        plan,
+        new Map([
+          [
+            query.id,
+            { columns: [{ name: "revenue__sum", type: "number" as const }], rows: [[10]] },
+          ],
+        ]),
+        { asOf: "2026-10-31", timezone: "UTC", weekStart: "monday", bindings: {} },
+      );
     return Response.json({
       report,
+      kpi: assembled?.data?.blocks[0],
       human: renderHuman(report),
       columns: project.columns.get("orders"),
       schemaTitle: jsonSchema("dashboard").title,
