@@ -841,6 +841,7 @@ class Assembler {
           subtotal: row(pad(g.keys), (m) => value(m, set, pad(g.keys)), {
             kind: "subtotal",
             level,
+            count: g.members.length,
           }),
         }))
         .sort((a, b) => order(a.subtotal, b.subtotal))

@@ -53,25 +53,10 @@ export function renderTable(block: TableData, ctx: RenderContext, alone = true):
   const keyClass = (i: number) =>
     `hm-key${i === 0 ? "" : " hm-key2"}${i === width - 1 ? " hm-fill" : grouped ? " hm-outer" : ""}`;
   const levelOf = (row: TableRow) => row.level ?? 1;
-  /** Every row of the data is shown or folded into an Other row, so a group's rows are all its rows. */
-  const complete =
-    block.rows.reduce(
-      (n, row) => n + (row.kind === undefined ? 1 : row.kind === "other" ? (row.count ?? 0) : 0),
-      0,
-    ) === block.rowCount;
+  /** Subtotals whose group had exactly one row before limit, so no Other row and nothing cut. */
   const solo = new Set<number>();
   block.rows.forEach((row, index) => {
-    if (row.kind !== "subtotal") return;
-    const level = levelOf(row);
-    const children: TableRow[] = [];
-    for (let j = index + 1; j < block.rows.length; j++) {
-      const next = block.rows[j] as TableRow;
-      const nested = next.kind === "subtotal";
-      if (nested && levelOf(next) <= level) break;
-      if (level === width - 1 ? !nested : nested && levelOf(next) === level + 1)
-        children.push(next);
-    }
-    if (complete && children.length === 1) solo.add(index);
+    if (row.kind === "subtotal" && row.count === 1) solo.add(index);
   });
   const revealed: Set<number>[] = [];
   const stack: { level: number; solo: boolean }[] = [];

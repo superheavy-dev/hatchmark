@@ -235,7 +235,7 @@ export interface TableRow {
   kind?: "subtotal" | "other";
   /** A subtotal row's depth: how many leading keys define its group (1 to by.length - 1). */
   level?: number;
-  /** An Other row's number of folded rows. */
+  /** An Other row's number of folded rows; a subtotal row's number of group rows before limit. */
   count?: number;
   /** By metric name. */
   values: Record<string, Value>;

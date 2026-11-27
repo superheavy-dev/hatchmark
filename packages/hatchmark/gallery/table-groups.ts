@@ -60,7 +60,7 @@ function grouped(
       .map((keys) => ({ keys, parts: parts.filter((p) => sameGroup(keys, p.keys)) }))
       .sort((a, b) => values(b.parts).revenue - values(a.parts).revenue)
       .flatMap((g) => [
-        row(pad(g.keys), g.parts, { kind: "subtotal", level }),
+        row(pad(g.keys), g.parts, { kind: "subtotal", level, count: g.parts.length }),
         ...nest(g.parts, g.keys),
       ]);
   };

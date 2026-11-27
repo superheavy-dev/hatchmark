@@ -81,13 +81,58 @@ beforeAll(async () => {
         ],
         subtotals: true,
         rows: [
-          { keys: ["East", null], kind: "subtotal", level: 1, values: { revenue: 30 } },
+          { keys: ["East", null], kind: "subtotal", level: 1, count: 2, values: { revenue: 30 } },
           { keys: ["East", "Boston"], values: { revenue: 20 } },
-          { keys: ["West", null], kind: "subtotal", level: 1, values: { revenue: 5 } },
+          { keys: ["West", null], kind: "subtotal", level: 1, count: 1, values: { revenue: 5 } },
           { keys: ["West", "Denver"], values: { revenue: 5 } },
         ],
         rowCount: 3,
         total: { values: { revenue: 35 } },
+      },
+      {
+        ...TRICKY,
+        id: "folded",
+        by: [
+          { column: "region", label: "Region" },
+          { column: "channel", label: "Channel" },
+          { column: "store", label: "Store" },
+        ],
+        subtotals: true,
+        rows: [
+          {
+            keys: ["West", null, null],
+            kind: "subtotal",
+            level: 1,
+            count: 1,
+            values: { revenue: 50 },
+          },
+          {
+            keys: ["West", "Online", null],
+            kind: "subtotal",
+            level: 2,
+            count: 1,
+            values: { revenue: 50 },
+          },
+          { keys: ["West", "Online", "Denver"], values: { revenue: 50 } },
+          {
+            keys: ["East", null, null],
+            kind: "subtotal",
+            level: 1,
+            count: 2,
+            values: { revenue: 30 },
+          },
+          {
+            keys: ["East", "Retail", null],
+            kind: "subtotal",
+            level: 2,
+            count: 2,
+            values: { revenue: 30 },
+          },
+          { keys: ["East", "Retail", "Boston"], values: { revenue: 20 } },
+          { keys: ["East", "Retail", null], kind: "other", count: 1, values: { revenue: 10 } },
+        ],
+        rowCount: 3,
+        total: { values: { revenue: 80 } },
       },
     ]),
     stores: dashboard("stores", "Stores", [
@@ -661,24 +706,35 @@ describe("narrow layouts of grouped tables", () => {
     await page.close();
   });
 
-  it("keeps every subtotal when rows were cut by the limit, since a group's one shown row may not be its only row", async () => {
-    const page = await open("cut");
-    const shown = await page.$$eval(".hm-table tbody tr", (trs) =>
-      trs
-        .filter((tr) => getComputedStyle(tr).display !== "none")
-        .map((tr) => [
-          (tr as HTMLElement).dataset.hmKind,
-          tr.querySelector("td:not(.hm-key)")?.getAttribute("data-v"),
-        ]),
-    );
-    expect(shown).toEqual([
-      ["subtotal", "30"],
-      ["row", "20"],
-      ["subtotal", "5"],
-      ["row", "5"],
-    ]);
-    await page.close();
-  });
+  for (const width of [1280, 390]) {
+    it(`hides a subtotal only when its group had one row before the limit, also with Other and three levels (${width}px)`, async () => {
+      const visible = async (id: string) => {
+        const page = await open("cut", width);
+        const rows = await page.$$eval(`[aria-labelledby="hm-${id}-t"] tbody tr`, (trs) =>
+          trs
+            .filter((tr) => getComputedStyle(tr).display !== "none")
+            .map((tr) => [
+              (tr as HTMLElement).dataset.hmKind,
+              tr.querySelector("td:not(.hm-key)")?.getAttribute("data-v"),
+            ]),
+        );
+        await page.close();
+        return rows;
+      };
+      expect(await visible("cut")).toEqual([
+        ["subtotal", "30"],
+        ["row", "20"],
+        ["row", "5"],
+      ]);
+      expect(await visible("folded")).toEqual([
+        ["row", "50"],
+        ["subtotal", "30"],
+        ["subtotal", "30"],
+        ["row", "20"],
+        ["other", "10"],
+      ]);
+    });
+  }
 
   it("downloads the plain column names from a two-line header", async () => {
     for (const width of [1280, 390]) {
@@ -759,6 +815,21 @@ describe("overflow: page or scroll, by layout", () => {
       await page.close();
     });
   }
+
+  it("prints a scrolled page-mode table with the header and total in place", async () => {
+    const page = await browser.newPage({ viewport: { width: 1280, height: 600 } });
+    await page.goto(urls.tall ?? "");
+    await probe(page, 600);
+    await page.waitForFunction(
+      () => getComputedStyle(document.querySelector("thead th") as Element).transform !== "none",
+    );
+    await page.emulateMedia({ media: "print" });
+    const moved = await page.$$eval("thead th, tfoot th, tfoot td", (cells) =>
+      cells.map((c) => getComputedStyle(c).transform).filter((t) => t !== "none"),
+    );
+    expect(moved).toEqual([]);
+    await page.close();
+  });
 
   it("pins the total above a classic horizontal scrollbar in page mode (390x430)", async () => {
     const classic = await chromium.launch({ ignoreDefaultArgs: ["--hide-scrollbars"] });
