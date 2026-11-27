@@ -106,7 +106,7 @@ ${body}
 const SHELL_STYLE = `html, body { height: 100%; }
 body { display: flex; flex-direction: column; }
 header { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 16px; padding: 8px 16px; border-bottom: 1px solid var(--line); }
-header .brand { display: flex; align-items: center; gap: 12px; padding-block: 6px; font-weight: 600; }
+header .brand { display: flex; align-items: center; gap: 14px; padding-block: 6px; font-weight: 600; }
 header .brand img { display: block; height: 16px; width: auto; }
 [data-theme="dark"] .brand .light, :root:not([data-theme="dark"]) .brand .dark { display: none; }
 header .info { color: var(--muted); margin-right: auto; }
