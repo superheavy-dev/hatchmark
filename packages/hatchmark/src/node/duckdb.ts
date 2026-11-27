@@ -85,7 +85,7 @@ import { type FileSource, normalizePath, type ProjectConfig } from "../spec/inde
  *
  * Plans and config. Each query carries its source's file and reader options (PlannedQuery.input),
  * so they are part of its id and of the plan hash. The executor refuses a query whose input
- * differs from config's source of the same name: the plan was made for another hatchmark.json.
+ * differs from config's source of the same name: the plan was made for another hatchmark.yaml.
  */
 export async function createDuckDbExecutor(options: {
   root: string;
@@ -121,7 +121,7 @@ export async function createDuckDbExecutor(options: {
     if (configured === undefined || canonicalJson(configured) !== canonicalJson(query.input)) {
       return Promise.reject(
         new Error(
-          `source "${query.source}" in this plan differs from hatchmark.json; plan the dashboard again`,
+          `source "${query.source}" in this plan differs from hatchmark.yaml; plan the dashboard again`,
         ),
       );
     }

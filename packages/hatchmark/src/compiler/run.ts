@@ -381,7 +381,7 @@ export async function executionContext(
 
 /**
  * Plans a dashboard, runs its queries and assembles DashboardData, with the filter defaults bound.
- * The project is checked first: any error in hatchmark.json, a metric, or this dashboard is
+ * The project is checked first: any error in hatchmark.yaml, a metric, or this dashboard is
  * returned without running anything. The as-of date resolves once, before any query runs, from the
  * source horizons (executionContext), so every window ends on the same day. now is the build
  * machine's clock, used only for the HM4012 warning. bindings sets filter values (a period filter's

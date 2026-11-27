@@ -1,15 +1,4 @@
-import type { Applicability, Fix, SpecDocument, SpecNode } from "../diagnostics/index.js";
-
-const PLAIN_SAFE = /^[A-Za-z_][A-Za-z0-9_./ -]*$/;
-const PLAIN_RESERVED = /^(?:true|false|null|~)$/i;
-
-/** A value as YAML text that reads back as the same value in block and flow context. */
-export function yamlScalar(value: unknown): string {
-  if (typeof value === "string" && PLAIN_SAFE.test(value) && !PLAIN_RESERVED.test(value)) {
-    if (!value.endsWith(" ") && !value.includes(" #") && !value.includes(": ")) return value;
-  }
-  return JSON.stringify(value);
-}
+import type { Applicability, Fix, SpecDocument } from "../diagnostics/index.js";
 
 export function replaceValueFix(
   document: SpecDocument,
@@ -22,7 +11,7 @@ export function replaceValueFix(
   if (!found?.exact) return undefined;
   return {
     range: document.rangeAt(found.node.start, found.node.end),
-    text: yamlScalar(value),
+    text: JSON.stringify(value),
     applicability,
     description,
   };
@@ -39,7 +28,7 @@ export function addPropertyFix(
   const found = document.locate(objectPointer);
   if (!found?.exact || found.node.kind !== "object") return undefined;
   const object = found.node;
-  const property = `${yamlScalar(key)}: ${yamlScalar(value)}`;
+  const property = `${JSON.stringify(key)}: ${JSON.stringify(value)}`;
   const last = object.members.at(-1);
   if (object.flow) {
     if (last === undefined) {
@@ -60,29 +49,13 @@ export function addPropertyFix(
   if (last === undefined) return undefined;
   const first = object.members[0] ?? last;
   const indent = document.positionAt(first.keyStart).column - 1;
-  const end = blockEnd(document, last.value);
+  const end = last.value.end;
   return {
     range: document.rangeAt(end, end),
     text: `\n${" ".repeat(indent)}${property}`,
     applicability,
     description,
   };
-}
-
-function blockEnd(document: SpecDocument, node: SpecNode): number {
-  if (node.kind === "object" && !node.flow) {
-    const last = node.members.at(-1);
-    return last ? blockEnd(document, last.value) : node.end;
-  }
-  if (node.kind === "array" && !node.flow) {
-    const last = node.items.at(-1);
-    return last ? blockEnd(document, last) : node.end;
-  }
-  if (node.kind === "string" && (node.style === "literal" || node.style === "folded")) {
-    const text = document.text.slice(0, node.end);
-    return text.trimEnd().length;
-  }
-  return node.end;
 }
 
 export function removeItemFix(
@@ -110,7 +83,7 @@ export function removeItemFix(
   const dash = document.text.lastIndexOf("-", item.start - 1);
   if (items.length === 1) {
     return {
-      range: document.rangeAt(dash, blockEnd(document, item)),
+      range: document.rangeAt(dash, item.end),
       text: "[]",
       applicability,
       description,
@@ -120,9 +93,9 @@ export function removeItemFix(
     const nextDash = document.text.lastIndexOf("-", next.start - 1);
     return { range: document.rangeAt(dash, nextDash), text: "", applicability, description };
   }
-  const previousEnd = blockEnd(document, previous ?? item);
+  const previousEnd = (previous ?? item).end;
   return {
-    range: document.rangeAt(previousEnd, blockEnd(document, item)),
+    range: document.rangeAt(previousEnd, item.end),
     text: "",
     applicability,
     description,

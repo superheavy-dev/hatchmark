@@ -1,6 +1,6 @@
 import { lstat, mkdir, readFile, realpath, writeFile } from "node:fs/promises";
 import path from "node:path";
-import { stringify } from "yaml";
+import { Document, isScalar, visit } from "yaml";
 import { CONFIG_FILE } from "../../spec/index.js";
 import { VERSION } from "../../version.js";
 import type { CommandHelp } from "../help.js";
@@ -43,8 +43,16 @@ export const initHelp: CommandHelp = {
 const TEMPLATES = ["sample", "minimal"] as const;
 const GITIGNORE = ["dist/", ".hatchmark/"];
 
-const specYaml = ({ $schema, ...spec }: Record<string, unknown>): string =>
-  `${typeof $schema === "string" ? `# yaml-language-server: $schema=${$schema}\n` : ""}${stringify(spec, { lineWidth: 0 })}`;
+function specYaml({ $schema, ...spec }: Record<string, unknown>): string {
+  const document = new Document(spec, { aliasDuplicateObjects: false });
+  visit(document, {
+    Seq(_, seq) {
+      if (seq.items.every((item) => isScalar(item))) seq.flow = true;
+    },
+  });
+  const header = typeof $schema === "string" ? `# yaml-language-server: $schema=${$schema}\n` : "";
+  return `${header}${document.toString({ lineWidth: 0, flowCollectionPadding: false })}`;
+}
 
 async function readOptional(file: string): Promise<string | undefined> {
   return readFile(file, "utf8").catch(() => undefined);

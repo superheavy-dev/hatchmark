@@ -8,7 +8,7 @@ import {
   type SpecDocument,
   toPointer,
 } from "../diagnostics/index.js";
-import { addPropertyFix, replaceValueFix, yamlScalar } from "./fixes.js";
+import { addPropertyFix, replaceValueFix } from "./fixes.js";
 
 type Path = (string | number)[];
 type Schema = core.$ZodType;
@@ -239,7 +239,7 @@ export function issuesToDiagnostics(
               name,
               fallback,
               "safe",
-              `add ${name}: ${yamlScalar(fallback)} (the default)`,
+              `add "${name}": ${JSON.stringify(fallback)} (the default)`,
             );
       push("HM3001", path, `missing required property "${name}"`, {
         label: `add "${name}"`,
@@ -279,7 +279,7 @@ export function issuesToDiagnostics(
               ? {
                   fix: {
                     range: keyRange,
-                    text: yamlScalar(match),
+                    text: JSON.stringify(match),
                     applicability:
                       match.toLowerCase() === extraKey.toLowerCase() ? "safe" : "unsafe",
                     description: `rename to "${match}"`,

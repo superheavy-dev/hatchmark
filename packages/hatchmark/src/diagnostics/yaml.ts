@@ -114,9 +114,18 @@ class Builder {
       });
     }
     const doc = list[0];
-    if (doc === undefined) {
+    if (doc === undefined || doc.contents === null) {
       const end = this.text.length;
-      return { node: { kind: "null", value: null, start: end, end }, value: null };
+      if (first === undefined) {
+        this.errors.push({
+          kind: "syntax",
+          message: "the file is empty",
+          start: end,
+          end,
+          help: "a spec file holds one YAML mapping, such as title: Sales",
+        });
+      }
+      return undefined;
     }
     return this.build(doc.contents, doc.range[0]);
   }
@@ -220,8 +229,16 @@ class Builder {
           configurable: true,
         });
       }
+      const flow = node.flow === true;
+      const last = members.at(-1)?.value.end;
       return {
-        node: { kind: "object", flow: node.flow === true, members, start, end },
+        node: {
+          kind: "object",
+          flow,
+          members,
+          start,
+          end: flow || last === undefined ? end : last,
+        },
         value,
       };
     }
@@ -233,13 +250,20 @@ class Builder {
         items.push(built.node);
         value.push(built.value);
       }
-      return { node: { kind: "array", flow: node.flow === true, items, start, end }, value };
+      const flow = node.flow === true;
+      const last = items.at(-1)?.end;
+      return {
+        node: { kind: "array", flow, items, start, end: flow || last === undefined ? end : last },
+        value,
+      };
     }
     if (isScalar(node)) {
       const v = node.value;
       if (typeof v === "string") {
         const style = STYLES[node.type ?? "PLAIN"] ?? "plain";
-        return { node: { kind: "string", value: v, style, start, end }, value: v };
+        const block = style === "literal" || style === "folded";
+        const contentEnd = block ? start + this.text.slice(start, end).trimEnd().length : end;
+        return { node: { kind: "string", value: v, style, start, end: contentEnd }, value: v };
       }
       if (typeof v === "number")
         return { node: { kind: "number", value: v, start, end }, value: v };

@@ -160,11 +160,10 @@ describe("parseYamlFile diagnostics", () => {
     expect(errorsOf("---\na: 1\n...\n")).toEqual([]);
   });
 
-  it("reads an empty file or one with only comments as null", () => {
-    for (const text of ["", "# nothing yet\n"]) {
-      const { document, diagnostics } = parseYamlFile("x.yaml", text);
-      expect(diagnostics).toEqual([]);
-      expect(document.value).toBeNull();
-    }
+  it("reports an empty file or one with only comments as HM1002 at the end of input", () => {
+    expect(errorsOf("")).toEqual([{ code: "HM1002", message: "the file is empty", at: "1:1" }]);
+    expect(errorsOf("# nothing yet\n")).toEqual([
+      { code: "HM1002", message: "the file is empty", at: "1:14" },
+    ]);
   });
 });
