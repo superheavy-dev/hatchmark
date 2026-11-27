@@ -335,7 +335,7 @@ describe("sorting", () => {
   });
 });
 
-describe("review regressions (HAT-55)", () => {
+describe("table regressions", () => {
   it("sorts a numeric grouping column by value, not by its formatted text", async () => {
     const page = await open("numeric");
     await page.getByRole("button", { name: "Key", exact: true }).press("Enter");

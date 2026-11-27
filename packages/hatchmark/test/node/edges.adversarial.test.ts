@@ -1,5 +1,4 @@
-// Adopted from the HAT-66 review of hatchmark#29 (the edges and incomplete options, RFC 0001 section
-// 6.5): every chart value is checked against raw SQL over the same rows, written apart from the
+// The edges and incomplete options (#29, RFC 0001 section 6.5): every chart value is checked against raw SQL over the same rows, written apart from the
 // planner. Three sources lag differently, so hide, clip and HM4014 meet a horizon before, inside and
 // after the range.
 import { readFileSync } from "node:fs";

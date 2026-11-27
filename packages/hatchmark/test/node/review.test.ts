@@ -79,7 +79,7 @@ async function first(fixture: Awaited<ReturnType<typeof probe>>): Promise<BlockD
   return block;
 }
 
-describe("HAT-22 probes", () => {
+describe("queries against hostile source columns", () => {
   it("groups by the requested column when the source has a column named hm_d0", async () => {
     const text = CSV.trimEnd()
       .split("\n")
@@ -259,7 +259,7 @@ describe("HAT-22 probes", () => {
     return { outputs: [...outputs], diagnostics };
   }
 
-  it("sums HAT-22's cancelling floats in file order, the same bytes at 1, 4 and 8 threads", async () => {
+  it("sums cancelling floats in file order, the same bytes at 1, 4 and 8 threads", async () => {
     const { outputs, diagnostics } = await threadOutputs(
       [
         { type: "kpi", id: "total", metric: "total" },
@@ -443,7 +443,7 @@ describe("HAT-22 probes", () => {
   );
 });
 
-describe("HAT-22 capped round", () => {
+describe("capped aggregates", () => {
   const read = async (
     files: Record<string, unknown>,
     source: unknown,
@@ -583,7 +583,7 @@ const ORDERS = `id,ordered_at,amount,p
 5,2026-11-01T05:30:00Z,32,0.0000000004
 `;
 
-describe("HAT-23 blockers", () => {
+describe("count filters and thresholds", () => {
   const count = (value: unknown, op = "gte") =>
     metric({
       type: "aggregate",

@@ -629,7 +629,7 @@ afterAll(async () => {
   await removeProjects();
 });
 
-describe("pie and donut against a SQL oracle (HAT-60 harness)", () => {
+describe("pie and donut against a SQL oracle", () => {
   it("the oracle's hand-computed horizons and as-of match the data", () => {
     expect(H).toEqual({
       orders: "2026-11-26 14:03:00",

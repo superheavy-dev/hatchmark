@@ -1,4 +1,4 @@
-// Adopted from the HAT-62 adversarial review of hatchmark#28 (scatter): harness.mjs. A hostile orders
+// Scatter (#28). A hostile orders
 // table (signed refunds, null amounts and quantities, refunds-only and net-zero countries, four exact
 // ties, New York window edges, 500/501/700-value columns), a DATE source ending Apr 15, a source whose
 // horizon is exactly local midnight and one with no complete day in June run through the real engine
@@ -53,7 +53,7 @@ const COUNTRIES = [
 const CHANNELS = ["Online store", "Marketplace", "Retail partners", ""];
 const iso = (t: number) => `${new Date(t).toISOString().slice(0, 19)}Z`;
 
-// The random draws follow harness.mjs in the same order, so the data is the same.
+// The random draws run in a fixed order from a fixed seed, so the data is the same on every run.
 function data(): Record<string, string> {
   const rand = rng(62);
   const ord = [
@@ -800,7 +800,7 @@ afterAll(async () => {
   await removeProjects();
 });
 
-describe("scatter against a SQL oracle (HAT-62 harness)", () => {
+describe("scatter against a SQL oracle", () => {
   it("the oracle's hand-computed window ends match the data", () => {
     expect(H).toEqual({ o: "2026-06-28", s: "2026-04-16", st: "2026-05-01", k: "2026-06-01" });
   });

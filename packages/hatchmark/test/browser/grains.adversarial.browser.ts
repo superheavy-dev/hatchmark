@@ -1,8 +1,6 @@
 /// <reference lib="dom" />
-// Adopted from the HAT-40 adversarial review of hatchmark#16 (grain switching): browser.mjs, on the
-// trends example built by hatchmark build. Its two header ArrowRight expectations were wrong in the
-// harness; the expectations here follow the README's correction (a card without the grain keeps its own).
-// Its phone readout check pressed ArrowLeft once, which lands on the last week the readout already pins.
+// Grain switching (#16) on the trends example built by hatchmark build. A card without the grain
+// keeps its own.
 import { readFile } from "node:fs/promises";
 import path from "node:path";
 import { type Browser, chromium, type Locator, type Page } from "playwright";
@@ -77,7 +75,7 @@ const open = async (name: string, width: number): Promise<Page> => {
 };
 const radio = (scope: Locator, name: string) => scope.getByRole("radio", { name, exact: true });
 
-describe("grain switching on the built trends page (HAT-40 browser.mjs)", () => {
+describe("grain switching on the built trends page", () => {
   it("header and card switches move only the cards that list the grain, and header arrow keys step and wrap", async () => {
     const page = await open("t", 1280);
     const cards = page.locator("section[data-hm-grains]");

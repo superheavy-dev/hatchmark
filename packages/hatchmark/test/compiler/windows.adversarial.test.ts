@@ -73,7 +73,7 @@ const RANGES: RangeSpec[] = [
   "last_complete_month",
 ];
 
-describe("resolveRange shifts (HAT-36 core.mjs and invariant.mjs)", SWEEP, () => {
+describe("resolveRange shifts", SWEEP, () => {
   it("never resolves a range and comparison to an empty window", () => {
     const comparisons: Comparison[] = [
       "previous_period",
@@ -207,7 +207,7 @@ describe("resolveRange shifts (HAT-36 core.mjs and invariant.mjs)", SWEEP, () =>
   });
 });
 
-describe("last_complete and to_date at anchored edges (HAT-36 edges.mjs)", SWEEP, () => {
+describe("last_complete and to_date at anchored edges", SWEEP, () => {
   const anchorSets: Anchors[] = [
     { week: "sunday", quarter: "02-15", year: "02-15" },
     { week: "wednesday", quarter: "01-28", year: "10-28" },
@@ -265,7 +265,7 @@ describe("last_complete and to_date at anchored edges (HAT-36 edges.mjs)", SWEEP
   });
 });
 
-describe("whole months stay whole months when shifted (HAT-36 months.mjs)", SWEEP, () => {
+describe("whole months stay whole months when shifted", SWEEP, () => {
   const R = (r: RangeSpec, c: Comparison, asOf: string) => resolveRange(r, c, asOf, DEFAULT);
   const window = (start: string, end: string) => ({ kind: "bounded", start, end });
 

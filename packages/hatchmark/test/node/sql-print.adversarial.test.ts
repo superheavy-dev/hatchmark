@@ -33,7 +33,7 @@ async function rows(connection: DuckDBConnection, text: string, params?: Record<
   }
 }
 
-describe("printSql literals run like the bound parameters (HAT-42 harness.mjs part 1)", () => {
+describe("printSql literals run like the bound parameters", () => {
   let connection: DuckDBConnection;
   beforeAll(async () => {
     connection = await connect("UTC");
@@ -349,7 +349,7 @@ const DASHBOARD = {
 
 type Printed = { id: string; source: string; sql: string; params: Record<string, SqlValue> };
 
-describe("a hostile project's printed SQL runs like its bound SQL (HAT-42 harness.mjs parts 2 to 4)", () => {
+describe("a hostile project's printed SQL runs like its bound SQL", () => {
   let root: string;
   const hatchmark = async (...argv: string[]) => {
     let stdout = "";

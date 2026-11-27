@@ -42,7 +42,7 @@ async function check(
   const fixture = await writeProject({
     "hatchmark.json": {
       ...PROJECT_DEFAULTS,
-      name: "Independent scatter review",
+      name: "Independent scatter oracle",
       timezone: "America/New_York",
       sources: Object.fromEntries(
         Object.keys(sources).map((key) => [key, { type: "csv", path: `${key}.csv` }]),

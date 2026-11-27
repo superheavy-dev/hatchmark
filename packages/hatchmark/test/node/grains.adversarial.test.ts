@@ -1,4 +1,4 @@
-// Adopted from the HAT-40 adversarial review of hatchmark#16 (grain switching): data.mjs and hashes.mjs.
+// Grain switching (#16).
 // Every grain option of seven switching blocks is checked against an independent oracle (DuckDB reads
 // the raw rows; buckets, windows and metrics are computed here), at default and shifted anchors.
 import { readFile } from "node:fs/promises";
@@ -325,72 +325,67 @@ const kpis = (d: DashboardData) =>
     }),
   );
 
-describe.each(Object.entries(CONFIGS))(
-  "grain switching numbers at %s (HAT-40 data.mjs)",
-  (_, c) => {
-    const bl = blocks(c);
-    let g: Awaited<ReturnType<typeof errorsAndData>>;
-    let n: Awaited<ReturnType<typeof errorsAndData>>;
-    beforeAll(async () => {
-      const withFilter = {
-        title: "G",
-        period,
-        filters: [
-          { type: "grain", id: "g", options: ["week", "month", "quarter"], default: "quarter" },
-        ],
-        blocks: bl,
-      };
-      const noGrains = { title: "N", period, blocks: bl.map(({ grains: _g, ...b }) => b) };
-      const root = await writeExample(c.cfg, { g: withFilter, n: noGrains });
-      [g, n] = await Promise.all([errorsAndData(root, "g"), errorsAndData(root, "n")]);
-    });
+describe.each(Object.entries(CONFIGS))("grain switching numbers at %s", (_, c) => {
+  const bl = blocks(c);
+  let g: Awaited<ReturnType<typeof errorsAndData>>;
+  let n: Awaited<ReturnType<typeof errorsAndData>>;
+  beforeAll(async () => {
+    const withFilter = {
+      title: "G",
+      period,
+      filters: [
+        { type: "grain", id: "g", options: ["week", "month", "quarter"], default: "quarter" },
+      ],
+      blocks: bl,
+    };
+    const noGrains = { title: "N", period, blocks: bl.map(({ grains: _g, ...b }) => b) };
+    const root = await writeExample(c.cfg, { g: withFilter, n: noGrains });
+    [g, n] = await Promise.all([errorsAndData(root, "g"), errorsAndData(root, "n")]);
+  });
 
-    it("every grain option's buckets and values match the oracle, for sums, ratios, count_distinct and splits", () => {
-      expect(g.errors).toEqual([]);
-      const { cells, problems } = compareBlocks(
-        g.data as DashboardData,
-        bl,
-        c.anchors,
-        WINDOW,
-        () => true,
-        "quarter",
-      );
-      expect(problems.slice(0, 5)).toEqual([]);
-      expect(cells).toBeGreaterThan(2000);
-    });
+  it("every grain option's buckets and values match the oracle, for sums, ratios, count_distinct and splits", () => {
+    expect(g.errors).toEqual([]);
+    const { cells, problems } = compareBlocks(
+      g.data as DashboardData,
+      bl,
+      c.anchors,
+      WINDOW,
+      () => true,
+      "quarter",
+    );
+    expect(problems.slice(0, 5)).toEqual([]);
+    expect(cells).toBeGreaterThan(2000);
+  });
 
-    it("KPIs are identical with and without grains, and equal the oracle for the period and the year before", () => {
-      const withGrains = kpis(g.data as DashboardData);
-      expect(withGrains).toEqual(kpis(n.data as DashboardData));
-      for (const k of withGrains) {
-        const metric = KPI_METRIC[k.id] as string;
-        expect(num(k.value)).toBeCloseTo(num(oracleTotal(metric, WINDOW, () => true)), 6);
-        expect(num(k.previousValue)).toBeCloseTo(num(oracleTotal(metric, PREVIOUS, () => true)), 6);
-      }
-    });
+  it("KPIs are identical with and without grains, and equal the oracle for the period and the year before", () => {
+    const withGrains = kpis(g.data as DashboardData);
+    expect(withGrains).toEqual(kpis(n.data as DashboardData));
+    for (const k of withGrains) {
+      const metric = KPI_METRIC[k.id] as string;
+      expect(num(k.value)).toBeCloseTo(num(oracleTotal(metric, WINDOW, () => true)), 6);
+      expect(num(k.previousValue)).toBeCloseTo(num(oracleTotal(metric, PREVIOUS, () => true)), 6);
+    }
+  });
 
-    it("each block's own-grain option equals the same block without grains", () => {
-      for (const sb of bl.filter((b) => b.grains)) {
-        const plain = (n.data as DashboardData).blocks.find(
-          (b) => b.id === sb.id,
-        ) as unknown as SwitchBlock;
-        const switched = (g.data as DashboardData).blocks.find(
-          (b) => b.id === sb.id,
-        ) as unknown as SwitchBlock;
-        const own = switched.grains?.options.find(
-          (o) => o.key === key(resolve(sb.grain, c.anchors)),
-        );
-        expect({ id: sb.id, axis: own?.axis, series: own?.series }).toEqual({
-          id: sb.id,
-          axis: plain.axis,
-          series: plain.series,
-        });
-      }
-    });
-  },
-);
+  it("each block's own-grain option equals the same block without grains", () => {
+    for (const sb of bl.filter((b) => b.grains)) {
+      const plain = (n.data as DashboardData).blocks.find(
+        (b) => b.id === sb.id,
+      ) as unknown as SwitchBlock;
+      const switched = (g.data as DashboardData).blocks.find(
+        (b) => b.id === sb.id,
+      ) as unknown as SwitchBlock;
+      const own = switched.grains?.options.find((o) => o.key === key(resolve(sb.grain, c.anchors)));
+      expect({ id: sb.id, axis: own?.axis, series: own?.series }).toEqual({
+        id: sb.id,
+        axis: plain.axis,
+        series: plain.series,
+      });
+    }
+  });
+});
 
-describe("a select, a period and a grain filter combined (HAT-40 data.mjs)", () => {
+describe("a select, a period and a grain filter combined", () => {
   it("every grain option and the KPI match the oracle over the period filter's default and the selected regions", async () => {
     const c = CONFIGS["default anchors (week sunday)"];
     const bl = blocks(c).filter((b) => b.type !== "kpi");
@@ -476,7 +471,7 @@ function controls(html: string) {
   return { groups, duplicateIds, visiblePanelsAtLoad: visible };
 }
 
-describe("check rejects duplicate and misplaced grains, and builds the rest (HAT-40 data.mjs)", () => {
+describe("check rejects duplicate and misplaced grains, and builds the rest", () => {
   const sameAs = (pointer: string) => [`HM3007 ${pointer}`];
   it.each([
     [
@@ -671,7 +666,7 @@ describe("check rejects duplicate and misplaced grains, and builds the rest (HAT
   );
 });
 
-describe("plan hashes and query reuse for grain switches (HAT-40 data.mjs and hashes.mjs)", () => {
+describe("plan hashes and query reuse for grain switches", () => {
   const hashOf = async (cfg: Record<string, unknown>, d: unknown) => {
     const { project } = await loadAt(await writeExample(cfg, { h: d }));
     const { plan } = planDashboard(project, "h");
@@ -759,7 +754,7 @@ describe("plan hashes and query reuse for grain switches (HAT-40 data.mjs and ha
   });
 });
 
-describe("the trends example rebuilds byte for byte (HAT-40 data.mjs)", () => {
+describe("the trends example rebuilds byte for byte", () => {
   it("builds the same HTML twice, with unique ids and every switching card at month", async () => {
     const trends = JSON.parse(await readFile(path.join(EXAMPLE, "dashboards/trends.json"), "utf8"));
     const root = await writeExample({}, { t: trends });

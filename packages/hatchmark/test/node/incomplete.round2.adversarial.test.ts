@@ -23,7 +23,7 @@ async function dashboard(options: {
   const fixture = await writeProject({
     "hatchmark.json": {
       ...PROJECT_DEFAULTS,
-      name: "HAT-51",
+      name: "incomplete",
       timezone: options.timezone ?? "UTC",
       sources: Object.fromEntries(
         Object.keys(options.sources).map((n) => [n, { type: "csv", path: `${n}.csv` }]),
@@ -74,7 +74,7 @@ async function sumDays(root: string, source: string, tz: string, from: string, t
 }
 const days = (from: string, to: string) => (Date.parse(to) - Date.parse(from)) / 86_400_000;
 
-describe("R2 blockers: a slid last N months or weeks keeps its length (RFC 6.4)", () => {
+describe("a slid last N months or weeks keeps its length (RFC 6.4)", () => {
   for (const [range, label, asOf] of [
     ["last_12_months", "12 months", "2026-02-15"],
     [{ last: 4, unit: "week" }, "4 weeks", "2026-02-11"],

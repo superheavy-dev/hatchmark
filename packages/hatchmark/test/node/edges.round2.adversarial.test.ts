@@ -1,4 +1,4 @@
-// Adopted from HAT-66's second review round of hatchmark#29: HM4014 for an all-time range and for
+// Edges and incomplete (#29): HM4014 for an all-time range and for
 // a one-bucket series partial only at its clipped start, and clip plus hide before a stale source,
 // each checked against raw SQL over the same rows.
 import { afterAll, expect, test } from "vitest";

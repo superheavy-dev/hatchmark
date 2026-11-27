@@ -247,7 +247,7 @@ describe("usage errors", () => {
   });
 });
 
-describe("review regressions (HAT-16)", () => {
+describe("CLI regressions", () => {
   it("keeps the requested output mode for parse errors", async () => {
     const cwd = await tempDir();
     const agent = await cli(["check", "--json", "--bogus"], { cwd, tty: true, agent: true });
@@ -336,7 +336,7 @@ describe("review regressions (HAT-16)", () => {
     }
   });
 
-  it("counts a marker only when it is alone on its line (HAT-16 round 3)", async () => {
+  it("counts a marker only when it is alone on its line", async () => {
     const cases: [string, string[]][] = [
       [
         "<!-- hatchmark:start --> <!-- hatchmark:start -->\nKeep me\n<!-- hatchmark:end -->\n",

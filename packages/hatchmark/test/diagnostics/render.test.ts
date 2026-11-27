@@ -178,7 +178,7 @@ describe("createReport and renderJson", () => {
     expect(createReport([{ ...unknownMetric(), severity: "warning" }]).ok).toBe(true);
   });
 
-  it("serialises to one line of JSON with the HAT-4 fields", () => {
+  it("serialises to one line of JSON with the diagnostic fields", () => {
     const json = renderJson(createReport([unknownMetric()]));
     expect(json).not.toContain("\n");
     const parsed = JSON.parse(json);

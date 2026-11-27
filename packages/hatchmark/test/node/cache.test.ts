@@ -246,7 +246,7 @@ describe("build cache", { timeout: 30_000 }, () => {
     }
   });
 
-  it("never caches raw SQL metrics, which can read the clock or files no key covers (HAT-52)", async () => {
+  it("never caches raw SQL metrics, which can read the clock or files no key covers", async () => {
     const root = await example();
     await writeFile(path.join(root, "data", "adjustment.csv"), "adjustment\n7\n");
     const file = path.join(root, "metrics", "orders.json");
@@ -272,7 +272,7 @@ describe("build cache", { timeout: 30_000 }, () => {
     expect(warm.report.cache?.hits).toBeGreaterThan(0);
   });
 
-  it("still builds when the cache directory is read-only (HAT-52)", async () => {
+  it("still builds when the cache directory is read-only", async () => {
     const root = await example();
     await build(root, true);
     const q = path.join(root, ".hatchmark", "cache", "v1", "q");
@@ -291,7 +291,7 @@ describe("build cache", { timeout: 30_000 }, () => {
     }
   });
 
-  it("stores what DuckDB read even when the data changes and changes back mid-build (HAT-53 ABA)", async () => {
+  it("stores what DuckDB read even when the data changes and changes back mid-build", async () => {
     const root = await example();
     const file = path.join(root, "data", "orders.csv");
     const original = await readFile(file, "utf8");
@@ -337,7 +337,7 @@ describe("build cache", { timeout: 30_000 }, () => {
     expect(warm.files).toEqual((await build(root, false)).files);
   });
 
-  it("never writes or sweeps through a symbolic link anywhere under .hatchmark (HAT-53)", async () => {
+  it("never writes or sweeps through a symbolic link anywhere under .hatchmark", async () => {
     for (const under of ["cache/v1/q", "cache/v1/h", "cache/v1", "tmp"]) {
       const root = await example();
       const victim = await mkdtemp(path.join(tmpdir(), "hatchmark-cache-victim-"));
@@ -405,7 +405,7 @@ describe("build cache", { timeout: 30_000 }, () => {
       },
     ],
   ];
-  it.each(edits)("matches --no-cache after a change to %s (HAT-53 harness)", async (_, edit) => {
+  it.each(edits)("matches --no-cache after a change to %s", async (_, edit) => {
     const root = await example();
     const file = path.join(root, "data", "orders.csv");
     await writeFile(path.join(root, "data", "a.csv"), await readFile(file));
@@ -419,7 +419,7 @@ describe("build cache", { timeout: 30_000 }, () => {
     expect(cached.files).toEqual((await build(root, false)).files);
   });
 
-  it("builds and explains when .hatchmark/tmp is inaccessible (HAT-52)", async () => {
+  it("builds and explains when .hatchmark/tmp is inaccessible", async () => {
     const root = await example();
     const tmp = path.join(root, ".hatchmark", "tmp");
     await mkdir(tmp, { recursive: true });
@@ -493,7 +493,7 @@ describe("build cache", { timeout: 30_000 }, () => {
     (under) => (["0300", "file"] as const).map((how) => [under, how] as const),
   );
   it.each(extra)(
-    "with .hatchmark/%s as %s, build and explain succeed and match --no-cache (HAT-53 perms.mjs)",
+    "with .hatchmark/%s as %s, build and explain succeed and match --no-cache",
     async (under, how) => {
       const root = await example();
       await build(root, true);
@@ -535,7 +535,7 @@ describe("build cache", { timeout: 30_000 }, () => {
   );
 
   it.each(["q", "h"])(
-    "with one %s entry file at mode 000, build and explain succeed and match --no-cache (HAT-53 perms.mjs)",
+    "with one %s entry file at mode 000, build and explain succeed and match --no-cache",
     async (kind) => {
       const root = await example();
       await build(root, true);
@@ -763,7 +763,7 @@ describe("cached executor", () => {
     expect(await roundTrip(root2, none)).toEqual(none);
   });
 
-  it("computes from a snapshot, so an edit and its undo during the build store nothing wrong (HAT-53 ABA)", async () => {
+  it("computes from a snapshot, so an edit and its undo during the build store nothing wrong", async () => {
     const root = await project();
     const file = path.join(root, "data", "t.csv");
     const value = async (at: string) =>
