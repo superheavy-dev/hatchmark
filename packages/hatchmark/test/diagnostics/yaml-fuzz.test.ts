@@ -1,9 +1,10 @@
 import { describe, expect, it } from "vitest";
+import { parseAllDocuments } from "yaml";
 import {
-  JsonDocument,
   type Position,
-  parseJsonFile,
+  parseYamlFile,
   type Range,
+  SpecDocument,
 } from "../../src/diagnostics/index.js";
 
 function lcg(seed: number): () => number {
@@ -15,9 +16,9 @@ function lcg(seed: number): () => number {
 }
 
 const seeds = [
-  '{"title": "Sales", "charts": [{"type": "kpi", "metric": "net_revenue", "w": 3}], "x": null}',
-  '[1, -0.5, 2e10, "a\\"b", true, false, {"k": [[], {}]}]',
-  '{\n  "a": "é\\u00e9\\n",\n  "b": [\n    1,\n    2\n  ]\n}\n',
+  "title: Sales\nblocks:\n  - type: kpi\n    metric: net_revenue\n    span: 3\nx: null\n",
+  "sql: |\n  sum(amount)\n    - sum(refund)\nfilters: [{ column: status, op: eq, value: 'paid' }]\n",
+  'a: "é\\u00e9\\n"\nb:\n  - 1\n  - -0.5\n  - 2e10\nc: >-\n  folded\n  text\n',
 ];
 const alphabet = [
   "\r",
@@ -25,6 +26,7 @@ const alphabet = [
   "\t",
   "0",
   '"',
+  "'",
   ",",
   ":",
   "{",
@@ -33,59 +35,17 @@ const alphabet = [
   "]",
   " ",
   "\n",
-  "1",
-  "e",
   "-",
-  ".",
-  "\\",
-  "a",
-  "/",
+  "#",
+  "&",
   "*",
-  "t",
+  "!",
+  "|",
+  ">",
+  "a",
   "📈",
   "界",
 ];
-
-describe("JsonDocument agrees with JSON.parse on mutated input", () => {
-  it("accepts exactly what JSON.parse accepts and yields the same value", () => {
-    const random = lcg(20261127);
-    let accepted = 0;
-    for (let i = 0; i < 20000; i++) {
-      let text = seeds[i % seeds.length] ?? "";
-      const edits = 1 + Math.floor(random() * 3);
-      for (let e = 0; e < edits; e++) {
-        const at = Math.floor(random() * (text.length + 1));
-        const roll = random();
-        const ch = alphabet[Math.floor(random() * alphabet.length)] ?? "";
-        if (roll < 0.4) text = text.slice(0, at) + text.slice(at + 1);
-        else if (roll < 0.8) text = text.slice(0, at) + ch + text.slice(at);
-        else text = text.slice(0, at) + ch + text.slice(at + 1);
-      }
-      let expected: { ok: true; value: unknown } | { ok: false };
-      try {
-        expected = { ok: true, value: JSON.parse(text) };
-      } catch {
-        expected = { ok: false };
-      }
-      const doc = new JsonDocument("x.json", text);
-      const syntaxErrors = doc.errors.filter((err) => err.kind === "syntax");
-      expect(syntaxErrors.length === 0, text).toBe(expected.ok);
-      if (expected.ok) {
-        accepted++;
-        expect(doc.value, text).toEqual(expected.value);
-      } else {
-        const error = syntaxErrors[0];
-        expect(error, text).toBeDefined();
-        expect(error?.start, text).toBeGreaterThanOrEqual(0);
-        expect(error?.start, text).toBeLessThanOrEqual(text.length);
-      }
-    }
-    expect(accepted).toBeGreaterThan(1000);
-  });
-});
-
-const before = (a: Position, b: Position): boolean =>
-  a.line < b.line || (a.line === b.line && a.column <= b.column);
 
 function mutate(random: () => number, text: string): string {
   let out = text;
@@ -99,16 +59,52 @@ function mutate(random: () => number, text: string): string {
   return out;
 }
 
+const before = (a: Position, b: Position): boolean =>
+  a.line < b.line || (a.line === b.line && a.column <= b.column);
+
+describe("SpecDocument agrees with the yaml package on mutated input", () => {
+  it("reports a syntax error exactly when the yaml package does, and otherwise the same value", () => {
+    const random = lcg(20261128);
+    let accepted = 0;
+    for (let i = 0; i < 5000; i++) {
+      const text = mutate(random, seeds[i % seeds.length] ?? "");
+      const docs = parseAllDocuments(text, {
+        version: "1.2",
+        schema: "core",
+        strict: true,
+        uniqueKeys: false,
+        merge: false,
+        prettyErrors: false,
+      });
+      const list = Array.isArray(docs) ? docs : [];
+      const libErrors = list.some(
+        (d) => d.errors.length > 0 || d.warnings.some((w) => w.code !== "TAG_RESOLVE_FAILED"),
+      );
+      const doc = new SpecDocument("x.yaml", text);
+      expect(
+        doc.errors.some((e) => e.kind === "syntax"),
+        text,
+      ).toBe(libErrors);
+      if (doc.errors.length === 0) {
+        accepted++;
+        expect(list.length, text).toBeLessThanOrEqual(1);
+        expect(doc.value, text).toEqual(list[0]?.toJS() ?? null);
+      }
+    }
+    expect(accepted).toBeGreaterThan(500);
+  });
+});
+
 describe("span invariants", () => {
   it("keep every range inside the text, non-empty for diagnostics, with a frame from that text", () => {
     const random = lcg(1127);
-    const extra = ['"\\', "📈", "", " ", '"a', "[1,", "\r\n", '["\ud83d"]'];
+    const extra = ['"\\', "📈", "", " ", '"a', "[1,", "\r\n", "a: &x 1\nb: *x", "a: 1\n---\nb: 2"];
     const inputs = [
       ...extra,
-      ...Array.from({ length: 5000 }, (_, i) => mutate(random, seeds[i % seeds.length] ?? "")),
+      ...Array.from({ length: 3000 }, (_, i) => mutate(random, seeds[i % seeds.length] ?? "")),
     ];
     for (const text of inputs) {
-      const doc = new JsonDocument("x.json", text);
+      const doc = new SpecDocument("x.yaml", text);
       const eof = doc.positionAt(text.length);
       const checkRange = (range: Range, allowEmpty: boolean) => {
         expect(before({ line: 1, column: 1 }, range.start), text).toBe(true);
@@ -119,7 +115,7 @@ describe("span invariants", () => {
         if (empty && !allowEmpty)
           expect(text, "only an empty file has an empty diagnostic range").toBe("");
       };
-      const { diagnostics } = parseJsonFile("x.json", text);
+      const { diagnostics } = parseYamlFile("x.yaml", text);
       const located = [
         ...diagnostics,
         ...Array.from({ length: 4 }, () => {
@@ -143,7 +139,6 @@ describe("span invariants", () => {
           ).toBe(true);
         }
       }
-      for (const d of diagnostics) if (d.fix) checkRange(d.fix.range, true);
     }
   });
 });

@@ -54,7 +54,7 @@ export const buildHelp: CommandHelp = {
     {
       flag: "--out <dir>",
       description:
-        "Write here instead of outDir from hatchmark.json, relative to --cwd. Only files an earlier build wrote are replaced.",
+        "Write here instead of outDir from hatchmark.yaml, relative to --cwd. Only files an earlier build wrote are replaced.",
     },
     {
       flag: "--no-cache",

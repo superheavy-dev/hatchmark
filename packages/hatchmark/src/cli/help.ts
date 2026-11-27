@@ -46,7 +46,7 @@ export function renderCommandHelp(help: CommandHelp): string {
 export function renderTopHelp(commands: readonly CommandHelp[], version: string): string {
   const width = Math.max(...commands.map((c) => c.name.length));
   return [
-    `hatchmark ${version}: agent-first dashboards from JSON specs`,
+    `hatchmark ${version}: agent-first dashboards from YAML specs`,
     "",
     "Usage: hatchmark <command> [options]",
     "",

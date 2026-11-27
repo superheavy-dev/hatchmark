@@ -2,8 +2,8 @@ import type { z } from "zod";
 import {
   type Diagnostic,
   docsCommand,
-  type JsonDocument,
-  parseJsonFile,
+  parseYamlFile,
+  type SpecDocument,
 } from "../diagnostics/index.js";
 import { GLOB_CHARACTERS, IDENTIFIER_PATTERN, normalizePath } from "./common.js";
 import type { FileSource } from "./config.js";
@@ -14,7 +14,9 @@ import { type Metric, metricSchema } from "./metric.js";
 import { type Segment, segmentSchema } from "./segment.js";
 import { issuesToDiagnostics } from "./zod-diagnostics.js";
 
-export const CONFIG_FILE = "hatchmark.json";
+export const CONFIG_FILE = "hatchmark.yaml";
+const SPEC_EXTENSION = ".yaml";
+const UNREAD_EXTENSIONS = [".json", ".yml"] as const;
 const DASHBOARD_NAME_PATTERN = /^[a-z0-9][a-z0-9_-]*$/;
 
 export type SpecKind = "project" | "metric" | "dashboard" | "segment";
@@ -38,11 +40,11 @@ export const SPEC_SCHEMAS = schemas;
 /** One parsed spec file. spec is set only when the file parsed and passed its schema. */
 export interface SpecFile<K extends SpecKind = SpecKind> {
   kind: K;
-  /** Metric or dashboard name: the file name without .json. */
+  /** Metric or dashboard name: the file name without .yaml. */
   name: string;
   /** Project-relative path with forward slashes. */
   file: string;
-  document: JsonDocument;
+  document: SpecDocument;
   spec?: SpecTypes[K];
   diagnostics: Diagnostic[];
 }
@@ -71,8 +73,8 @@ export function parseSpecFile<K extends SpecKind>(
   text: string,
 ): SpecFile<K> {
   const base = file.slice(file.lastIndexOf("/") + 1);
-  const name = base.endsWith(".json") ? base.slice(0, -".json".length) : base;
-  const { document, diagnostics } = parseJsonFile(file, text);
+  const name = base.endsWith(SPEC_EXTENSION) ? base.slice(0, -SPEC_EXTENSION.length) : base;
+  const { document, diagnostics } = parseYamlFile(file, text);
   const result: SpecFile<K> = { kind, name, file, document, diagnostics };
   if (kind !== "project") {
     const pattern = kind === "dashboard" ? DASHBOARD_NAME_PATTERN : IDENTIFIER_PATTERN;
@@ -86,15 +88,19 @@ export function parseSpecFile<K extends SpecKind>(
           : `invalid ${kind} file name "${base}"`,
         file,
         help: keyword
-          ? `and, or, not and null are operators in expressions; rename the file, such as ${name}_count.json`
+          ? `and, or, not and null are operators in expressions; rename the file, such as ${name}_count.yaml`
           : kind !== "dashboard"
-            ? `${kind} names are lowercase snake_case, such as ${kind === "metric" ? "net_revenue" : "external_customers"}.json`
-            : "dashboard names are lowercase letters, digits, _ and -, such as sales-overview.json",
+            ? `${kind} names are lowercase snake_case, such as ${kind === "metric" ? "net_revenue" : "external_customers"}.yaml`
+            : "dashboard names are lowercase letters, digits, _ and -, such as sales-overview.yaml",
         docs: docsCommand("HM1004"),
       });
     }
   }
-  if (document.root === undefined || diagnostics.some((d) => d.code === "HM1002")) return result;
+  if (
+    document.root === undefined ||
+    diagnostics.some((d) => d.code === "HM1002" || d.code === "HM1006")
+  )
+    return result;
   const parsed = schemas[kind].safeParse(document.value);
   if (parsed.success) {
     if (!diagnostics.some((d) => d.severity === "error")) result.spec = parsed.data;
@@ -148,14 +154,33 @@ function dirSetting(
 }
 
 /**
- * Reads hatchmark.json, every metric and dashboard file, and checks that each source's data file
- * exists. Returns undefined for the project when there is no config file.
+ * Reads hatchmark.yaml, every metric and dashboard file, and checks that each source's data file
+ * exists. Returns undefined for the project when there is no config file. A spec file with another
+ * extension (a .json or .yml file) is not read; each one gets HM1007 naming the .yaml file expected.
  */
 export async function loadProject(
   host: ProjectHost,
 ): Promise<{ project?: Project; diagnostics: Diagnostic[] }> {
+  const unread: Diagnostic[] = [];
+  const flagUnread = (file: string): void => {
+    const ext = UNREAD_EXTENSIONS.find((e) => file.endsWith(e)) ?? "";
+    const expected = `${file.slice(0, -ext.length)}${SPEC_EXTENSION}`;
+    unread.push({
+      code: "HM1007",
+      severity: "error",
+      message: `${file} is not read: spec files are YAML, in ${expected}`,
+      file,
+      help: `write it as YAML in ${expected} and delete ${file}`,
+      docs: docsCommand("HM1007"),
+    });
+  };
+  for (const ext of UNREAD_EXTENSIONS) {
+    const file = `${CONFIG_FILE.slice(0, -SPEC_EXTENSION.length)}${ext}`;
+    if (await host.isFile(file)) flagUnread(file);
+  }
   const configText = await host.readText(CONFIG_FILE);
   if (configText === undefined) {
+    if (unread.length > 0) return { diagnostics: unread };
     return {
       diagnostics: [
         {
@@ -184,9 +209,14 @@ export async function loadProject(
     ["segment", "segmentsDir", project.segments],
   ] as const) {
     const dir = normalizePath(dirSetting(config, key));
-    const names = (await host.listFiles(dir)).filter((n) => n.endsWith(".json")).sort();
-    for (const name of names) {
-      const file = dir === "" || dir === "." ? name : `${dir}/${name}`;
+    const listed = (await host.listFiles(dir)).sort();
+    const root = dir === "" || dir === ".";
+    const inDir = (name: string): string => (root ? name : `${dir}/${name}`);
+    if (!root)
+      for (const name of listed)
+        if (UNREAD_EXTENSIONS.some((e) => name.endsWith(e))) flagUnread(inDir(name));
+    for (const name of listed.filter((n) => n.endsWith(SPEC_EXTENSION))) {
+      const file = inDir(name);
       const text = await host.readText(file);
       if (text === undefined) continue;
       const spec = parseSpecFile(kind, file, text);
@@ -194,7 +224,7 @@ export async function loadProject(
     }
   }
 
-  const diagnostics: Diagnostic[] = [];
+  const diagnostics: Diagnostic[] = [...unread];
   for (const [name, source] of Object.entries(config.spec?.sources ?? {})) {
     if (source.type === "lookup") continue;
     if (GLOB_CHARACTERS.test(source.path)) continue;

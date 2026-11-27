@@ -108,7 +108,7 @@ export async function explainMetric(
   executor: SqlExecutor,
   now?: Date,
 ): Promise<{ queries?: ExplainedQuery[]; asOf?: string; diagnostics: Diagnostic[] }> {
-  const file = `dashboards/${CANONICAL}.json`;
+  const file = `dashboards/${CANONICAL}.yaml`;
   const withBlock = (block: Record<string, unknown>, period: Record<string, unknown>): Project => {
     const spec = { title: metric, period, blocks: [{ id: "metric", ...block }] };
     const parsed = parseSpecFile("dashboard", file, JSON.stringify(spec));

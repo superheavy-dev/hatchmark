@@ -22,7 +22,7 @@ const tableFilter = z
   .strictObject({
     column: columnName,
     op: z.enum(["in_table", "not_in_table"]),
-    table: identifier.meta({ description: "A source name from hatchmark.json." }),
+    table: identifier.meta({ description: "A source name from hatchmark.yaml." }),
     key: columnName.meta({ description: "The column of that source to match against." }),
   })
   .meta({
@@ -254,7 +254,7 @@ const aggregateMetric = z
   .strictObject({
     ...common,
     type: z.literal("aggregate"),
-    table: identifier.meta({ description: "A source name from hatchmark.json." }),
+    table: identifier.meta({ description: "A source name from hatchmark.yaml." }),
     aggregate: z.enum(AGGREGATES),
     column: columnName.optional().meta({
       description:
@@ -459,7 +459,7 @@ export const metricSchema = z
     formulaMetric,
     perEntityMetric,
   ])
-  .meta({ title: "Hatchmark metric (metrics/<name>.json)" });
+  .meta({ title: "Hatchmark metric (metrics/<name>.yaml)" });
 export type Metric = z.infer<typeof metricSchema>;
 export type TableMetric = Extract<Metric, { table: string }>;
 

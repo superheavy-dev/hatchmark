@@ -423,7 +423,7 @@ export const dashboardSchema = z
     filters: z.array(dashboardFilterSchema).optional(),
     blocks: z.array(blockSchema).min(1),
   })
-  .meta({ title: "Hatchmark dashboard (dashboards/<name>.json)" });
+  .meta({ title: "Hatchmark dashboard (dashboards/<name>.yaml)" });
 export type Dashboard = z.infer<typeof dashboardSchema>;
 
 export { blockId } from "./units.js";

@@ -1,5 +1,6 @@
 import { lstat, mkdir, readFile, realpath, writeFile } from "node:fs/promises";
 import path from "node:path";
+import { stringify } from "yaml";
 import { CONFIG_FILE } from "../../spec/index.js";
 import { VERSION } from "../../version.js";
 import type { CommandHelp } from "../help.js";
@@ -18,7 +19,7 @@ import { usageError } from "../usage.js";
 export const initHelp: CommandHelp = {
   name: "init",
   summary:
-    "Create a project: hatchmark.json with every setting written out, sample US data, and an AGENTS.md block.",
+    "Create a project: hatchmark.yaml with every setting written out, sample US data, and an AGENTS.md block.",
   usage: "hatchmark init [dir] [--template sample|minimal] [--name <name>] [--force]",
   options: [
     {
@@ -42,7 +43,8 @@ export const initHelp: CommandHelp = {
 const TEMPLATES = ["sample", "minimal"] as const;
 const GITIGNORE = ["dist/", ".hatchmark/"];
 
-const json = (value: unknown): string => `${JSON.stringify(value, null, 2)}\n`;
+const specYaml = ({ $schema, ...spec }: Record<string, unknown>): string =>
+  `${typeof $schema === "string" ? `# yaml-language-server: $schema=${$schema}\n` : ""}${stringify(spec, { lineWidth: 0 })}`;
 
 async function readOptional(file: string): Promise<string | undefined> {
   return readFile(file, "utf8").catch(() => undefined);
@@ -105,12 +107,12 @@ export async function init(
   const name = flags.name ?? path.basename(requested);
   const withData = template === "sample";
 
-  const owned = new Map<string, string>([[CONFIG_FILE, json(sampleConfig(name, withData))]]);
+  const owned = new Map<string, string>([[CONFIG_FILE, specYaml(sampleConfig(name, withData))]]);
   if (withData) {
     owned.set("data/orders.csv", sampleOrdersCsv());
     for (const [metric, spec] of Object.entries(SAMPLE_METRICS))
-      owned.set(`metrics/${metric}.json`, json(spec));
-    owned.set("dashboards/sales.json", json(SAMPLE_DASHBOARD));
+      owned.set(`metrics/${metric}.yaml`, specYaml(spec as Record<string, unknown>));
+    owned.set("dashboards/sales.yaml", specYaml(SAMPLE_DASHBOARD));
   }
 
   const blocked: string[] = [];

@@ -12,8 +12,14 @@ export {
   renderJson,
   type Severity,
 } from "./diagnostic.js";
-export { JsonDocument, type JsonMember, type JsonNode, type JsonSyntaxError } from "./json.js";
-export { parseJsonFile } from "./json-diagnostics.js";
 export { type PointerSegment, parsePointer, toPointer } from "./pointer.js";
 export { type HumanRenderOptions, renderDiagnostic, renderHuman } from "./render-human.js";
 export { closestMatch, editDistance } from "./suggest.js";
+export {
+  type ScalarStyle,
+  SpecDocument,
+  type SpecMember,
+  type SpecNode,
+  type SpecSyntaxError,
+} from "./yaml.js";
+export { parseYamlFile } from "./yaml-diagnostics.js";

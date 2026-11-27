@@ -15,7 +15,7 @@ import { type CreateSqlExecutor, renderQueries } from "./explain.js";
 
 export const checkHelp: CommandHelp = {
   name: "check",
-  summary: "Check the project's files: JSON syntax, spec shape, and references between files.",
+  summary: "Check the project's files: YAML syntax, spec shape, and references between files.",
   usage: "hatchmark check [paths...] [--strict] [--sql]",
   options: [
     {
