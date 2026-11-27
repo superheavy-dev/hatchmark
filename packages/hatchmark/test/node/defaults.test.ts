@@ -26,15 +26,16 @@ const RANGES: unknown[] = [
   { last: 10, unit: "week" },
 ];
 
-const day = (date: string, weekday: boolean) =>
+const day = (date: string, weekday: boolean, asOf: string) =>
   new Date(`${date}T00:00:00Z`)
     .toLocaleDateString("en-US", {
       ...(weekday ? { weekday: "short" } : {}),
+      ...(date.slice(0, 4) === asOf.slice(0, 4) ? {} : { year: "numeric" }),
       month: "short",
       day: "numeric",
       timeZone: "UTC",
     })
-    .replace(",", "");
+    .replace(/^(\w{3}),/, "$1");
 
 describe("the edges note names the window the engine compiles (HM4040)", () => {
   it.each(AS_OF.flatMap((asOf) => RANGES.map((range) => [asOf, range] as const)))(
@@ -82,7 +83,7 @@ describe("the edges note names the window the engine compiles (HM4040)", () => {
         const message = notes[i]?.message;
         if (first < start) {
           expect(message, `block s${i}`).toBe(
-            `uses edges: snap: the first ${unit} starts on ${day(first, unit === "week")}, before the range starts on ${day(start, false)}`,
+            `uses edges: snap: the first ${unit} starts on ${day(first, unit === "week", asOf)}, before the range starts on ${day(start, false, asOf)}`,
           );
         } else {
           expect(first, `block s${i}`).toBe(start);

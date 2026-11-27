@@ -252,4 +252,57 @@ describe("check explains the defaults it applies (HM4040)", () => {
       "uses edges: snap: the first month starts at the start of the month that holds the range start",
     );
   });
+
+  it("names the anchors a range relies on, even on a page without time-series blocks", () => {
+    const blocks = [{ type: "kpi", metric: "revenue" }];
+    const options = {
+      period: { asOf: "2026-11-27", range: "year_to_date", compare: "previous_period" },
+      filters: [
+        {
+          type: "period",
+          id: "period",
+          options: [{ last: 4, unit: "week" }, "last_complete_quarter"],
+          default: { last: 4, unit: "week" },
+        },
+      ],
+    };
+    expect(
+      notes(blocks, { ...options, config: noAnchors }).map((d) => [d.file, d.message, d.help]),
+    ).toEqual([
+      [
+        "hatchmark.yaml",
+        "uses the default week anchor: weeks start on Monday",
+        "set anchors: {week: sunday} to start weeks on Sunday; anchors: {week: monday} keeps the default and silences this note",
+      ],
+      [
+        "hatchmark.yaml",
+        "uses the default quarter anchor: quarters start on Jan 1, Apr 1, Jul 1 and Oct 1",
+        "set anchors: {quarter: 02-01} for quarters from Feb 1; anchors: {quarter: 01-01} keeps the default and silences this note",
+      ],
+      [
+        "hatchmark.yaml",
+        "uses the default year anchor: years start on Jan 1",
+        "set anchors: {year: 07-01} for a year from Jul 1; anchors: {year: 01-01} keeps the default and silences this note",
+      ],
+    ]);
+    expect(
+      notes(blocks, {
+        ...options,
+        config: { ...noAnchors, anchors: { week: "monday", year: "01-01" } },
+      }),
+    ).toEqual([]);
+    expect(
+      notes(blocks, { ...options, config: { ...CONFIG, anchors: { year: "01-01" } } }),
+    ).toEqual([]);
+  });
+
+  it("names the year of a date outside the as-of year", () => {
+    const ds = notes(
+      [{ type: "line", metrics: ["revenue"], grain: { unit: "week", anchor: "monday" } }],
+      { period: { asOf: "2026-01-10", range: "last_30_days", compare: "none" } },
+    );
+    expect(ds[0]?.message).toBe(
+      "uses edges: snap: the first week starts on Mon Dec 8, 2025, before the range starts on Dec 12, 2025",
+    );
+  });
 });

@@ -11,9 +11,10 @@ import {
   type ResolvedGrain,
   resolveGrain,
   type SpecFile,
+  type TimeGrain,
 } from "../spec/index.js";
 import { shownGrain } from "./planner.js";
-import { bucketStart, resolveRange } from "./windows.js";
+import { bucketStart, NAMED, resolveRange } from "./windows.js";
 
 /**
  * HM4040 notes for the business-definition defaults a project relies on (RFC 0001 section 3.11):
@@ -21,7 +22,8 @@ import { bucketStart, resolveRange } from "./windows.js";
  */
 export function explainDefaults(project: Project): Diagnostic[] {
   const out: Diagnostic[] = [];
-  const anchored = new Set<"week" | "quarter" | "year">();
+  const anchored = new Set<AnchorUnit>();
+  const blockAnchored = new Set<AnchorUnit>();
   for (const file of project.dashboards.values()) {
     const dashboard = file.spec;
     if (dashboard === undefined) continue;
@@ -39,13 +41,20 @@ export function explainDefaults(project: Project): Diagnostic[] {
     const anchors = projectAnchors(project.config.spec);
     const shownRange = firstRange(dashboard);
     const bounded = ranges(dashboard).some((r) => r !== "all_time");
+    for (const range of [...ranges(dashboard), (dashboard.period ?? DEFAULT_PERIOD).range]) {
+      const unit = rangeUnit(range);
+      if (unit === "week" || unit === "quarter" || unit === "year") anchored.add(unit);
+    }
     dashboard.blocks.forEach((block, index) => {
       const grains = timeGrains(block);
       if (grains.length === 0) return;
       for (const g of grains) {
         const unit = unitOf(g);
         const own = typeof g === "object" && g.anchor !== undefined;
-        if ((unit === "week" || unit === "quarter" || unit === "year") && !own) anchored.add(unit);
+        if ((unit === "week" || unit === "quarter" || unit === "year") && !own) {
+          anchored.add(unit);
+          blockAnchored.add(unit);
+        }
       }
       const shown = shownGrain(
         { spec: dashboard, anchors },
@@ -84,6 +93,8 @@ export function explainDefaults(project: Project): Diagnostic[] {
   const config = project.config.spec;
   const quarter = config?.anchors?.quarter;
   const year = config?.anchors?.year;
+  const blockOption = (unit: AnchorUnit, anchor: string) =>
+    blockAnchored.has(unit) ? `, or a block's grain: {unit: ${unit}, anchor: ${anchor}}` : "";
   if (
     anchored.has("week") &&
     config?.anchors?.week === undefined &&
@@ -94,7 +105,7 @@ export function explainDefaults(project: Project): Diagnostic[] {
         project.config,
         "/name",
         "uses the default week anchor: weeks start on Monday",
-        "set anchors: {week: sunday} to start weeks on Sunday, or a block's grain: {unit: week, anchor: sunday}; anchors: {week: monday} keeps the default and silences this note",
+        `set anchors: {week: sunday} to start weeks on Sunday${blockOption("week", "sunday")}; anchors: {week: monday} keeps the default and silences this note`,
       ),
     );
   }
@@ -104,7 +115,7 @@ export function explainDefaults(project: Project): Diagnostic[] {
         project.config,
         "/name",
         "uses the default quarter anchor: quarters start on Jan 1, Apr 1, Jul 1 and Oct 1",
-        "set anchors: {quarter: 02-01} for quarters from Feb 1, or a block's grain: {unit: quarter, anchor: 02-01}; anchors: {quarter: 01-01} keeps the default and silences this note",
+        `set anchors: {quarter: 02-01} for quarters from Feb 1${blockOption("quarter", "02-01")}; anchors: {quarter: 01-01} keeps the default and silences this note`,
       ),
     );
   }
@@ -116,8 +127,8 @@ export function explainDefaults(project: Project): Diagnostic[] {
         "/name",
         "uses the default year anchor: years start on Jan 1",
         quarter === undefined
-          ? `set anchors: {year: ${example}} for a year from ${monthDay(example)}, or a block's grain: {unit: year, anchor: ${example}}; anchors: {year: 01-01} keeps the default and silences this note`
-          : `set anchors: {year: ${example}} for a year from ${monthDay(example)}, or another quarter start; a block's grain: {unit: year, anchor: 01-01} keeps years from Jan 1 and silences this note`,
+          ? `set anchors: {year: ${example}} for a year from ${monthDay(example)}${blockOption("year", example)}; anchors: {year: 01-01} keeps the default and silences this note`
+          : `set anchors: {year: ${example}} for a year from ${monthDay(example)}, or another quarter start${blockAnchored.has("year") ? "; a block's grain: {unit: year, anchor: 01-01} keeps years from Jan 1 and silences this note" : ""}`,
       ),
     );
   }
@@ -135,6 +146,17 @@ function note(file: SpecFile, pointer: string, message: string, help: string): D
     help,
     docs: docsCommand("HM4040"),
   };
+}
+
+type AnchorUnit = "week" | "quarter" | "year";
+
+function rangeUnit(range: RangeSpec): TimeGrain | undefined {
+  if (range === "all_time") return undefined;
+  const spec = typeof range === "string" ? NAMED[range] : range;
+  if ("start" in spec) return undefined;
+  if ("last_complete" in spec) return spec.last_complete;
+  if ("to_date" in spec) return spec.to_date;
+  return spec.unit;
 }
 
 function unitOf(grain: Grain) {
@@ -177,20 +199,22 @@ function snapped(
   if (bounds?.kind !== "bounded") return undefined;
   const start = bucketStart(bounds.start, grain);
   if (start === bounds.start) return undefined;
-  return `the first ${grain.unit} starts on ${day(start, grain.unit === "week")}, before the range starts on ${day(bounds.start, false)}`;
+  const year = asOf.slice(0, 4);
+  return `the first ${grain.unit} starts on ${day(start, grain.unit === "week", year)}, before the range starts on ${day(bounds.start, false, year)}`;
 }
 
 function monthDay(md: string): string {
   return day(`2001-${md}`, false);
 }
 
-function day(date: string, weekday: boolean): string {
+function day(date: string, weekday: boolean, year?: string): string {
   return new Date(`${date}T00:00:00Z`)
     .toLocaleDateString("en-US", {
       ...(weekday ? { weekday: "short" } : {}),
+      ...(year === undefined || date.startsWith(year) ? {} : { year: "numeric" }),
       month: "short",
       day: "numeric",
       timeZone: "UTC",
     })
-    .replace(",", "");
+    .replace(/^(\w{3}),/, "$1");
 }
