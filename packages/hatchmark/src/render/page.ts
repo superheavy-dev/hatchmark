@@ -167,14 +167,16 @@ function scatterHeading(
 ): { title: string; subtitle: string } {
   const label = (m: string) => ctx.data.metrics[m]?.label ?? m;
   const what = `${label(block.y)} against ${label(block.x)} by ${humanize(block.column)}`;
-  const span = block.window
-    ? [
-        formatSpan(block.window, ctx.data.locale),
-        ...(block.allTime ?? []).map((m) => `${label(m)} over all time`),
-      ].join(", ")
+  const dated = block.window
+    ? formatSpan(block.window, ctx.data.locale)
+    : block.through
+      ? `through ${formatDate(block.through, ctx.data.locale)}`
+      : undefined;
+  const span = dated
+    ? [dated, ...(block.allTime ?? []).map((m) => `${label(m)} over all time`)].join(", ")
     : block.empty
       ? undefined
-      : "All time";
+      : "all time";
   const shown = block.points.length;
   const limited = block.omittedCategories
     ? `top ${shown} of ${shown + block.omittedCategories}`
@@ -183,7 +185,9 @@ function scatterHeading(
   const extra = [span, limited, missing].filter((p) => p !== undefined);
   return {
     title: block.title ?? what,
-    subtitle: (block.title ? [what, ...extra] : extra).join(", "),
+    subtitle: (block.title ? [what, ...extra] : extra)
+      .join(", ")
+      .replace(/^./, (c) => c.toUpperCase()),
   };
 }
 

@@ -27,9 +27,10 @@ Every metric is computed per category from that category's rows, as in a table: 
 average order value divides the category's revenue by its orders, never averages the orders'
 values. The dashboard period and select filters apply to all three metrics, over one window: x, y
 and size all end at the earliest horizon among their sources, so a point never pairs days one
-metric has with days another lacks. The subtitle states that window, and names a metric without a
-time column as read "over all time" (just "All time" when none has one). A scatter needs no time
-column.
+metric has with days another lacks. The subtitle states that window ("through Nov 1, 2026" when the
+period is all time, since dated metrics still stop at their last complete day), and names a metric
+without a time column as read "over all time" (just "All time" when none has one). A scatter needs
+no time column.
 
 What it draws:
 

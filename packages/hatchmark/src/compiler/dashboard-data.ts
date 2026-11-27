@@ -310,6 +310,11 @@ export interface ScatterData extends BlockCommon {
   omittedCategories?: number;
   /** The window x, y and size all read: through the earliest horizon among them. */
   window?: DateSpan;
+  /**
+   * Set instead of window when the period has no start (all time): the last day, inclusive, that the
+   * dated metrics read.
+   */
+  through?: string;
   /** Metrics without a time column, read over all their rows while the others read window. */
   allTime?: string[];
   /** Set when x's or y's window is empty (no complete day yet, or no data): no points. */

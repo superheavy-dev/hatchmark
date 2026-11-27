@@ -9,6 +9,10 @@ import { metric, Oracle, removeProjects, run, writeProject } from "./fixture.js"
 
 afterAll(removeProjects);
 
+const fail = (): never => {
+  throw new Error("no dashboard data");
+};
+
 const columns = "at,market,amount,units,margin,status,channel,country\n";
 const agg = (table: string, column: string, extra: Record<string, unknown> = {}) =>
   metric({
@@ -234,7 +238,7 @@ it("says all time, not the dashboard period, when no scatter metric has a time c
   expect(b.window).toBeUndefined();
   if (data === undefined) throw new Error("no dashboard data");
   const subtitle = renderFragment(data).match(/<\/h2><p>([^<]+)/)?.[1];
-  expect(subtitle).toBe("Revenue against Units by market, All time");
+  expect(subtitle).toBe("Revenue against Units by market, all time");
 });
 
 it("the HM2024 safe edit and the documented HM5020/HM5021 manual edits clear the warnings", () => {
@@ -252,6 +256,72 @@ it("the HM2024 safe edit and the documented HM5020/HM5021 manual edits clear the
   fixed.y = "avg_order_value";
   delete fixed.size;
   expect(checkReferences(make(fixed))).toEqual([]);
+});
+
+it.each(["x", "y", "size"] as const)(
+  "an untimed %s names its scope in the subtitle while dated metrics use the complete-day window",
+  async (untimed) => {
+    const names = { x: "units", y: "amount", size: "margin" };
+    const labels = { x: "Units", y: "Revenue", size: "Margin" };
+    const { b, data, query, raw } = await check(
+      {
+        sales:
+          "2026-10-29T15:00:00Z,A,300,2,4,paid,Web,US\n2026-11-01T15:00:00Z,A,70,1,7,paid,Web,US\n2026-11-02T18:00:00Z,A,99,3,8,paid,Web,US\n",
+      },
+      Object.fromEntries(
+        Object.entries(names).map(([axis, name]) => [
+          name,
+          agg("sales", name, {
+            time: axis === untimed ? undefined : "at",
+            label: labels[axis as keyof typeof labels],
+          }),
+        ]),
+      ),
+      [scatter(names.x, names.y, { size: names.size, title: "Comparing sales" })],
+    );
+    const where = (axis: keyof typeof names) =>
+      axis === untimed
+        ? ""
+        : `FILTER (WHERE "at" >= TIMESTAMPTZ '2026-11-01 04:00:00+00' AND "at" < TIMESTAMPTZ '2026-11-02 05:00:00+00')`;
+    const rows = await query(`
+    SELECT market AS key, market AS label, sum(units) ${where("x")} AS x,
+      sum(amount) ${where("y")} AS y, sum(margin) ${where("size")} AS size FROM ${raw("sales")}
+    GROUP BY market`);
+    expect(b.points).toEqual(rows);
+    expect(b.window).toEqual({ start: "2026-11-01", end: "2026-11-02" });
+    const subtitle = renderFragment(data ?? fail()).match(/<\/h2><p>([^<]+)/)?.[1];
+    expect(subtitle).toBe(
+      `Revenue against Units by market, Nov 1, 2026, ${labels[untimed]} over all time`,
+    );
+  },
+);
+
+it("distinguishes an untimed axis from the dated cutoff even for an all_time dashboard", async () => {
+  const { b, data, query, raw } = await check(
+    {
+      sales:
+        "2026-10-29T15:00:00Z,A,300,2,4,paid,Web,US\n2026-11-01T15:00:00Z,A,70,1,7,paid,Web,US\n2026-11-02T18:00:00Z,A,99,3,8,paid,Web,US\n",
+    },
+    {
+      units: agg("sales", "units", { time: undefined, label: "Units" }),
+      amount: agg("sales", "amount", { label: "Revenue" }),
+    },
+    [scatter("units", "amount", { title: "Comparing sales" })],
+    "all_time",
+  );
+  const rows = await query(`
+    SELECT market AS key, market AS label, sum(units) AS x,
+      sum(amount) FILTER (WHERE "at" < TIMESTAMPTZ '2026-11-02 05:00:00+00') AS y,
+      sum(amount) AS y_all_rows FROM ${raw("sales")} GROUP BY market`);
+  expect(rows).toEqual([{ key: "A", label: "A", x: 6, y: 370, y_all_rows: 469 }]);
+  expect(b.points).toEqual(rows.map(({ y_all_rows: _, ...point }) => point));
+  const subtitle = renderFragment(data ?? fail()).match(/<\/h2><p>([^<]+)/)?.[1];
+  expect(subtitle).toMatch(/\bNov [12], 2026\b/);
+  expect(subtitle).toContain("Units over all time");
+  expect(subtitle).toBe(
+    "Revenue against Units by market, through Nov 1, 2026, Units over all time",
+  );
+  expect(b.through).toBe("2026-11-01");
 });
 
 it("the documented explicit limit keeps the highest y values and clears HM5022", async () => {

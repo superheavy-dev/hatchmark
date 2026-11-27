@@ -943,13 +943,27 @@ class Assembler {
         'set "limit" to keep fewer, or plot a coarser column',
       );
     }
-    const spans = [block.x, block.y, block.size].flatMap((m) =>
-      m === undefined
-        ? []
-        : [[m, span(this.bounds(plan.measures[m]), this.context.timezone)] as const],
+    const bounds = [block.x, block.y, block.size].flatMap((m) =>
+      m === undefined ? [] : [[m, this.bounds(plan.measures[m])] as const],
     );
-    const window = spans.find(([, s]) => s !== undefined)?.[1];
-    const allTime = window ? spans.filter(([, s]) => s === undefined).map(([m]) => m) : [];
+    const endOf = (b: WindowBounds | undefined) =>
+      b?.kind === "bounded" ? b.end : b?.kind === "unbounded" ? b.end : undefined;
+    const window = bounds
+      .map(([, b]) => span(b, this.context.timezone))
+      .find((s) => s !== undefined);
+    const openEnd = window
+      ? undefined
+      : bounds.map(([, b]) => endOf(b)).find((e) => e !== undefined);
+    const before =
+      openEnd === undefined
+        ? undefined
+        : span({ kind: "bounded", start: openEnd, end: openEnd }, this.context.timezone)?.end;
+    const through =
+      before === undefined
+        ? undefined
+        : new Date(Date.parse(`${before}T00:00:00Z`) - 86_400_000).toISOString().slice(0, 10);
+    const allTime =
+      window || through ? bounds.filter(([, b]) => endOf(b) === undefined).map(([m]) => m) : [];
     return {
       ...common,
       type: "scatter",
@@ -961,6 +975,7 @@ class Assembler {
       ...(omittedPoints > 0 ? { omittedPoints } : {}),
       ...(omittedCategories > 0 ? { omittedCategories } : {}),
       ...(window && !empty ? { window } : {}),
+      ...(through && !empty ? { through } : {}),
       ...(allTime.length > 0 && !empty ? { allTime } : {}),
       ...(empty ? { empty } : {}),
     };
