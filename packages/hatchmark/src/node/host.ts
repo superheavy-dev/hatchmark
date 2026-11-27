@@ -2,7 +2,10 @@ import { open, readdir, readFile, stat } from "node:fs/promises";
 import path from "node:path";
 import type { ProjectHost } from "../spec/index.js";
 
-/** The Node.js ProjectHost: reads files under root. */
+/**
+ * The Node.js ProjectHost: reads files under root, and reads the columns of Parquet and JSON
+ * sources with DuckDB (loaded only when a project has such a source).
+ */
 export function nodeProjectHost(root: string): ProjectHost {
   const resolve = (file: string): string => path.join(root, ...file.split("/"));
   return {
@@ -31,6 +34,10 @@ export function nodeProjectHost(root: string): ProjectHost {
       } finally {
         await handle.close();
       }
+    },
+    async columns(file, source) {
+      const { describeColumns } = await import("./duckdb.js");
+      return describeColumns(resolve(file), source);
     },
   };
 }

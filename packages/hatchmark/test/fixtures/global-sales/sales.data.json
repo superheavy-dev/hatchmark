@@ -1,0 +1,564 @@
+{
+  "version": 1,
+  "name": "sales",
+  "title": "Global sales",
+  "description": "Orders from every market, last 12 months against the 12 before.",
+  "project": "Global Sales",
+  "asOf": "2026-10-31",
+  "period": {
+    "range": "last_12_months",
+    "compare": "previous_period",
+    "current": {
+      "start": "2025-11-01",
+      "end": "2026-11-01"
+    },
+    "previous": {
+      "start": "2024-11-01",
+      "end": "2025-11-01"
+    }
+  },
+  "locale": "en-US",
+  "currency": "USD",
+  "timezone": "America/New_York",
+  "weekStart": "sunday",
+  "metrics": {
+    "avg_order_value": {
+      "name": "avg_order_value",
+      "label": "Average order value",
+      "format": {
+        "type": "currency",
+        "decimals": 2,
+        "currency": "USD"
+      },
+      "better": "up"
+    },
+    "customers": {
+      "name": "customers",
+      "label": "Customers",
+      "description": "Distinct customers with a paid order.",
+      "format": {
+        "type": "number"
+      },
+      "better": "up"
+    },
+    "orders": {
+      "name": "orders",
+      "label": "Orders",
+      "description": "Paid orders.",
+      "format": {
+        "type": "number"
+      },
+      "better": "up"
+    },
+    "refund_rate": {
+      "name": "refund_rate",
+      "label": "Refund rate",
+      "description": "Refunded orders as a share of placed orders.",
+      "format": {
+        "type": "percent",
+        "decimals": 1
+      },
+      "better": "down"
+    },
+    "revenue": {
+      "name": "revenue",
+      "label": "Revenue",
+      "description": "Paid order amounts in USD, before refunds.",
+      "format": {
+        "type": "currency",
+        "compact": true,
+        "currency": "USD"
+      },
+      "better": "up"
+    }
+  },
+  "blocks": [
+    {
+      "id": "revenue",
+      "span": 3,
+      "type": "kpi",
+      "metric": "revenue",
+      "value": 257492.57,
+      "compare": "previous_period",
+      "current": {
+        "start": "2025-11-01",
+        "end": "2026-11-01"
+      },
+      "previous": {
+        "start": "2024-11-01",
+        "end": "2025-11-01"
+      },
+      "previousValue": 201063.36,
+      "change": 56429.21000000002,
+      "changePct": 0.28065386950660737,
+      "changeKind": "relative",
+      "sparkline": {
+        "grain": "month",
+        "buckets": [
+          "2025-11-01",
+          "2025-12-01",
+          "2026-01-01",
+          "2026-02-01",
+          "2026-03-01",
+          "2026-04-01",
+          "2026-05-01",
+          "2026-06-01",
+          "2026-07-01",
+          "2026-08-01",
+          "2026-09-01",
+          "2026-10-01"
+        ],
+        "values": [
+          21918.16,
+          28126.85,
+          15730.44,
+          17158.3,
+          17091.36,
+          19637.34,
+          20971.47,
+          21398.81,
+          22515.3,
+          21448.61,
+          24472.26,
+          27023.67
+        ]
+      }
+    },
+    {
+      "id": "orders",
+      "span": 3,
+      "type": "kpi",
+      "metric": "orders",
+      "value": 2784,
+      "compare": "previous_period",
+      "current": {
+        "start": "2025-11-01",
+        "end": "2026-11-01"
+      },
+      "previous": {
+        "start": "2024-11-01",
+        "end": "2025-11-01"
+      },
+      "previousValue": 2080,
+      "change": 704,
+      "changePct": 0.3384615384615385,
+      "changeKind": "relative"
+    },
+    {
+      "id": "aov",
+      "span": 3,
+      "type": "kpi",
+      "metric": "avg_order_value",
+      "value": 92.49014727011495,
+      "compare": "previous_period",
+      "current": {
+        "start": "2025-11-01",
+        "end": "2026-11-01"
+      },
+      "previous": {
+        "start": "2024-11-01",
+        "end": "2025-11-01"
+      },
+      "previousValue": 96.66507692307691,
+      "change": -4.174929652961964,
+      "changePct": -0.04318963772494843,
+      "changeKind": "relative"
+    },
+    {
+      "id": "refund_rate",
+      "span": 3,
+      "type": "kpi",
+      "metric": "refund_rate",
+      "value": 0.05945945945945946,
+      "compare": "previous_period",
+      "current": {
+        "start": "2025-11-01",
+        "end": "2026-11-01"
+      },
+      "previous": {
+        "start": "2024-11-01",
+        "end": "2025-11-01"
+      },
+      "previousValue": 0.06935123042505593,
+      "change": -0.009891770965596472,
+      "changePct": -0.009891770965596472,
+      "changeKind": "points"
+    },
+    {
+      "id": "revenue_by_region",
+      "title": "Revenue by month, by region",
+      "span": 8,
+      "type": "line",
+      "axis": {
+        "kind": "time",
+        "grain": "month",
+        "buckets": [
+          "2025-11-01",
+          "2025-12-01",
+          "2026-01-01",
+          "2026-02-01",
+          "2026-03-01",
+          "2026-04-01",
+          "2026-05-01",
+          "2026-06-01",
+          "2026-07-01",
+          "2026-08-01",
+          "2026-09-01",
+          "2026-10-01"
+        ],
+        "window": {
+          "start": "2025-11-01",
+          "end": "2026-11-01"
+        }
+      },
+      "series": [
+        {
+          "key": "revenue:Americas",
+          "metric": "revenue",
+          "label": "Americas",
+          "splitValue": "Americas",
+          "values": [
+            11888.64,
+            15304.85,
+            9442.82,
+            9470.59,
+            8506.65,
+            10705.29,
+            10655.69,
+            11382.89,
+            12574.87,
+            11541.01,
+            12614.67,
+            14367.48
+          ]
+        },
+        {
+          "key": "revenue:EMEA",
+          "metric": "revenue",
+          "label": "EMEA",
+          "splitValue": "EMEA",
+          "values": [
+            6208.57,
+            9534.36,
+            4444.75,
+            5460.17,
+            5679.01,
+            6560.03,
+            5945.46,
+            7414.81,
+            7797.52,
+            6689.2,
+            8378.12,
+            7656.5
+          ]
+        },
+        {
+          "key": "revenue:APAC",
+          "metric": "revenue",
+          "label": "APAC",
+          "splitValue": "APAC",
+          "values": [
+            3820.95,
+            3287.64,
+            1842.87,
+            2227.54,
+            2905.7,
+            2372.02,
+            4370.32,
+            2601.11,
+            2142.91,
+            3218.4,
+            3479.47,
+            4999.69
+          ]
+        }
+      ]
+    },
+    {
+      "id": "revenue_by_channel",
+      "title": "Revenue by channel",
+      "span": 4,
+      "type": "bar",
+      "orientation": "horizontal",
+      "stack": false,
+      "axis": {
+        "kind": "category",
+        "column": "channel",
+        "categories": [
+          "Organic search",
+          "Paid search",
+          "Social",
+          "Email",
+          "Direct",
+          "Affiliate",
+          null
+        ]
+      },
+      "series": [
+        {
+          "key": "revenue",
+          "metric": "revenue",
+          "label": "Revenue",
+          "values": [
+            77695.13,
+            58539.29,
+            35171.02,
+            34537.6,
+            33386.87,
+            12511.69,
+            5650.97
+          ]
+        }
+      ]
+    },
+    {
+      "id": "by_country",
+      "title": "Top countries by revenue",
+      "span": 12,
+      "type": "table",
+      "by": [
+        {
+          "column": "country",
+          "label": "Country"
+        }
+      ],
+      "metrics": [
+        "revenue",
+        "orders",
+        "avg_order_value",
+        "customers"
+      ],
+      "percentOfTotal": [
+        "revenue"
+      ],
+      "rows": [
+        {
+          "keys": [
+            "United States"
+          ],
+          "values": {
+            "revenue": 104370.18,
+            "orders": 1165,
+            "avg_order_value": 89.58813733905579,
+            "customers": 926
+          },
+          "share": {
+            "revenue": 0.4053327830003017
+          }
+        },
+        {
+          "keys": [
+            "United Kingdom"
+          ],
+          "values": {
+            "revenue": 23512.21,
+            "orders": 254,
+            "avg_order_value": 92.5677559055118,
+            "customers": 241
+          },
+          "share": {
+            "revenue": 0.09131218815362323
+          }
+        },
+        {
+          "keys": [
+            "Canada"
+          ],
+          "values": {
+            "revenue": 18645.95,
+            "orders": 204,
+            "avg_order_value": 91.40171568627451,
+            "customers": 197
+          },
+          "share": {
+            "revenue": 0.07241354575784459
+          }
+        },
+        {
+          "keys": [
+            "Germany"
+          ],
+          "values": {
+            "revenue": 16925.32,
+            "orders": 172,
+            "avg_order_value": 98.40302325581395,
+            "customers": 164
+          },
+          "share": {
+            "revenue": 0.06573129469327989
+          }
+        },
+        {
+          "keys": [
+            "Australia"
+          ],
+          "values": {
+            "revenue": 14445.41,
+            "orders": 149,
+            "avg_order_value": 96.94906040268457,
+            "customers": 146
+          },
+          "share": {
+            "revenue": 0.05610029835035628
+          }
+        },
+        {
+          "keys": [
+            "France"
+          ],
+          "values": {
+            "revenue": 11798.63,
+            "orders": 115,
+            "avg_order_value": 102.59678260869565,
+            "customers": 110
+          },
+          "share": {
+            "revenue": 0.04582124447319004
+          }
+        },
+        {
+          "keys": [
+            "Japan"
+          ],
+          "values": {
+            "revenue": 8696.02,
+            "orders": 89,
+            "avg_order_value": 97.70808988764045,
+            "customers": 87
+          },
+          "share": {
+            "revenue": 0.03377192592392084
+          }
+        },
+        {
+          "keys": [
+            "Spain"
+          ],
+          "values": {
+            "revenue": 8197.21,
+            "orders": 70,
+            "avg_order_value": 117.103,
+            "customers": 69
+          },
+          "share": {
+            "revenue": 0.03183474381416131
+          }
+        },
+        {
+          "keys": [
+            "Brazil"
+          ],
+          "values": {
+            "revenue": 7884.58,
+            "orders": 91,
+            "avg_order_value": 86.64373626373626,
+            "customers": 90
+          },
+          "share": {
+            "revenue": 0.03062061169376654
+          }
+        },
+        {
+          "keys": [
+            "Italy"
+          ],
+          "values": {
+            "revenue": 5573.88,
+            "orders": 58,
+            "avg_order_value": 96.10137931034483,
+            "customers": 57
+          },
+          "share": {
+            "revenue": 0.021646760525944497
+          }
+        },
+        {
+          "keys": [
+            "Mexico"
+          ],
+          "values": {
+            "revenue": 5415.35,
+            "orders": 65,
+            "avg_order_value": 83.31307692307693,
+            "customers": 65
+          },
+          "share": {
+            "revenue": 0.021031092275788775
+          }
+        },
+        {
+          "keys": [
+            "Netherlands"
+          ],
+          "values": {
+            "revenue": 4495.17,
+            "orders": 47,
+            "avg_order_value": 95.64191489361703,
+            "customers": 46
+          },
+          "share": {
+            "revenue": 0.017457474598199085
+          }
+        },
+        {
+          "keys": [
+            "India"
+          ],
+          "values": {
+            "revenue": 4387,
+            "orders": 54,
+            "avg_order_value": 81.24074074074075,
+            "customers": 54
+          },
+          "share": {
+            "revenue": 0.01703738480687035
+          }
+        },
+        {
+          "keys": [
+            "Sweden"
+          ],
+          "values": {
+            "revenue": 4262.02,
+            "orders": 42,
+            "avg_order_value": 101.47666666666667,
+            "customers": 41
+          },
+          "share": {
+            "revenue": 0.016552011578431176
+          }
+        },
+        {
+          "keys": [
+            "Singapore"
+          ],
+          "values": {
+            "revenue": 3841.17,
+            "orders": 43,
+            "avg_order_value": 89.32953488372094,
+            "customers": 43
+          },
+          "share": {
+            "revenue": 0.014917595486347432
+          }
+        }
+      ],
+      "rowCount": 21,
+      "total": {
+        "values": {
+          "revenue": 257492.57,
+          "orders": 2784,
+          "avg_order_value": 92.49014727011495,
+          "customers": 1699
+        },
+        "share": {
+          "revenue": 1
+        }
+      },
+      "window": {
+        "start": "2025-11-01",
+        "end": "2026-11-01"
+      }
+    }
+  ]
+}
