@@ -80,7 +80,7 @@ describe("spec schemas", () => {
     expect(d).toMatchObject({
       code: "HM3004",
       pointer: "/blocks/0/type",
-      expected: ["kpi", "line", "area", "bar", "bar_list", "table", "text"],
+      expected: ["kpi", "line", "area", "bar", "pie", "donut", "bar_list", "table", "text"],
       fix: { text: '"line"', applicability: "unsafe" },
     });
   });

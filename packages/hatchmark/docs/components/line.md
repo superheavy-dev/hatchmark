@@ -36,7 +36,8 @@ What it draws:
   a longer key makes the chart taller. Line names are never shortened; only a name wider than the
   whole card is cut, at the end, with the full name on hover.
 - Hover (or tap, or the arrow keys) shows a crosshair, the points, and a tooltip with every line's
-  value at that date.
+  value at that date. With several lines each row starts with a short line in its colour; a single
+  line's tooltip has none (an area's rows start with a square).
 - With `grains`, a segmented control in the card header ("Week · Month · Quarter") switches the
   chart, its title and subtitle. Every grain is built ahead, so switching re-derives nothing in the
   browser. Two options with the same unit name their anchors ("Year from Jan 1", "Year from Jul 1").

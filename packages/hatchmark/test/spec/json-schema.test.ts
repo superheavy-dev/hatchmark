@@ -25,6 +25,8 @@ const DEFINITIONS: Record<SpecKind, string[]> = {
     "AreaBlock",
     "BarBlock",
     "BarListBlock",
+    "DonutBlock",
+    "PieBlock",
     "Block",
     "Comparison",
     "DashboardFilter",

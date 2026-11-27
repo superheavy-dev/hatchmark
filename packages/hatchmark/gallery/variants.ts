@@ -3,6 +3,7 @@ import type {
   DashboardData,
   KpiData,
   LineData,
+  PieData,
   TableData,
   Value,
 } from "../src/compiler/dashboard-data.js";
@@ -41,7 +42,7 @@ import {
 
 /** One gallery entry: a component variant on sample data, wrapped as a one-block dashboard. */
 export interface GalleryVariant {
-  component: "kpi" | "line" | "bar" | "stacked" | "table";
+  component: "kpi" | "line" | "bar" | "stacked" | "pie" | "table";
   variant: string;
   title: string;
   data: DashboardData;
@@ -864,6 +865,190 @@ const STACKED: GalleryVariant[] = [
   ),
 ];
 
+/** A pie or donut's engine output for sample data: the largest positive slices, then Other. */
+function pie(
+  type: "pie" | "donut",
+  id: string,
+  title: string,
+  metric: string,
+  column: string,
+  rows: [string | null, number | null][],
+  extra: { limit?: number; span?: number } = {},
+): PieData {
+  const limit = extra.limit ?? 5;
+  const positive = rows
+    .filter((r): r is [string | null, number] => r[1] !== null && r[1] > 0)
+    .sort((a, b) => b[1] - a[1]);
+  const negative = rows.filter((r): r is [string | null, number] => r[1] !== null && r[1] < 0);
+  const empty = rows.length - positive.length - negative.length;
+  const whole = positive.reduce((s, r) => s + r[1], 0);
+  const total = rows.reduce((s, r) => s + (r[1] ?? 0), 0);
+  const label = (k: string | null) => (k === null ? "(empty)" : k);
+  const rest = positive.slice(limit);
+  const otherValue = rest.reduce((s, r) => s + r[1], 0);
+  return {
+    type,
+    id,
+    title,
+    span: extra.span ?? 6,
+    metric,
+    column,
+    slices: positive
+      .slice(0, limit)
+      .map(([key, value]) => ({ key, label: label(key), value, share: value / whole })),
+    ...(rest.length > 0
+      ? { other: { count: rest.length, value: otherValue, share: otherValue / whole } }
+      : {}),
+    total: rows.length === 0 ? null : total,
+    whole,
+    ...(negative.length > 0 || empty > 0
+      ? {
+          excluded: {
+            negative: negative.map(([key, value]) => ({ key, label: label(key), value })),
+            empty,
+          },
+        }
+      : {}),
+    window: OCT,
+  };
+}
+
+const PIES: GalleryVariant[] = [
+  one(
+    "pie",
+    "pie-countries",
+    "Pie: top 5 countries and Other",
+    pie(
+      "pie",
+      "pie_countries",
+      "The United States brings in 39% of revenue",
+      "revenue",
+      "country",
+      COUNTRIES.map((c) => [c.name, round(1_843_210 * c.share)]),
+    ),
+  ),
+  one(
+    "pie",
+    "donut-channels",
+    "Donut: three channels, total in the hole",
+    pie(
+      "donut",
+      "donut_channels",
+      "The online store takes 58% of revenue",
+      "revenue",
+      "channel",
+      CHANNELS.map((c) => [c.name, round(1_843_210 * c.share)]),
+    ),
+  ),
+  one(
+    "pie",
+    "donut-devices",
+    "Donut: orders by device",
+    pie("donut", "donut_devices", "Six in ten orders come from phones", "orders", "device", [
+      ["Mobile", 13_342],
+      ["Desktop", 7_219],
+      ["Tablet", 1_313],
+    ]),
+  ),
+  one(
+    "pie",
+    "pie-two",
+    "Pie: two slices",
+    pie("pie", "pie_two", "New customers placed a third of orders", "orders", "customer_type", [
+      ["Returning", 14_583],
+      ["New", 7_291],
+    ]),
+  ),
+  one(
+    "pie",
+    "pie-six",
+    "Pie: six slices (the readable maximum)",
+    pie(
+      "pie",
+      "pie_six",
+      "Outerwear leads revenue by category",
+      "revenue",
+      "category",
+      [
+        ["Outerwear", 512_400],
+        ["Footwear", 398_100],
+        ["Apparel", 344_900],
+        ["Accessories", 221_800],
+        ["Bags", 182_300],
+        ["Home", 96_200],
+        ["Kids", 87_510],
+      ],
+      { limit: 6 },
+    ),
+  ),
+  one(
+    "pie",
+    "donut-long-labels",
+    "Donut: long category names wrap, never cut in the middle",
+    pie(
+      "donut",
+      "donut_regions",
+      "Revenue by World Bank region",
+      "revenue",
+      "region",
+      [
+        ["North America", 866_309],
+        ["Europe and Central Asia", 534_531],
+        ["East Asia and Pacific", 263_347],
+        ["Latin America and the Caribbean", 129_025],
+        ["Middle East, North Africa, Afghanistan and Pakistan", 33_178],
+        ["Sub-Saharan Africa", 16_820],
+      ],
+      { span: 6 },
+    ),
+  ),
+  one(
+    "pie",
+    "pie-negative",
+    "Pie with negative values: left out and listed",
+    pie("pie", "pie_negative", "Net revenue by channel after refunds", "net_cash_flow", "channel", [
+      ["Online store", 612_300],
+      ["Marketplace", 288_900],
+      ["Retail partners", 141_200],
+      ["Wholesale", -12_300],
+      ["Pop-up stores", null],
+    ]),
+  ),
+  one(
+    "pie",
+    "pie-single",
+    "Pie: one category",
+    pie(
+      "pie",
+      "pie_single",
+      "All October orders shipped from one warehouse",
+      "orders",
+      "warehouse",
+      [["Reno, NV", 21_874]],
+    ),
+  ),
+  one(
+    "pie",
+    "donut-narrow",
+    "Donut, narrow card: the key goes under the ring",
+    pie(
+      "donut",
+      "donut_narrow",
+      "Revenue by region",
+      "revenue",
+      "region",
+      REGIONS.map((r) => [r.name, round(1_843_210 * r.share)]),
+      { span: 4 },
+    ),
+  ),
+  one(
+    "pie",
+    "pie-empty",
+    "No data",
+    pie("pie", "pie_empty", "Revenue by country", "revenue", "country", []),
+  ),
+];
+
 export const GALLERY: GalleryVariant[] = [
   ...KPIS,
   ...LINES,
@@ -871,6 +1056,7 @@ export const GALLERY: GalleryVariant[] = [
   ...BARS,
   ...GRAIN_BARS,
   ...STACKED,
+  ...PIES,
   ...TABLES,
 ];
 

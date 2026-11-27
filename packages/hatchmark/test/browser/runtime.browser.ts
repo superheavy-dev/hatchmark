@@ -192,6 +192,37 @@ describe("browser runtime", () => {
     await expect.poll(() => tip.isVisible()).toBe(false);
   });
 
+  it("highlights one slice and shows its value and share in a pie, by keyboard and by hover", async () => {
+    const page = await browser.newPage({ viewport: { width: 1440, height: 900 } });
+    await page.goto(allUrl);
+    const figure = page.locator('[data-hm-chart="pie_countries"]');
+    const svg = figure.locator("svg").filter({ visible: true });
+    await svg.focus();
+    await page.keyboard.press("ArrowRight");
+    const tip = figure.locator(".hm-tip");
+    expect(await tip.locator(".hm-tip-h").textContent()).toBe("United States");
+    expect(await tip.textContent()).toMatch(/\$[\d,]+39\.2%/);
+    expect(await svg.getAttribute("class")).toContain("hm-dim");
+    expect(await svg.locator(".hm-slice.hm-on").count()).toBe(1);
+    await page.keyboard.press("End");
+    expect(await tip.locator(".hm-tip-h").textContent()).toMatch(/^Other \(19 more\)$/);
+    expect(await figure.locator("[aria-live]").textContent()).toMatch(
+      /^Other \(19 more\), Revenue \$[\d,]+, 32\.3%/,
+    );
+    await page.keyboard.press("Escape");
+    await expect.poll(() => tip.isVisible()).toBe(false);
+    expect(await svg.getAttribute("class")).not.toContain("hm-dim");
+
+    const donut = page.locator('[data-hm-chart="donut_channels"]');
+    const ring = donut.locator("svg").filter({ visible: true });
+    const box = await ring.locator(".hm-slice").first().boundingBox();
+    if (!box) throw new Error("donut slice has no box");
+    await page.mouse.move(box.x + box.width * 0.85, box.y + box.height * 0.5);
+    expect(await donut.locator(".hm-tip .hm-tip-h").textContent()).toBe("Online store");
+    await page.mouse.move(5, 5);
+    await expect.poll(() => donut.locator(".hm-tip").isVisible()).toBe(false);
+  });
+
   it("updates the pinned readout instead of a tooltip on a phone", async () => {
     const page = await browser.newPage({ viewport: { width: 390, height: 800 }, hasTouch: true });
     await page.goto(url);

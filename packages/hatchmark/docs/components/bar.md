@@ -38,5 +38,6 @@ What it draws:
 - Several series get a key above the plot. The key wraps instead of shortening names; only a name
   wider than the whole card is cut, at the end, with the full name on hover.
 - Hover, tap or the arrow keys highlight a category and show a tooltip with every series and, for
-  stacked bars, each series' share and the total, recomputed from rows.
+  stacked bars, each series' share and the total, recomputed from rows. With several series each
+  row starts with a square in its colour; a single series' tooltip has none.
 - A null category is a real group and shows as "(empty)".

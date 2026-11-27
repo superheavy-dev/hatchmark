@@ -34,7 +34,7 @@ import {
 } from "./plan.js";
 
 /** Block types the planner builds in phase 1; the others get an HM4002 warning and no plan. */
-export const PLANNED_BLOCK_TYPES = ["kpi", "line", "area", "bar", "table"] as const;
+export const PLANNED_BLOCK_TYPES = ["kpi", "line", "area", "bar", "pie", "donut", "table"] as const;
 
 type AxisDimension = { kind: "column"; column: string } | { kind: "time"; grain: ResolvedGrain };
 
@@ -382,6 +382,17 @@ function planBlockAt(
               }),
         };
       }
+      case "pie":
+      case "donut":
+        return {
+          measures: planReading(
+            ctx,
+            [block.metric],
+            [{ kind: "column", column: block.by }],
+            [[0], []],
+            "none",
+          ),
+        };
       case "table": {
         const axes: AxisDimension[] = block.by.map((column) => ({ kind: "column", column }));
         return {
