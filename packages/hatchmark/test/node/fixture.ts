@@ -41,7 +41,7 @@ export async function copyProject(from: string, prefix: string): Promise<string>
       filter: (src) => !LEFT_OUT.has(path.relative(from, src).split(path.sep)[0] ?? ""),
     });
   } catch (error) {
-    await rm(root, { recursive: true, force: true });
+    await rm(root, { recursive: true, force: true }).catch(() => {});
     throw error;
   }
   return root;
