@@ -64,6 +64,21 @@ export function textWidth(text: string, style: TextStyle): number {
 }
 
 /**
+ * Shortens text to fit maxWidth by cutting its end and adding an ellipsis ("Middle East & No…"),
+ * for names that read as words, where the start carries the meaning. Text that fits is returned
+ * unchanged; when not even one character and the ellipsis fit, the result is "…".
+ */
+export function truncateEnd(text: string, maxWidth: number, style: TextStyle): string {
+  if (textWidth(text, style) <= maxWidth) return text;
+  const chars = Array.from(text);
+  let keep = chars.length - 1;
+  const build = () => `${chars.slice(0, keep).join("").trimEnd()}\u2026`;
+  while (keep > 1 && textWidth(build(), style) > maxWidth) keep--;
+  const result = build();
+  return textWidth(result, style) <= maxWidth ? result : "\u2026";
+}
+
+/**
  * Shortens text to fit maxWidth by replacing its middle with an ellipsis, keeping at least one
  * character on each side ("Health & … outdoors"). Text that fits is returned unchanged; when not
  * even "a…z" fits, the result is "…".

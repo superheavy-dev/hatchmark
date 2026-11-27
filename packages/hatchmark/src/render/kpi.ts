@@ -1,12 +1,20 @@
 import type { KpiData } from "../compiler/dashboard-data.js";
 import { isNumber, metricOf, type RenderContext } from "./chart.js";
-import { formatChange, formatPreviousSpan, formatSpan, formatValue } from "./format.js";
-import { esc, r } from "./svg.js";
+import {
+  formatBucket,
+  formatChange,
+  formatPreviousSpan,
+  formatSpan,
+  formatValue,
+} from "./format.js";
+import { esc, r, scriptJson } from "./svg.js";
 
 /**
  * One KPI cell for a KPI strip: label, headline figure in regular weight, the change with an arrow,
  * a sign and a good or bad colour by the metric's better direction, and a note naming the
- * comparison. null shows as an em dash with a reason; 0 shows as a real zero.
+ * comparison. null shows as an em dash with a reason; 0 shows as a real zero. A sparkline is a
+ * small line chart the runtime drives like any other: crosshair, dot and tooltip on hover, touch and
+ * the arrow keys.
  */
 export function renderKpi(block: KpiData, ctx: RenderContext): string {
   const locale = ctx.data.locale;
@@ -48,6 +56,7 @@ export function renderKpi(block: KpiData, ctx: RenderContext): string {
   }
   if (metric.better === "down") note += " \u00B7 lower is better";
   let spark = "";
+  let runtime = "";
   const values = block.sparkline?.values ?? [];
   const defined = values.filter(isNumber);
   if (defined.length > 1) {
@@ -65,10 +74,27 @@ export function renderKpi(block: KpiData, ctx: RenderContext): string {
       d += `${pen ? "L" : "M"}${r(x(i))},${r(y(v))}`;
       pen = true;
     });
-    spark = `<svg class="hm-spark" viewBox="0 0 100 24" preserveAspectRatio="none" aria-hidden="true"><path d="${d}"${ctx.paint.attrs("none", "c1")} stroke-width="1.5" vector-effect="non-scaling-stroke" stroke-linejoin="round"/></svg>`;
+    const sparkline = block.sparkline as NonNullable<KpiData["sparkline"]>;
+    const headers = sparkline.buckets.map((b) => formatBucket(b, sparkline.grain, locale));
+    const geometry = `data-hm-kind="line" data-hm-x="0,${r(100 / (values.length - 1))},${values.length}" data-hm-y="${hi === lo ? `${lo},${lo + 1},12,12` : `${lo},${hi},22,2`}" data-hm-plot="0,0,100,24"`;
+    spark = `<svg class="hm-spark" viewBox="0 0 100 24" preserveAspectRatio="none" overflow="visible" tabindex="0" role="img" aria-label="${esc(`${label} by ${sparkline.grain}, ${headers[0]} to ${headers.at(-1)}`)}" ${geometry}><path d="${d}"${ctx.paint.attrs("none", "c1")} stroke-width="1.5" vector-effect="non-scaling-stroke" stroke-linejoin="round"/></svg>`;
+    runtime = `<script type="application/json">${scriptJson({
+      kind: "line",
+      headers,
+      series: [
+        {
+          label,
+          color: 1,
+          v: values,
+          text: values.map((v) => formatValue(v, metric, locale, "full")),
+          short: values.map((v) => formatValue(v, metric, locale, "compact")),
+        },
+      ],
+    })}</script>`;
   }
   return [
-    `<div class="hm-kpi" style="--span:${block.span}">`,
+    `<div class="hm-kpi" style="--span:${block.span}"${runtime ? ` data-hm-chart="${esc(block.id)}"` : ""}>`,
+    runtime,
     `<div class="hm-kpi-label">${esc(label)}</div>`,
     `<div class="hm-kpi-figure"><span class="hm-kpi-value${block.value === null ? " hm-null" : ""}">${esc(value)}</span>${delta}</div>`,
     `<div class="hm-kpi-note">${esc(note)}</div>`,

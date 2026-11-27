@@ -22,5 +22,7 @@ What it draws:
   `▲ +0.27 pp`. The colour judges the change by the metric's `better`: `up` and `down` colour a
   rise good or bad, `neutral` leaves it grey. Metrics with `better: "down"` say "lower is better".
 - The note names the comparison: "vs $5.58M in Sep".
+- The sparkline sits 12 px below the note. Hover, tap or focus it and use the arrow keys to see
+  each month's value in the same tooltip as the line chart.
 - An undefined value shows `—` with "No data in this period"; a real zero shows `$0`. With no
   previous value the note says "No Sep data to compare" and there is no change.

@@ -17,19 +17,20 @@ import {
 } from "./chart.js";
 import { formatBucket, formatValue } from "./format.js";
 import { stackLabels } from "./labels.js";
-import { textWidth, truncateMiddle } from "./measure.js";
+import { textWidth, truncateEnd } from "./measure.js";
 import { r, svgLine, svgText } from "./svg.js";
 import { seriesColor } from "./theme.js";
 
 /** Direct labels need this much plot width; below it a pinned readout replaces them. */
 export const DIRECT_LABEL_MIN_PLOT = 320;
-const DIRECT_LABEL_MAX = 150;
-const DIRECT_NAME_MAX = 90;
 const MAX_DIRECT_SERIES = 6;
 const LINE_WIDTH = 1.75;
 const READOUT_PAD_X = 10;
 const READOUT_PAD_Y = 8;
 const READOUT_COLUMNS = 3;
+const READOUT_GAP = 8;
+/** A tall readout (long names in one column) grows the chart instead of squeezing the plot below this. */
+const READOUT_MIN_PLOT = 80;
 
 /** Values as drawn: cumulative for stacked areas (missing values count as 0 there). */
 export function plottedValues(block: LineData): Value[][] {
@@ -68,20 +69,17 @@ export function renderLine(
   const lastText = series.map((s, k) =>
     formatValue(s.values[lastIndex[k] ?? -1] ?? null, metricOf(ctx, s.metric), locale, "compact"),
   );
-  const names = series.map((s) => truncateMiddle(s.label, DIRECT_NAME_MAX, nameStyle));
-  const directWidth = Math.min(
-    DIRECT_LABEL_MAX,
+  const directWidth =
     Math.max(
       0,
       ...series.map(
-        (_, k) =>
+        (s, k) =>
           12 +
-          textWidth(names[k] as string, nameStyle) +
+          textWidth(s.label, nameStyle) +
           6 +
           textWidth(lastText[k] as string, { size: CAPTION }),
       ),
-    ) + 8,
-  );
+    ) + 8;
 
   const bottomBand = 24;
   const top0 = 8;
@@ -95,10 +93,22 @@ export function renderLine(
   let readout = "";
   let readoutHeight = 0;
   if (!direct && !empty && series.length > 0) {
-    const columns = Math.min(series.length, READOUT_COLUMNS);
+    const inner = size.width - 2 - READOUT_PAD_X * 2;
+    const needed = Math.max(
+      ...series.map((s, k) =>
+        Math.max(
+          13 + textWidth(s.label, { size: CAPTION }),
+          textWidth(lastText[k] as string, { size: BODY, weight: 500 }),
+        ),
+      ),
+    );
+    let columns = Math.min(series.length, READOUT_COLUMNS);
+    while (columns > 1 && inner / columns - READOUT_GAP < needed) columns--;
     const rows = Math.ceil(series.length / columns);
-    readoutHeight = READOUT_PAD_Y * 2 + LABEL_LINE + 4 + rows * 34 + (rows - 1) * 6;
-    const colWidth = (size.width - 2 - READOUT_PAD_X * 2) / columns;
+    const inline = columns === 1 && series.length > 1;
+    const pitch = inline ? LABEL_LINE + 6 : 40;
+    readoutHeight = READOUT_PAD_Y * 2 + LABEL_LINE + 4 + rows * pitch - 6;
+    const colWidth = inner / columns;
     const last = Math.max(...lastIndex);
     const parts = [
       `<rect x="0.5" y="0.5" width="${r(size.width - 1)}" height="${readoutHeight - 1}" rx="${ctx.theme.radius.control}"${paint.attrs("cardAlt", "border")}/>`,
@@ -114,26 +124,44 @@ export function renderLine(
       const col = k % columns;
       const row = Math.floor(k / columns);
       const x = READOUT_PAD_X + 1 + col * colWidth;
-      const y = READOUT_PAD_Y + LABEL_LINE + 4 + row * 40;
+      const y = READOUT_PAD_Y + LABEL_LINE + 4 + row * pitch;
+      const valueStyle = { size: BODY, weight: 500 } as const;
+      const room = inline
+        ? colWidth -
+          25 -
+          Math.max(
+            ...s.values.map((v) =>
+              textWidth(formatValue(v, metricOf(ctx, s.metric), locale, "compact"), valueStyle),
+            ),
+          )
+        : colWidth - 17;
       parts.push(
         `<circle cx="${r(x + 4)}" cy="${r(y + 8)}" r="4"${paint.attrs(seriesColor(k))}/>`,
-        svgText(paint, x + 13, y + 8, truncateMiddle(s.label, colWidth - 17, { size: CAPTION }), {
+        svgText(paint, x + 13, y + 8, truncateEnd(s.label, room, { size: CAPTION }), {
           size: CAPTION,
           color: "textMuted",
+          ...(textWidth(s.label, { size: CAPTION }) > room ? { title: s.label } : {}),
         }),
-        svgText(paint, x, y + 16 + 9, lastText[k] as string, {
-          size: BODY,
-          weight: 500,
-          color: "text",
-          className: `hm-rv hm-rv-${k}`,
-        }),
+        svgText(
+          paint,
+          inline ? size.width - 1 - READOUT_PAD_X : x,
+          inline ? y + 8 : y + 16 + 9,
+          lastText[k] as string,
+          {
+            ...valueStyle,
+            color: "text",
+            className: `hm-rv hm-rv-${k}`,
+            ...(inline ? { anchor: "end" as const } : {}),
+          },
+        ),
       );
     });
     readout = `<g class="hm-readout">${parts.join("")}</g>`;
   }
 
   const top = readoutHeight > 0 ? readoutHeight + 16 : top0;
-  const plotBottom = size.height - bottomBand;
+  const height = Math.max(size.height, readoutHeight > 0 ? top + READOUT_MIN_PLOT + bottomBand : 0);
+  const plotBottom = height - bottomBand;
   const axis = yAxis(values, plotBottom - top, metric, locale);
   const [d0, d1] = axis.domain;
   const y = (v: number) => plotBottom - ((v - d0) / (d1 - d0)) * (plotBottom - top);
@@ -214,10 +242,11 @@ export function renderLine(
           `<polyline points="${r(plotRight + 2)},${r(target)} ${r(plotRight + 6)},${r(target)} ${r(plotRight + 10)},${r(centre)}"${paint.attrs("none", "textSubtle")}/>`,
         );
       }
-      const nameWidth = textWidth(names[k] as string, nameStyle);
+      const name = series[k]?.label ?? "";
+      const nameWidth = textWidth(name, nameStyle);
       parts.push(
         `<circle cx="${r(labelX + 4)}" cy="${r(centre)}" r="4"${paint.attrs(seriesColor(k))}/>`,
-        svgText(paint, labelX + 12, centre, names[k] as string, {
+        svgText(paint, labelX + 12, centre, name, {
           ...nameStyle,
           color: "text",
         }),
@@ -230,7 +259,7 @@ export function renderLine(
   }
 
   return svgRoot(
-    size,
+    { width: size.width, height },
     block.title ?? series.map((s) => s.label).join(", "),
     {
       kind: "line",

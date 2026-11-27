@@ -12,7 +12,10 @@ import { chartRuntimeData, chartTable, describeChart } from "./describe.js";
 import { formatDate, formatSpan } from "./format.js";
 import { renderKpi } from "./kpi.js";
 import { renderLine } from "./line.js";
-import { esc } from "./svg.js";
+import { esc, scriptJson } from "./svg.js";
+
+export { scriptJson };
+
 import { renderTable } from "./table.js";
 import {
   COLOR_KEYS,
@@ -265,12 +268,12 @@ export function pageStyles(assets: PageAssets, theme: Theme = DEFAULT_THEME): st
     `.hm-card{display:flex;flex-direction:column;gap:14px;padding:${d.cardPadding}px}.hm-table{gap:10px}`,
     `.hm-card-head{display:flex;flex-direction:column;gap:2px}.hm-root h2{font-size:14px;line-height:20px;font-weight:500}.hm-card-head p{font-size:12px;line-height:16px;color:var(--hm-text-muted)}`,
     `.hm-strip{--cols:var(--span);display:grid;grid-template-columns:repeat(var(--cols),minmax(0,1fr));overflow:hidden}`,
-    `.hm-kpi{grid-column:span var(--span);display:flex;flex-direction:column;gap:4px;padding:${d.kpiPadding}px;box-shadow:-1px 0 0 var(--hm-border),0 -1px 0 var(--hm-border);min-width:0}`,
+    `.hm-kpi{grid-column:span var(--span);position:relative;display:flex;flex-direction:column;gap:4px;padding:${d.kpiPadding}px;box-shadow:-1px 0 0 var(--hm-border),0 -1px 0 var(--hm-border);min-width:0}`,
     `.hm-kpi-label{font-size:12px;line-height:16px;color:var(--hm-text-muted)}.hm-kpi-figure{display:flex;align-items:baseline;gap:10px;flex-wrap:wrap}`,
     `.hm-kpi-value{font-size:${d.kpiSize}px;line-height:${d.kpiLineHeight}px;letter-spacing:-0.02em;white-space:nowrap}.hm-kpi-value.hm-null{color:var(--hm-text-subtle)}`,
     `.hm-delta{font-weight:500;white-space:nowrap}.hm-good{color:var(--hm-good)}.hm-bad{color:var(--hm-bad)}.hm-neutral{color:var(--hm-text-muted)}`,
-    `.hm-kpi-note{font-size:12px;line-height:16px;color:var(--hm-text-subtle)}.hm-spark{display:block;width:100%;height:24px;margin-top:4px}`,
-    `.hm-chart{position:relative}.hm-v{display:none}.hm-v svg{display:block;max-width:100%;height:auto;overflow:visible;touch-action:pan-y}.hm-v svg:focus{outline:none}.hm-v svg:focus-visible{outline:2px solid var(--hm-focus);outline-offset:2px;border-radius:2px}`,
+    `.hm-kpi-note{font-size:12px;line-height:16px;color:var(--hm-text-subtle)}.hm-spark{display:block;width:100%;height:24px;margin-top:8px}`,
+    `.hm-chart{position:relative}.hm-v{display:none}.hm-v svg{display:block;max-width:100%;height:auto;overflow:visible;touch-action:pan-y}.hm-v svg:focus,.hm-spark:focus{outline:none}.hm-v svg:focus-visible,.hm-spark:focus-visible{outline:2px solid var(--hm-focus);outline-offset:2px;border-radius:2px}`,
     `.hm-chart text{font-variant-numeric:tabular-nums}`,
     `.hm-table-wrap{overflow-x:auto}.hm-table{width:100%;border-collapse:collapse}`,
     `.hm-table th,.hm-table td{height:${d.tableRow}px;padding:0 0 0 16px;text-align:right;font-weight:400;white-space:nowrap}.hm-table .hm-key{text-align:left;padding-left:0;white-space:normal;min-width:120px}.hm-table tbody .hm-key{padding-top:6px;padding-bottom:6px}.hm-table .hm-key2{padding-left:16px}.hm-table .hm-fill{width:100%}`,
@@ -302,11 +305,6 @@ export function pageHead(assets: PageAssets, theme: Theme = DEFAULT_THEME): stri
     .map((url) => `<link rel="preload" href="${esc(url)}" as="font" type="font/woff2" crossorigin>`)
     .join("");
   return `${preload}<style>${pageStyles(assets, theme)}</style><script>${THEME_SCRIPT}</script><script defer src="${esc(assets.runtime)}"></script>`;
-}
-
-/** JSON for a script element: "<" escaped so the data can never close the element. */
-export function scriptJson(value: unknown): string {
-  return JSON.stringify(value).replaceAll("<", "\\u003c");
 }
 
 function document(title: string, head: string, body: string): string {

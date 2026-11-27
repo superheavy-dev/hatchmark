@@ -16,7 +16,7 @@ import {
 } from "./chart.js";
 import { formatBucket, formatKey, formatValue } from "./format.js";
 import { thinTicks } from "./labels.js";
-import { textWidth, truncateMiddle } from "./measure.js";
+import { textWidth, truncateEnd, truncateMiddle } from "./measure.js";
 import { r, svgLine, svgText } from "./svg.js";
 import { type Paint, seriesColor } from "./theme.js";
 
@@ -74,7 +74,7 @@ function drawKey(
   let x = 0;
   let row = 0;
   labels.forEach((label, k) => {
-    const text = truncateMiddle(label, Math.max(40, width - 14), { size: CAPTION });
+    const text = truncateEnd(label, width - 14, { size: CAPTION });
     const w = 14 + textWidth(text, { size: CAPTION });
     if (x > 0 && x + w > width) {
       x = 0;
@@ -83,7 +83,11 @@ function drawKey(
     const cy = row * LABEL_LINE + LABEL_LINE / 2;
     parts.push(
       `<rect x="${r(x)}" y="${r(cy - 4)}" width="8" height="8" rx="1"${paint.attrs(seriesColor(k))}/>`,
-      svgText(paint, x + 14, cy, text, { size: CAPTION, color: "textMuted" }),
+      svgText(paint, x + 14, cy, text, {
+        size: CAPTION,
+        color: "textMuted",
+        ...(text === label ? {} : { title: label }),
+      }),
     );
     x += w + KEY_GAP;
   });

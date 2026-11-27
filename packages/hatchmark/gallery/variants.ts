@@ -135,6 +135,26 @@ const sevenChannels = [
   ),
 );
 
+/** World Bank region names: long, multi-word series names that must never be middle-truncated. */
+const WORLD_REGIONS = [
+  { name: "North America", share: 0.38 },
+  { name: "Europe & Central Asia", share: 0.24 },
+  { name: "East Asia & Pacific", share: 0.18 },
+  { name: "Latin America & Caribbean", share: 0.1 },
+  { name: "Middle East & North Africa", share: 0.06 },
+  { name: "Sub-Saharan Africa", share: 0.04 },
+];
+const worldRegions = WORLD_REGIONS.map((region, k) =>
+  series(
+    "revenue",
+    region.name,
+    MONTHLY_REVENUE.map((v, i) =>
+      round(v * region.share * (1 + (k - 2) * 0.03 * (i / 23)) * (1 + 0.04 * Math.sin(i + k))),
+    ),
+    region.name,
+  ),
+);
+
 const LINES: GalleryVariant[] = [
   one("line", "line-single", "One series, 24 months", { ...REVENUE_LINE, span: 12 }),
   one("line", "line-split", "Split by region, direct labels", { ...REGION_LINE, span: 12 }),
@@ -143,6 +163,21 @@ const LINES: GalleryVariant[] = [
     id: "region_narrow",
     span: 4,
   }),
+  one(
+    "line",
+    "line-long-names",
+    "Long series names: full direct labels, readout reflows on phones",
+    line("world_regions", "North America still brings in the most revenue", {
+      span: 8,
+      series: worldRegions,
+    }),
+  ),
+  one(
+    "line",
+    "line-long-names-narrow",
+    "Long series names in a narrow card: readout in fewer columns",
+    line("world_regions_narrow", "Revenue by world region", { span: 4, series: worldRegions }),
+  ),
   one(
     "line",
     "line-weekly",
@@ -298,6 +333,12 @@ const channelSplit = (values: (share: number, i: number) => Value) =>
   );
 const last12 = MONTHLY_REVENUE.slice(12);
 
+const worldAxis = {
+  kind: "category" as const,
+  column: "channel",
+  categories: CHANNELS.map((c) => c.name),
+};
+
 const BARS: GalleryVariant[] = [
   one("bar", "bar-horizontal", "Horizontal, top 10 of 24 countries", { ...COUNTRY_BAR, span: 6 }),
   one(
@@ -331,6 +372,25 @@ const BARS: GalleryVariant[] = [
     bar("grouped", "The online store leads in every region", {
       axis: regionAxis,
       series: channelSplit((s) => round(1_843_210 * s)),
+    }),
+  ),
+  one(
+    "bar",
+    "bar-long-series",
+    "Long series names: the key reflows, nothing is cut",
+    bar("long_series", "North America leads in every channel", {
+      axis: worldAxis,
+      stack: true,
+      orientation: "horizontal",
+      span: 6,
+      series: WORLD_REGIONS.map((region) =>
+        series(
+          "revenue",
+          region.name,
+          CHANNELS.map((c) => round(1_843_210 * c.share * region.share)),
+          region.name,
+        ),
+      ),
     }),
   ),
   one(

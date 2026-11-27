@@ -10,6 +10,11 @@ export function esc(text: string): string {
     .replaceAll('"', "&quot;");
 }
 
+/** JSON for a script element: "<" escaped so the data can never close the element. */
+export function scriptJson(value: unknown): string {
+  return JSON.stringify(value).replaceAll("<", "\\u003c");
+}
+
 /** Rounds a coordinate to 0.1 px, without "-0", so output is byte-stable. */
 export function r(value: number): number {
   const rounded = Math.round(value * 10) / 10;
@@ -29,6 +34,8 @@ export interface TextOptions {
   anchor?: "start" | "middle" | "end";
   color: ColorKey;
   className?: string;
+  /** Full text for a native tooltip, when content is shortened. */
+  title?: string;
 }
 
 /** An SVG text element vertically centred on y. */
@@ -42,7 +49,7 @@ export function svgText(
   const anchor =
     options.anchor && options.anchor !== "start" ? ` text-anchor="${options.anchor}"` : "";
   const weight = options.weight && options.weight !== 400 ? ` font-weight="${options.weight}"` : "";
-  return `<text x="${r(x)}" y="${r(y + options.size * BASELINE_FROM_CENTER)}" font-size="${options.size}"${weight}${anchor}${paint.attrs(options.color, undefined, options.className)}>${esc(content)}</text>`;
+  return `<text x="${r(x)}" y="${r(y + options.size * BASELINE_FROM_CENTER)}" font-size="${options.size}"${weight}${anchor}${paint.attrs(options.color, undefined, options.className)}>${options.title === undefined ? "" : `<title>${esc(options.title)}</title>`}${esc(content)}</text>`;
 }
 
 export function svgLine(

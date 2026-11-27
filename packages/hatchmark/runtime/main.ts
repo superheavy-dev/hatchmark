@@ -1,8 +1,8 @@
 /**
- * The Hatchmark browser runtime: tooltips, the line crosshair and the bar highlight, plus keyboard
- * stepping through points. Charts are already drawn on the server, so this only reads the chart
- * geometry from data-hm-* attributes and the formatted values from the JSON each chart's figure
- * carries. One pointer listener per chart, no dependencies.
+ * The Hatchmark browser runtime: tooltips, the line crosshair (KPI sparklines included) and the bar
+ * highlight, plus keyboard stepping through points. Charts are already drawn on the server, so this
+ * only reads the chart geometry from data-hm-* attributes and the formatted values from the JSON each
+ * chart's figure carries. One pointer listener per chart, no dependencies.
  */
 
 interface RuntimeSeries {
@@ -113,19 +113,20 @@ function attach(figure: HTMLElement, chart: RuntimeChart): void {
     return tip;
   };
 
-  const place = (svg: SVGSVGElement, x: number, y: number) => {
+  const place = (svg: SVGSVGElement, x: number, y: number, gap = 0) => {
     if (!tip) return;
     const box = svg.getBoundingClientRect();
     const frame = figure.getBoundingClientRect();
-    const scale = box.width / svg.viewBox.baseVal.width;
-    const px = box.left - frame.left + x * scale;
-    const py = box.top - frame.top + y * scale;
+    const px = box.left - frame.left + (x * box.width) / svg.viewBox.baseVal.width;
+    const py = box.top - frame.top + (y * box.height) / svg.viewBox.baseVal.height;
     const width = tip.offsetWidth;
     const height = tip.offsetHeight;
     let left = px + 14;
     if (left + width > frame.width) left = px - 14 - width;
+    let top = py + gap;
+    if (gap && top + height > frame.height) top = py - gap - height;
     tip.style.left = `${Math.max(0, left)}px`;
-    tip.style.top = `${Math.max(0, Math.min(frame.height - height, py))}px`;
+    tip.style.top = `${Math.max(0, Math.min(frame.height - height, top))}px`;
   };
 
   const show = (svg: SVGSVGElement, index: number) => {
@@ -140,22 +141,37 @@ function attach(figure: HTMLElement, chart: RuntimeChart): void {
       const y = (v: number) => r0 + ((v - d0) / (d1 - d0)) * (r1 - r0);
       overlay = svgElement("g", { class: "hm-hover", "pointer-events": "none" });
       overlay.append(
-        svgElement("line", { x1: x, x2: x, y1: top, y2: bottom, class: "hm-s-borderStrong" }),
+        svgElement("line", {
+          x1: x,
+          x2: x,
+          y1: top,
+          y2: bottom,
+          class: "hm-s-borderStrong",
+          "vector-effect": "non-scaling-stroke",
+        }),
       );
       let highest = bottom;
       chart.series.forEach((s) => {
         const v = (s.y ?? s.v)[index];
         if (v === null || v === undefined) return;
         highest = Math.min(highest, y(v));
-        overlay?.append(
-          svgElement("circle", {
-            cx: x,
-            cy: y(v),
-            r: 3.5,
-            "stroke-width": 2,
-            class: `hm-f-c${s.color} hm-s-card`,
-          }),
-        );
+        for (const [width, color] of [
+          [9, "card"],
+          [5, `c${s.color}`],
+        ]) {
+          overlay?.append(
+            svgElement("line", {
+              x1: x,
+              x2: x,
+              y1: y(v),
+              y2: y(v),
+              "stroke-width": width as number,
+              "stroke-linecap": "round",
+              "vector-effect": "non-scaling-stroke",
+              class: `hm-dot hm-s-${color}`,
+            }),
+          );
+        }
       });
       svg.append(overlay);
       if (svg.hasAttribute("data-hm-readout")) {
@@ -163,7 +179,7 @@ function attach(figure: HTMLElement, chart: RuntimeChart): void {
         return;
       }
       tooltip(index);
-      place(svg, x, highest + 12);
+      place(svg, x, highest, 12);
       return;
     }
     const [start = 0, step = 0] = numbers(svg, "band");
@@ -186,9 +202,8 @@ function attach(figure: HTMLElement, chart: RuntimeChart): void {
 
   const pick = (svg: SVGSVGElement, event: PointerEvent): number => {
     const box = svg.getBoundingClientRect();
-    const scale = svg.viewBox.baseVal.width / box.width;
-    const x = (event.clientX - box.left) * scale;
-    const y = (event.clientY - box.top) * scale;
+    const x = ((event.clientX - box.left) * svg.viewBox.baseVal.width) / box.width;
+    const y = ((event.clientY - box.top) * svg.viewBox.baseVal.height) / box.height;
     if (chart.kind === "line") {
       const [x0 = 0, step = 0] = numbers(svg, "x");
       return n > 1 ? Math.max(0, Math.min(n - 1, Math.round((x - x0) / step))) : 0;

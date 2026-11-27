@@ -31,7 +31,8 @@ What it draws:
 - Vertical bars get 3 to 6 y ticks; long category labels are shortened in the middle
   ("Technical sh…outerwear"), or thinned when even that does not fit.
 - Horizontal charts get one row per category, 28 to 36 px tall.
-- Several series get a key above the plot.
+- Several series get a key above the plot. The key wraps instead of shortening names; only a name
+  wider than the whole card is cut, at the end, with the full name on hover.
 - Hover, tap or the arrow keys highlight a category and show a tooltip with every series and, for
   stacked bars, the total.
 - A null category is a real group and shows as "(empty)".
