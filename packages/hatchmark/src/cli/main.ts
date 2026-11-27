@@ -60,13 +60,16 @@ const COMMANDS: Record<string, Command> = {
   },
   build: {
     help: buildHelp,
-    options: { out: { type: "string" } },
+    options: { out: { type: "string" }, "no-cache": { type: "boolean" } },
     run: (ctx, positionals, flags) =>
       positionals.length > 0
         ? usageError("HM0002", `unexpected argument "${positionals[0]}"`, {
             help: "run hatchmark build --help",
           })
-        : build(ctx, typeof flags.out === "string" ? { out: flags.out } : {}),
+        : build(ctx, {
+            ...(typeof flags.out === "string" ? { out: flags.out } : {}),
+            cache: flags["no-cache"] !== true,
+          }),
   },
   schema: { help: schemaHelp, options: {}, run: (ctx, positionals) => schema(ctx, positionals) },
   explain: {

@@ -14,7 +14,12 @@ import {
 import path from "node:path";
 import { type DashboardData, type DashboardExecutor, runDashboard } from "../../compiler/index.js";
 import { createReport, type Diagnostic, renderHuman } from "../../diagnostics/index.js";
-import { createDuckDbExecutor, nodeProjectHost } from "../../node/index.js";
+import {
+  type CacheStats,
+  createCachedExecutor,
+  createDuckDbExecutor,
+  nodeProjectHost,
+} from "../../node/index.js";
 import { FONT_FILES, renderDashboardPage, renderIndexPage } from "../../render/index.js";
 import {
   checkReferences,
@@ -32,12 +37,17 @@ export const buildHelp: CommandHelp = {
   name: "build",
   summary:
     "Build every dashboard into static HTML: check, run the queries, render, write the output directory.",
-  usage: "hatchmark build [--out <dir>]",
+  usage: "hatchmark build [--out <dir>] [--no-cache]",
   options: [
     {
       flag: "--out <dir>",
       description:
         "Write here instead of outDir from hatchmark.json, relative to --cwd. Only files an earlier build wrote are replaced.",
+    },
+    {
+      flag: "--no-cache",
+      description:
+        "Run every query instead of reusing results from .hatchmark/cache/, and write no cache entries. The output is the same either way.",
     },
   ],
   example: {
@@ -217,7 +227,7 @@ function isOwnPath(file: string): boolean {
  */
 export async function build(
   ctx: CommandContext,
-  flags: { out?: string },
+  flags: { out?: string; cache?: boolean },
   deps: BuildDeps = defaultDeps,
 ): Promise<CommandResult> {
   const { project, diagnostics: loadDiagnostics } = await loadProject(nodeProjectHost(ctx.root));
@@ -230,7 +240,13 @@ export async function build(
   const pending = await checkOutDir(ctx.root, outDir, new Set());
   if ("refused" in pending) return usageError("HM0004", pending.refused);
 
-  const { pages, diagnostics } = await runAll(ctx.root, project, config, deps);
+  const { pages, diagnostics, cache } = await runAll(
+    ctx.root,
+    project,
+    config,
+    deps,
+    flags.cache !== false,
+  );
   if (diagnostics.some((d) => d.severity === "error")) {
     const report = createReport(diagnostics);
     return {
@@ -347,13 +363,21 @@ export async function build(
     pages: written,
     ...(pages.length > 1 ? { index: `${outLabel}/index.html` } : {}),
     files: files.size,
+    ...(cache !== undefined ? { cache } : {}),
   };
   const warnings = report.warning_count > 0 ? `${renderHuman(report, { color: ctx.color })}\n` : "";
   const human =
     ctx.quiet && report.warning_count === 0
       ? ""
-      : `${warnings}Built ${pages.length} dashboard${pages.length === 1 ? "" : "s"} into ${outLabel}/\n${written.map((p) => `  ${p.path}`).join("\n")}`;
+      : `${warnings}Built ${pages.length} dashboard${pages.length === 1 ? "" : "s"} into ${outLabel}/\n${written.map((p) => `  ${p.path}`).join("\n")}${cache === undefined ? "" : `\n${cacheLine(cache)}`}`;
   return { exitCode: EXIT.ok, json, human };
+}
+
+function cacheLine(cache: CacheStats): string {
+  if (!cache.enabled)
+    return `warning: the build cache is off: ${cache.reason}; the build ran without it`;
+  const total = cache.hits + cache.misses;
+  return `Reused ${cache.hits} of ${total} quer${total === 1 ? "y" : "ies"} from ${cache.dir}/`;
 }
 
 async function runAll(
@@ -361,13 +385,22 @@ async function runAll(
   project: Project,
   config: ProjectConfig,
   deps: BuildDeps,
-): Promise<{ pages: DashboardData[]; diagnostics: Diagnostic[] }> {
+  useCache: boolean,
+): Promise<{ pages: DashboardData[]; diagnostics: Diagnostic[]; cache?: CacheStats }> {
   const pages: DashboardData[] = [];
   const diagnostics = new Map<string, Diagnostic>();
   for (const d of [...parseDiagnostics(project), ...checkReferences(project)]) {
     if (d.severity === "warning") diagnostics.set(JSON.stringify(d), d);
   }
-  const executor = await deps.createExecutor({ root, config });
+  const cached = useCache
+    ? await createCachedExecutor({
+        root,
+        config,
+        createInner: (at) => deps.createExecutor({ root: at, config }),
+        sweep: true,
+      })
+    : undefined;
+  const executor = cached ?? (await deps.createExecutor({ root, config }));
   try {
     for (const name of [...project.dashboards.keys()].sort()) {
       const result = await deps.runDashboard(project, name, executor, new Date());
@@ -377,5 +410,9 @@ async function runAll(
   } finally {
     await executor.close();
   }
-  return { pages, diagnostics: [...diagnostics.values()] };
+  return {
+    pages,
+    diagnostics: [...diagnostics.values()],
+    ...(cached !== undefined ? { cache: cached.stats() } : {}),
+  };
 }

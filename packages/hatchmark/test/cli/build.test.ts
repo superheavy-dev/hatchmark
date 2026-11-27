@@ -361,7 +361,7 @@ describe("hatchmark build", () => {
     expect(code).toBe(0);
     expect(JSON.parse(out)).toMatchObject({
       command: "build",
-      usage: "hatchmark build [--out <dir>]",
+      usage: "hatchmark build [--out <dir>] [--no-cache]",
     });
   });
 });

@@ -9,7 +9,7 @@ example. [README.md](README.md) lists every docs page; the files a project holds
 | ----------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `init [dir]`                              | Creates a project: `hatchmark.json` with every setting written out, sample US orders data, four metrics, a dashboard, and a Hatchmark block in `AGENTS.md`.                                                           |
 | `check [paths...]`                        | Checks JSON syntax, spec shape, and references between files and to data columns. Paths are relative to `--cwd`. `hatchmark.json` is always checked first, whatever the paths. `--sql` also prints every block's SQL. |
-| `build [--out <dir>]`                     | Checks the project, runs every dashboard's queries and writes static HTML pages to `outDir`. See [build.md](build.md).                                                                                                |
+| `build [--out <dir>] [--no-cache]`        | Checks the project, runs every dashboard's queries (reusing unchanged results from `.hatchmark/cache/`) and writes static HTML pages to `outDir`. See [build.md](build.md).                                           |
 | `schema [project\|metric\|dashboard]`     | Prints the JSON Schema for a file kind, or all three keyed by kind.                                                                                                                                                   |
 | `explain <code>`                          | Explains a diagnostic code such as `HM2003` and how to fix it.                                                                                                                                                        |
 | `explain <metric>`                        | Prints the SQL that build runs for a metric. See [Printing the SQL](#printing-the-sql).                                                                                                                               |
@@ -40,6 +40,12 @@ dashboard filters do. A metric without a time column is read once over all rows.
 `hatchmark check --sql` prints the queries of every block. In both cases each filter is at its
 default. A grain switch prints one query per grain. A comparison window that doesn't exist, such as
 `all_time`, is left out, the same way build skips it.
+
+`explain` also says whether the next build would reuse each query's result from the
+[build cache](build.md#build-cache): human output ends with one `-- build cache` line per query
+(`hit`, `stale` and what changed, `miss`, or `off` for raw SQL metrics), and JSON gives each query a `cache` object with
+`status`, `stored_at`, `changed`, `changed_files` and the `data` files with their SHA-256. Explain
+only reads the cache, never writes it.
 
 The printed SQL is the text the DuckDB executor runs. The same core function builds it with the
 same values. Human output inlines each value as a SQL literal of the type it is bound as.
