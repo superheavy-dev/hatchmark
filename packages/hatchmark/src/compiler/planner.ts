@@ -251,7 +251,11 @@ function planReading(
   return { queries, measures };
 }
 
-/** A line, area or bar block's metrics over its axes: time buckets at a grain, or its by column. */
+/**
+ * A line, area or bar block's metrics over its axes: time buckets at a grain, or its by column. A
+ * split adds the split column, with the split's totals across positions (to order the series) and,
+ * for bars and stacked areas, each position's total across split values (StackTotals.totals).
+ */
 function seriesReading(
   ctx: Context,
   block: Block & { type: "line" | "area" | "bar" },
@@ -262,8 +266,8 @@ function seriesReading(
       ? [{ kind: "time", grain }]
       : [{ kind: "column", column: block.type === "bar" ? (block.by ?? "") : "" }];
   if (block.split !== undefined) axes.push({ kind: "column", column: block.split });
-  const sets =
-    block.split === undefined ? [[0]] : block.type === "bar" ? [[0, 1], [0], [1]] : [[0, 1], [1]];
+  const perPosition = block.type === "bar" || (block.type === "area" && Boolean(block.stack));
+  const sets = block.split === undefined ? [[0]] : perPosition ? [[0, 1], [0], [1]] : [[0, 1], [1]];
   return planReading(ctx, block.metrics, axes, sets, "none");
 }
 

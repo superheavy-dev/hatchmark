@@ -12,6 +12,7 @@ import {
   LABEL_LINE,
   metricOf,
   type RenderContext,
+  shareAxis,
   svgRoot,
   yAxis,
 } from "./chart.js";
@@ -35,14 +36,17 @@ export function barCategories(block: BarData, locale: string): string[] {
       );
 }
 
-/** Bar extents per series and position: stacked bars start where the previous series ended. */
+/**
+ * Bar extents per series and position: stacked bars start where the previous series ended. A 100%
+ * stack draws each series' share of its position's total instead of its value.
+ */
 function extents(block: BarData, stacked: boolean): [number, number][][] {
   const n =
     block.axis.kind === "category" ? block.axis.categories.length : block.axis.buckets.length;
   const positive = new Array<number>(n).fill(0);
   const negative = new Array<number>(n).fill(0);
   return block.series.map((s) =>
-    s.values.map((v, i): [number, number] => {
+    drawnValues(block, s).map((v, i): [number, number] => {
       if (!isNumber(v)) return [0, 0];
       if (!stacked) return [0, v];
       const base = v >= 0 ? (positive[i] as number) : (negative[i] as number);
@@ -53,8 +57,18 @@ function extents(block: BarData, stacked: boolean): [number, number][][] {
   );
 }
 
-/** Totals per position for stacked bars, or the single series' values; undefined when grouped. */
+/** What a bar series draws: its shares in a 100% stack, else its values. */
+function drawnValues(block: BarData, s: BarData["series"][number]): Value[] {
+  return block.percent && s.share ? s.share : s.values;
+}
+
+/**
+ * The value printed at each bar's end: the position's total for stacked bars (the engine's, which
+ * a distinct count or ratio needs; summed only for data without totals), or the single series'
+ * values; undefined when grouped.
+ */
 function labelValues(block: BarData, stacked: boolean): Value[] | undefined {
+  if (block.totals && (stacked || block.percent)) return block.totals;
   if (block.series.length === 1) return block.series[0]?.values;
   if (!stacked) return undefined;
   const n = block.series[0]?.values.length ?? 0;
@@ -156,8 +170,10 @@ export function renderBar(
   const n = names.length;
   const series = block.series;
   const multi = series.length > 1;
-  const stacked = multi && block.stack;
+  const stacked = (multi && block.stack) || block.percent === true;
   const metric = metricOf(ctx, series[0]?.metric ?? "");
+  const valueAxis = (height: number) =>
+    block.percent ? shareAxis(ends, height, locale) : yAxis(ends, height, metric, locale);
   const ext = extents(block, stacked);
   const ends = ext.flat().flat();
   const empty = !series.some((s) => s.values.some(isNumber));
@@ -267,7 +283,7 @@ export function renderBar(
   const bottomBand = 24;
   const valueStyle = { size: CAPTION } as const;
   const provisionalTop = key.height + 8;
-  const axis0 = yAxis(ends, size.height - provisionalTop - bottomBand, metric, locale);
+  const axis0 = valueAxis(size.height - provisionalTop - bottomBand);
   const plotLeft = empty ? 0 : axis0.labelWidth + 8;
   const plotRight = size.width;
   const band = scaleBand<number>()
@@ -284,7 +300,7 @@ export function renderBar(
     totalText.every((t) => textWidth(t, valueStyle) <= step - 2);
   const top = provisionalTop + (showValues ? LABEL_LINE : 0);
   const plotBottom = size.height - bottomBand;
-  const axis = yAxis(ends, plotBottom - top, metric, locale);
+  const axis = valueAxis(plotBottom - top);
   const [d0, d1] = axis.domain;
   const y = (v: number) => plotBottom - fraction(v, d0, d1) * (plotBottom - top);
   parts.push(

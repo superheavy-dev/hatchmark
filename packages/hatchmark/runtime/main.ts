@@ -20,6 +20,7 @@ interface RuntimeSeries {
   text: string[];
   short: string[];
   y?: (number | null)[];
+  pct?: string[];
 }
 
 interface RuntimeChart {
@@ -116,15 +117,16 @@ function attach(figure: HTMLElement, chart: RuntimeChart): void {
       const row = element("div", "hm-tip-r");
       const name = element("span", "hm-tip-n");
       name.append(element("i", `hm-b-c${s.color}`), s.label);
-      row.append(name, element("span", "hm-tip-v", s.text[index] ?? ""));
+      const value = element("span", "hm-tip-v", s.text[index] ?? "");
+      if (s.pct) value.append(element("span", "hm-tip-p", s.pct[index] ?? ""));
+      row.append(name, value);
       tip.append(row);
     }
     if (chart.total) {
       const row = element("div", "hm-tip-r hm-tip-t");
-      row.append(
-        element("span", "", "Total"),
-        element("span", "hm-tip-v", chart.total[index] ?? ""),
-      );
+      const value = element("span", "hm-tip-v", chart.total[index] ?? "");
+      if (chart.series.some((s) => s.pct)) value.append(element("span", "hm-tip-p"));
+      row.append(element("span", "", "Total"), value);
       tip.append(row);
     }
     tip.style.display = "flex";
@@ -287,7 +289,7 @@ function attach(figure: HTMLElement, chart: RuntimeChart): void {
     show(svg, index);
     live.textContent = [
       chart.headers[index],
-      ...chart.series.map((s) => `${s.label} ${s.text[index]}`),
+      ...chart.series.map((s) => `${s.label} ${s.text[index]}${s.pct ? `, ${s.pct[index]}` : ""}`),
       ...(chart.total ? [`Total ${chart.total[index]}`] : []),
     ].join(", ");
   });

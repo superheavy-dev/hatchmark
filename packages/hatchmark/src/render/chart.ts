@@ -35,6 +35,14 @@ export function metricOf(ctx: RenderContext, name: string): MetricInfo {
   );
 }
 
+/** The format of a share of a total: the value axis of a 100% stack, tooltip and key shares. */
+export const SHARE: MetricInfo = {
+  name: "share",
+  label: "Share",
+  format: { type: "percent" },
+  better: "neutral",
+};
+
 /** "Revenue" becomes "revenue" for use mid-sentence; acronyms such as "ARR" stay. */
 export function lowerFirst(text: string): string {
   return /^[A-Z][a-z]/.test(text) ? text[0]?.toLowerCase() + text.slice(1) : text;
@@ -74,6 +82,21 @@ export function yAxis(
   const labels = formatTicks(ticks, metric, locale);
   const labelWidth = Math.max(0, ...labels.map((l) => textWidth(l, { size: CAPTION })));
   return { domain, ticks, labels, labelWidth };
+}
+
+/**
+ * The value axis of a 100% stack: 0% to 100% in quarters (halves on short plots), so every chart
+ * of shares reads the same. Shares outside 0 to 1 (a negative part, HM4061) get a computed axis.
+ */
+export function shareAxis(values: readonly number[], plotHeight: number, locale: string): YAxis {
+  const eps = 1e-9;
+  if (!values.every((v) => v >= -eps && v <= 1 + eps)) {
+    return yAxis(values, plotHeight, SHARE, locale);
+  }
+  const ticks = plotHeight >= 160 ? [0, 0.25, 0.5, 0.75, 1] : [0, 0.5, 1];
+  const labels = formatTicks(ticks, SHARE, locale);
+  const labelWidth = Math.max(0, ...labels.map((l) => textWidth(l, { size: CAPTION })));
+  return { domain: [0, 1], ticks, labels, labelWidth };
 }
 
 /** Horizontal gridlines with the zero line as the baseline, and right-aligned tick labels. */

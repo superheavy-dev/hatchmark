@@ -911,6 +911,87 @@ function needsTime(block: Block, dashboard: Dashboard): boolean {
   }
 }
 
+/** Why a metric's values do not add up across groups, for HM4001 and HM4060 labels. */
+function notAdditiveLabel(metric: Metric): string {
+  const kind =
+    metric.type === "aggregate"
+      ? metric.over_time === "min" || metric.over_time === "max"
+        ? `${metric.aggregate} over_time ${metric.over_time}`
+        : metric.aggregate
+      : metric.type === "formula"
+        ? "a non-linear formula"
+        : metric.type;
+  return `${kind} does not add up across rows`;
+}
+
+/**
+ * A stacked bar or area block: a 100% stack of a metric that does not add up is an error (HM4001),
+ * and a plain stack of one, or of metrics in different units, draws a meaningless height (HM4060).
+ */
+function checkStack(
+  r: Reporter,
+  file: SpecFile<"dashboard">,
+  block: Block & { type: "bar" | "area" },
+  base: string,
+  metrics: ReadonlyMap<string, Metric>,
+  projectCurrency: string,
+): void {
+  const percent = block.stack === "percent";
+  if (!percent && block.split === undefined && block.metrics.length < 2) return;
+  const fix = optional(
+    "fix",
+    replaceValueFix(
+      file.document,
+      `${base}/stack`,
+      percent,
+      "unsafe",
+      percent ? 'set "stack": true' : 'set "stack": false',
+    ),
+  );
+  block.metrics.forEach((name, i) => {
+    const metric = metrics.get(name);
+    if (metric === undefined || groupAdditive(name, metrics)) return;
+    const pointer = `${base}/metrics/${i}`;
+    if (percent) {
+      r.report("HM4001", pointer, `a 100% stack is not meaningful for "${name}"`, {
+        label: notAdditiveLabel(metric),
+        help: 'shares need parts that add up to the total; stack a sum or a count, or use "stack": true',
+        ...fix,
+      });
+      return;
+    }
+    r.report(
+      "HM4060",
+      pointer,
+      `stacked "${name}" does not add up, so the stack height means nothing`,
+      {
+        severity: "warning",
+        label: notAdditiveLabel(metric),
+        help: 'remove "stack" to draw the series side by side, or stack the sum or count it is built from',
+        ...fix,
+      },
+    );
+  });
+  const units = block.metrics.flatMap((name) => {
+    const metric = metrics.get(name);
+    return metric ? [currencyUnit(metric, projectCurrency) ?? metric.format.type] : [];
+  });
+  const distinct = [...new Set(units)];
+  if (distinct.length > 1) {
+    r.report(
+      "HM4060",
+      `${base}/metrics`,
+      `stacked metrics are in different units (${distinct.join(", ")})`,
+      {
+        severity: "warning",
+        label: "values in different units cannot be added",
+        help: 'stack metrics of one unit, or remove "stack" and show them in separate charts',
+        ...fix,
+      },
+    );
+  }
+}
+
 function checkDashboard(project: Project, file: SpecFile<"dashboard">, out: Diagnostic[]): void {
   const dashboard = file.spec;
   if (dashboard === undefined) return;
@@ -999,7 +1080,7 @@ function checkDashboard(project: Project, file: SpecFile<"dashboard">, out: Diag
         const metric = metrics.get(name);
         if (metric && !groupAdditive(name, metrics)) {
           r.report("HM4001", pointer, `percent of total is not meaningful for "${name}"`, {
-            label: `${metric.type === "aggregate" ? metric.aggregate : metric.type === "formula" ? "a non-linear formula" : metric.type} does not add up across rows`,
+            label: notAdditiveLabel(metric),
             ...optional(
               "fix",
               removeItemFix(
@@ -1013,6 +1094,10 @@ function checkDashboard(project: Project, file: SpecFile<"dashboard">, out: Diag
           });
         }
       });
+    }
+
+    if ((block.type === "bar" || block.type === "area") && block.stack) {
+      checkStack(r, file, block, base, metrics, project.config.spec?.currency ?? "USD");
     }
 
     if ((block.type === "table" || block.type === "bar") && block.sort) {

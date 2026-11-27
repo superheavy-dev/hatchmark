@@ -104,6 +104,23 @@ export interface Series {
   values: Value[];
   /** On a time axis, the bucket the series' horizon falls inside, when one does. */
   partial?: PartialBucket[];
+  /**
+   * Stacked blocks only: each value's share of its position's total (StackTotals.totals), as a
+   * fraction; null where the value or the total is null or the total is 0.
+   */
+  share?: Value[];
+}
+
+/**
+ * What a stacked block adds (stack true or "percent"). totals holds one value per position: for a
+ * split, the metric over every split value at that position, recomputed from rows (the query's
+ * grouping set without the split column), never the sum of the segments, so a distinct count or a
+ * ratio shows its real total; for several metrics, the sum of their values.
+ */
+export interface StackTotals {
+  totals?: Value[];
+  /** true when the block stacks to 100% (stack "percent"); series then carry share. */
+  percent?: true;
 }
 
 export interface TimeAxis {
@@ -140,10 +157,10 @@ export interface GrainOption {
  */
 export interface GrainSwitch {
   selected: string;
-  options: (GrainOption & { axis: TimeAxis; series: Series[] })[];
+  options: (GrainOption & { axis: TimeAxis; series: Series[]; totals?: Value[] })[];
 }
 
-export interface LineData extends BlockCommon {
+export interface LineData extends BlockCommon, StackTotals {
   type: "line" | "area";
   stack?: boolean;
   axis: TimeAxis;
@@ -152,7 +169,7 @@ export interface LineData extends BlockCommon {
   grains?: GrainSwitch;
 }
 
-export interface BarData extends BlockCommon {
+export interface BarData extends BlockCommon, StackTotals {
   type: "bar";
   orientation: "vertical" | "horizontal";
   stack: boolean;

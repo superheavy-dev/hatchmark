@@ -1,6 +1,6 @@
 import type { BarData, LineData, Value } from "../compiler/dashboard-data.js";
 import { barCategories } from "./bar.js";
-import { isNumber, metricOf, type RenderContext } from "./chart.js";
+import { isNumber, metricOf, type RenderContext, SHARE } from "./chart.js";
 import { formatBucket, formatSpan, formatValue } from "./format.js";
 import { plottedValues } from "./line.js";
 import { esc } from "./svg.js";
@@ -25,8 +25,8 @@ export function describeChart(block: ChartBlock, ctx: RenderContext): string {
   const series = block.series;
   const kind =
     block.type === "bar"
-      ? `${block.orientation === "horizontal" ? "Horizontal bar" : "Bar"} chart${series.length > 1 ? (block.stack ? ", stacked" : ", grouped") : ""}`
-      : `${block.type === "area" ? "Area" : "Line"} chart${block.stack ? ", stacked" : ""}`;
+      ? `${block.orientation === "horizontal" ? "Horizontal bar" : "Bar"} chart${block.percent ? ", stacked to 100%" : series.length > 1 ? (block.stack ? ", stacked" : ", grouped") : ""}`
+      : `${block.type === "area" ? "Area" : "Line"} chart${block.percent ? ", stacked to 100%" : block.stack ? ", stacked" : ""}`;
   const over =
     block.axis.kind === "time"
       ? `by ${block.axis.grain}, ${formatSpan(block.axis.window, ctx.data.locale)}`
@@ -56,14 +56,26 @@ export function describeChart(block: ChartBlock, ctx: RenderContext): string {
   return parts.join(" ");
 }
 
-/** The chart's numbers as a visually hidden table, so screen readers get every value. */
+const share = (ctx: RenderContext, v: Value | undefined) =>
+  formatValue(v ?? null, SHARE, ctx.data.locale, "full");
+
+/**
+ * The chart's numbers as a visually hidden table, so screen readers get every value. Stacked charts
+ * add each value's share and a Total column.
+ */
 export function chartTable(block: ChartBlock, ctx: RenderContext, caption: string): string {
   const names = positions(block, ctx);
-  const head = `<tr><th scope="col">${block.axis.kind === "time" ? "Period" : esc(block.axis.column.replaceAll("_", " "))}</th>${block.series.map((s) => `<th scope="col">${esc(s.label)}</th>`).join("")}</tr>`;
+  const totals = block.totals;
+  const metric = block.series[0]?.metric ?? "";
+  const cell = (s: ChartBlock["series"][number], i: number) =>
+    s.share
+      ? `${full(ctx, s.metric, s.values[i])} (${share(ctx, s.share[i])})`
+      : full(ctx, s.metric, s.values[i]);
+  const head = `<tr><th scope="col">${block.axis.kind === "time" ? "Period" : esc(block.axis.column.replaceAll("_", " "))}</th>${block.series.map((s) => `<th scope="col">${esc(s.label)}</th>`).join("")}${totals ? '<th scope="col">Total</th>' : ""}</tr>`;
   const rows = names
     .map(
       (name, i) =>
-        `<tr><th scope="row">${esc(name)}</th>${block.series.map((s) => `<td>${esc(full(ctx, s.metric, s.values[i]))}</td>`).join("")}</tr>`,
+        `<tr><th scope="row">${esc(name)}</th>${block.series.map((s) => `<td>${esc(cell(s, i))}</td>`).join("")}${totals ? `<td>${esc(full(ctx, metric, totals[i]))}</td>` : ""}</tr>`,
     )
     .join("");
   return `<div class="hm-sr"><table><caption>${esc(caption)}</caption><thead>${head}</thead><tbody>${rows}</tbody></table></div>`;
@@ -85,6 +97,8 @@ export interface ChartRuntimeData {
     short: string[];
     /** Plotted values when they differ from v (stacked areas). */
     y?: Value[];
+    /** Share of the position's total, as text, for stacked charts. */
+    pct?: string[];
   }[];
   /** Total text per position, for stacked charts. */
   total?: string[];
@@ -92,7 +106,7 @@ export interface ChartRuntimeData {
 
 export function chartRuntimeData(block: ChartBlock, ctx: RenderContext): ChartRuntimeData {
   const locale = ctx.data.locale;
-  const stacked = block.stack === true && block.series.length > 1;
+  const stacked = (block.stack === true && block.series.length > 1) || block.percent === true;
   const plotted = block.type === "bar" ? undefined : plottedValues(block);
   const metric = metricOf(ctx, block.series[0]?.metric ?? "");
   return {
@@ -103,23 +117,28 @@ export function chartRuntimeData(block: ChartBlock, ctx: RenderContext): ChartRu
       color: (k % 8) + 1,
       v: s.values,
       text: s.values.map((v) => full(ctx, s.metric, v)),
-      short: s.values.map((v) => formatValue(v, metricOf(ctx, s.metric), locale, "compact")),
+      short: block.percent
+        ? (s.share ?? []).map((v) => formatValue(v, SHARE, locale, "compact"))
+        : s.values.map((v) => formatValue(v, metricOf(ctx, s.metric), locale, "compact")),
       ...(plotted && stacked ? { y: plotted[k] as Value[] } : {}),
+      ...(stacked && s.share ? { pct: s.share.map((v) => share(ctx, v)) } : {}),
     })),
-    ...(stacked
-      ? {
-          total: (block.series[0]?.values ?? []).map((_, i) => {
-            const vals = block.series.map((s) => s.values[i]).filter(isNumber);
-            return vals.length === 0
-              ? "\u2014"
-              : formatValue(
-                  vals.reduce((a, b) => a + b, 0),
-                  metric,
-                  locale,
-                  "full",
-                );
-          }),
-        }
-      : {}),
+    ...(stacked && block.totals
+      ? { total: block.totals.map((v) => full(ctx, block.series[0]?.metric ?? "", v)) }
+      : stacked
+        ? {
+            total: (block.series[0]?.values ?? []).map((_, i) => {
+              const vals = block.series.map((s) => s.values[i]).filter(isNumber);
+              return vals.length === 0
+                ? "\u2014"
+                : formatValue(
+                    vals.reduce((a, b) => a + b, 0),
+                    metric,
+                    locale,
+                    "full",
+                  );
+            }),
+          }
+        : {}),
   };
 }

@@ -14,7 +14,7 @@ const kpi = (variant: string, title = variant) => ({
 describe("preview site", () => {
   it("registers the renderer's gallery entries", () => {
     expect(new Set(entries.map((e) => e.component))).toEqual(
-      new Set(["kpi", "line", "bar", "table"]),
+      new Set(["kpi", "line", "bar", "stacked", "table"]),
     );
     expect(renderSite({ entries, head, build }).get("components/index.html")).toContain(
       'class="hm-root"',

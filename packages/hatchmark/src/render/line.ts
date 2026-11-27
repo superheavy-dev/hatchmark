@@ -12,6 +12,8 @@ import {
   lastDefined,
   metricOf,
   type RenderContext,
+  SHARE,
+  shareAxis,
   svgRoot,
   yAxis,
 } from "./chart.js";
@@ -35,16 +37,16 @@ const LEGEND_ROW = LABEL_LINE + 4;
  * stack upward and negative values downward. A missing value is a gap in its own band, never 0.
  */
 export function stackBands(block: LineData): { lower: Value[][]; upper: Value[][] } {
-  const upper = block.series.map((s) => s.values);
+  const upper = block.series.map((s) => drawnValues(block, s));
   if (!(block.type === "area" && block.stack)) return { lower: upper.map(() => []), upper };
   const up = block.axis.buckets.map(() => 0);
   const down = block.axis.buckets.map(() => 0);
   const lower: Value[][] = [];
   const stacked: Value[][] = [];
-  for (const s of block.series) {
-    lower.push(s.values.map((v, i) => (isNumber(v) ? ((v < 0 ? down : up)[i] as number) : null)));
+  for (const values of upper) {
+    lower.push(values.map((v, i) => (isNumber(v) ? ((v < 0 ? down : up)[i] as number) : null)));
     stacked.push(
-      s.values.map((v, i) => {
+      values.map((v, i) => {
         if (!isNumber(v)) return null;
         const totals = v < 0 ? down : up;
         totals[i] = (totals[i] as number) + v;
@@ -53,6 +55,11 @@ export function stackBands(block: LineData): { lower: Value[][]; upper: Value[][
     );
   }
   return { lower, upper: stacked };
+}
+
+/** What a series draws before stacking: its shares in a 100% stack, else its values. */
+export function drawnValues(block: LineData, s: LineData["series"][number]): Value[] {
+  return block.percent && s.share ? s.share : s.values;
 }
 
 /** Values as drawn: running totals for stacked areas, with gaps where a value is missing. */
@@ -77,7 +84,8 @@ export function renderLine(
   const locale = data.locale;
   const n = block.axis.buckets.length;
   const series = block.series;
-  const metric = metricOf(ctx, series[0]?.metric ?? "");
+  const metric = block.percent ? SHARE : metricOf(ctx, series[0]?.metric ?? "");
+  const shown = (k: number) => (block.percent ? SHARE : metricOf(ctx, series[k]?.metric ?? ""));
   const bands = stackBands(block);
   const plotted = bands.upper;
   const values = plotted.flat().filter(isNumber);
@@ -86,7 +94,7 @@ export function renderLine(
   const nameStyle = { size: CAPTION, weight: 500 } as const;
   const lastIndex = series.map((s) => lastDefined(s.values));
   const lastText = series.map((s, k) =>
-    formatValue(s.values[lastIndex[k] ?? -1] ?? null, metricOf(ctx, s.metric), locale, "compact"),
+    formatValue(drawnValues(block, s)[lastIndex[k] ?? -1] ?? null, shown(k), locale, "compact"),
   );
   const directWidth =
     Math.max(
@@ -102,7 +110,9 @@ export function renderLine(
 
   const bottomBand = 24;
   const top0 = 8;
-  const provisional = yAxis(values, size.height - top0 - bottomBand, metric, locale);
+  const valueAxis = (height: number) =>
+    block.percent ? shareAxis(values, height, locale) : yAxis(values, height, metric, locale);
+  const provisional = valueAxis(size.height - top0 - bottomBand);
   const left = empty ? 0 : provisional.labelWidth + 8;
   const direct =
     !empty &&
@@ -114,11 +124,11 @@ export function renderLine(
   if (!direct && !empty && series.length > 0) {
     const last = Math.max(...lastIndex);
     const style = { size: CAPTION } as const;
-    const valueWidth = series.map((s) =>
+    const valueWidth = series.map((s, k) =>
       Math.max(
         0,
-        ...s.values.map((v) =>
-          textWidth(formatValue(v, metricOf(ctx, s.metric), locale, "compact"), style),
+        ...drawnValues(block, s).map((v) =>
+          textWidth(formatValue(v, shown(k), locale, "compact"), style),
         ),
       ),
     );
@@ -157,7 +167,7 @@ export function renderLine(
           paint,
           x + LEGEND_NAME_X + textWidth(name, style) + 6,
           cy,
-          formatValue(s.values[last] ?? null, metricOf(ctx, s.metric), locale, "compact"),
+          formatValue(drawnValues(block, s)[last] ?? null, shown(k), locale, "compact"),
           { ...style, color: "text", className: `hm-rv hm-rv-${k}` },
         ),
       );
@@ -170,7 +180,7 @@ export function renderLine(
   const top = legendHeight > 0 ? legendHeight + 16 : top0;
   const height = top + size.height - top0;
   const plotBottom = height - bottomBand;
-  const axis = yAxis(values, plotBottom - top, metric, locale);
+  const axis = valueAxis(plotBottom - top);
   const [d0, d1] = axis.domain;
   const y = (v: number) => plotBottom - fraction(v, d0, d1) * (plotBottom - top);
   const targets = series.map((_, k) => {

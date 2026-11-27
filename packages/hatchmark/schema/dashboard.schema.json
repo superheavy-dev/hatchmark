@@ -557,7 +557,16 @@
           "const": "area"
         },
         "stack": {
-          "type": "boolean"
+          "description": "true stacks the series on each other; \"percent\" stacks them to 100%, so each shows its share of the total. Stacking needs metrics that add up (sums and counts) in the same unit.",
+          "anyOf": [
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "string",
+              "const": "percent"
+            }
+          ]
         }
       },
       "required": [
@@ -623,7 +632,16 @@
           "description": "A column name in the source data."
         },
         "stack": {
-          "type": "boolean"
+          "description": "true stacks the series on each other; \"percent\" stacks them to 100%, so each shows its share of the total. Stacking needs metrics that add up (sums and counts) in the same unit.",
+          "anyOf": [
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "string",
+              "const": "percent"
+            }
+          ]
         },
         "orientation": {
           "type": "string",
