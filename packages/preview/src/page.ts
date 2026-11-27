@@ -129,6 +129,7 @@ const state = {
   view: "components",
   theme: matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light",
   width: "desktop",
+  locale: "en-US",
   section: "",
 };
 function read() {
@@ -138,12 +139,17 @@ function read() {
   }
 }
 function frameSrc() {
-  const page = (VIEWS[state.view] ?? VIEWS.components) + location.search;
+  const base = VIEWS[state.view] ?? VIEWS.components;
+  const localized = state.locale !== "en-US" && base.startsWith("dashboard/")
+    ? "dashboard-" + state.locale + base.slice("dashboard".length)
+    : base;
+  const page = localized + location.search;
   return state.view === "components" && state.section ? page + "#" + state.section : page;
 }
 function writeHash() {
   const params = new URLSearchParams(state);
   if (!state.section) params.delete("section");
+  if (state.locale === "en-US") params.delete("locale");
   history.replaceState(null, "", "#" + params);
 }
 function themeFrame() {
@@ -210,6 +216,11 @@ ${toggle("theme", "Theme", [
 ${toggle("width", "Width", [
   ["desktop", "Desktop"],
   ["mobile", "390 px"],
+])}
+${toggle("locale", "Dashboard locale", [
+  ["en-US", "en-US"],
+  ["de-DE", "de-DE"],
+  ["ja-JP", "ja-JP"],
 ])}
 </header>
 <main><iframe id="frame" title="Preview" src="components/"></iframe></main>

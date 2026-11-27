@@ -101,6 +101,25 @@ describe("preview shell deep links", () => {
     await page.close();
   });
 
+  it("switches the example dashboard's locale and leaves en-US out of the hash", async () => {
+    const page = await browser.newPage();
+    await page.goto(`${origin}/#view=dashboard&locale=de-DE`);
+    await expect
+      .poll(() => page.locator("#frame").getAttribute("src"))
+      .toBe("dashboard-de-DE/sales/");
+    await page.getByRole("button", { name: "ja-JP" }).click();
+    expect(await page.locator("#frame").getAttribute("src")).toBe("dashboard-ja-JP/sales/");
+    await page.getByRole("button", { name: "Date range picker" }).click();
+    expect(await page.locator("#frame").getAttribute("src")).toBe("dashboard-ja-JP/explorer/");
+    await page.getByRole("button", { name: "Picker variants" }).click();
+    expect(await page.locator("#frame").getAttribute("src")).toBe("periods/");
+    await page.getByRole("button", { name: "en-US" }).click();
+    await page.getByRole("button", { name: "Example dashboard" }).click();
+    expect(await page.locator("#frame").getAttribute("src")).toBe("dashboard/sales/");
+    expect(hash(page)).not.toHaveProperty("locale");
+    await page.close();
+  });
+
   it("leaves the section out of the hash when there is none", async () => {
     const page = await browser.newPage();
     await page.goto(`${origin}/#theme=light`);
