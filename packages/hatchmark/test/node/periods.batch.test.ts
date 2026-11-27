@@ -5,8 +5,10 @@ import {
   type DashboardExecutor,
   type ExecutionContext,
   type PlannedQuery,
+  planDashboard,
   queryBounds,
   runDashboard,
+  runDashboardBindings,
 } from "../../src/compiler/index.js";
 import { runPeriodData } from "../../src/compiler/period-build.js";
 import { createDuckDbExecutor } from "../../src/node/index.js";
@@ -43,6 +45,16 @@ const METRICS = {
     type: "sql",
     table: "orders",
     sql: "max(amount) - min(amount)",
+    additive: false,
+    time: "ordered_at",
+    format: { type: "number" },
+    better: "up",
+  },
+  query_text: {
+    label: "Query text",
+    type: "sql",
+    table: "orders",
+    sql: "count(*) + length(current_query())",
     additive: false,
     time: "ordered_at",
     format: { type: "number" },
@@ -87,6 +99,38 @@ beforeAll(async () => {
       explorer,
       previous: { title: "Previous period", period: period("previous_period"), filters, blocks },
       year: { title: "Previous year", period: period("previous_year"), filters, blocks },
+      raw: {
+        title: "Raw SQL",
+        period: { asOf: "latest_data", range: "last_7_days", compare: "none" },
+        filters: [
+          {
+            type: "period",
+            id: "period",
+            options: [
+              { last: 7, unit: "day" },
+              { last: 30, unit: "day" },
+              { last: 90, unit: "day" },
+            ],
+            default: { last: 7, unit: "day" },
+            custom: false,
+          },
+        ],
+        blocks: [{ type: "kpi", metric: "query_text" }],
+      },
+      single: {
+        title: "One preset",
+        period: { asOf: "latest_data", range: "last_7_days", compare: "none" },
+        filters: [
+          {
+            type: "period",
+            id: "period",
+            options: [{ last: 7, unit: "day" }],
+            default: { last: 7, unit: "day" },
+            custom: false,
+          },
+        ],
+        blocks: [{ type: "kpi", metric: "revenue" }],
+      },
     },
   );
   for (const [name, spec] of Object.entries(METRICS)) {
@@ -134,17 +178,56 @@ async function periodData(name: string, executor: DashboardExecutor) {
 }
 
 describe("period presets run as one batch per query", () => {
-  it.each(["explorer", "previous", "year"])(
+  it.each(["explorer", "previous", "year", "raw"])(
     "%s: every preset, custom range data and diagnostic is the same JSON as one query at a time",
     async (name) => {
       const batched = await periodData(name, db);
       const single = await periodData(name, oneByOne(db));
       expect(Object.keys(batched.period.data?.presets ?? {})).toHaveLength(
-        name === "explorer" ? 8 : PRESETS.length,
+        name === "explorer" ? 8 : name === "raw" ? 3 : PRESETS.length,
       );
       expect(JSON.stringify(batched)).toBe(JSON.stringify(single));
     },
   );
+
+  it("runs raw SQL once per window, never inside a shared statement", async () => {
+    const { executor, calls } = counted(db);
+    const base = await runDashboard(project, "raw", executor);
+    if (base.data === undefined) throw new Error("no raw data");
+    await runPeriodData(project, "raw", executor, base.data);
+    expect(calls.executeMany).toBe(0);
+    expect(calls.execute).toBe(3);
+  });
+
+  it("gives every set of bindings the result runDashboard gives it alone, invalid selects included", async () => {
+    const sets = [
+      {},
+      { region: null },
+      { region: Number.NaN },
+      { region: "EMEA" },
+      { region: ["EMEA"] },
+    ];
+    const together = await runDashboardBindings(project, "previous", db, sets);
+    const alone = [];
+    for (const bindings of sets) {
+      alone.push(await runDashboard(project, "previous", oneByOne(db), undefined, bindings));
+    }
+    expect(JSON.stringify(together)).toBe(JSON.stringify(alone));
+    expect(together[1]?.diagnostics.some((d) => d.code === "HM2015")).toBe(true);
+    expect(together[2]?.diagnostics.some((d) => d.code === "HM2015")).toBe(true);
+  });
+
+  it("returns no results for no contexts, and reads nothing when there is no other preset", async () => {
+    const plan = planDashboard(project, "single").plan;
+    const query = plan?.queries[0];
+    if (query === undefined) throw new Error("no query");
+    expect(await db.executeMany?.(query, [])).toEqual([]);
+    const { executor, calls } = counted(db);
+    const base = await runDashboard(project, "single", db);
+    if (base.data === undefined) throw new Error("no single data");
+    await runPeriodData(project, "single", executor, base.data);
+    expect(calls).toEqual({ execute: 0, executeMany: 0, horizon: 0 });
+  });
 
   it("keeps each preset's own error when one window fails", async () => {
     const failing = (context: ExecutionContext, query: PlannedQuery) =>
