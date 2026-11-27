@@ -50,6 +50,10 @@ export interface PartialBucket {
    * elapsed is then the share of the bucket inside the window.
    */
   edge?: "start";
+  /** Local calendar days of the bucket that hold data (a day counts once any of it is covered). */
+  days?: number;
+  /** For a bucket the horizon cuts: the horizon as local wall-clock time, "YYYY-MM-DDTHH:MM:SS". */
+  through?: string;
 }
 
 export interface MetricInfo {

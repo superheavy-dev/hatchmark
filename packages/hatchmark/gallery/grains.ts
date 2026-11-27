@@ -224,7 +224,7 @@ function incompleteSeries(
   };
 }
 
-/** Weekly revenue lines (or an area) over the partial third quarter: marked (default), clipped, or hidden. */
+/** Weekly revenue lines over the partial third quarter: marked (default), clipped, or hidden. */
 export function incompleteLine(
   id: string,
   title: string,
@@ -249,6 +249,35 @@ export function incompleteBars(id: string, title: string, options: { hide?: bool
     orientation: "vertical",
     stack: false,
     ...incompleteSeries(MONTH, options),
+  };
+}
+
+export function incompleteLaggingArea(id: string, title: string): LineData {
+  const {
+    axis,
+    series: [total],
+  } = incompleteSeries(WEEK, {}) as {
+    axis: LineData["axis"];
+    series: [Series];
+  };
+  const lag = total.values.length - 3;
+  return {
+    type: "area",
+    id,
+    title,
+    span: 6,
+    axis,
+    series: [
+      total,
+      {
+        ...series(
+          "returns",
+          "Returns",
+          total.values.map((v, i) => (v === null || i > lag ? null : Math.round(v * 0.12))),
+        ),
+        partial: [{ index: lag, elapsed: 0.285714, days: 2 }],
+      },
+    ],
   };
 }
 

@@ -115,6 +115,7 @@ test("raw SQL distinguishes snap, clip and an exact-window KPI", async () => {
     index: 0,
     elapsed: 0.714285,
     edge: "start",
+    days: 5,
   });
   expect(block<KpiData>("summary").value).toBe(want?.kpi);
 });

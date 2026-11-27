@@ -183,6 +183,32 @@ describe("browser runtime", () => {
       .toContain("In progress · 3 of 7 days");
   });
 
+  it("gives the pinned readout a status line and hatched swatches on a partial bucket", async () => {
+    const page = await browser.newPage({ viewport: { width: 390, height: 844 } });
+    await page.goto(partialUrl);
+    const svg = page.locator(".hm-line svg").filter({ visible: true });
+    const visible = (selector: string) =>
+      svg
+        .locator(selector)
+        .first()
+        .evaluate((n) => getComputedStyle(n).visibility);
+    expect(await svg.locator(".hm-readout").count()).toBe(1);
+    expect(await svg.locator(".hm-rh").textContent()).toBe("Sep 21\u201323");
+    expect(await svg.locator(".hm-rs").textContent()).toBe("In progress \u00B7 3 of 7 days");
+    expect(await visible(".hm-rsw")).toBe("visible");
+    expect(await visible(".hm-rq-0")).toBe("visible");
+    expect(await visible(".hm-rd-0")).toBe("hidden");
+    await svg.focus();
+    await page.keyboard.press("Home");
+    expect(await svg.locator(".hm-rs").textContent()).toBe("");
+    expect(await visible(".hm-rsw")).toBe("hidden");
+    expect(await visible(".hm-rq-0")).toBe("hidden");
+    expect(await visible(".hm-rd-0")).toBe("visible");
+    await page.keyboard.press("End");
+    expect(await svg.locator(".hm-rs").textContent()).toBe("In progress \u00B7 3 of 7 days");
+    await page.close();
+  });
+
   it("marks a partial stack's Total row with the hatched swatch and its status, and announces it", async () => {
     const page = await browser.newPage({ viewport: { width: 1440, height: 900 } });
     await page.goto(partialStackUrl);

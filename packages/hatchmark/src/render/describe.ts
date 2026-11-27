@@ -129,14 +129,7 @@ export function describeChart(
   }
   if (series.length > 3) parts.push(`${series.length - 3} more series in the data table.`);
   const partial = partialPositions(block, ctx);
-  for (const [i, p] of partial) {
-    const { status = "" } = bucketLines(block, i, ctx, partial);
-    parts.push(
-      p.point && p.edge === undefined
-        ? `${names[i]}: ${status.charAt(0).toLowerCase()}${status.slice(1)}.`
-        : `${names[i]} is ${p.edge === "start" ? "partial" : "in progress"}: ${p.days} of ${p.of} ${p.of === 1 ? "day" : "days"}.`,
-    );
-  }
+  for (const i of partial.keys()) parts.push(`${bucketLines(block, i, ctx, partial).line}.`);
   return parts.join(" ");
 }
 
@@ -239,9 +232,6 @@ export function chartRuntimeData(
     swatch: block.type === "line" ? "line" : "square",
     headers: lines ? lines.map((l) => l.date) : positions(block, ctx),
     ...(lines && partial.size > 0 ? { status: lines.map((l) => l.status ?? "") } : {}),
-    ...(lines && partial.size > 0 && !(block.type !== "bar" && block.stack && block.totals)
-      ? { heads: positions(block, ctx) }
-      : {}),
     series: block.series.map((s, k) => ({
       label: s.label,
       color: (k % 8) + 1,
@@ -280,7 +270,9 @@ export function chartRuntimeData(
     ...(lines && stacked && partial.size > 0
       ? {
           totalStatus: lines.map((l, i) =>
-            block.series.some((s) => isNumber(s.values[i])) &&
+            block.series.some(
+              (s) => isNumber(s.values[i]) && (s.partial ?? []).some((p) => p.index === i),
+            ) &&
             (block.totals === undefined || isNumber(block.totals[i]))
               ? (l.status ?? "")
               : "",

@@ -113,9 +113,21 @@ function attach(figure: HTMLElement, chart: RuntimeChart): void {
   const fillReadout = (svg: SVGSVGElement, index: number) => {
     const head = svg.querySelector(".hm-rh");
     if (head) head.textContent = (chart.heads ?? chart.headers)[index] ?? "";
+    const status = svg.querySelector(".hm-rs");
+    if (status) status.textContent = chart.status?.[index] ?? "";
+    const hatched = chart.series.some((s) => s.partial?.includes(index));
+    const show = (node: Element | null, on: boolean) =>
+      node?.setAttribute("visibility", on ? "visible" : "hidden");
+    show(svg.querySelector(".hm-rsw"), hatched && Boolean(chart.status?.[index]));
     chart.series.forEach((s, k) => {
       const value = svg.querySelector(`.hm-rv-${k}`);
       if (value) value.textContent = s.short[index] ?? "";
+      const partial = Boolean(s.partial?.includes(index));
+      const hatch = svg.querySelector(`.hm-rq-${k}`);
+      if (hatch) {
+        show(hatch, partial);
+        show(svg.querySelector(`.hm-rd-${k}`), !partial);
+      }
     });
   };
 
@@ -160,8 +172,9 @@ function attach(figure: HTMLElement, chart: RuntimeChart): void {
       const value = element("span", "hm-tip-v", chart.total[index] ?? "");
       if (chart.series.some((s) => s.pct)) value.append(element("span", "hm-tip-p"));
       const status = chart.totalStatus?.[index];
-      const name = element("span", hatched ? "hm-tip-n" : "", hatched ? "" : "Total");
-      if (hatched) name.append(element("i", "hm-tip-hatch"), "Total");
+      const marked = Boolean(status) && hatched;
+      const name = element("span", marked ? "hm-tip-n" : "", marked ? "" : "Total");
+      if (marked) name.append(element("i", "hm-tip-hatch"), "Total");
       row.append(name, value);
       tip.append(row);
       if (status) tip.append(element("div", "hm-tip-s hm-tip-ts", status));

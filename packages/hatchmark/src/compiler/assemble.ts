@@ -58,6 +58,8 @@ import {
   windowAt,
 } from "./windows.js";
 
+const DAY_US = 86_400_000_000n;
+
 type Key = string | number | boolean | null;
 
 interface IndexedQuery {
@@ -297,6 +299,8 @@ class Assembler {
           index,
           elapsed: Number(((to - from) * 1_000_000n) / (end - start)) / 1e6,
           ...(from > start ? { edge: "start" as const } : {}),
+          days: Number((to - 1n) / DAY_US - from / DAY_US) + 1,
+          ...(to < end ? { through: formatWall(to).slice(0, 19) } : {}),
         });
       }
       return value;

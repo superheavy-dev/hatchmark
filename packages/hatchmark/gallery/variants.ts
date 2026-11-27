@@ -35,6 +35,7 @@ import {
   FISCAL_BARS,
   incompleteBars,
   incompleteChannelBars,
+  incompleteLaggingArea,
   incompleteLine,
   incompletePointBars,
   MONTH,
@@ -733,6 +734,12 @@ const INCOMPLETE_LINES: GalleryVariant[] = [
     "area-incomplete-mark",
     "An area whose last week is partial: the slice is hatched, not filled",
     incompleteLine("weeks_area", "Weekly revenue, third quarter", { area: true }),
+  ),
+  one(
+    "line",
+    "area-incomplete-lagging",
+    "Returns end two weeks before revenue: only the Returns band is hatched in its partial week",
+    incompleteLaggingArea("weeks_lagging", "Weekly revenue and returns, third quarter"),
   ),
 ];
 

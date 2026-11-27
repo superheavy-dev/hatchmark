@@ -1,22 +1,21 @@
 import type { BarData, LineData } from "../compiler/dashboard-data.js";
-import type { RenderContext } from "./chart.js";
+import { isNumber, type RenderContext } from "./chart.js";
 import { formatBucket, formatDay, parseDate } from "./format.js";
 import { r } from "./svg.js";
 import type { ColorKey, Paint } from "./theme.js";
 
 type ChartBlock = LineData | BarData;
 
-/** A partial bucket as the renderer reads it (RFC 0001 section 6.6). */
+/** RFC 0001 section 6.6. */
 export interface PartialPosition {
-  /** "start" for the first bucket of a clipped window; otherwise the data ends inside the bucket. */
   edge?: "start";
-  /** The days of the bucket the data covers, as a span (end exclusive), and their count of the bucket's. */
   from: string;
   to: string;
   days: number;
   of: number;
-  /** Every series partial here is point-in-time: its value is the state at the horizon, not low. */
+  through?: string;
   point: boolean;
+  complete: boolean;
 }
 
 const DAY_MS = 86_400_000;
@@ -36,10 +35,15 @@ export function partialPositions(
     const here = block.series.flatMap((s) =>
       (s.partial ?? []).filter((p) => p.index === i).map((p) => ({ p, metric: s.metric })),
     );
-    const least = here.reduce<(typeof here)[number] | undefined>(
-      (a, b) => (a === undefined || b.p.elapsed < a.p.elapsed ? b : a),
-      undefined,
-    );
+    const covered = ({ p }: (typeof here)[number]) => [p.days ?? 0, p.through ?? "", p.elapsed];
+    const least = here.reduce<(typeof here)[number] | undefined>((a, b) => {
+      if (a === undefined) return b;
+      const [x, y] = [covered(a), covered(b)];
+      for (let j = 0; j < x.length; j++) {
+        if (y[j] !== x[j]) return (y[j] as number | string) < (x[j] as number | string) ? b : a;
+      }
+      return a;
+    }, undefined);
     if (least === undefined) continue;
     const start = parseDate(bucket);
     const end =
@@ -53,7 +57,7 @@ export function partialPositions(
             ),
           );
     const of = Math.round((end.getTime() - start.getTime()) / DAY_MS);
-    const days = Math.min(of, Math.max(1, Math.ceil(least.p.elapsed * of - 1e-4)));
+    const days = least.p.days ?? Math.min(of, Math.max(1, Math.ceil(least.p.elapsed * of - 1e-4)));
     const from = least.p.edge === "start" && window.start > bucket ? window.start : bucket;
     out.set(i, {
       ...(least.p.edge ? { edge: least.p.edge } : {}),
@@ -61,7 +65,11 @@ export function partialPositions(
       to: plusDays(from, days),
       days,
       of,
+      ...(least.p.through ? { through: least.p.through } : {}),
       point: here.every(({ metric }) => ctx.data.metrics[metric]?.nature === "point"),
+      complete: block.series.some(
+        (s) => isNumber(s.values[i]) && !(s.partial ?? []).some((p) => p.index === i),
+      ),
     });
   }
   return out;
@@ -96,13 +104,13 @@ export function bucketLines(
 ): { date: string; status?: string; note?: string; line: string } {
   if (block.axis.kind !== "time") return { date: "", line: "" };
   const { locale, asOf } = ctx.data;
-  const { grain, window } = block.axis;
+  const { grain } = block.axis;
   const name = formatBucket(block.axis.buckets[i] ?? "", grain, locale);
   const p = partial.get(i);
   if (p === undefined) return { date: name, line: name };
   if (p.point && p.edge === undefined) {
-    const when = window.endAt
-      ? `${formatDay(new Date(`${window.endAt.slice(0, 10)}T00:00:00Z`), locale)}, ${timeOf(window.endAt, locale)}`
+    const when = p.through
+      ? `${formatDay(parseDate(p.through.slice(0, 10)), locale)}, ${timeOf(p.through, locale)}`
       : formatDay(parseDate(plusDays(p.to, -1)), locale);
     return {
       date: name,
@@ -111,7 +119,7 @@ export function bucketLines(
       line: `${name} \u00B7 as of ${when}`,
     };
   }
-  const date = coveredLabel(p.from, p.to, asOf, locale);
+  const date = p.complete ? name : coveredLabel(p.from, p.to, asOf, locale);
   const count = `${p.days} of ${p.of} days`;
   if (p.edge === "start") {
     return {
@@ -122,7 +130,7 @@ export function bucketLines(
     };
   }
   if (grain === "day") {
-    const through = window.endAt ? `through ${timeOf(window.endAt, locale)}` : undefined;
+    const through = p.through ? `through ${timeOf(p.through, locale)}` : undefined;
     return {
       date,
       status: through ? `In progress \u00B7 ${through}` : "In progress",
@@ -206,7 +214,11 @@ export function partialBar(
     length >= theme.partial.barHatchMin
       ? `<rect ${box} fill="url(#${id}-${color})" opacity="${theme.partial.barHatchOpacity}"/>`
       : "";
-  return `<rect ${box}${paint.attrs(color)} fill-opacity="${theme.partial.barTint}"/>${hatch}<rect x="${r(x + 0.5)}" y="${r(y + 0.5)}" width="${r(Math.max(0, w - 1))}" height="${r(Math.max(0, h - 1))}"${paint.attrs("none", color)} stroke-width="1"/>`;
+  const outline =
+    w < 2 || h < 2
+      ? `<rect ${box}${paint.attrs(color)}/>`
+      : `<rect x="${r(x + 0.5)}" y="${r(y + 0.5)}" width="${r(w - 1)}" height="${r(h - 1)}"${paint.attrs("none", color)} stroke-width="1"/>`;
+  return `<rect ${box}${paint.attrs(color)} fill-opacity="${theme.partial.barTint}"/>${hatch}${outline}`;
 }
 
 export function hollowPoint(ctx: RenderContext, color: ColorKey, x: number, y: number): string {

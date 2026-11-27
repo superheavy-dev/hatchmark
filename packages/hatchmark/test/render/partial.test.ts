@@ -1,9 +1,9 @@
 import { describe, expect, it } from "vitest";
 import { GALLERY } from "../../gallery/variants.js";
-import type { DashboardData, LineData } from "../../src/compiler/dashboard-data.js";
+import type { DashboardData, KpiData, LineData } from "../../src/compiler/dashboard-data.js";
 import { chartRuntimeData, chartTable, describeChart } from "../../src/render/describe.js";
 import { renderFragment } from "../../src/render/page.js";
-import { partialPositions } from "../../src/render/partial.js";
+import { partialBar, partialPositions } from "../../src/render/partial.js";
 import { DEFAULT_THEME } from "../../src/render/theme.js";
 
 function variant(name: string): { block: LineData; data: DashboardData } {
@@ -18,7 +18,10 @@ describe("partial buckets", () => {
     const { block, data } = variant("line-incomplete-mark");
     const last = block.axis.kind === "time" ? block.axis.buckets.length - 1 : -1;
     expect([...partialPositions(block, ctx(data))]).toEqual([
-      [last, { from: "2026-09-21", to: "2026-09-24", days: 3, of: 7, point: false }],
+      [
+        last,
+        { from: "2026-09-21", to: "2026-09-24", days: 3, of: 7, point: false, complete: false },
+      ],
     ]);
   });
 
@@ -27,12 +30,12 @@ describe("partial buckets", () => {
     const runtime = chartRuntimeData(block, ctx(data));
     expect(runtime.headers.slice(-2)).toEqual(["Week of Sep 14, 2026", "Sep 21\u201323"]);
     expect(runtime.status?.slice(-2)).toEqual(["", "In progress \u00B7 3 of 7 days"]);
-    expect(runtime.heads?.at(-1)).toBe("Sep 21\u201323 \u00B7 in progress (3 of 7 days)");
+    expect(runtime.heads).toBeUndefined();
     expect(chartTable(block, ctx(data), "c")).toContain(
       '<th scope="row">Sep 21\u201323 \u00B7 in progress (3 of 7 days)</th>',
     );
     expect(describeChart(block, ctx(data))).toContain(
-      "Week of Sep 21, 2026 is in progress: 3 of 7 days.",
+      "Sep 21\u201323 \u00B7 in progress (3 of 7 days).",
     );
   });
 
@@ -41,9 +44,9 @@ describe("partial buckets", () => {
     const runtime = chartRuntimeData(block, ctx(data));
     expect(runtime.headers[0]).toBe("Jul 1\u20135");
     expect(runtime.status?.[0]).toBe("Partial week \u00B7 5 of 7 days");
-    expect(runtime.heads?.[0]).toBe("Jul 1\u20135 \u00B7 partial week (5 of 7 days)");
+    expect(runtime.heads).toBeUndefined();
     expect(describeChart(block, ctx(data))).toContain(
-      "Week of Jun 29, 2026 is partial: 5 of 7 days.",
+      "Jul 1\u20135 \u00B7 partial week (5 of 7 days).",
     );
   });
 
@@ -69,13 +72,18 @@ describe("partial buckets", () => {
     };
     const atTime = {
       ...block,
-      axis: { ...block.axis, window: { ...block.axis.window, endAt: "2026-09-23T14:03:00" } },
+      series: block.series.map((s) => ({
+        ...s,
+        partial: (s.partial ?? []).map((p) => ({ ...p, through: "2026-09-23T14:03:00" })),
+      })),
     };
     const timed = chartRuntimeData(atTime, ctx(point));
     expect(timed.headers.at(-1)).toBe("Week of Sep 21, 2026");
     expect(timed.status?.at(-1)).toMatch(/^As of Sep 23, 2026, 2:03\sPM$/);
     expect(chartRuntimeData(block, ctx(point)).status?.at(-1)).toBe("As of Sep 23, 2026");
-    expect(describeChart(block, ctx(point))).toContain("Week of Sep 21, 2026: as of Sep 23, 2026.");
+    expect(describeChart(block, ctx(point))).toContain(
+      "Week of Sep 21, 2026 \u00B7 as of Sep 23, 2026.",
+    );
   });
 
   it("adds no status line when nothing is partial", () => {
@@ -103,9 +111,9 @@ describe("partial buckets drawn (option B)", () => {
 
   it("hatches a partial area slice in the series colour, with no flat fill there", () => {
     const html = svg("area-incomplete-mark");
-    expect(count(html, /clip-path="url\(#hm-p-[^)]*-whole\)"/g)).toBe(charts(html));
+    expect(count(html, /clip-path="url\(#hm-p-[^)]*-whole0\)"/g)).toBe(charts(html));
     expect(
-      count(html, /fill="url\(#hm-p-[^)]*-c1\)"[^>]*clip-path="url\(#hm-p-[^)]*-part\)"/g),
+      count(html, /fill="url\(#hm-p-[^)]*-c1\)"[^>]*clip-path="url\(#hm-p-[^)]*-part0\)"/g),
     ).toBe(charts(html));
   });
 
@@ -133,5 +141,73 @@ describe("partial buckets drawn (option B)", () => {
     expect(count(partial, /h0"[^>]*stroke-linecap="round"/g)).toBe(2 * sparks);
     expect(partial).not.toMatch(/url\(#hm-p-/);
     expect(count(svg("kpi-sparkline"), /h0"/g)).toBe(0);
+  });
+});
+
+describe("partial buckets: review cases (HAT-80)", () => {
+  const find = (name: string) => {
+    const v = GALLERY.find((g) => g.variant === name);
+    if (!v) throw new Error(`no gallery variant ${name}`);
+    return v.data;
+  };
+  const count = (html: string, re: RegExp) => html.match(re)?.length ?? 0;
+
+  it("keeps a visible outline on a 1 px stack part", () => {
+    const data = find("bar-incomplete-stacked");
+    const svg = partialBar(ctx(data), "h", "c1", 0, 0, 40, 1, 1);
+    expect(svg).not.toMatch(/url\(#h-c1\)/);
+    expect(svg).toMatch(/<rect x="0" y="0" width="40" height="1"[^>]*\/>$/);
+    expect(svg).not.toMatch(/height="0"/);
+  });
+
+  it("draws a point-in-time line's partial end hollow, without the hatch", () => {
+    const data = find("line-incomplete-mark");
+    const metric = (data.blocks[0] as LineData).series[0]?.metric ?? "";
+    const info = data.metrics[metric];
+    if (!info) throw new Error("unexpected variant");
+    const html = renderFragment({
+      ...data,
+      metrics: { ...data.metrics, [metric]: { ...info, nature: "point" } },
+    });
+    expect(count(html, /<circle[^>]* r="3.5"[^>]*stroke-width="1.75"/g)).toBe(count(html, /<svg/g));
+    expect(html).not.toMatch(/url\(#hm-p-/);
+  });
+
+  it("gives a missing stack Total no partial status", () => {
+    const data = find("bar-incomplete-stacked");
+    const block = data.blocks[0] as LineData;
+    const totals = block.totals ?? [];
+    const last = totals.length - 1;
+    const gone = { ...block, totals: totals.map((v, i) => (i === last ? null : v)) };
+    const runtime = chartRuntimeData(gone, ctx(data));
+    expect(runtime.totalStatus?.[last]).toBe("");
+    expect(chartRuntimeData(block, ctx(data)).totalStatus?.[last]).toBe(
+      "In progress \u00B7 23 of 30 days",
+    );
+  });
+
+  it("names a partial sparkline bucket in its table, accessible name and runtime, and marks the last drawn point", () => {
+    const html = renderFragment(find("kpi-sparkline-partial"));
+    expect(html).toMatch(/aria-label="[^"]*in progress \(\d+ of \d+ days\)"/);
+    expect(html).toMatch(/<th scope="row">[^<]*in progress \(\d+ of \d+ days\)<\/th>/);
+    expect(html).toMatch(/"status":\[[^\]]*"In progress \u00B7 \d+ of \d+ days"\]/);
+    const data = find("kpi-sparkline-partial");
+    const kpi = data.blocks[0] as KpiData;
+    const spark = kpi.sparkline;
+    if (!spark) throw new Error("unexpected variant");
+    const trailing = renderFragment({
+      ...data,
+      blocks: [
+        {
+          ...kpi,
+          sparkline: {
+            ...spark,
+            buckets: [...spark.buckets, "2099-01-01"],
+            values: [...spark.values, null],
+          },
+        },
+      ],
+    });
+    expect(count(trailing, /h0"[^>]*stroke-linecap="round"/g)).toBe(2);
   });
 });

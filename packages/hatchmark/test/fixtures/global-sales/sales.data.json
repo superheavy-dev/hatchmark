@@ -136,7 +136,9 @@
         "partial": [
           {
             "index": 11,
-            "elapsed": 0.993164
+            "elapsed": 0.993164,
+            "days": 31,
+            "through": "2026-10-31T18:54:53"
           }
         ]
       }
@@ -252,7 +254,9 @@
           "partial": [
             {
               "index": 11,
-              "elapsed": 0.993164
+              "elapsed": 0.993164,
+              "days": 31,
+              "through": "2026-10-31T18:54:53"
             }
           ]
         },
@@ -278,7 +282,9 @@
           "partial": [
             {
               "index": 11,
-              "elapsed": 0.993164
+              "elapsed": 0.993164,
+              "days": 31,
+              "through": "2026-10-31T18:54:53"
             }
           ]
         },
@@ -304,7 +310,9 @@
           "partial": [
             {
               "index": 11,
-              "elapsed": 0.993164
+              "elapsed": 0.993164,
+              "days": 31,
+              "through": "2026-10-31T18:54:53"
             }
           ]
         }

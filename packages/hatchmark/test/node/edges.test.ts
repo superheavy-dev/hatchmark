@@ -69,7 +69,9 @@ describe("edges", () => {
     expect(l.axis.window.start).toBe("2026-09-14");
     expect(l.series[0]?.values).toEqual(weekly("2026-09-14"));
     expect(l.series[0]?.values[0]).toBe(7);
-    expect(l.series[0]?.partial).toEqual([{ index: 4, elapsed: 0.5 }]);
+    expect(l.series[0]?.partial).toEqual([
+      { index: 4, elapsed: 0.5, days: 4, through: "2026-10-15T12:00:00" },
+    ]);
   });
 
   it("keeps the window start with clip and marks the clipped first week", async () => {
@@ -79,8 +81,8 @@ describe("edges", () => {
     expect(l.series[0]?.values).toEqual(weekly("2026-09-16"));
     expect(l.series[0]?.values[0]).toBe(5);
     expect(l.series[0]?.partial).toEqual([
-      { index: 0, elapsed: 0.714285, edge: "start" },
-      { index: 4, elapsed: 0.5 },
+      { index: 0, elapsed: 0.714285, edge: "start", days: 5 },
+      { index: 4, elapsed: 0.5, days: 4, through: "2026-10-15T12:00:00" },
     ]);
   });
 

@@ -84,7 +84,9 @@ test("all-time show warns for a trailing partial flow bucket", async () => {
   } finally {
     oracle.close();
   }
-  expect(series?.partial).toEqual([{ index: 3, elapsed: 0.5 }]);
+  expect(series?.partial).toEqual([
+    { index: 3, elapsed: 0.5, days: 4, through: "2026-10-08T12:00:00" },
+  ]);
   expect(blocks[1]?.series[0]?.values).toEqual(series?.values);
   expect(blocks[1]?.series[0]?.partial).toBeUndefined();
   expect.soft(runCodes).toContain("HM4014");
@@ -98,7 +100,9 @@ test("clip-only partial is also the last bucket in a one-bucket flow series", as
     { edges: "clip", incomplete: "show" },
   );
   expect(blocks[0]?.axis.buckets).toEqual(["2026-09-14"]);
-  expect(blocks[0]?.series[0]?.partial).toEqual([{ index: 0, elapsed: 0.714285, edge: "start" }]);
+  expect(blocks[0]?.series[0]?.partial).toEqual([
+    { index: 0, elapsed: 0.714285, edge: "start", days: 5 },
+  ]);
   expect.soft(runCodes).toContain("HM4014");
   expect.soft(checkCodes).toContain("HM4014");
 });
