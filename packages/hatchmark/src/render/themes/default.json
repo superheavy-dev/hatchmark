@@ -1,0 +1,629 @@
+{
+  "$schema": "hatchmark-tokens/0.2",
+  "id": "default",
+  "name": "Default",
+  "version": "1.0.0",
+  "status": "final",
+  "finalized": "2026-11-27 (HAT-8, approved by Gunwoo: good/bad variant A, brand rule warn-not-replace)",
+  "license": "Apache-2.0",
+  "origin": "Exported from Paper file 01M8DTB9YYV2B57MQKB6B0M0G2 (Paper tokens are the source of truth for values; rules and metadata carried from the HAT-8 builder).",
+  "layers": {
+    "theme": "fixed by the theme (this file)",
+    "brand": "overridable through brand-layer.schema.json; see brandable flags"
+  },
+  "font": {
+    "sans": {
+      "family": "IBM Plex Sans",
+      "fallback": "system-ui, -apple-system, \"Segoe UI\", sans-serif",
+      "weights": [
+        400,
+        500,
+        600
+      ],
+      "license": "SIL OFL 1.1",
+      "features": {
+        "numbers": "tnum",
+        "zero": false
+      }
+    }
+  },
+  "type": {
+    "caption": {
+      "size": 12,
+      "lineHeight": 16,
+      "weight": 400,
+      "use": "ticks, axis labels, legends, captions, table headers, annotation notes"
+    },
+    "body": {
+      "size": 13,
+      "lineHeight": 18,
+      "weight": 400,
+      "use": "table cells, bar list, tooltip rows, card subtitles"
+    },
+    "title": {
+      "size": 14,
+      "lineHeight": 20,
+      "weight": 500,
+      "use": "card titles (state the finding)"
+    },
+    "page": {
+      "size": 20,
+      "lineHeight": 28,
+      "weight": 600,
+      "tracking": "-0.01em",
+      "use": "dashboard title"
+    },
+    "kpi": {
+      "size": 28,
+      "lineHeight": 32,
+      "weight": 400,
+      "tracking": "-0.02em",
+      "use": "KPI values"
+    },
+    "minimum": 12,
+    "numbers": "tabular-nums everywhere",
+    "truncation": "middle ellipsis, full text in tooltip",
+    "tableMaxLines": 2
+  },
+  "color": {
+    "light": {
+      "page": "#f5f5f5",
+      "card": "#ffffff",
+      "cardAlt": "#fafafa",
+      "border": "#e5e5e5",
+      "borderStrong": "#d4d4d4",
+      "grid": "#ebebeb",
+      "baseline": "#c7c7c7",
+      "text": "#171717",
+      "textMuted": "#525252",
+      "textSubtle": "#6b6b6b",
+      "accent": "#171717",
+      "accentContrast": "#ffffff",
+      "good": "#0a7ca6",
+      "bad": "#a63d02",
+      "context": "#d0d0d0",
+      "land": "#ececec",
+      "landBorder": "#ffffff",
+      "focus": "#171717"
+    },
+    "dark": {
+      "page": "#111111",
+      "card": "#191919",
+      "cardAlt": "#1e1e1e",
+      "border": "#2b2b2b",
+      "borderStrong": "#3a3a3a",
+      "grid": "#262626",
+      "baseline": "#4a4a4a",
+      "text": "#ededed",
+      "textMuted": "#a3a3a3",
+      "textSubtle": "#8f8f8f",
+      "accent": "#ededed",
+      "accentContrast": "#111111",
+      "good": "#0ea6c8",
+      "bad": "#fd6324",
+      "context": "#3d3d3d",
+      "land": "#262626",
+      "landBorder": "#191919",
+      "focus": "#ededed"
+    }
+  },
+  "data": {
+    "light": {
+      "categorical": [
+        "#1f58b6",
+        "#ae8100",
+        "#923965",
+        "#3b9d82",
+        "#486a00",
+        "#9f72c5",
+        "#006d78",
+        "#cb6574"
+      ],
+      "sequential": [
+        "#e4efff",
+        "#bcd2f9",
+        "#92b2eb",
+        "#6991dc",
+        "#4571c6",
+        "#2552aa",
+        "#123780"
+      ],
+      "diverging": [
+        "#962a00",
+        "#bb6546",
+        "#da9e86",
+        "#efd0c2",
+        "#ededed",
+        "#c6d9f2",
+        "#8eb0e1",
+        "#5380c7",
+        "#224fa7"
+      ]
+    },
+    "dark": {
+      "categorical": [
+        "#87c0ff",
+        "#bb8d1c",
+        "#e2acc2",
+        "#44ad73",
+        "#bac860",
+        "#a281d9",
+        "#40d9c1",
+        "#d6708c"
+      ],
+      "sequential": [
+        "#1e2e47",
+        "#26426c",
+        "#315a97",
+        "#4174bf",
+        "#5e93e1",
+        "#85b3f7",
+        "#b1d3ff"
+      ],
+      "diverging": [
+        "#ff9b79",
+        "#d07758",
+        "#905943",
+        "#553c31",
+        "#2e2e2e",
+        "#344458",
+        "#4b6a97",
+        "#6493db",
+        "#92bdff"
+      ]
+    },
+    "categoricalNames": [
+      "ultramarine",
+      "ochre",
+      "plum",
+      "jade",
+      "olive",
+      "lilac",
+      "petrol",
+      "rose"
+    ],
+    "rules": {
+      "directLabelsUpTo": 6,
+      "moreThan6": "group into Other or small multiples (check error HM-C006)",
+      "alternation": "odd slots dark, even slots mid lightness",
+      "highlightOne": "c1 for the highlighted item, context for the rest"
+    }
+  },
+  "density": {
+    "default": "compact",
+    "compact": {
+      "tableRow": 30,
+      "cardPadding": 16,
+      "gap": 12,
+      "page": 24,
+      "kpiPadding": 16,
+      "barRow": 28,
+      "chartHeight": 280,
+      "kpiSize": 28,
+      "kpiLineHeight": 32,
+      "historyRow": 26,
+      "periodChartHeight": 150
+    },
+    "comfortable": {
+      "tableRow": 36,
+      "cardPadding": 20,
+      "gap": 16,
+      "page": 32,
+      "kpiPadding": 20,
+      "barRow": 34,
+      "chartHeight": 320,
+      "kpiSize": 36,
+      "kpiLineHeight": 40,
+      "historyRow": 30,
+      "periodChartHeight": 170
+    }
+  },
+  "radius": {
+    "card": 6,
+    "control": 4,
+    "tooltip": 4,
+    "bar": 1,
+    "badge": 4
+  },
+  "card": {
+    "group": {
+      "use": "related cards share one container: 1px internal dividers in border colour, no gap, outer radius card",
+      "mobile": "cells stack, divider on top"
+    }
+  },
+  "border": {
+    "width": 1,
+    "shadows": "none on cards; one shadow on floating layers only (tooltip): 0 4px 12px rgba(0,0,0,.08) light, none in dark"
+  },
+  "chart": {
+    "grid": {
+      "horizontal": true,
+      "vertical": false,
+      "width": 1,
+      "color": "grid",
+      "baseline": "baseline at zero only"
+    },
+    "axis": {
+      "lines": false,
+      "ticks": false,
+      "yLabels": "left, right-aligned, compact currency",
+      "ySpacing": 48,
+      "yTicks": [
+        3,
+        6
+      ],
+      "xLabels": "month starts, January and first label carry the year",
+      "minLabelGap": 8,
+      "tickPadding": 8
+    },
+    "line": {
+      "width": 1.75,
+      "curve": "linear",
+      "area": "none (no gradient fills)",
+      "dotRadius": 3.5,
+      "dotRing": 2
+    },
+    "bar": {
+      "radius": 1,
+      "gapRatio": 0.25
+    },
+    "directLabels": {
+      "show": "up to 6 series",
+      "content": "name + last value",
+      "minSpacing": 16,
+      "maxWidth": 120,
+      "fallbackBelowPlotWidth": 320,
+      "fallback": "coloured inline key above plot"
+    },
+    "annotations": {
+      "style": "dotted rule + short note",
+      "rule": "1px, dash 2 3, textSubtle",
+      "note": "caption, textMuted",
+      "band": "notes above plot, max 2 rows, flip left at right edge, else numbered markers listed below"
+    },
+    "tooltip": {
+      "padding": "8px 10px",
+      "radius": "tooltip",
+      "swatch": "line 10x2",
+      "header": "caption 500",
+      "rows": "body tabular",
+      "total": true,
+      "mobile": "pinned readout row above the plot instead of a floating card"
+    },
+    "legend": {
+      "default": "direct labels",
+      "when": "maps and > 6 series only",
+      "swatch": "line or square 8px"
+    },
+    "deltas": {
+      "good": "good colour + ▲/▼ + sign",
+      "bad": "bad colour + ▲/▼ + sign",
+      "lowerIsBetter": "flip colour, say lower is better",
+      "semantic": "good and bad are judgement colours: never used for series, ramps or the accent",
+      "variant": "A",
+      "variantName": "cerulean / vermilion"
+    },
+    "periodLegend": {
+      "use": "charts that compare periods",
+      "current": "solid c1 line swatch 12x2 + date range",
+      "previous": "dashed (3 2) c1 at the same width + date range",
+      "placement": "under the title, caption textMuted"
+    },
+    "kpiHistory": {
+      "periods": 6,
+      "row": "label, track bar, value",
+      "current": "text colour, bar c1",
+      "past": "textMuted, bar context",
+      "delta": "on the headline figure only"
+    },
+    "empty": {
+      "undefined": "— (em dash) in textSubtle with a one-line reason",
+      "zero": "a real 0 in the normal format",
+      "noData": "keep axes and baseline, no series, note in the plot centre: No <measure> in this period",
+      "never": "NaN, Infinity, skeleton shimmer, fake placeholder data"
+    }
+  },
+  "map": {
+    "choropleth": {
+      "scale": "single-hue sequential",
+      "classes": 5,
+      "method": "quantize, nice thresholds",
+      "legend": "threshold boxes with boundary labels and unit",
+      "stroke": "card colour 0.75px",
+      "noData": "land with dotted outline"
+    },
+    "symbols": {
+      "shape": "hollow circle",
+      "stroke": "c1 1.25px",
+      "fillOpacity": 0.08,
+      "scale": "sqrt",
+      "maxRadius": {
+        "desktop": 26,
+        "mobile": 16
+      },
+      "labels": "top 5 (desktop) or 3 (mobile), name + value, collision avoidance: right, left, upper-right, upper-left, above, below, else skip"
+    },
+    "projection": {
+      "world": "Equal Earth, cropped to data extent (lat -50..72)",
+      "us": "Albers USA"
+    },
+    "land": "one step off the card",
+    "borders": "thin, card colour",
+    "graticule": false,
+    "mobile": "pinned readout row; tap selects"
+  },
+  "number": {
+    "locale": "en-US",
+    "currencyCompact": {
+      "style": "currency",
+      "currency": "USD",
+      "notation": "compact",
+      "maximumSignificantDigits": 3
+    },
+    "currencyAxis": {
+      "style": "currency",
+      "currency": "USD",
+      "notation": "compact",
+      "maximumFractionDigits": 1
+    },
+    "currencyFull": {
+      "style": "currency",
+      "currency": "USD",
+      "maximumFractionDigits": 0
+    },
+    "percent": {
+      "style": "percent",
+      "minimumFractionDigits": 1,
+      "maximumFractionDigits": 1
+    },
+    "delta": {
+      "style": "percent",
+      "minimumFractionDigits": 1,
+      "maximumFractionDigits": 1,
+      "signDisplay": "exceptZero"
+    },
+    "minusSign": "−"
+  },
+  "motion": {
+    "hover": "none beyond crosshair and dots",
+    "intro": "none"
+  },
+  "checks": {
+    "light": {
+      "textContrast": {
+        "text": 17.93,
+        "textMuted": 7.81,
+        "textSubtle": 5.33,
+        "textSubtleOnPage": 4.89,
+        "good": 4.72,
+        "bad": 6.38,
+        "accentOnCard": 17.93,
+        "accentContrast": 17.93
+      },
+      "gridVsCard": 1.19,
+      "borderVsCard": 1.26,
+      "landVsCard": 1.18,
+      "seriesContrastVsCard": {
+        "c1": 6.71,
+        "c2": 3.54,
+        "c3": 7.01,
+        "c4": 3.32,
+        "c5": 6.29,
+        "c6": 3.69,
+        "c7": 6.07,
+        "c8": 3.71
+      },
+      "categoricalCVD": {
+        "first3": {
+          "normal": {
+            "min": 30.7,
+            "pair": "c1/c3"
+          },
+          "deutan": {
+            "min": 17.7,
+            "pair": "c1/c3"
+          },
+          "protan": {
+            "min": 14.3,
+            "pair": "c1/c3"
+          },
+          "tritan": {
+            "min": 19.2,
+            "pair": "c2/c3"
+          }
+        },
+        "first6": {
+          "normal": {
+            "min": 23.6,
+            "pair": "c3/c6"
+          },
+          "deutan": {
+            "min": 17.7,
+            "pair": "c1/c3"
+          },
+          "protan": {
+            "min": 12.7,
+            "pair": "c2/c5"
+          },
+          "tritan": {
+            "min": 19.1,
+            "pair": "c1/c5"
+          }
+        },
+        "all8": {
+          "normal": {
+            "min": 19.5,
+            "pair": "c3/c8"
+          },
+          "deutan": {
+            "min": 9.7,
+            "pair": "c3/c7"
+          },
+          "protan": {
+            "min": 9.6,
+            "pair": "c3/c7"
+          },
+          "tritan": {
+            "min": 8.3,
+            "pair": "c2/c8"
+          }
+        }
+      },
+      "goodVsBadCVD": {
+        "normal": {
+          "min": 49.5,
+          "pair": "c1/c2"
+        },
+        "deutan": {
+          "min": 48.9,
+          "pair": "c1/c2"
+        },
+        "protan": {
+          "min": 45.5,
+          "pair": "c1/c2"
+        },
+        "tritan": {
+          "min": 57.2,
+          "pair": "c1/c2"
+        }
+      },
+      "semanticVsData": {
+        "good": {
+          "minDE": 12.7,
+          "closest": "seq-5"
+        },
+        "bad": {
+          "minDE": 26.1,
+          "closest": "c8"
+        }
+      },
+      "sequentialLightness": [
+        0.949,
+        0.86,
+        0.761,
+        0.66,
+        0.56,
+        0.459,
+        0.359
+      ]
+    },
+    "dark": {
+      "textContrast": {
+        "text": 15.02,
+        "textMuted": 6.97,
+        "textSubtle": 5.44,
+        "textSubtleOnPage": 5.84,
+        "good": 6.12,
+        "bad": 5.85,
+        "accentOnCard": 15.02,
+        "accentContrast": 16.13
+      },
+      "gridVsCard": 1.16,
+      "borderVsCard": 1.24,
+      "landVsCard": 1.16,
+      "seriesContrastVsCard": {
+        "c1": 9.22,
+        "c2": 5.81,
+        "c3": 9.14,
+        "c4": 6.25,
+        "c5": 9.64,
+        "c6": 5.59,
+        "c7": 9.97,
+        "c8": 5.49
+      },
+      "categoricalCVD": {
+        "first3": {
+          "normal": {
+            "min": 32.2,
+            "pair": "c1/c3"
+          },
+          "deutan": {
+            "min": 19.2,
+            "pair": "c1/c3"
+          },
+          "protan": {
+            "min": 14.1,
+            "pair": "c1/c3"
+          },
+          "tritan": {
+            "min": 16.1,
+            "pair": "c2/c3"
+          }
+        },
+        "first6": {
+          "normal": {
+            "min": 21.5,
+            "pair": "c4/c5"
+          },
+          "deutan": {
+            "min": 11,
+            "pair": "c1/c6"
+          },
+          "protan": {
+            "min": 13.6,
+            "pair": "c2/c4"
+          },
+          "tritan": {
+            "min": 13.6,
+            "pair": "c1/c4"
+          }
+        },
+        "all8": {
+          "normal": {
+            "min": 15.7,
+            "pair": "c3/c8"
+          },
+          "deutan": {
+            "min": 8.1,
+            "pair": "c4/c8"
+          },
+          "protan": {
+            "min": 10.5,
+            "pair": "c3/c7"
+          },
+          "tritan": {
+            "min": 8.3,
+            "pair": "c2/c8"
+          }
+        }
+      },
+      "goodVsBadCVD": {
+        "normal": {
+          "min": 59.6,
+          "pair": "c1/c2"
+        },
+        "deutan": {
+          "min": 52.1,
+          "pair": "c1/c2"
+        },
+        "protan": {
+          "min": 45.3,
+          "pair": "c1/c2"
+        },
+        "tritan": {
+          "min": 65.5,
+          "pair": "c1/c2"
+        }
+      },
+      "semanticVsData": {
+        "good": {
+          "minDE": 16.7,
+          "closest": "c1"
+        },
+        "bad": {
+          "minDE": 26.5,
+          "closest": "c2"
+        }
+      },
+      "sequentialLightness": [
+        0.3,
+        0.379,
+        0.469,
+        0.56,
+        0.661,
+        0.761,
+        0.857
+      ]
+    }
+  }
+}

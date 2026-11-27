@@ -29,7 +29,7 @@ export const checkHelp: CommandHelp = {
  */
 const ENVIRONMENT_CODES = new Set(["HM1001", "HM2010"]);
 
-function exitCodeFor(diagnostics: readonly Diagnostic[], strict: boolean): ExitCode {
+export function exitCodeFor(diagnostics: readonly Diagnostic[], strict: boolean): ExitCode {
   const errors = diagnostics.filter((d) => d.severity === "error");
   if (errors.some((d) => d.file === CONFIG_FILE && !ENVIRONMENT_CODES.has(d.code)))
     return EXIT.usage;

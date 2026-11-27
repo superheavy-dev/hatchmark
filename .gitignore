@@ -13,3 +13,6 @@ packages/hatchmark/NOTICE
 
 # Wrangler local state
 .wrangler/
+
+# Built by vite build (the browser runtime)
+packages/hatchmark/assets/runtime/

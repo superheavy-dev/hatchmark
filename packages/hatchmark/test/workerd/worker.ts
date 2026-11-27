@@ -1,3 +1,4 @@
+import { REVENUE_LINE, SALES } from "../../gallery/fixtures.js";
 import {
   assemble,
   planDashboard,
@@ -6,6 +7,7 @@ import {
   windowBounds,
 } from "../../src/compiler/index.js";
 import { createReport, renderHuman } from "../../src/diagnostics/index.js";
+import { renderChartSvg, renderDashboardPage, textWidth } from "../../src/render/index.js";
 import {
   checkReferences,
   jsonSchema,
@@ -101,6 +103,11 @@ export default {
         queries: [],
         materialization: {},
       }),
+      page: renderDashboardPage(SALES, {
+        assets: { runtime: "../_hatchmark/hatchmark.js", fonts: {} },
+      }),
+      svg: renderChartSvg(REVENUE_LINE, SALES, { width: 600, mode: "dark" }),
+      width: textWidth("Revenue", { size: 12 }),
     });
   },
 };

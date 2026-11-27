@@ -1,5 +1,6 @@
 // Bundles the engine core for a worker and runs it in workerd (Cloudflare's open-source runtime)
-// through Miniflare, as a smoke test that the modules it reaches use only web-standard APIs; the
+// through Miniflare, as a smoke test that the modules it reaches (renderer included, which renders
+// the sample dashboard page there) use only web-standard APIs; the
 // core-purity unit test scans every core module statically. Exits non-zero on failure.
 import assert from "node:assert/strict";
 import { build } from "esbuild";
@@ -18,6 +19,9 @@ interface SmokeResult {
   params: unknown[];
   window: unknown;
   planHash: string;
+  page: string;
+  svg: string;
+  width: number;
 }
 
 const bundle = await build({
@@ -55,7 +59,21 @@ try {
   assert.equal(body.kpi.value, 10);
   assert.deepEqual(body.kpi.current, { start: "2026-10-01", end: "2026-11-01" });
   assert.equal(body.planHash, "b677a470c9588ffe57c77a8397b6c26fe280e46a11c07ef3220140b947f8c3b1");
-  console.log("workerd smoke test passed:", body.report.diagnostics[0].message);
+  assert.match(body.page, /^<!doctype html>/);
+  assert.match(body.page, /<h1>Sales overview<\/h1>/);
+  assert.match(body.page, /Data through Oct 31, 2026/);
+  assert.ok((body.page.match(/<svg /g) ?? []).length >= 14);
+  assert.match(
+    body.svg,
+    /^<svg xmlns="http:\/\/www\.w3\.org\/2000\/svg" font-family="IBM Plex Sans/,
+  );
+  assert.match(body.svg, /stroke="#87c0ff"/);
+  assert.ok(body.width > 40 && body.width < 50, `text width ${body.width}`);
+  console.log(
+    "workerd smoke test passed:",
+    body.report.diagnostics[0].message,
+    `| dashboard page ${body.page.length} bytes rendered in workerd`,
+  );
 } finally {
   await mf.dispose();
 }

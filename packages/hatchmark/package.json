@@ -22,24 +22,36 @@
     "dist",
     "docs",
     "schema",
+    "assets",
     "LICENSE",
     "NOTICE"
   ],
   "scripts": {
-    "build": "tsc -p tsconfig.build.json",
-    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "build": "tsc -p tsconfig.build.json && vite build",
+    "typecheck": "tsc -p tsconfig.json --noEmit && tsc -p runtime/tsconfig.json",
     "gen:schema": "pnpm build && node scripts/write-schemas.ts",
+    "gen:text-metrics": "node scripts/gen-text-metrics.mjs",
     "prepack": "node -e \"for (const f of ['LICENSE', 'NOTICE']) require('fs').copyFileSync('../../' + f, f)\""
   },
   "dependencies": {
     "@duckdb/node-api": "2.0.1-r.1",
     "@vercel/detect-agent": "^1.2.7",
+    "d3-array": "^3.2.5",
+    "d3-scale": "^4.0.3",
+    "d3-shape": "^3.2.1",
     "zod": "^4.6.7"
   },
   "bin": {
     "hatchmark": "./dist/cli/bin.js"
   },
   "devDependencies": {
-    "ajv": "^8.20.0"
+    "@types/d3-array": "^3.2.2",
+    "@types/d3-scale": "^4.0.9",
+    "@types/d3-shape": "^3.2.0",
+    "@types/fontkit": "^2.0.9",
+    "ajv": "^8.20.0",
+    "fontkit": "^3.0.0",
+    "playwright": "^1.65.1",
+    "vite": "~8.3.8"
   }
 }

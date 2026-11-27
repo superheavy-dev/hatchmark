@@ -24,7 +24,7 @@ export const CODES = {
   HM0004: {
     title: "would overwrite existing files",
     explanation:
-      "hatchmark init found files it would write already in the target directory, and wrote nothing. The diagnostic lists them. Pass --force to overwrite them, or choose another directory. AGENTS.md and .gitignore are always merged, never overwritten.",
+      "hatchmark init found files it would write already in the target directory, and wrote nothing. The diagnostic lists them. Pass --force to overwrite them, or choose another directory. AGENTS.md and .gitignore are always merged, never overwritten. hatchmark build replaces its output directory on every run, so it refuses one that is not empty and holds no _hatchmark/ folder (it did not write it), or one that contains the project. Empty the directory or pass another --out.",
   },
   HM0005: {
     title: "unbalanced AGENTS.md markers",

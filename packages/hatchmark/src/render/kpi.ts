@@ -1,0 +1,78 @@
+import type { KpiData } from "../compiler/dashboard-data.js";
+import { isNumber, metricOf, type RenderContext } from "./chart.js";
+import { formatChange, formatPreviousSpan, formatSpan, formatValue } from "./format.js";
+import { esc, r } from "./svg.js";
+
+/**
+ * One KPI cell for a KPI strip: label, headline figure in regular weight, the change with an arrow,
+ * a sign and a good or bad colour by the metric's better direction, and a note naming the
+ * comparison. null shows as an em dash with a reason; 0 shows as a real zero.
+ */
+export function renderKpi(block: KpiData, ctx: RenderContext): string {
+  const locale = ctx.data.locale;
+  const metric = metricOf(ctx, block.metric);
+  const label = block.title ?? metric.label;
+  const value = formatValue(block.value, metric, locale, "headline");
+  const kind = block.changeKind ?? (metric.format.type === "percent" ? "points" : "relative");
+  const raw = kind === "points" ? (block.changePct ?? block.change) : block.changePct;
+  const changeText =
+    block.value === null || block.previousValue === undefined || block.previousValue === null
+      ? undefined
+      : formatChange(raw, kind, locale);
+  let delta = "";
+  if (changeText !== undefined && isNumber(raw)) {
+    const direction = raw > 0 ? "up" : raw < 0 ? "down" : "flat";
+    const judged =
+      direction === "flat" || metric.better === "neutral"
+        ? "neutral"
+        : (direction === "up") === (metric.better === "up")
+          ? "good"
+          : "bad";
+    const arrow = direction === "up" ? "\u25B2" : direction === "down" ? "\u25BC" : "";
+    const spoken =
+      direction === "flat"
+        ? "no change"
+        : `${direction}${judged === "neutral" ? "" : `, ${judged === "good" ? "better" : "worse"}`}`;
+    delta = `<span class="hm-delta hm-${judged}">${arrow ? `<span aria-hidden="true">${arrow}</span>\u2009` : ""}${esc(changeText)}<span class="hm-sr"> (${spoken})</span></span>`;
+  }
+  let note: string;
+  if (block.value === null) note = "No data in this period";
+  else if (block.previous === undefined || block.previousValue === undefined) {
+    note = block.current ? formatSpan(block.current, locale) : "All time";
+  } else {
+    const span = formatPreviousSpan(block.previous, block.current, locale);
+    note =
+      block.previousValue === null
+        ? `No ${span} data to compare`
+        : `vs ${formatValue(block.previousValue, metric, locale, "headline")} in ${span}`;
+  }
+  if (metric.better === "down") note += " \u00B7 lower is better";
+  let spark = "";
+  const values = block.sparkline?.values ?? [];
+  const defined = values.filter(isNumber);
+  if (defined.length > 1) {
+    const lo = Math.min(...defined);
+    const hi = Math.max(...defined);
+    const x = (i: number) => (i / (values.length - 1)) * 100;
+    const y = (v: number) => (hi === lo ? 12 : 22 - ((v - lo) / (hi - lo)) * 20);
+    let d = "";
+    let pen = false;
+    values.forEach((v, i) => {
+      if (!isNumber(v)) {
+        pen = false;
+        return;
+      }
+      d += `${pen ? "L" : "M"}${r(x(i))},${r(y(v))}`;
+      pen = true;
+    });
+    spark = `<svg class="hm-spark" viewBox="0 0 100 24" preserveAspectRatio="none" aria-hidden="true"><path d="${d}"${ctx.paint.attrs("none", "c1")} stroke-width="1.5" vector-effect="non-scaling-stroke" stroke-linejoin="round"/></svg>`;
+  }
+  return [
+    `<div class="hm-kpi" style="--span:${block.span}">`,
+    `<div class="hm-kpi-label">${esc(label)}</div>`,
+    `<div class="hm-kpi-figure"><span class="hm-kpi-value${block.value === null ? " hm-null" : ""}">${esc(value)}</span>${delta}</div>`,
+    `<div class="hm-kpi-note">${esc(note)}</div>`,
+    spark,
+    "</div>",
+  ].join("");
+}
