@@ -8,6 +8,7 @@ import {
   type JsonDocument,
   toPointer,
 } from "../diagnostics/index.js";
+import { addPropertyFix, replaceValueFix } from "./fixes.js";
 
 type Path = (string | number)[];
 // biome-ignore lint/suspicious/noExplicitAny: walking Zod's internal definitions
@@ -110,6 +111,7 @@ function describeType(value: unknown): string {
 }
 
 function closestFix(
+  document: JsonDocument,
   input: unknown,
   options: string[],
   pointer: string,
@@ -117,16 +119,14 @@ function closestFix(
   if (typeof input !== "string") return {};
   const match = closestMatch(input, options);
   if (match === undefined) return {};
-  return {
-    help: `did you mean "${match}"?`,
-    fix: {
-      op: "replace",
-      pointer,
-      value: match,
-      applicability: match.toLowerCase() === input.toLowerCase() ? "safe" : "unsafe",
-      description: `replace with "${match}"`,
-    },
-  };
+  const fix = replaceValueFix(
+    document,
+    pointer,
+    match,
+    match.toLowerCase() === input.toLowerCase() ? "safe" : "unsafe",
+    `replace with "${match}"`,
+  );
+  return { help: `did you mean "${match}"?`, ...(fix ? { fix } : {}) };
 }
 
 export interface IssueContext {
@@ -154,14 +154,14 @@ export function issuesToDiagnostics(
   ): void => {
     const { target, ...rest } = extra;
     const pointer = toPointer(path);
-    const range = document.rangeOf(pointer, target);
+    const location = document.locationOf(pointer, target);
     out.push({
       code,
       severity: "error",
       message,
       file,
       pointer,
-      ...(range ? { range } : {}),
+      ...location,
       ...rest,
       docs: docsCommand(code),
     });
@@ -195,20 +195,21 @@ export function issuesToDiagnostics(
         path.length === 1 && ctx.defaults && Object.hasOwn(ctx.defaults, name)
           ? ctx.defaults[name]
           : undefined;
+      const fix =
+        fallback === undefined
+          ? undefined
+          : addPropertyFix(
+              document,
+              toPointer(path.slice(0, -1)),
+              name,
+              fallback,
+              "safe",
+              `add "${name}": ${JSON.stringify(fallback)} (the default)`,
+            );
       push("HM3001", path, `missing required property "${name}"`, {
         label: `add "${name}"`,
         ...(options ? { expected: options } : {}),
-        ...(fallback !== undefined
-          ? {
-              fix: {
-                op: "add",
-                pointer: toPointer(path),
-                value: fallback,
-                applicability: "safe",
-                description: `add "${name}": ${JSON.stringify(fallback)} (the default)`,
-              } satisfies Fix,
-            }
-          : {}),
+        ...(fix ? { fix } : {}),
       });
       continue;
     }
@@ -233,7 +234,6 @@ export function issuesToDiagnostics(
             ...(match && keyRange
               ? {
                   fix: {
-                    op: "text",
                     range: keyRange,
                     text: JSON.stringify(match),
                     applicability:
@@ -253,7 +253,7 @@ export function issuesToDiagnostics(
         const expected = issue.values.map((v) => (typeof v === "string" ? v : JSON.stringify(v)));
         push("HM3004", path, `invalid value ${JSON.stringify(at.value)}`, {
           expected,
-          ...closestFix(at.value, expected, toPointer(path)),
+          ...closestFix(document, at.value, expected, toPointer(path)),
         });
         break;
       }
@@ -262,7 +262,7 @@ export function issuesToDiagnostics(
           const options = ((issue as { options?: unknown[] }).options ?? []).map(String);
           push("HM3004", path, `invalid ${String(key)} ${JSON.stringify(at.value)}`, {
             expected: options,
-            ...closestFix(at.value, options, toPointer(path)),
+            ...closestFix(document, at.value, options, toPointer(path)),
           });
           break;
         }

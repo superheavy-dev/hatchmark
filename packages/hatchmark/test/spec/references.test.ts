@@ -4,7 +4,7 @@ import {
   dashboardDependencies,
   dashboardsAffectedBy,
 } from "../../src/spec/index.js";
-import { CONFIG, DASHBOARD, METRICS, projectFrom } from "./helpers.js";
+import { applyFix, CONFIG, DASHBOARD, METRICS, projectFrom } from "./helpers.js";
 
 function refs(files: Parameters<typeof projectFrom>[0]) {
   return checkReferences(projectFrom(files));
@@ -26,7 +26,7 @@ describe("checkReferences", () => {
       pointer: "/blocks/0/metric",
       label: "no file metrics/revenu.json",
       help: 'did you mean "revenue"?',
-      fix: { op: "replace", value: "revenue", applicability: "unsafe" },
+      fix: { text: '"revenue"', applicability: "unsafe" },
     });
     expect(d?.expected).toEqual(Object.keys(METRICS));
   });
@@ -114,6 +114,13 @@ describe("checkReferences", () => {
       ["HM2006", "/blocks/1/percentOfTotal/0"],
     ]);
     expect(ds[1]?.label).toBe("count_distinct does not add up across rows");
+    const text =
+      projectFrom({
+        dashboards: withBlocks(table(["avg_order_value", "merchants"])),
+      }).dashboards.get("sales")?.document.text ?? "";
+    const [first] = refs({ dashboards: withBlocks(table(["avg_order_value", "merchants"])) });
+    const fixed = JSON.parse(applyFix(text, first?.fix));
+    expect(fixed.blocks[0].percentOfTotal).toEqual(["merchants"]);
   });
 
   it("checks sort keys", () => {

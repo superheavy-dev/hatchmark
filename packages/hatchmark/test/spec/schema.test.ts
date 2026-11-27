@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { PROJECT_DEFAULTS, parseSpecFile } from "../../src/spec/index.js";
-import { CONFIG, DASHBOARD, METRICS, projectFrom } from "./helpers.js";
+import { applyFix, CONFIG, DASHBOARD, METRICS, projectFrom } from "./helpers.js";
 
 const json = (v: unknown): string => `${JSON.stringify(v, null, 2)}\n`;
 
@@ -28,7 +28,16 @@ describe("spec schemas", () => {
       message: 'missing required property "locale"',
       pointer: "/locale",
       range: { start: { line: 1, column: 1 } },
-      fix: { op: "add", pointer: "/locale", value: PROJECT_DEFAULTS.locale, applicability: "safe" },
+      fix: { applicability: "safe" },
+    });
+    const fixed = applyFix(json(rest), d?.fix);
+    expect(JSON.parse(fixed)).toEqual({ ...rest, locale: PROJECT_DEFAULTS.locale });
+    expect(fixed).toContain('\n  "locale": "en-US"\n}');
+    expect(diagnose("project", fixed)).toEqual([]);
+    const compact = JSON.stringify(rest);
+    expect(JSON.parse(applyFix(compact, diagnose("project", compact)[0]?.fix))).toEqual({
+      ...rest,
+      locale: "en-US",
     });
   });
 
@@ -57,7 +66,7 @@ describe("spec schemas", () => {
       message: 'unknown property "metirc"',
       pointer: "/blocks/0/metirc",
       help: 'did you mean "metric"?',
-      fix: { op: "text", text: '"metric"', applicability: "unsafe" },
+      fix: { text: '"metric"', applicability: "unsafe" },
     });
     expect(unknown?.expected).toContain("sparkline");
     expect(ds.find((d) => d.code === "HM3001")?.pointer).toBe("/blocks/0/metric");
@@ -72,7 +81,7 @@ describe("spec schemas", () => {
       code: "HM3004",
       pointer: "/blocks/0/type",
       expected: ["kpi", "line", "area", "bar", "bar_list", "table", "text"],
-      fix: { op: "replace", value: "line", applicability: "unsafe" },
+      fix: { text: '"line"', applicability: "unsafe" },
     });
   });
 
@@ -81,7 +90,7 @@ describe("spec schemas", () => {
       ...DASHBOARD,
       blocks: [{ type: "line", metrics: ["revenue"], grain: "Week" }],
     });
-    expect(d).toMatchObject({ code: "HM3004", fix: { value: "week", applicability: "safe" } });
+    expect(d).toMatchObject({ code: "HM3004", fix: { text: '"week"', applicability: "safe" } });
   });
 
   it("report a missing type with the allowed values", () => {

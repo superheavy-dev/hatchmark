@@ -1,4 +1,32 @@
+import type { Fix, Position } from "../../src/diagnostics/index.js";
 import { type Project, parseSpecFile } from "../../src/spec/index.js";
+
+function offsetOf(text: string, position: Position): number {
+  let offset = 0;
+  for (let line = 1; line < position.line; line++) {
+    const brk = /\r\n|\r|\n/g;
+    brk.lastIndex = offset;
+    const match = brk.exec(text);
+    if (!match) return text.length;
+    offset = match.index + match[0].length;
+  }
+  let column = 1;
+  while (column < position.column && offset < text.length) {
+    offset += (text.codePointAt(offset) ?? 0) > 0xffff ? 2 : 1;
+    column++;
+  }
+  return offset;
+}
+
+/** Applies one fix to the text it was produced from. */
+export function applyFix(text: string, fix: Fix | undefined): string {
+  if (fix === undefined) throw new Error("no fix");
+  return (
+    text.slice(0, offsetOf(text, fix.range.start)) +
+    fix.text +
+    text.slice(offsetOf(text, fix.range.end))
+  );
+}
 
 export const CONFIG = {
   version: 1,

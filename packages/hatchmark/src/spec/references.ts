@@ -9,10 +9,15 @@ import {
   type Severity,
 } from "../diagnostics/index.js";
 import { type Block, blockId, type Dashboard, DEFAULT_PERIOD } from "./dashboard.js";
+import { removeItemFix, replaceValueFix } from "./fixes.js";
 import { isAdditive, type Metric } from "./metric.js";
 import type { Project, SpecFile } from "./project.js";
 
 export const TEXT_REFERENCE_FIELDS = ["value", "previous", "change", "change_pct"] as const;
+function optional<K extends string, V>(key: K, value: V | undefined): { [P in K]?: V } {
+  return (value === undefined ? {} : { [key]: value }) as { [P in K]?: V };
+}
+
 const TEXT_REFERENCE = /\{\{([^{}]*)\}\}/g;
 const TEXT_REFERENCE_BODY = /^([a-z][a-z0-9_]*)(?:\.([a-z_]+))?$/;
 
@@ -28,14 +33,14 @@ interface Reporter {
 function reporter(spec: SpecFile, out: Diagnostic[]): Reporter {
   return {
     report(code, pointer, message, extra = {}) {
-      const range = extra.range ?? spec.document.rangeOf(pointer);
+      const location = extra.range ? {} : spec.document.locationOf(pointer);
       out.push({
         code,
         severity: "error",
         message,
         file: spec.file,
         pointer,
-        ...(range ? { range } : {}),
+        ...location,
         ...extra,
         docs: docsCommand(code),
       });
@@ -44,22 +49,21 @@ function reporter(spec: SpecFile, out: Diagnostic[]): Reporter {
 }
 
 function suggestion(
+  document: JsonDocument,
   input: string,
   options: string[],
   pointer: string,
 ): { help?: string; fix?: Fix } {
   const match = closestMatch(input, options);
   if (match === undefined) return {};
-  return {
-    help: `did you mean "${match}"?`,
-    fix: {
-      op: "replace",
-      pointer,
-      value: match,
-      applicability: match.toLowerCase() === input.toLowerCase() ? "safe" : "unsafe",
-      description: `replace with "${match}"`,
-    },
-  };
+  const fix = replaceValueFix(
+    document,
+    pointer,
+    match,
+    match.toLowerCase() === input.toLowerCase() ? "safe" : "unsafe",
+    `replace with "${match}"`,
+  );
+  return { help: `did you mean "${match}"?`, ...(fix ? { fix } : {}) };
 }
 
 function metricMap(project: Project): Map<string, Metric> {
@@ -110,7 +114,7 @@ function checkMetrics(project: Project, out: Diagnostic[]): void {
         r.report("HM2001", "/table", `unknown source "${metric.table}"`, {
           label: "not a key of sources in hatchmark.json",
           expected: sources,
-          ...suggestion(metric.table, sources, "/table"),
+          ...suggestion(file.document, metric.table, sources, "/table"),
         });
       }
       continue;
@@ -121,7 +125,7 @@ function checkMetrics(project: Project, out: Diagnostic[]): void {
         r.report("HM2003", `/${side}`, `unknown metric "${ref}"`, {
           label: `no file metrics/${ref}.json`,
           expected: names,
-          ...suggestion(ref, names, `/${side}`),
+          ...suggestion(file.document, ref, names, `/${side}`),
         });
       } else if (reaches(ref, name, metrics)) {
         r.report("HM2004", `/${side}`, `metric "${name}" refers back to itself through "${ref}"`);
@@ -191,7 +195,7 @@ function checkDashboard(project: Project, file: SpecFile<"dashboard">, out: Diag
     r.report("HM2003", pointer, `unknown metric "${name}"`, {
       label: `no file metrics/${name}.json`,
       expected: names,
-      ...suggestion(name, names, pointer),
+      ...suggestion(file.document, name, names, pointer),
     });
     return false;
   };
@@ -241,12 +245,16 @@ function checkDashboard(project: Project, file: SpecFile<"dashboard">, out: Diag
         if (metric && !isAdditive(metric)) {
           r.report("HM4001", pointer, `percent of total is not meaningful for "${name}"`, {
             label: `${metric.type === "aggregate" ? metric.aggregate : metric.type} does not add up across rows`,
-            fix: {
-              op: "remove",
-              pointer,
-              applicability: "unsafe",
-              description: `remove "${name}" from percentOfTotal`,
-            },
+            ...optional(
+              "fix",
+              removeItemFix(
+                file.document,
+                `${base}/percentOfTotal`,
+                i,
+                "unsafe",
+                `remove "${name}" from percentOfTotal`,
+              ),
+            ),
           });
         }
       });
@@ -260,7 +268,7 @@ function checkDashboard(project: Project, file: SpecFile<"dashboard">, out: Diag
       if (!allowed.includes(block.sort.by)) {
         r.report("HM2009", `${base}/sort/by`, `cannot sort by "${block.sort.by}"`, {
           expected: allowed,
-          ...suggestion(block.sort.by, allowed, `${base}/sort/by`),
+          ...suggestion(file.document, block.sort.by, allowed, `${base}/sort/by`),
         });
       }
     }
