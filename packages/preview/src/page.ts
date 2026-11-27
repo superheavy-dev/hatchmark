@@ -155,7 +155,7 @@ function toggle(key: string, label: string, options: [string, string, boolean?][
 
 function shell(input: SiteInput): string {
   const label = buildLabel(input.build);
-  const pages: Record<string, string> = { components: "gallery.html" };
+  const pages: Record<string, string> = { components: "components/" };
   if (input.dashboard) pages.dashboard = "dashboard/";
   const dashboardLink = input.dashboard
     ? '<a href="dashboard/">Open the example dashboard</a>'
@@ -247,7 +247,7 @@ function notice(title: string, text: string): string {
 export function renderSite(input: SiteInput): Map<string, string> {
   return new Map([
     ["index.html", shell(input)],
-    ["gallery.html", gallery(input)],
+    ["components/index.html", gallery(input)],
     ["404.html", notice("Not found", '<a href="/">Back to the preview</a>')],
   ]);
 }

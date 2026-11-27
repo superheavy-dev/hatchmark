@@ -7,7 +7,7 @@ Builds and deploys the component preview gallery for every pull request. Private
 `pnpm --filter @hatchmark/preview run site` (after `pnpm build`) writes a static site to `dist/site/`:
 
 - `index.html`: the gallery shell. A toolbar switches between the component gallery and the example dashboard, light and dark, and desktop and a 390 px frame. The page renders inside an iframe, so at 390 px the content's own viewport is 390 px wide and mobile media queries really apply. The state lives in the URL hash (`#view=components&theme=dark&width=mobile`), so a link reproduces what the reviewer saw.
-- `gallery.html`: every registered entry, grouped by component, or "No components yet" with the build info.
+- `components/index.html`: every registered entry, grouped by component, or "No components yet" with the build info.
 - `dashboard/`: the example dashboard, once it can be built (see below).
 - `404.html`.
 

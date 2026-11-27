@@ -17,14 +17,18 @@ describe("preview site", () => {
   });
 
   it("shows an empty state with the build info", () => {
-    const gallery = renderSite(empty).get("gallery.html") ?? "";
+    const gallery = renderSite(empty).get("components/index.html") ?? "";
     expect(gallery).toContain("No components yet");
     expect(gallery).toContain("PR #12 · 1a5224b");
     expect(gallery).toContain(build.sha);
   });
 
   it("writes the shell, the gallery and a 404 page", () => {
-    expect([...renderSite(empty).keys()]).toEqual(["index.html", "gallery.html", "404.html"]);
+    expect([...renderSite(empty).keys()]).toEqual([
+      "index.html",
+      "components/index.html",
+      "404.html",
+    ]);
   });
 
   it("is deterministic for the same input", () => {
@@ -35,7 +39,8 @@ describe("preview site", () => {
   it("groups variants under their component in registration order", () => {
     const line = { component: "line", variant: "plain", title: "Plain", html: "<svg></svg>" };
     const gallery =
-      renderSite({ ...empty, entries: [kpi("b"), line, kpi("a")] }).get("gallery.html") ?? "";
+      renderSite({ ...empty, entries: [kpi("b"), line, kpi("a")] }).get("components/index.html") ??
+      "";
     expect(gallery).not.toContain("No components yet");
     expect(gallery.indexOf('id="kpi--b"')).toBeLessThan(gallery.indexOf('id="kpi--a"'));
     expect(gallery.indexOf('id="kpi--a"')).toBeLessThan(gallery.indexOf('id="line"'));
@@ -43,7 +48,9 @@ describe("preview site", () => {
 
   it("escapes titles and inserts entry html as is", () => {
     const gallery =
-      renderSite({ ...empty, entries: [kpi("plain", "<b>Revenue</b>")] }).get("gallery.html") ?? "";
+      renderSite({ ...empty, entries: [kpi("plain", "<b>Revenue</b>")] }).get(
+        "components/index.html",
+      ) ?? "";
     expect(gallery).toContain("&lt;b&gt;Revenue&lt;/b&gt;");
     expect(gallery).toContain('<div class="kpi">plain</div>');
   });
@@ -62,7 +69,7 @@ describe("preview site", () => {
 
   it("puts the head markup into the gallery", () => {
     const gallery = renderSite({ ...empty, head: '<link rel="stylesheet" href="theme.css">' }).get(
-      "gallery.html",
+      "components/index.html",
     );
     expect(gallery).toContain('<link rel="stylesheet" href="theme.css">');
   });
