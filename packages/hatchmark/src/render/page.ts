@@ -164,25 +164,35 @@ function tableSpan(block: TableData, ctx: RenderContext): string | undefined {
   if (block.empty) return undefined;
   const locale = ctx.data.locale;
   const label = (m: string) => ctx.data.metrics[m]?.label ?? m;
+  const windows = new Map(Object.entries(block.windows ?? {}));
+  const throughs = new Map(Object.entries(block.throughs ?? {}));
+  const empties = new Map(Object.entries(block.emptyMetrics ?? {}));
+  const allTime = new Set(block.allTime ?? []);
   const dated = block.window
     ? formatSpan(block.window, locale)
     : block.through
       ? `through ${formatDate(block.through, locale)}`
       : "all time";
-  return [
-    dated,
-    ...block.metrics.flatMap((m) => {
-      const window = block.windows?.[m];
-      const through = block.throughs?.[m];
-      const empty = block.emptyMetrics?.[m];
-      if (window) return [`${label(m)} ${formatSpan(window, locale)}`];
-      if (through) return [`${label(m)} through ${formatDate(through, locale)}`];
-      if (block.allTime?.includes(m)) return [`${label(m)} over all time`];
-      if (empty === "no_complete_day") return [`${label(m)} no complete day yet`];
-      if (empty === "no_data") return [`${label(m)} no data in this period`];
-      return [];
-    }),
-  ].join(", ");
+  const scopeOf = (m: string): string => {
+    const window = windows.get(m);
+    const through = throughs.get(m);
+    const empty = empties.get(m);
+    if (window) return formatSpan(window, locale);
+    if (through) return `through ${formatDate(through, locale)}`;
+    if (allTime.has(m)) return "all time";
+    if (empty === "no_complete_day") return "no complete day yet";
+    if (empty === "no_data") return "no data in this period";
+    return dated;
+  };
+  const groups = new Map<string, string[]>();
+  for (const m of new Set(block.metrics)) {
+    const scope = scopeOf(m);
+    groups.set(scope, [...(groups.get(scope) ?? []), label(m)]);
+  }
+  if (groups.size <= 1) return dated;
+  return [...groups]
+    .map(([scope, labels]) => `${listOf(labels)}: ${scope.replaceAll(" ", "\u00A0")}`)
+    .join("; ");
 }
 
 /**
@@ -341,10 +351,12 @@ function card(
   const { title, subtitle } = blockHeading(block, ctx);
   const id = `hm-${block.id}-t`;
   const body =
-    block.type === "table" ? renderTable(block, ctx, alone) : chartBody(block, ctx, title);
+    block.type === "table"
+      ? renderTable(block, ctx, alone, subtitle !== "")
+      : chartBody(block, ctx, title);
   if (block.type === "table") {
     const download = `<button type="button" class="hm-csv" data-hm-csv="${esc(block.id)}" aria-label="Download ${esc(title)} as CSV" hidden>Download CSV</button>`;
-    return `<section class="hm-card hm-table" style="--span:${block.span}" aria-labelledby="${esc(id)}"><header class="hm-card-head hm-switch"><div class="hm-card-titles"><h2 id="${esc(id)}">${esc(title)}</h2>${subtitle ? `<p>${esc(subtitle)}</p>` : ""}</div>${download}</header>${body}</section>`;
+    return `<section class="hm-card hm-table" style="--span:${block.span}" aria-labelledby="${esc(id)}"><header class="hm-card-head hm-switch"><div class="hm-card-titles"><h2 id="${esc(id)}">${esc(title)}</h2>${subtitle ? `<p id="hm-${esc(block.id)}-s">${esc(subtitle)}</p>` : ""}</div>${download}</header>${body}</section>`;
   }
   return `<section class="hm-card hm-${block.type}" style="--span:${chartSpan(block)}" aria-labelledby="${esc(id)}"><header class="hm-card-head"><h2 id="${esc(id)}">${esc(title)}</h2>${subtitle ? `<p>${esc(subtitle)}</p>` : ""}</header>${body}</section>`;
 }

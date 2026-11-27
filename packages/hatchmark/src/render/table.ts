@@ -42,7 +42,12 @@ function track(geometry: { left: number; width: number }, zero: number | undefin
  * and keep their full text in a title. An outer key that repeats the row above, or that a subtotal
  * row already names, is left to screen readers, so groups read as groups.
  */
-export function renderTable(block: TableData, ctx: RenderContext, alone = true): string {
+export function renderTable(
+  block: TableData,
+  ctx: RenderContext,
+  alone = true,
+  described = false,
+): string {
   const locale = ctx.data.locale;
   const width = block.by.length;
   const metrics = block.metrics.map((m) => metricOf(ctx, m));
@@ -253,5 +258,5 @@ export function renderTable(block: TableData, ctx: RenderContext, alone = true):
   const overflow = block.overflow ?? (alone ? "page" : "scroll");
   const tall =
     block.rows.length > TALL_TABLE_ROWS ? ` hm-tall${overflow === "page" ? " hm-grow" : ""}` : "";
-  return `<div class="hm-table-wrap${tall}" tabindex="0" role="region" aria-labelledby="hm-${esc(block.id)}-t"><table class="hm-table${grouped ? (block.subtotals ? " hm-ma" : " hm-mb") : ""}${grouped && block.subtotals && width > 2 ? " hm-deep" : ""}"><thead><tr>${head}</tr></thead><tbody>${rows}</tbody>${total}</table></div>${empty}${note}`;
+  return `<div class="hm-table-wrap${tall}" tabindex="0" role="region" aria-labelledby="hm-${esc(block.id)}-t"><table${described ? ` aria-describedby="hm-${esc(block.id)}-s"` : ""} class="hm-table${grouped ? (block.subtotals ? " hm-ma" : " hm-mb") : ""}${grouped && block.subtotals && width > 2 ? " hm-deep" : ""}"><thead><tr>${head}</tr></thead><tbody>${rows}</tbody>${total}</table></div>${empty}${note}`;
 }
