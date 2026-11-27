@@ -95,3 +95,6 @@ export function customIssue(
 ): { code: "custom"; path: (string | number)[]; message: string; params: { hatchmark: string } } {
   return { code: "custom", path, message, params: { hatchmark: code } };
 }
+
+/** Characters DuckDB expands as a glob in a file path (HM2016). */
+export const GLOB_CHARACTERS = /[*?[]/;

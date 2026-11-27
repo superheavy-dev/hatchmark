@@ -8,7 +8,7 @@ import {
   type JsonNode,
   type Severity,
 } from "../diagnostics/index.js";
-import { hasColumn, sameColumn } from "./common.js";
+import { GLOB_CHARACTERS, hasColumn, sameColumn } from "./common.js";
 import { type Block, blockId, type Dashboard, DEFAULT_PERIOD } from "./dashboard.js";
 import { addPropertyFix, removeItemFix, replaceValueFix } from "./fixes.js";
 import { metricSources } from "./graph.js";
@@ -519,8 +519,37 @@ function checkDashboard(project: Project, file: SpecFile<"dashboard">, out: Diag
  * Checks references between files: metric to source, ratio to metric, dashboard to metric,
  * text references, ids and table options. Pure and cheap, so it can run on every edit.
  */
+/** HM2016: a source path with glob characters, which DuckDB would read as several files. */
+function checkSourcePaths(project: Project, out: Diagnostic[]): void {
+  const config = project.config;
+  for (const [name, source] of Object.entries(config.spec?.sources ?? {})) {
+    if (!GLOB_CHARACTERS.test(source.path)) continue;
+    const pointer = `/sources/${name}/path`;
+    const renamed = source.path.replace(/[*?[\]]/g, "_");
+    const fix = replaceValueFix(
+      config.document,
+      pointer,
+      renamed,
+      "unsafe",
+      `rename the file to "${renamed}" and point the source at it`,
+    );
+    out.push({
+      code: "HM2016",
+      severity: "error",
+      message: `the path "${source.path}" of source "${name}" contains a glob character (*, ? or [)`,
+      file: config.file,
+      pointer,
+      ...config.document.locationOf(pointer),
+      help: "rename the file so its path has no *, ? or [",
+      ...(fix ? { fix } : {}),
+      docs: docsCommand("HM2016"),
+    });
+  }
+}
+
 export function checkReferences(project: Project): Diagnostic[] {
   const out: Diagnostic[] = [];
+  checkSourcePaths(project, out);
   checkMetrics(project, out);
   for (const file of project.dashboards.values()) checkDashboard(project, file, out);
   return out;

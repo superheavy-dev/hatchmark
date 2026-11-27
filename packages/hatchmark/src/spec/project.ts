@@ -5,7 +5,7 @@ import {
   type JsonDocument,
   parseJsonFile,
 } from "../diagnostics/index.js";
-import { IDENTIFIER_PATTERN, normalizePath } from "./common.js";
+import { GLOB_CHARACTERS, IDENTIFIER_PATTERN, normalizePath } from "./common.js";
 import type { Source } from "./config.js";
 import { PROJECT_DEFAULTS, type ProjectConfig, projectConfigSchema } from "./config.js";
 import { type Dashboard, dashboardSchema } from "./dashboard.js";
@@ -181,6 +181,7 @@ export async function loadProject(
 
   const diagnostics: Diagnostic[] = [];
   for (const [name, source] of Object.entries(config.spec?.sources ?? {})) {
+    if (GLOB_CHARACTERS.test(source.path)) continue;
     const file = normalizePath(source.path);
     if (await host.isFile(file)) {
       if (source.type === "csv" && source.header !== false) {

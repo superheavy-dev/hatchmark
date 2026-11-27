@@ -63,8 +63,9 @@ average is that sum divided by the count. Every floating-point result is rounded
 significant digits, and tiny values such as 4e-10 are never rounded away. Because the values are
 added in the same order on every run, a total is the same, byte for byte, however many threads
 DuckDB uses. File order comes from the reader: a CSV or JSON file is loaded once into a table that
-keeps the file's row order, and Parquet rows carry their row number in the file. A path with glob
-characters (`*`, `?`, `[`) can make DuckDB read several files; their rows are then taken file by
+keeps the file's row order, and Parquet rows carry their row number in the file. A source path
+with glob characters (`*`, `?`, `[`) is a check error (HM2016), since DuckDB would read it as
+several files. Should the executor still be given several files, it takes their rows file by
 file, with the paths sorted in byte order (`B.csv` before `a.csv`).
 
 Floating-point sums are accurate for values within ±1e15. When a metric sums or averages a

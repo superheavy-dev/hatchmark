@@ -390,6 +390,9 @@ describe("HAT-22 probes", () => {
          TO '${path.join(dir, `${file}.${type}`)}' (${copy})`,
         );
       }
+      const refused = await run(fixture.root, fixture.project, "probe");
+      expect(refused.data).toBeUndefined();
+      expect(refused.diagnostics.map((d) => d.code)).toEqual(["HM2016"]);
       const { plan } = planDashboard(fixture.project, "probe");
       const config = fixture.project.config.spec;
       const query = plan?.queries[0];
