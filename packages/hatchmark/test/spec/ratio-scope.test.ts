@@ -1,5 +1,11 @@
 import { describe, expect, it } from "vitest";
-import { checkReferences, parseCsvRecord, parseDiagnostics } from "../../src/spec/index.js";
+import {
+  checkReferences,
+  loadProject,
+  type ProjectHost,
+  parseCsvRecord,
+  parseDiagnostics,
+} from "../../src/spec/index.js";
 import { CONFIG, METRICS, projectFrom } from "./helpers.js";
 
 // Regression tests for HAT-14's numbers-path blockers on hatchmark#5.
@@ -125,6 +131,60 @@ describe("parseCsvRecord", () => {
   it("reads quoted headers, custom delimiters and CRLF", () => {
     expect(parseCsvRecord('a,"b,c","d""e"\r\n1,2,3', ",")).toEqual(["a", "b,c", 'd"e']);
     expect(parseCsvRecord("x;y\n", ";")).toEqual(["x", "y"]);
-    expect(parseCsvRecord('"open', ",")).toBeUndefined();
+    expect(parseCsvRecord('"open', ",", true)).toBeUndefined();
+    expect(parseCsvRecord("a,b", ",")).toBeUndefined();
+    expect(parseCsvRecord("a,b", ",", true)).toEqual(["a", "b"]);
+  });
+
+  it("reads a CSV header longer than one read, so HM2013 sees every column", async () => {
+    const head = `${"x".repeat(65535)},region\n1,West\n`;
+    const files: Record<string, string> = {
+      "hatchmark.json": JSON.stringify({
+        ...CONFIG,
+        sources: {
+          orders: { type: "csv", path: "orders.csv" },
+          sessions: { type: "csv", path: "sessions.csv" },
+        },
+      }),
+      "metrics/orders.json": JSON.stringify({
+        ...(metrics.order_count as object),
+        table: "orders",
+      }),
+      "metrics/sessions.json": JSON.stringify({ ...(metrics.sessions as object), time: undefined }),
+      "dashboards/sales.json": JSON.stringify({
+        title: "Sales",
+        filters,
+        blocks: [{ type: "table", by: ["x"], metrics: ["orders", "sessions"] }],
+      }),
+      "orders.csv": head,
+      "sessions.csv": "x\n1\n",
+    };
+    const host: ProjectHost = {
+      label: "memory",
+      readText: async (f) => files[f],
+      isFile: async (f) => f in files,
+      listFiles: async (d) =>
+        Object.keys(files)
+          .filter((f) => f.startsWith(`${d}/`))
+          .map((f) => f.slice(d.length + 1)),
+      readHead: async (f, n) => {
+        const text = files[f];
+        return text === undefined
+          ? undefined
+          : { text: text.slice(0, n), complete: text.length <= n };
+      },
+    };
+    const { project } = await loadProject(host);
+    if (!project) throw new Error("no project");
+    expect(project.columns.get("orders")).toEqual(["x".repeat(65535), "region"]);
+    expect(project.columns.get("sessions")).toEqual(["x"]);
+    expect(checkReferences(project).map((d) => d.code)).toEqual(["HM2013"]);
+
+    files["orders.csv"] = "y".repeat(17 * 1024 * 1024);
+    const tooLong = await loadProject(host);
+    expect(tooLong.diagnostics.map((d) => [d.code, d.pointer])).toEqual([
+      ["HM2014", "/sources/orders/path"],
+    ]);
+    expect(tooLong.project?.columns.has("orders")).toBe(false);
   });
 });

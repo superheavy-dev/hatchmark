@@ -102,7 +102,8 @@
         "previous_period",
         "previous_year",
         "none"
-      ]
+      ],
+      "description": "previous_period: the previous calendar unit for calendar ranges (October vs September; to-date ranges compare the same elapsed span), or the same length just before for rolling ranges (last N days, last 12 months). previous_year: the same span one year earlier. none: no comparison."
     },
     "__schema9": {
       "type": "array",

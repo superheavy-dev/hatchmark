@@ -76,9 +76,11 @@ export interface PlannedWindow {
   /** The span, ending at the plan's asOf: the block's or filter's range, or "all_time". */
   range: PeriodRange;
   /**
-   * "none" reads the range itself. "previous_period" reads the span of the same length just
-   * before it, and "previous_year" the same span one year earlier; KPI and text comparisons use
-   * these, with each block's own compare override.
+   * "none" reads the range itself. "previous_period" reads the previous calendar unit for calendar
+   * ranges (October vs September, Q3 vs Q2; to-date ranges compare the same elapsed span of the
+   * previous unit) and shifts rolling ranges (last N days, last 12 months) back by their own
+   * length. "previous_year" reads the same span one year earlier. windowBounds() in windows.ts is
+   * the executable definition; KPI and text comparisons use it with each block's compare override.
    */
   shift: Comparison;
   /** The metric's time column that places rows in the window. Absent only for "all_time". */
@@ -99,14 +101,31 @@ export interface PlannedQuery {
   groupingSets: number[][];
   window: PlannedWindow;
   /**
-   * Dashboard filter ids that bind into this query. A filter binds to a block only when every
-   * source the block reads has its column; check rejects blocks where only some do (HM2013), so a
-   * ratio never divides filtered rows by unfiltered ones.
+   * Dashboard filters that bind into this query, with the column each one filters. A filter binds
+   * to a block only when every source the block reads has its column; check rejects blocks where
+   * only some do (HM2013), so a ratio never divides filtered rows by unfiltered ones. The column is
+   * part of the query's identity, so the same filter id on another column is another query.
    */
-  params: string[];
+  params: PlannedParam[];
   orderBy?: { key: string; order: "asc" | "desc" }[];
   limit?: number;
 }
+
+/**
+ * A dashboard filter as one query applies it. A select filter keeps rows whose column equals the
+ * bound value (any of the values when multiple); no binding means no filter. A period filter
+ * replaces the window's range with the bound range, on the query's time column.
+ */
+export type PlannedParam =
+  | {
+      id: string;
+      kind: "select";
+      source: string;
+      column: string;
+      operator: "in";
+      multiple: boolean;
+    }
+  | { id: string; kind: "period"; source: string; column: string };
 
 /** How build mode stores a query's result for in-browser filtering. */
 export type Materialization =
@@ -115,14 +134,32 @@ export type Materialization =
   /** Some component cannot be re-aggregated: one result per combination of filter values. */
   | { kind: "per_filter_value" };
 
-export interface PlanParam {
-  id: string;
-  kind: "select" | "period";
-  column?: string;
-  multiple: boolean;
-  default?: unknown;
-  options?: PeriodRange[];
-}
+/**
+ * A dashboard filter, resolved: which sources it binds to, on which column, with which operator and
+ * default. The executor needs nothing from the spec; two specs whose filters mean different
+ * things give plans that differ when serialized.
+ */
+export type PlanParam =
+  | {
+      id: string;
+      kind: "select";
+      column: string;
+      /** "in": keep rows whose column equals one of the bound values. */
+      operator: "in";
+      multiple: boolean;
+      /** Values used when nothing is bound; empty means no filter (all rows). */
+      default: (string | number | boolean)[];
+      /** Sources this filter binds to, sorted. */
+      sources: string[];
+    }
+  | {
+      id: string;
+      kind: "period";
+      options: PeriodRange[];
+      default: PeriodRange;
+      /** Time columns this filter windows, by source. */
+      columns: Record<string, string[]>;
+    };
 
 export interface BlockPlan {
   /** blockId(block, index) from the spec. */

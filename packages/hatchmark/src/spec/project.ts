@@ -114,8 +114,11 @@ export interface ProjectHost {
   listFiles(dir: string): Promise<string[]>;
   /** Whether the path is an existing file. */
   isFile(file: string): Promise<boolean>;
-  /** Up to the first bytes of a file decoded as UTF-8, or undefined when it cannot be read. */
-  readHead(file: string, bytes: number): Promise<string | undefined>;
+  /**
+   * Up to the first bytes of a file decoded as UTF-8, and whether that is the whole file; undefined
+   * when it cannot be read.
+   */
+  readHead(file: string, bytes: number): Promise<{ text: string; complete: boolean } | undefined>;
 }
 
 function dirSetting(config: SpecFile<"project">, key: "metricsDir" | "dashboardsDir"): string {
@@ -174,12 +177,22 @@ export async function loadProject(
     const file = normalizePath(source.path);
     if (await host.isFile(file)) {
       if (source.type === "csv" && source.header !== false) {
-        const head = await host.readHead(file, 64 * 1024);
-        const header =
-          head === undefined
-            ? undefined
-            : parseCsvRecord(head.replace(/^\ufeff/, ""), source.delimiter ?? ",");
-        if (header) project.columns.set(name, header);
+        const header = await readCsvHeader(host, file, source.delimiter ?? ",");
+        if (header === "too-long") {
+          const pointer = `/sources/${name}/path`;
+          diagnostics.push({
+            code: "HM2014",
+            severity: "error",
+            message: `the first record of "${source.path}" is longer than ${CSV_HEADER_LIMIT / 1024 / 1024} MiB`,
+            file: CONFIG_FILE,
+            pointer,
+            ...config.document.locationOf(pointer),
+            help: 'check the delimiter and quoting, or set "header": false',
+            docs: docsCommand("HM2014"),
+          });
+        } else if (header !== undefined) {
+          project.columns.set(name, header);
+        }
       }
       continue;
     }
@@ -198,8 +211,36 @@ export async function loadProject(
   return { project, diagnostics };
 }
 
-/** Parses the first record of CSV text (RFC 4180 quoting); undefined when a quote is left open. */
-export function parseCsvRecord(text: string, delimiter: string): string[] | undefined {
+/** The longest CSV header Hatchmark reads; a longer first record is an error, never a partial list. */
+export const CSV_HEADER_LIMIT = 16 * 1024 * 1024;
+
+/**
+ * Reads the whole first record of a CSV file, however long, by reading more until the record ends
+ * or the file does. Undefined when the file cannot be read or a quote never closes at the end.
+ */
+async function readCsvHeader(
+  host: ProjectHost,
+  file: string,
+  delimiter: string,
+): Promise<string[] | "too-long" | undefined> {
+  for (let bytes = 64 * 1024; ; bytes *= 4) {
+    const head = await host.readHead(file, Math.min(bytes, CSV_HEADER_LIMIT));
+    if (head === undefined) return undefined;
+    const record = parseCsvRecord(head.text.replace(/^\ufeff/, ""), delimiter, head.complete);
+    if (record !== undefined || head.complete) return record;
+    if (bytes >= CSV_HEADER_LIMIT) return "too-long";
+  }
+}
+
+/**
+ * Parses the first record of CSV text (RFC 4180 quoting). Returns undefined when the record does
+ * not end inside the text, unless the text is the whole file (atEnd), or when a quote is left open.
+ */
+export function parseCsvRecord(
+  text: string,
+  delimiter: string,
+  atEnd = false,
+): string[] | undefined {
   const fields: string[] = [];
   let field = "";
   let quoted = false;
@@ -220,7 +261,7 @@ export function parseCsvRecord(text: string, delimiter: string): string[] | unde
       return fields;
     } else field += ch;
   }
-  if (quoted) return undefined;
+  if (quoted || !atEnd) return undefined;
   fields.push(field);
   return fields;
 }

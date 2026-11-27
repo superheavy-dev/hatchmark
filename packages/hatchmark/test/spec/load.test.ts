@@ -49,6 +49,18 @@ describe("loadProject", () => {
     expect(project?.columns.get("orders")).toEqual(["amount", "region, US"]);
   });
 
+  it("reads a header-only CSV with no trailing line break as complete", async () => {
+    const root = await tempProject({
+      "hatchmark.json": JSON.stringify({
+        ...CONFIG,
+        sources: { orders: { type: "csv", path: "data/orders.csv" } },
+      }),
+      "data/orders.csv": "a,b",
+    });
+    const { project } = await loadProject(nodeProjectHost(root));
+    expect(project?.columns.get("orders")).toEqual(["a", "b"]);
+  });
+
   it("falls back to the configured directories when the config is invalid", async () => {
     const root = await tempProject({
       "hatchmark.json": JSON.stringify({ ...CONFIG, metricsDir: "defs", locale: 1, sources: {} }),

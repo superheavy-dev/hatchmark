@@ -89,6 +89,11 @@ export const CODES = {
     explanation:
       "A dashboard select filter must apply to every source a block reads. If a ratio's numerator comes from a source with the filter column and its denominator from one without, the block would divide filtered rows by unfiltered rows. Hatchmark knows the columns of CSV sources from their header; for other sources it cannot confirm the column yet and reports this too. Keep such metrics in separate blocks, or drop the filter.",
   },
+  HM2014: {
+    title: "CSV header too long",
+    explanation:
+      'The first record of a CSV source is longer than 16 MiB, so Hatchmark does not read it as column names rather than guess from part of it. This usually means the delimiter or quoting is wrong. Fix the file, set the source\'s delimiter, or set "header": false.',
+  },
   HM3001: {
     title: "missing required property",
     explanation:

@@ -39,7 +39,10 @@ export const periodRange = z.enum(PERIOD_RANGES);
 export type PeriodRange = z.infer<typeof periodRange>;
 
 export const COMPARISONS = ["previous_period", "previous_year", "none"] as const;
-export const comparison = z.enum(COMPARISONS);
+export const comparison = z.enum(COMPARISONS).meta({
+  description:
+    "previous_period: the previous calendar unit for calendar ranges (October vs September; to-date ranges compare the same elapsed span), or the same length just before for rolling ranges (last N days, last 12 months). previous_year: the same span one year earlier. none: no comparison.",
+});
 export type Comparison = z.infer<typeof comparison>;
 
 const CURRENCIES = new Set(Intl.supportedValuesOf("currency"));

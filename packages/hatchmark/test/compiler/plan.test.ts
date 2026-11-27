@@ -1,5 +1,10 @@
 import { describe, expect, it } from "vitest";
-import type { ExecutionContext, PlannedQuery, PlannedWindow } from "../../src/compiler/index.js";
+import type {
+  ExecutionContext,
+  PlannedParam,
+  PlannedQuery,
+  PlannedWindow,
+} from "../../src/compiler/index.js";
 
 describe("query plan types", () => {
   it("give 7-day and 30-day KPIs different windows, and comparisons their own", () => {
@@ -27,5 +32,12 @@ describe("query plan types", () => {
       bindings: {},
     };
     expect(Object.keys(context)).toEqual(["asOf", "timezone", "weekStart", "bindings"]);
+  });
+
+  it("carry each filter's column, so the same filter id on another column is another query", () => {
+    const params = (column: string): PlannedParam[] => [
+      { id: "slice", kind: "select", source: "orders", column, operator: "in", multiple: false },
+    ];
+    expect(JSON.stringify(params("region"))).not.toBe(JSON.stringify(params("channel")));
   });
 });

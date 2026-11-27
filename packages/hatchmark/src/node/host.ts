@@ -21,9 +21,13 @@ export function nodeProjectHost(root: string): ProjectHost {
       const handle = await open(resolve(file), "r").catch(() => undefined);
       if (handle === undefined) return undefined;
       try {
-        const buffer = new Uint8Array(bytes);
-        const { bytesRead } = await handle.read(buffer, 0, bytes, 0);
-        return new TextDecoder().decode(buffer.subarray(0, bytesRead));
+        const buffer = new Uint8Array(bytes + 1);
+        const { bytesRead } = await handle.read(buffer, 0, bytes + 1, 0);
+        const complete = bytesRead <= bytes;
+        return {
+          text: new TextDecoder().decode(buffer.subarray(0, Math.min(bytesRead, bytes))),
+          complete,
+        };
       } finally {
         await handle.close();
       }
