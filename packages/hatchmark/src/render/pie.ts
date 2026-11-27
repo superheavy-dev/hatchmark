@@ -127,7 +127,6 @@ function keyLayout(
   return { rows, ...(total ? { total } : {}), note, height };
 }
 
-/** The donut's total, and whether it fits in the hole at a size; otherwise the key states it. */
 function donutTotal(block: PieData, ctx: RenderContext, diameter: number) {
   const text = formatValue(block.total, metricOf(ctx, block.metric), ctx.data.locale, "headline");
   const room = diameter * HOLE - 12;
@@ -142,7 +141,10 @@ function geometry(block: PieData, ctx: RenderContext, width: number, plotHeight:
   const keyX = side ? diameter + KEY_GAP : 0;
   const keyWidth = side ? width - keyX : width;
   const empty = pieItems(block).length === 0 || block.whole === 0;
-  const total = block.type === "donut" && !empty ? donutTotal(block, ctx, diameter) : undefined;
+  const total =
+    block.type === "donut" && (!empty || isNumber(block.total))
+      ? donutTotal(block, ctx, diameter)
+      : undefined;
   const key = keyLayout(block, ctx, keyWidth, total && !total.inHole ? total.text : undefined);
   const pieArea = side ? plotHeight : diameter + 8;
   const height = side ? Math.max(plotHeight, key.height) : pieArea + 16 + key.height;
@@ -224,20 +226,26 @@ export function renderPie(
   const empty = items.length === 0 || block.whole === 0;
 
   if (empty) {
-    const withTotal = isNumber(block.total);
+    const withTotal = isNumber(block.total) && (g.total === undefined || g.total.inHole);
     parts.push(
       `<path d="${slicePath(g.cx, g.cy, block.type === "donut" ? inner : outer - 1, outer, 0, 1)}"${paint.attrs("grid")}/>`,
       ...(withTotal
         ? [
-            svgText(paint, g.cx, g.cy - 10, formatValue(block.total, metric, locale, "headline"), {
-              size: 20,
-              anchor: "middle",
-              color: "text",
-            }),
+            svgText(
+              paint,
+              g.cx,
+              g.cy - 10,
+              g.total?.text ?? formatValue(block.total, metric, locale, "headline"),
+              {
+                size: g.total?.size ?? 20,
+                anchor: "middle",
+                color: "text",
+              },
+            ),
           ]
         : []),
       svgText(paint, g.cx, withTotal ? g.cy + 12 : g.cy, pieEmptyText(block, ctx), {
-        size: withTotal ? CAPTION : BODY,
+        size: isNumber(block.total) ? CAPTION : BODY,
         anchor: "middle",
         color: "textMuted",
       }),
@@ -252,7 +260,7 @@ export function renderPie(
     });
   }
 
-  if (g.total) {
+  if (g.total && !empty) {
     const label = truncateEnd(metric.label, g.total.room, { size: CAPTION });
     if (g.total.inHole) {
       parts.push(

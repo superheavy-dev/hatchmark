@@ -81,6 +81,33 @@ describe("exact values that are too long for the chart", () => {
     });
   }
 
+  for (const width of [390, 1280]) {
+    it(`moves an all-negative donut's total into the key and keeps the empty message at ${width} px`, () => {
+      const { block, data } = variant<PieData>("donut-channels", (d, b) => {
+        sixDecimals(d, b.metric);
+        b.slices = [];
+        delete b.other;
+        b.whole = 0;
+        b.total = -987_654.123456;
+        b.excluded = {
+          negative: [{ key: "New England", label: "New England", value: -987_654.123456 }],
+          empty: 0,
+        };
+      });
+      const metric = data.metrics[block.metric];
+      if (!metric) throw new Error("no metric");
+      const total = formatValue(block.total, metric, "de-DE", "headline");
+      const svg = renderChartSvg(block, data, { width });
+      const element = new RegExp(`<text[^>]*>${total.replace(/[.$]/g, "\\$&")}</text>`).exec(
+        svg,
+      )?.[0];
+      expect(element).toBeDefined();
+      expect(element).not.toContain('text-anchor="middle"');
+      expect(svg).toMatch(/>Total<\/text>/);
+      expect(svg).toContain(">No positive values to divide</text>");
+    });
+  }
+
   it("keeps a total that fits in the hole", () => {
     const { block, data } = donut(1234.5);
     const svg = renderChartSvg(block, data, { width: 1280 });
