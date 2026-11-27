@@ -189,7 +189,7 @@ describe("period control", () => {
     await page.close();
   });
 
-  it("keeps focus inside the dialog when a redraw disables or replaces the focused control (HAT-73)", async () => {
+  it("keeps focus inside the dialog when a redraw disables or replaces the focused control", async () => {
     const { page, errors } = await open();
     await page.locator(".hm-period-button").focus();
     await page.keyboard.press("Enter");
@@ -214,7 +214,7 @@ describe("period control", () => {
     expect(errors).toEqual([]);
   });
 
-  it("never applies a typed day outside the data: Apply stays off and the field says so (HAT-73)", async () => {
+  it("never applies a typed day outside the data: Apply stays off and the field says so", async () => {
     const { page, errors } = await open();
     await page.locator(".hm-period-button").click();
     const max = await page.locator("[data-hm-edge=end]").getAttribute("max");
@@ -230,7 +230,7 @@ describe("period control", () => {
     expect(errors).toEqual([]);
   });
 
-  it("keeps a link to dates as dates, even when a preset reads the same days (HAT-73)", async () => {
+  it("keeps a link to dates as dates, even when a preset reads the same days", async () => {
     const probe = await open();
     const end = await probe.page.locator(".hm-cal").getAttribute("data-hm-end");
     await probe.page.close();
@@ -246,7 +246,7 @@ describe("period control", () => {
     expect(errors).toEqual([]);
   });
 
-  it("labels a KPI with its own dates when they differ from the caption (HAT-73 round 2)", async () => {
+  it("labels a KPI with its own dates when they differ from the caption", async () => {
     const probe = await open();
     const end = await probe.page.locator(".hm-cal").getAttribute("data-hm-end");
     await probe.page.close();
@@ -273,7 +273,7 @@ describe("period control", () => {
     for (const r of [preset, sameLabel, sameDays]) expect(r.errors).toEqual([]);
   });
 
-  it("clears the invalid mark when the calendar corrects a typed day (HAT-73 round 2)", async () => {
+  it("clears the invalid mark when the calendar corrects a typed day", async () => {
     const { page, errors } = await open();
     await page.locator(".hm-period-button").click();
     const end = page.locator("[data-hm-edge=end]");

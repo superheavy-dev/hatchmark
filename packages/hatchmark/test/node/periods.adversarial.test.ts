@@ -1,4 +1,4 @@
-// Independent oracle for the period filter (GUN-1823): every preset the build embeds, and custom ranges
+// Independent oracle for the period filter: every preset the build embeds, and custom ranges
 // through customRangeDashboard on that same embedded payload (the browser path), checked against
 // periods.oracle.ts; custom ranges are also checked against runDashboard's SQL path with the same binding.
 import { readFile } from "node:fs/promises";

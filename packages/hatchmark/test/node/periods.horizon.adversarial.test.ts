@@ -8,7 +8,7 @@ import { metric, removeProjects, writeProject } from "./fixture.js";
 
 afterAll(removeProjects);
 
-it("keeps the exact series cutoff (HAT-73) for a timestamp source with a freshness lag", async () => {
+it("keeps the exact series cutoff for a timestamp source with a freshness lag", async () => {
   const pairs = [
     ["2026-10-31T19:00:00Z", 4],
     ["2026-11-01T05:40:00Z", 1],

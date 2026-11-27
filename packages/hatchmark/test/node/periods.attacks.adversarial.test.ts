@@ -1,4 +1,4 @@
-// Attacks on the period filter's numbers path (GUN-1823, CREW.md): totals against an SQL ROLLUP oracle,
+// Attacks on the period filter's numbers path: totals against an SQL ROLLUP oracle,
 // non-additive metrics, empty and null groups, a select default with the period and grain filters,
 // partial periods at a mid-month as-of date, shifted anchors, and invalid custom ranges. Numbers are
 // checked against periods.oracle.ts (and, for totals, plain ROLLUP SQL over the oracle's own rows).

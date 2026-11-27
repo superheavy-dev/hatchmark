@@ -212,12 +212,12 @@ let oracle: Oracle;
 const H: Record<string, number> = {};
 
 async function writeProject(): Promise<string> {
-  const dir = await mkdtemp(path.join(tmpdir(), "hatchmark-hat74-"));
+  const dir = await mkdtemp(path.join(tmpdir(), "hatchmark-periods-custom-"));
   const { orders, sessions } = generate();
   const files: Record<string, string> = {
     "hatchmark.json": JSON.stringify({
       version: 1,
-      name: "HAT-74 attacks",
+      name: "Period custom range attacks",
       dataDir: "data",
       metricsDir: "metrics",
       dashboardsDir: "dashboards",
@@ -535,7 +535,7 @@ const presetOnlyPath = (p: string) => /\.presetOnly$/.test(p) || /k_customers/.t
 const report = (label: string, diff: Diff) =>
   console.log(`${label}: ${diff.cells} cells, ${diff.problems.length} mismatches`);
 
-describe("HAT-74: custom ranges on two sources with different horizons", () => {
+describe("custom ranges on two sources with different horizons", () => {
   it("the project has the horizons the attacks need", () => {
     expect(new Date(H.orders as number).toISOString()).toBe("2026-11-20T19:13:05.000Z");
     expect(new Date(H.sessions as number).toISOString()).toBe("2026-11-18T20:41:00.000Z");
@@ -593,7 +593,7 @@ describe("HAT-74: custom ranges on two sources with different horizons", () => {
   });
 });
 
-describe("HAT-74: planted bugs make the oracle check fail", () => {
+describe("planted bugs make the oracle check fail", () => {
   const failures = async (mutate: (p: PeriodData) => void) => {
     const p = structuredClone(payloads.pp) as PeriodData;
     mutate(p);
