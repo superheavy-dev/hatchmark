@@ -108,8 +108,29 @@ A `grain` filter draws one control in the page header. Choosing a grain switches
 and bar block whose `grains` list it; the others keep their grain. Its `default` is shown first in
 those blocks. A dashboard has at most one `grain` filter (`HM3007`).
 
-`hatchmark check` validates them. **This version does not draw `select` and `period` controls
-yet:** the built page shows the data at each of those filters' `default`, and does not say so on the
-page. A `select` filter with a
-`default` therefore filters the whole page (only the default's rows); leave `default` out to show
-all rows. A dashboard has at most one `period` filter (`HM3007`).
+Its accessible name is the filter's label followed by ", all charts", so screen readers tell it
+apart from a chart's own grain switch. A grain option that no block lists switches nothing and is a
+warning (`HM2025`).
+
+A `period` filter draws a date control in the page header. `options` lists up to 12 presets, using
+the same range values as `period.range` (`"last_30_days"`, `{ "to_date": "month" }`,
+`{ "last_complete": "quarter" }`, ...). Each preset is listed once, even under another spelling, and
+`default` must be one of them (`HM3007`). The `default` is what the page shows first, and it
+replaces `period.range`. Unless `"custom": false` is set, the control also offers a calendar where
+a reader picks any start and end day within the data.
+
+The built page stays static. Every preset is computed exactly at build time. Custom ranges are
+added up in the browser from day-level totals embedded in the page. Metrics that can't be added up
+from days (`count_distinct`, `median`, SQL metrics that are not `additive`) show "—" on a custom
+range and ask the reader to pick a preset; check notes each one (`HM4041`). The day-level data makes
+the page bigger. Above 3 MB, build warns (`HM5002`) and names what weighs the most. Set
+`"custom": false` to embed only the presets.
+
+The chosen period and grain are kept in the page's URL query under each filter's `id`
+(`?period=last_7_days`, `?period=2026-03-01..2026-05-15` with the last day included, `?grain=week`;
+a filter at its default is left out), so a reload or a shared link opens the same view.
+
+**This version does not draw `select` controls yet:** the built page shows the data at each
+`select` filter's `default`, and does not say so on the page. A `select` filter with a `default`
+therefore filters the whole page (only the default's rows); leave `default` out to show all rows. A
+dashboard has at most one `period` filter (`HM3007`).
