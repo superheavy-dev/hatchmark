@@ -4,6 +4,7 @@ import {
   docsCommand,
   parseYamlFile,
   type SpecDocument,
+  type SpecNode,
 } from "../diagnostics/index.js";
 import { GLOB_CHARACTERS, IDENTIFIER_PATTERN, normalizePath } from "./common.js";
 import type { FileSource } from "./config.js";
@@ -79,6 +80,7 @@ export function parseSpecFile<K extends SpecKind>(
   const base = file.slice(file.lastIndexOf("/") + 1);
   const name = base.endsWith(SPEC_EXTENSION) ? base.slice(0, -SPEC_EXTENSION.length) : base;
   const { document, diagnostics } = parseYamlFile(file, text);
+  diagnostics.push(...commentedValues(document));
   const result: SpecFile<K> = { kind, name, file, document, diagnostics };
   if (kind !== "project") {
     const pattern = kind === "dashboard" ? DASHBOARD_NAME_PATTERN : IDENTIFIER_PATTERN;
@@ -145,6 +147,56 @@ export interface ProjectHost {
    * sources keep unknown columns.
    */
   columns?(file: string, source: FileSource): Promise<string[] | undefined>;
+}
+
+const FILTER_VALUE_KEYS = new Set(["value", "values", "from", "to"]);
+
+function commentedValues(document: SpecDocument): Diagnostic[] {
+  const found: Diagnostic[] = [];
+  const text = document.text;
+  const check = (node: SpecNode): void => {
+    if (node.kind === "array") {
+      for (const item of node.items) check(item);
+      return;
+    }
+    const plain =
+      (node.kind === "string" && node.style === "plain") ||
+      node.kind === "number" ||
+      node.kind === "boolean";
+    if (!plain) return;
+    const comment = /^[ \t]+#/.exec(text.slice(node.end));
+    if (comment === null) return;
+    const lineEnd = text.slice(node.end).search(/\r\n|\r|\n|$/);
+    const written = text.slice(node.start, node.end + lineEnd).trimEnd();
+    found.push({
+      code: "HM1008",
+      severity: "warning",
+      message: `this value is read as ${JSON.stringify(node.value)}: the text after # is a comment`,
+      file: document.file,
+      ...document.location(node.start, node.end + lineEnd),
+      help: `quote it if the # is part of the value: ${JSON.stringify(written)}`,
+      docs: docsCommand("HM1008"),
+    });
+  };
+  const walk = (node: SpecNode | undefined): void => {
+    if (node === undefined) return;
+    if (node.kind === "array") for (const item of node.items) walk(item);
+    if (node.kind !== "object") return;
+    const keys = new Set(node.members.map((m) => m.key));
+    const select = node.members.some(
+      (m) => m.key === "type" && m.value.kind === "string" && m.value.value === "select",
+    );
+    for (const member of node.members) {
+      if (
+        (keys.has("op") && FILTER_VALUE_KEYS.has(member.key)) ||
+        (select && member.key === "default")
+      )
+        check(member.value);
+      else walk(member.value);
+    }
+  };
+  walk(document.root);
+  return found;
 }
 
 function dirSetting(

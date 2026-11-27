@@ -64,12 +64,17 @@ export const CODES = {
   HM1006: {
     title: "YAML feature not allowed in spec files",
     explanation:
-      "Spec files use plain YAML so every value reads the same in every tool: anchors (&name), aliases (*name), merge keys (<<), tags other than the core ones (!!str, !!int, !!float, !!bool, !!null, !!map, !!seq), keys that are not strings and a second document after --- are errors. Write the value out in full where it is used, and quote a key that YAML would read as a number, boolean or null.",
+      "Spec files use plain YAML so every value reads the same in every tool: anchors (&name), aliases (*name), merge keys (<<), tags other than the core ones (!!str, !!int, !!float, !!bool, !!null, !!map, !!seq), a core tag that does not fit its value, keys that are not strings, a %YAML directive other than 1.2 and a second document after --- are errors. So is a number not written as JSON writes it (0123, +1, 0x10, .5, .inf): quote it to keep it a string, as the safe fix does. SQL must be a literal block scalar (sql: |), because a folded or multi-line plain value joins lines with spaces and a -- comment would hide the lines after it. Write the value out in full where it is used, and quote a key that YAML would read as a number, boolean or null.",
   },
   HM1007: {
     title: "spec file is not YAML",
     explanation:
       "Spec files are YAML with the .yaml extension: hatchmark.yaml, metrics/<name>.yaml, dashboards/<name>.yaml and segments/<name>.yaml. A .json or .yml file in their place is not read, so the diagnostic names the .yaml file Hatchmark expects. Write the spec as YAML in that file and delete the old one.",
+  },
+  HM1008: {
+    title: "comment after an unquoted filter value",
+    explanation:
+      'In YAML, a # after a space starts a comment, so value: Store #12 is read as Store. A filter value or a select default followed by a comment on the same line gets this warning, because a value such as a store or order number often contains #. Quote the value to keep the #, such as value: "Store #12", or move the comment to its own line.',
   },
   HM2001: {
     title: "unknown source",

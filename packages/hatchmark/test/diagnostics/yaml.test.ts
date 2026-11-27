@@ -13,7 +13,7 @@ describe("SpecDocument", () => {
   it("reads YAML 1.2 core values, with no yes/no booleans and no dates", () => {
     const doc = new SpecDocument(
       "x.yaml",
-      "a: [1, -2.5e3, true, false, null, ~]\nb: yes\nc: no\nd: on\ne: 2026-01-01\nf: 0012\ng: 1_000\nh: 0o17\ni: .inf\nj: 'it''s'\nk:\n",
+      "a: [1, -2.5e3, true, false, null, ~]\nb: yes\nc: no\nd: on\ne: 2026-01-01\ng: 1_000\nj: 'it''s'\nk:\n",
     );
     expect(doc.errors).toEqual([]);
     expect(doc.value).toEqual({
@@ -22,13 +22,13 @@ describe("SpecDocument", () => {
       c: "no",
       d: "on",
       e: "2026-01-01",
-      f: 12,
       g: "1_000",
-      h: 15,
-      i: Number.POSITIVE_INFINITY,
       j: "it's",
       k: null,
     });
+    expect(
+      new SpecDocument("x.yaml", "f: 0012\nh: 0o17\ni: .inf\n").errors.map((e) => e.kind),
+    ).toEqual(["unsupported", "unsupported", "unsupported"]);
   });
 
   it("reads JSON text as YAML", () => {
@@ -95,6 +95,20 @@ describe("SpecDocument", () => {
       expect(node.style).toBe(style);
       const offset = doc.stringOffset(node, node.value.indexOf("bad"));
       expect(text.slice(offset, offset + 3), style).toBe("bad");
+    }
+  });
+
+  it("ends a block value at its last content line, not at the next key", () => {
+    for (const text of [
+      "a: |\n  one\n  two\n\nb: 1\n",
+      "a: >-\n  one\n\n\nb: 1\n",
+      "a:\n  - x\n\n# note\nb: 1\n",
+    ]) {
+      const doc = new SpecDocument("x.yaml", text);
+      const end = doc.rangeOf("/a")?.end;
+      const b = doc.rangeOf("/b", "key")?.start;
+      expect(end?.line, text).toBeLessThan(b?.line ?? 0);
+      expect(text.split("\n")[(end?.line ?? 1) - 1]?.trim(), text).not.toBe("");
     }
   });
 

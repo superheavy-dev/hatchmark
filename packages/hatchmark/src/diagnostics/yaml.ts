@@ -45,10 +45,14 @@ export interface SpecSyntaxError {
   /** Offset of the first occurrence, for duplicate keys. */
   related?: number;
   help?: string;
+  /** A safe replacement for the text from start to end. */
+  fix?: { text: string; description: string };
 }
 
 const FRAME_BEFORE = 80;
 const FRAME_AFTER = 160;
+
+const JSON_NUMBER = /^-?(0|[1-9]\d*)(\.\d+)?([eE][+-]?\d+)?$/;
 
 const CORE_TAGS = new Set(
   ["str", "int", "float", "bool", "null", "map", "seq"].map((t) => `tag:yaml.org,2002:${t}`),
@@ -167,6 +171,17 @@ class Builder {
       });
     }
     const doc = list[0];
+    const directive = doc?.directives?.yaml;
+    if (directive?.explicit && directive.version !== "1.2") {
+      const start = Math.max(0, this.text.search(/^%YAML/m));
+      const lineEnd = this.text.slice(start).search(/\r\n|\r|\n|$/);
+      this.unsupported(
+        `spec files are YAML 1.2, but this file declares %YAML ${directive.version}`,
+        start,
+        start + lineEnd,
+        "remove the %YAML line",
+      );
+    }
     if (doc === undefined || doc.contents === null) {
       const end = this.text.length;
       if (first === undefined) {
@@ -183,8 +198,21 @@ class Builder {
     return this.build(doc.contents, doc.range[0]);
   }
 
-  private unsupported(message: string, start: number, end: number, help?: string): void {
-    this.errors.push({ kind: "unsupported", message, start, end, ...(help ? { help } : {}) });
+  private unsupported(
+    message: string,
+    start: number,
+    end: number,
+    help?: string,
+    fix?: SpecSyntaxError["fix"],
+  ): void {
+    this.errors.push({
+      kind: "unsupported",
+      message,
+      start,
+      end,
+      ...(help ? { help } : {}),
+      ...(fix ? { fix } : {}),
+    });
   }
 
   private checkNode(node: Node): void {
@@ -209,6 +237,17 @@ class Builder {
         "remove the tag; quote the value if it must stay a string",
       );
     }
+  }
+
+  private checkSql(node: SpecNode): void {
+    if (node.kind !== "string" || node.style === "literal") return;
+    if (node.style !== "folded" && !/[\r\n]/.test(this.text.slice(node.start, node.end))) return;
+    this.unsupported(
+      "SQL here is folded: YAML joins its lines with spaces, so a -- comment would hide the lines after it",
+      node.start,
+      node.style === "folded" ? node.start + 1 : node.end,
+      "write the SQL as a literal block: sql: | with the query on the indented lines below",
+    );
   }
 
   private build(node: Node | null, at: number): Built {
@@ -276,6 +315,7 @@ class Builder {
           });
         }
         const built = this.build(pair.value as Node | null, keyEnd);
+        if (name === "sql") this.checkSql(built.node);
         members.push({ key: name, keyStart, keyEnd, value: built.node });
         Object.defineProperty(value, name, {
           value: built.value,
@@ -320,8 +360,20 @@ class Builder {
         const contentEnd = block ? start + this.text.slice(start, end).trimEnd().length : end;
         return { node: { kind: "string", value: v, style, start, end: contentEnd }, value: v };
       }
-      if (typeof v === "number")
+      if (typeof v === "number") {
+        const source = this.text.slice(start, end);
+        if (node.type === Scalar.PLAIN && !JSON_NUMBER.test(source)) {
+          const quoted = JSON.stringify(source);
+          this.unsupported(
+            `YAML reads ${source} as the number ${v}, but spec files write numbers as JSON does`,
+            start,
+            end,
+            `quote it to keep it a string: ${quoted}${Number.isFinite(v) ? `, or write the number as ${v}` : ""}`,
+            { text: quoted, description: `quote ${source}` },
+          );
+        }
         return { node: { kind: "number", value: v, start, end }, value: v };
+      }
       if (typeof v === "boolean")
         return { node: { kind: "boolean", value: v, start, end }, value: v };
       if (v === null) return { node: { kind: "null", value: null, start, end }, value: null };

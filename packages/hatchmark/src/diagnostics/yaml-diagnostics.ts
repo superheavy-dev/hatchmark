@@ -34,6 +34,16 @@ export function parseYamlFile(
             help: `the first one is at line ${document.positionAt(error.related).line}; keep one of them`,
           }),
       ...(error.help === undefined ? {} : { help: error.help }),
+      ...(error.fix === undefined
+        ? {}
+        : {
+            fix: {
+              range: document.rangeAt(error.start, error.end),
+              text: error.fix.text,
+              applicability: "safe" as const,
+              description: error.fix.description,
+            },
+          }),
       docs: docsCommand(code),
     };
   });

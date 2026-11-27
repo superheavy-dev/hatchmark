@@ -95,6 +95,14 @@ a number, a boolean and null; where the spec expects a string, HM3003 says so an
 quotes the value as written (`"0012"`, not `"12"`).
 
 A few YAML features are errors so that every tool reads a file the same way: duplicate keys
-(HM1003), and anchors, aliases, merge keys (`<<`), tags other than the core ones, keys that are
-not strings and a second document after `---` (HM1006). A `.json` or `.yml` file where a spec
-file belongs is not read; HM1007 names the `.yaml` file Hatchmark expects.
+(HM1003), and anchors, aliases, merge keys (`<<`), tags other than the core ones, a core tag that
+does not fit its value, keys that are not strings, a `%YAML` directive other than 1.2 and a second
+document after `---` (HM1006). A number must be written as JSON writes it: `0123`, `+1`, `0x10`,
+`.5` and `.inf` are HM1006, and the safe fix quotes them as written. SQL must be a literal block
+(`sql: |`): a folded or multi-line plain value joins its lines with spaces, so a `--` comment
+would hide the lines after it. A `.json` or `.yml` file where a spec file belongs is not read;
+HM1007 names the `.yaml` file Hatchmark expects.
+
+A `#` after a space starts a comment, so `value: Store #12` reads as `Store`. A filter value or
+a select default followed by a comment on the same line is a warning (HM1008); quote the value to
+keep the `#`.
