@@ -87,6 +87,9 @@ Metric filters and dashboard select filters compare a column with a value:
 - **Stacked bars and areas** carry each position's total, recomputed from rows like a table's, and
   each segment's share of it; a 100% stack (`"stack": "percent"`) needs additive metrics too
   (HM4001). See [components/stacked.md](components/stacked.md).
+- **Pies and donuts** divide each positive category by the sum of the positive ones; Other sums the
+  categories past `limit`, and the total is recomputed from rows. Their metric must be additive
+  (HM4001). See [components/pie.md](components/pie.md).
   `"additive": true` on a SQL metric is checked when a table has a total: if the rows do not add up
   to the total, build warns with HM4003.
 - **KPI change.** `changePct` is the relative change, `(value - previous) / |previous|`, empty when

@@ -168,7 +168,7 @@ export const CODES = {
   HM2024: {
     title: "chart narrower than 3 columns",
     explanation:
-      'A line, area or bar block has "span" 1 or 2. At that width the axis labels, the key and the plot cannot all fit, so Hatchmark draws the chart 3 columns wide anyway and the grid row reflows around it. Set "span" to 3 or more to say what the page will show; the fix sets it to 3 and is safe. Use a kpi block (with "sparkline": true for a trend) when the space is meant for one number.',
+      'A line, area, bar, pie or donut block has "span" 1 or 2. At that width the axis labels, the key and the plot cannot all fit, so Hatchmark draws the chart 3 columns wide anyway and the grid row reflows around it. Set "span" to 3 or more to say what the page will show; the fix sets it to 3 and is safe. Use a kpi block (with "sparkline": true for a trend) when the space is meant for one number.',
   },
   HM3001: {
     title: "missing required property",
@@ -217,12 +217,12 @@ export const CODES = {
   HM4001: {
     title: "percent of total on a non-additive metric",
     explanation:
-      'A share of the total only makes sense when the parts add up to the total. This covers percentOfTotal in a table and bar or area charts stacked to 100% ("stack": "percent"). Averages, distinct counts, medians, ratios, non-linear formulas and SQL metrics declared additive: false do not; neither does a formula with a constant term (a + 1000 adds 1,000 to every group but once to the total), nor a sum read with over_time min or max (each group can peak on a different date). Point-in-time sums such as balances do, at one instant. Remove the metric from percentOfTotal, stack it with "stack": true or not at all, or show the additive metric it is built from.',
+      'A share of the total only makes sense when the parts add up to the total. This covers percentOfTotal in a table, bar or area charts stacked to 100% ("stack": "percent"), and pie and donut blocks. Averages, distinct counts, medians, ratios, non-linear formulas and SQL metrics declared additive: false do not; neither does a formula with a constant term (a + 1000 adds 1,000 to every group but once to the total), nor a sum read with over_time min or max (each group can peak on a different date). Point-in-time sums such as balances do, at one instant. Remove the metric from percentOfTotal, stack it with "stack": true or not at all, show it in a bar chart instead of a pie or donut, or show the additive metric it is built from.',
   },
   HM4002: {
     title: "block type not built yet",
     explanation:
-      "This version of Hatchmark builds kpi, line, area, bar and table blocks. bar_list and text blocks are valid specs but are not built yet, so the dashboard is built without them and they do not appear on the page. Use a bar block with by and a limit instead of bar_list, or keep the block and it will appear once its type is built.",
+      "This version of Hatchmark builds kpi, line, area, bar, pie, donut and table blocks. bar_list and text blocks are valid specs but are not built yet, so the dashboard is built without them and they do not appear on the page. Use a bar block with by and a limit instead of bar_list, or keep the block and it will appear once its type is built.",
   },
   HM4003: {
     title: "additive metric does not add up",
@@ -312,7 +312,17 @@ export const CODES = {
   HM4061: {
     title: "negative values in a part-of-whole chart",
     explanation:
-      'A chart stacked to 100% shows each value as a share of its total, which only works when every part is zero or more: a negative part makes the others add up to more than 100%. The chart is still drawn, with negative shares below zero, and this warning names the series. Use "stack": true or grouped bars, which show negative values honestly, or filter the metric to values that cannot be negative (such as gross revenue instead of net).',
+      'A chart stacked to 100%, a pie or a donut shows each value as a share of a whole, which only works when every part is zero or more: a negative part makes the others add up to more than 100%. A 100% stack is still drawn, with negative shares below zero, and the warning names the series. A pie or donut leaves negative and zero categories out, takes shares of the positive values, lists what it left out under the chart and still states the real total. Use "stack": true, grouped bars or a bar chart, which show negative values honestly, or filter the metric to values that cannot be negative (such as gross revenue instead of net).',
+  },
+  HM5010: {
+    title: "too many slices",
+    explanation:
+      'A pie or donut asks for more than 6 slices with "limit". Angles are hard to compare, and thin slices get colours that are hard to tell apart (the palette has 8). Keep "limit" at 6 or fewer, so the smaller categories join one "Other" slice, or show the categories as a horizontal bar chart with "limit", which compares any number of them by length.',
+  },
+  HM5011: {
+    title: "Other is the largest slice",
+    explanation:
+      'A pie or donut groups the categories past "limit" into "Other", and here Other is larger than every slice shown, so the chart mostly says "other". The data has many small categories; show them as a horizontal bar chart with "limit", group them into fewer categories in the data, or raise "limit" up to 6.',
   },
   HM4063: {
     title: "Other row cannot be computed for a metric",

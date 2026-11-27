@@ -1,7 +1,12 @@
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 import { GALLERY, SALES } from "../../gallery/variants.js";
-import type { BarData, DashboardData, LineData } from "../../src/compiler/dashboard-data.js";
+import type {
+  BarData,
+  DashboardData,
+  LineData,
+  PieData,
+} from "../../src/compiler/dashboard-data.js";
 import {
   cardWidth,
   cssPaint,
@@ -47,7 +52,7 @@ describe("golden renders", () => {
         golden(`${entry.variant}.html`, `${renderBlocks(entry.data.blocks, ctx)}\n`);
         return;
       }
-      const chart = block as LineData | BarData;
+      const chart = block as LineData | BarData | PieData;
       const desktop = cardWidth(LAYOUTS[0], chart.span) - 34;
       golden(
         `${entry.variant}.desktop.svg`,

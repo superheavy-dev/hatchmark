@@ -1,8 +1,9 @@
-import type { BarData, LineData, Value } from "../compiler/dashboard-data.js";
+import type { BarData, LineData, PieData, Value } from "../compiler/dashboard-data.js";
 import { barCategories } from "./bar.js";
 import { isNumber, metricOf, type RenderContext, SHARE } from "./chart.js";
 import { formatBucket, formatSpan, formatValue } from "./format.js";
 import { plottedValues, readoutHead, readoutValue } from "./line.js";
+import { isPie, pieCuts, pieItems, pieNote } from "./pie.js";
 import { esc } from "./svg.js";
 
 type ChartBlock = LineData | BarData;
@@ -20,7 +21,9 @@ const full = (ctx: RenderContext, metric: string, v: Value | undefined) =>
  * A generated text alternative for a chart (Datawrapper-style): chart type, what it shows, and per
  * series (up to three) the first and last values and the extremes.
  */
-export function describeChart(block: ChartBlock, ctx: RenderContext): string {
+export function describeChart(input: ChartBlock | PieData, ctx: RenderContext): string {
+  if (isPie(input)) return describePie(input, ctx);
+  const block = input;
   const names = positions(block, ctx);
   const series = block.series;
   const kind =
@@ -63,7 +66,13 @@ const share = (ctx: RenderContext, v: Value | undefined) =>
  * The chart's numbers as a visually hidden table, so screen readers get every value. Stacked charts
  * add each value's share and a Total column.
  */
-export function chartTable(block: ChartBlock, ctx: RenderContext, caption: string): string {
+export function chartTable(
+  input: ChartBlock | PieData,
+  ctx: RenderContext,
+  caption: string,
+): string {
+  if (isPie(input)) return pieTable(input, ctx, caption);
+  const block = input;
   const names = positions(block, ctx);
   const totals = block.totals;
   const metric = block.series[0]?.metric ?? "";
@@ -83,7 +92,11 @@ export function chartTable(block: ChartBlock, ctx: RenderContext, caption: strin
 
 /** What the browser runtime needs for tooltips and the readout: labels and formatted values. */
 export interface ChartRuntimeData {
-  kind: "line" | "bar";
+  kind: "line" | "bar" | "pie";
+  /** Pie only: each slice's categorical slot (0 for Other, which is neutral). */
+  colors?: number[];
+  /** Pie only: each slice's cumulative end as a fraction of a turn from 12 o'clock. */
+  cuts?: number[];
   headers: string[];
   series: {
     label: string;
@@ -106,7 +119,12 @@ export interface ChartRuntimeData {
   heads?: string[];
 }
 
-export function chartRuntimeData(block: ChartBlock, ctx: RenderContext): ChartRuntimeData {
+export function chartRuntimeData(
+  input: ChartBlock | PieData,
+  ctx: RenderContext,
+): ChartRuntimeData {
+  if (isPie(input)) return pieRuntimeData(input, ctx);
+  const block = input;
   const locale = ctx.data.locale;
   const stacked =
     block.percent === true ||
@@ -148,5 +166,57 @@ export function chartRuntimeData(block: ChartBlock, ctx: RenderContext): ChartRu
     ...(block.type !== "bar" && block.stack && block.totals
       ? { heads: block.axis.buckets.map((_, i) => readoutHead(block, i, ctx)) }
       : {}),
+  };
+}
+
+/** A pie or donut in words: what it shows, the total, and every slice's share and value. */
+function describePie(block: PieData, ctx: RenderContext): string {
+  const metric = metricOf(ctx, block.metric);
+  const items = pieItems(block);
+  const kind = block.type === "donut" ? "Donut chart" : "Pie chart";
+  const by = block.column.replaceAll("_", " ");
+  if (items.length === 0 || block.whole === 0) {
+    return `${kind} of ${metric.label} by ${by}: no data in this period.`;
+  }
+  const slices = items
+    .map((i) => `${i.label} ${share(ctx, i.share)} (${full(ctx, block.metric, i.value)})`)
+    .join(", ");
+  const note = pieNote(block, ctx);
+  return [
+    `${kind} of ${metric.label} by ${by}, ${items.length} ${items.length === 1 ? "slice" : "slices"}, total ${full(ctx, block.metric, block.total)}.`,
+    `${slices}.`,
+    ...(note ? [note] : []),
+  ].join(" ");
+}
+
+function pieTable(block: PieData, ctx: RenderContext, caption: string): string {
+  const metric = metricOf(ctx, block.metric);
+  const rows = pieItems(block)
+    .map(
+      (i) =>
+        `<tr><th scope="row">${esc(i.label)}</th><td>${esc(full(ctx, block.metric, i.value))}</td><td>${esc(share(ctx, i.share))}</td></tr>`,
+    )
+    .join("");
+  return `<div class="hm-sr"><table><caption>${esc(caption)}</caption><thead><tr><th scope="col">${esc(block.column.replaceAll("_", " "))}</th><th scope="col">${esc(metric.label)}</th><th scope="col">Share</th></tr></thead><tbody>${rows}</tbody><tfoot><tr><th scope="row">Total</th><td>${esc(full(ctx, block.metric, block.total))}</td><td></td></tr></tfoot></table></div>`;
+}
+
+function pieRuntimeData(block: PieData, ctx: RenderContext): ChartRuntimeData {
+  const metric = metricOf(ctx, block.metric);
+  const items = pieItems(block);
+  return {
+    kind: "pie",
+    headers: items.map((i) => i.label),
+    colors: items.map((i) => (i.color === "context" ? 0 : Number(i.color.slice(1)))),
+    cuts: pieCuts(block),
+    series: [
+      {
+        label: metric.label,
+        color: 1,
+        v: items.map((i) => i.value),
+        text: items.map((i) => full(ctx, block.metric, i.value)),
+        short: items.map((i) => formatValue(i.value, metric, ctx.data.locale, "compact")),
+        pct: items.map((i) => share(ctx, i.share)),
+      },
+    ],
   };
 }

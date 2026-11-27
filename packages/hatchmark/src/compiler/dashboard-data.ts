@@ -181,6 +181,43 @@ export interface BarData extends BlockCommon, StackTotals {
   grains?: GrainSwitch;
 }
 
+/** One slice of a pie or donut. */
+export interface PieSlice {
+  /** The category value. null is a real group, shown as "(empty)". */
+  key: string | number | boolean | null;
+  label: string;
+  value: number;
+  /** value / PieData.whole, as a fraction. */
+  share: number;
+}
+
+/**
+ * A pie or donut: the largest positive categories as slices, the remaining positive ones grouped
+ * into other, and categories whose value is zero, negative or undefined left out (excluded).
+ */
+export interface PieData extends BlockCommon {
+  type: "pie" | "donut";
+  metric: string;
+  column: string;
+  /** Largest first, ties by key; at most the block's limit. */
+  slices: PieSlice[];
+  /** The positive categories past the limit, summed. */
+  other?: { count: number; value: number; share: number };
+  /**
+   * The metric over every row in the window, recomputed from rows (SQL ROLLUP's grand total). Equals
+   * whole unless some category is negative.
+   */
+  total: Value;
+  /** The sum of the positive categories: what the slices and other divide. */
+  whole: number;
+  /** Categories left out: negative values, and how many were zero or undefined. */
+  excluded?: {
+    negative: { key: string | number | boolean | null; label: string; value: number }[];
+    empty: number;
+  };
+  window?: DateSpan;
+}
+
 export interface TableRow {
   /**
    * One value per by column, in order. null is a real group (shown as "(empty)"). A subtotal row
@@ -239,7 +276,7 @@ export interface TableData extends BlockCommon {
   empty?: EmptyWindow;
 }
 
-export type BlockData = KpiData | LineData | BarData | TableData;
+export type BlockData = KpiData | LineData | BarData | PieData | TableData;
 
 export interface DashboardData {
   version: typeof DASHBOARD_DATA_VERSION;

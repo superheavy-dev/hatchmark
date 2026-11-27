@@ -162,6 +162,36 @@ const barBlock = z
   })
   .meta({ id: "BarBlock" });
 
+/** Slices a pie or donut shows before grouping the rest into "Other". */
+export const PIE_DEFAULT_LIMIT = 5;
+/** More slices than this get HM5010: the angles become too thin to compare. */
+export const PIE_READABLE_LIMIT = 6;
+
+const pieFields = {
+  ...blockCommon,
+  metric: metricName.meta({
+    description: "A part-of-whole metric: a sum or a count, whose slices add up to its total.",
+  }),
+  by: columnName.meta({ description: "Category column: one slice per value." }),
+  limit: z
+    .number()
+    .int()
+    .min(1)
+    .max(12)
+    .optional()
+    .meta({
+      description: `Largest slices shown; the rest are grouped into one "Other" slice. Default ${PIE_DEFAULT_LIMIT}; more than ${PIE_READABLE_LIMIT} gets warning HM5010.`,
+    }),
+};
+
+const pieBlock = z
+  .strictObject({ ...pieFields, type: z.literal("pie") })
+  .meta({ id: "PieBlock", description: "Shares of a whole, as a pie." });
+
+const donutBlock = z
+  .strictObject({ ...pieFields, type: z.literal("donut") })
+  .meta({ id: "DonutBlock", description: "Shares of a whole, as a ring with the total inside." });
+
 const barListBlock = z
   .strictObject({
     ...blockCommon,
@@ -252,6 +282,8 @@ export const blockSchema = z
     lineBlock,
     areaBlock,
     barBlock,
+    pieBlock,
+    donutBlock,
     barListBlock,
     tableBlock,
     textBlock,

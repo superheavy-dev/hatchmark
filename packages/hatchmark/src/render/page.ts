@@ -6,6 +6,7 @@ import type {
   GrainSwitch,
   KpiData,
   LineData,
+  PieData,
   TableData,
 } from "../compiler/dashboard-data.js";
 import { MIN_CHART_SPAN } from "../spec/layout.js";
@@ -15,6 +16,7 @@ import { chartRuntimeData, chartTable, describeChart } from "./describe.js";
 import { formatDate, formatSpan } from "./format.js";
 import { renderKpi } from "./kpi.js";
 import { renderLine } from "./line.js";
+import { isPie, pieHeight, renderPie } from "./pie.js";
 import { esc, scriptJson } from "./svg.js";
 
 export { scriptJson };
@@ -107,10 +109,23 @@ function metricLabels(ctx: RenderContext, names: string[]): string {
 
 /** The card title (the block's, else what it measures) and a subtitle saying what is measured. */
 export function blockHeading(
-  block: LineData | BarData | TableData,
+  block: LineData | BarData | PieData | TableData,
   ctx: RenderContext,
 ): { title: string; subtitle: string } {
   const locale = ctx.data.locale;
+  if (isPie(block)) {
+    const what = `${metricLabels(ctx, [block.metric])} by ${humanize(block.column)}`;
+    const window = block.window ?? ctx.data.period.current;
+    const span = window ? formatSpan(window, locale) : undefined;
+    const extra = block.other
+      ? `top ${block.slices.length} of ${block.slices.length + block.other.count}`
+      : undefined;
+    const subtitle = [what, span, extra].filter((p) => p !== undefined).join(", ");
+    return {
+      title: block.title ?? what,
+      subtitle: block.title ? subtitle : [span, extra].filter(Boolean).join(", "),
+    };
+  }
   const measured = metricLabels(
     ctx,
     block.type === "table" ? block.metrics : block.series.map((s) => s.metric),
@@ -144,7 +159,7 @@ export function blockHeading(
  * HM2024). CSS grid auto-placement moves the card to the next row when the widened card no longer
  * fits beside the cards before it, so the layout stays a function of the spec alone.
  */
-function chartSpan(block: LineData | BarData): number {
+function chartSpan(block: LineData | BarData | PieData): number {
   return Math.max(block.span, MIN_CHART_SPAN);
 }
 
@@ -156,13 +171,18 @@ export function cardWidth(layout: Layout, span: number, theme: Theme = DEFAULT_T
   return Math.floor(span * column + (span - 1) * gap);
 }
 
-function chartBody(block: LineData | BarData, ctx: RenderContext, label: string): string {
+function chartBody(block: LineData | BarData | PieData, ctx: RenderContext, label: string): string {
   const { theme } = ctx;
   const variants = new Map<string, { svg: string; layouts: number[] }>();
   LAYOUTS.forEach((layout, index) => {
     const width = cardWidth(layout, chartSpan(block), theme) - 2 * theme.density.cardPadding - 2;
     const base = layout.mobile ? MOBILE_CHART_HEIGHT : theme.density.chartHeight;
-    const height = block.type === "bar" ? barHeight(block, ctx, width, base) : base;
+    const height =
+      block.type === "bar"
+        ? barHeight(block, ctx, width, base)
+        : isPie(block)
+          ? pieHeight(block, ctx, width, base)
+          : base;
     const key = `${width}x${height}`;
     const found = variants.get(key);
     if (found) {
@@ -170,7 +190,12 @@ function chartBody(block: LineData | BarData, ctx: RenderContext, label: string)
       return;
     }
     const size = { width, height };
-    const svg = block.type === "bar" ? renderBar(block, ctx, size) : renderLine(block, ctx, size);
+    const svg =
+      block.type === "bar"
+        ? renderBar(block, ctx, size)
+        : isPie(block)
+          ? renderPie(block, ctx, size)
+          : renderLine(block, ctx, size);
     variants.set(key, {
       svg: svg.replace("<svg ", `<svg tabindex="0" aria-describedby="hm-${esc(block.id)}-d" `),
       layouts: [index],
@@ -234,8 +259,8 @@ function grainCard(
   return `<section class="hm-card hm-${block.type}" style="--span:${chartSpan(block)}" aria-labelledby="${esc(id)}" data-hm-grains>${head}${panels.map((p) => p.body).join("")}</section>`;
 }
 
-function card(block: LineData | BarData | TableData, ctx: RenderContext): string {
-  if (block.type !== "table" && block.grains !== undefined) {
+function card(block: LineData | BarData | PieData | TableData, ctx: RenderContext): string {
+  if ((block.type === "line" || block.type === "area" || block.type === "bar") && block.grains) {
     return grainCard(block as (LineData | BarData) & { grains: GrainSwitch }, ctx);
   }
   const { title, subtitle } = blockHeading(block, ctx);
@@ -297,6 +322,8 @@ export function gridItems(blocks: readonly BlockData[], ctx: RenderContext): Gri
       block.type === "line" ||
       block.type === "area" ||
       block.type === "bar" ||
+      block.type === "pie" ||
+      block.type === "donut" ||
       block.type === "table"
     ) {
       out.push({ blocks: [block.id], html: card(block, ctx) });
@@ -366,7 +393,7 @@ export function pageStyles(assets: PageAssets, theme: Theme = DEFAULT_THEME): st
     `.hm-switch{flex-direction:row;flex-wrap:wrap;justify-content:space-between;align-items:flex-start;gap:8px 12px}.hm-card-titles{display:flex;flex-direction:column;gap:2px;min-width:0}.hm-header-side{display:flex;flex-direction:column;align-items:flex-end;gap:8px;max-width:100%;min-width:0}`,
     `.hm-seg{display:inline-flex;flex:0 1 auto;flex-wrap:wrap;max-width:100%;min-width:0;gap:2px;padding:2px;background:var(--hm-card-alt);border:1px solid var(--hm-border);border-radius:${theme.radius.control}px}.hm-seg button{font:inherit;font-size:12px;line-height:16px;font-weight:500;padding:3px 10px;border:0;border-radius:${Math.max(0, theme.radius.control - 2)}px;background:transparent;color:var(--hm-text-muted);cursor:pointer}.hm-seg button:hover{color:var(--hm-text)}.hm-seg button[aria-checked=true]{background:var(--hm-card);color:var(--hm-text);box-shadow:0 0 0 1px var(--hm-border-strong)}.hm-seg button:focus-visible{outline:2px solid var(--hm-focus);outline-offset:1px}[data-hm-grain][hidden]{display:none}`,
     `.hm-chart{position:relative}.hm-v{display:none}.hm-v svg{display:block;max-width:100%;height:auto;overflow:visible;touch-action:pan-y}.hm-v svg:focus,.hm-spark:focus{outline:none}.hm-v svg:focus-visible,.hm-spark:focus-visible,.hm-table-wrap:focus-visible{outline:2px solid var(--hm-focus);outline-offset:2px;border-radius:2px}`,
-    `.hm-chart text{font-variant-numeric:tabular-nums}`,
+    `.hm-chart text{font-variant-numeric:tabular-nums}.hm-dim .hm-slice:not(.hm-on){opacity:.35}.hm-b-context{background:var(--hm-context)}`,
     `.hm-table-wrap{overflow-x:auto}.hm-table{width:100%;border-collapse:collapse}`,
     `.hm-table th,.hm-table td{height:${d.tableRow}px;padding:0 0 0 16px;text-align:right;font-weight:400;white-space:nowrap}.hm-table .hm-key{text-align:left;padding-left:0;white-space:normal;min-width:120px}.hm-table tbody .hm-key{padding-top:6px;padding-bottom:6px}.hm-table .hm-key2{padding-left:16px}.hm-table .hm-fill{width:100%}`,
     `.hm-table tr>:first-child{position:sticky;left:0;z-index:1;background:var(--hm-card)}.hm-table .hm-key span{display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}`,
@@ -475,7 +502,7 @@ export function renderIndexPage(
  * rasterisers (resvg) and for embedding outside a Hatchmark page.
  */
 export function renderChartSvg(
-  block: LineData | BarData,
+  block: LineData | BarData | PieData,
   data: DashboardData,
   options: { width: number; height?: number; mode?: Mode; theme?: Theme },
 ): string {
@@ -486,12 +513,23 @@ export function renderChartSvg(
     font: `${theme.font.family}, ${theme.font.fallback}`,
     background: colorValue(theme, mode, "card"),
   };
-  const height =
-    block.type === "bar"
-      ? barHeight(block, ctx, options.width, options.height ?? theme.density.chartHeight)
-      : (options.height ?? theme.density.chartHeight);
-  const size = { width: options.width, height };
-  return block.type === "bar"
-    ? renderBar(block, ctx, size, standalone)
-    : renderLine(block, ctx, size, standalone);
+  const base = options.height ?? theme.density.chartHeight;
+  const size = { width: options.width, height: base };
+  if (isPie(block)) {
+    return renderPie(
+      block,
+      ctx,
+      { ...size, height: pieHeight(block, ctx, size.width, base) },
+      standalone,
+    );
+  }
+  if (block.type === "bar") {
+    return renderBar(
+      block,
+      ctx,
+      { ...size, height: barHeight(block, ctx, size.width, base) },
+      standalone,
+    );
+  }
+  return renderLine(block, ctx, size, standalone);
 }

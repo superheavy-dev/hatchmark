@@ -17,7 +17,13 @@ import {
   sameColumn,
 } from "./common.js";
 import { projectAnchors, type Source } from "./config.js";
-import { type Block, blockId, type Dashboard, DEFAULT_PERIOD } from "./dashboard.js";
+import {
+  type Block,
+  blockId,
+  type Dashboard,
+  DEFAULT_PERIOD,
+  PIE_READABLE_LIMIT,
+} from "./dashboard.js";
 import { ENTITY_NAMES, type Expr, exprRefs, parseExpr, shapeError } from "./expr.js";
 import { addPropertyFix, removeItemFix, replaceValueFix } from "./fixes.js";
 import { filterTables, metricSources, readSources, sourceTables } from "./graph.js";
@@ -884,6 +890,8 @@ function blockMetricRefs(block: Block): { pointer: string; name: string }[] {
   switch (block.type) {
     case "kpi":
     case "bar_list":
+    case "pie":
+    case "donut":
       return [{ pointer: "/metric", name: block.metric }];
     case "line":
     case "area":
@@ -923,6 +931,53 @@ function notAdditiveLabel(metric: Metric): string {
         ? "a non-linear formula"
         : metric.type;
   return `${kind} does not add up across rows`;
+}
+
+/**
+ * A pie or donut: its metric must be a part of a whole (HM4001, an error, since the slices would
+ * not add up to anything), and more than PIE_READABLE_LIMIT slices are too thin to compare (HM5010).
+ */
+function checkPie(
+  r: Reporter,
+  file: SpecFile<"dashboard">,
+  block: Block & { type: "pie" | "donut" },
+  base: string,
+  metrics: ReadonlyMap<string, Metric>,
+): void {
+  const metric = metrics.get(block.metric);
+  if (metric !== undefined && !groupAdditive(block.metric, metrics)) {
+    r.report(
+      "HM4001",
+      `${base}/metric`,
+      `a ${block.type} is not meaningful for "${block.metric}"`,
+      {
+        label: notAdditiveLabel(metric),
+        help: `a ${block.type} shows parts of a whole, so its metric must be a sum or a count; show "${block.metric}" in a bar chart instead, or the sum or count it is built from`,
+      },
+    );
+  }
+  if (block.limit !== undefined && block.limit > PIE_READABLE_LIMIT) {
+    r.report(
+      "HM5010",
+      `${base}/limit`,
+      `${block.limit} slices are too many to compare in a ${block.type}`,
+      {
+        severity: "warning",
+        label: `at most ${PIE_READABLE_LIMIT} read well; the rest join "Other"`,
+        help: `set "limit" to ${PIE_READABLE_LIMIT} or fewer, or show the categories as a horizontal bar chart with "limit"`,
+        ...optional(
+          "fix",
+          replaceValueFix(
+            file.document,
+            `${base}/limit`,
+            PIE_READABLE_LIMIT,
+            "unsafe",
+            `set "limit": ${PIE_READABLE_LIMIT}`,
+          ),
+        ),
+      },
+    );
+  }
 }
 
 /**
@@ -1029,7 +1084,11 @@ function checkDashboard(project: Project, file: SpecFile<"dashboard">, out: Diag
     }
 
     if (
-      (block.type === "line" || block.type === "area" || block.type === "bar") &&
+      (block.type === "line" ||
+        block.type === "area" ||
+        block.type === "bar" ||
+        block.type === "pie" ||
+        block.type === "donut") &&
       block.span !== undefined &&
       block.span < MIN_CHART_SPAN
     ) {
@@ -1128,6 +1187,10 @@ function checkDashboard(project: Project, file: SpecFile<"dashboard">, out: Diag
           });
         }
       }
+    }
+
+    if (block.type === "pie" || block.type === "donut") {
+      checkPie(r, file, block, base, metrics);
     }
 
     if ((block.type === "bar" || block.type === "area") && block.stack) {

@@ -18,7 +18,13 @@ function metricRefs(project: Project, name: string): string[] {
   if (spec === undefined) return [];
   const out: string[] = [];
   for (const block of spec.blocks) {
-    if (block.type === "kpi" || block.type === "bar_list") out.push(block.metric);
+    if (
+      block.type === "kpi" ||
+      block.type === "bar_list" ||
+      block.type === "pie" ||
+      block.type === "donut"
+    )
+      out.push(block.metric);
     else if (block.type === "text") {
       for (const m of block.markdown.matchAll(/\{\{\s*([a-z][a-z0-9_]*)/g))
         if (m[1]) out.push(m[1]);

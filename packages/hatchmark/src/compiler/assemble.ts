@@ -5,6 +5,7 @@ import {
   type DashboardFilter,
   grainKey,
   type Metric,
+  PIE_DEFAULT_LIMIT,
   type Project,
   type RangeSpec,
   type ResolvedGrain,
@@ -23,6 +24,8 @@ import {
   type LineData,
   type MetricInfo,
   type PartialBucket,
+  type PieData,
+  type PieSlice,
   type Series,
   type StackTotals,
   type TableData,
@@ -671,6 +674,75 @@ class Assembler {
     };
   }
 
+  /**
+   * A pie or donut: categories by value, the largest positive ones as slices and the rest of the
+   * positive ones as Other; zero, negative and undefined categories are left out, with HM4061 for
+   * negatives and HM5011 when Other outweighs every slice shown.
+   */
+  pie(block: Block & { type: "pie" | "donut" }, plan: BlockPlan, common: Common): PieData {
+    const expression = plan.measures[block.metric];
+    const limit = block.limit ?? PIE_DEFAULT_LIMIT;
+    const rows = this.keys([expression], 0).map((keys) => {
+      const key = keys[0] ?? null;
+      return {
+        key,
+        label: key === null ? "(empty)" : String(key),
+        value: this.evaluate(expression, 0, [key]),
+      };
+    });
+    const positive = rows
+      .filter((r): r is typeof r & { value: number } => r.value !== null && r.value > 0)
+      .sort((a, b) => b.value - a.value || compareKey(a.key, b.key));
+    const negative = rows
+      .filter((r): r is typeof r & { value: number } => r.value !== null && r.value < 0)
+      .sort((a, b) => a.value - b.value || compareKey(a.key, b.key));
+    const empty = rows.length - positive.length - negative.length;
+    const whole = positive.reduce((sum, r) => sum + r.value, 0);
+    const share = (v: number) => (whole === 0 ? 0 : v / whole);
+    const slices: PieSlice[] = positive
+      .slice(0, limit)
+      .map((r) => ({ key: r.key, label: r.label, value: r.value, share: share(r.value) }));
+    const rest = positive.slice(limit);
+    const otherValue = rest.reduce((sum, r) => sum + r.value, 0);
+    if (negative.length > 0) {
+      this.negativeShare(plan, `${plan.pointer}/metric`, negative.map((r) => r.label).join(", "));
+    }
+    if (rest.length > 0 && slices.every((s) => s.value < otherValue)) {
+      const file = this.project.dashboards.get(this.plan.dashboard);
+      const pointer = `${plan.pointer}/${block.limit === undefined ? "by" : "limit"}`;
+      this.diagnostics.push({
+        code: "HM5011",
+        severity: "warning",
+        message: `block "${plan.blockId}" groups ${rest.length} categories into "Other", which is larger than every slice shown (${Math.round(share(otherValue) * 100)}% of the whole)`,
+        ...(file ? { file: file.file, pointer, ...file.document.locationOf(pointer) } : {}),
+        help: 'show the categories as a horizontal bar chart with "limit", or group them into fewer categories',
+        docs: docsCommand("HM5011"),
+      });
+    }
+    const window = span(this.bounds(expression), this.context.timezone);
+    return {
+      ...common,
+      type: block.type,
+      metric: block.metric,
+      column: block.by,
+      slices,
+      ...(rest.length > 0
+        ? { other: { count: rest.length, value: otherValue, share: share(otherValue) } }
+        : {}),
+      total: this.evaluate(expression, 1, [null]),
+      whole,
+      ...(negative.length > 0 || empty > 0
+        ? {
+            excluded: {
+              negative: negative.map((r) => ({ key: r.key, label: r.label, value: r.value })),
+              empty,
+            },
+          }
+        : {}),
+      ...(window ? { window } : {}),
+    };
+  }
+
   table(block: Block & { type: "table" }, plan: BlockPlan, common: Common): TableData {
     const expressions = block.metrics.map((m) => plan.measures[m]);
     const percent = block.percentOfTotal ?? [];
@@ -908,6 +980,9 @@ export function assemble(
       blocks.push(
         assembler.series(block, blockPlan, (b, p) => assembler.bar(b as typeof block, p, common)),
       );
+    } else if (block.type === "pie" || block.type === "donut") {
+      shown.add(block.metric);
+      blocks.push(assembler.pie(block, blockPlan, common));
     } else if (block.type === "table") {
       for (const m of block.metrics) shown.add(m);
       blocks.push(assembler.table(block, blockPlan, common));

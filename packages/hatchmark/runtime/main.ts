@@ -26,7 +26,9 @@ interface RuntimeSeries {
 }
 
 interface RuntimeChart {
-  kind: "line" | "bar";
+  kind: "line" | "bar" | "pie";
+  colors?: number[];
+  cuts?: number[];
   headers: string[];
   series: RuntimeSeries[];
   total?: string[];
@@ -74,6 +76,7 @@ function attach(figure: HTMLElement, chart: RuntimeChart): void {
   const hide = () => {
     overlay?.remove();
     overlay = undefined;
+    if (current && chart.kind === "pie") current.svg.classList.remove("hm-dim");
     if (tip) tip.style.display = "none";
     if (current) resetReadout(current.svg);
     current = undefined;
@@ -119,7 +122,8 @@ function attach(figure: HTMLElement, chart: RuntimeChart): void {
     for (const { s } of rows) {
       const row = element("div", "hm-tip-r");
       const name = element("span", "hm-tip-n");
-      name.append(element("i", `hm-b-c${s.color}`), s.label);
+      const slot = chart.colors ? chart.colors[index] : s.color;
+      name.append(element("i", slot === 0 ? "hm-b-context" : `hm-b-c${slot}`), s.label);
       const value = element("span", "hm-tip-v", s.text[index] ?? "");
       if (s.pct) value.append(element("span", "hm-tip-p", s.pct[index] ?? ""));
       row.append(name, value);
@@ -228,6 +232,20 @@ function attach(figure: HTMLElement, chart: RuntimeChart): void {
       else place(svg, x, highest + 12);
       return;
     }
+    if (chart.kind === "pie") {
+      const [cx = 0, cy = 0, inner = 0, outer = 0] = numbers(svg, "pie");
+      const cuts = chart.cuts ?? [];
+      const middle = ((index === 0 ? 0 : (cuts[index - 1] ?? 0)) + (cuts[index] ?? 0)) / 2;
+      const radius = (inner + outer) / 2;
+      const angle = middle * 2 * Math.PI;
+      svg.classList.add("hm-dim");
+      svg.querySelectorAll(".hm-slice").forEach((slice, k) => {
+        slice.classList.toggle("hm-on", k === index);
+      });
+      tooltip(index);
+      place(svg, cx + radius * Math.sin(angle), cy - radius * Math.cos(angle));
+      return;
+    }
     const [start, step] = span(svg, "band", n);
     const vertical = svg.getAttribute("data-hm-o") === "v";
     const from = start + index * step;
@@ -253,6 +271,14 @@ function attach(figure: HTMLElement, chart: RuntimeChart): void {
     if (chart.kind === "line") {
       const [x0, step] = span(svg, "x", n - 1);
       return n > 1 ? Math.max(0, Math.min(n - 1, Math.round((x - x0) / step))) : 0;
+    }
+    if (chart.kind === "pie") {
+      const [cx = 0, cy = 0, inner = 0, outer = 0] = numbers(svg, "pie");
+      const distance = Math.hypot(x - cx, y - cy);
+      if (distance < inner - 2 || distance > outer + 4) return -1;
+      const turn = (Math.atan2(x - cx, cy - y) / (2 * Math.PI) + 1) % 1;
+      const index = (chart.cuts ?? []).findIndex((cut) => turn < cut);
+      return index < 0 ? n - 1 : index;
     }
     const [start, step] = span(svg, "band", n);
     const pos = svg.getAttribute("data-hm-o") === "v" ? x : y;
