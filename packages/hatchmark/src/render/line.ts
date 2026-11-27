@@ -62,8 +62,9 @@ export function plottedValues(block: LineData): Value[][] {
 
 /**
  * A line or area chart over a time axis. Direct labels sit at the line ends when the plot is at
- * least 320 px wide and there are at most 6 series; otherwise a key above the plot flows across the
- * card, the period first and then each series' name and value (the runtime updates both on hover).
+ * least 320 px wide and there are at most 6 series; otherwise a key above the plot names them: the
+ * period on its own line, then each series' name and value flowing across the card (the runtime
+ * updates the period and values on hover).
  * The plot is always as tall as size.height allows; a longer key makes the chart taller.
  */
 export function renderLine(
@@ -113,7 +114,6 @@ export function renderLine(
   if (!direct && !empty && series.length > 0) {
     const last = Math.max(...lastIndex);
     const style = { size: CAPTION } as const;
-    const headers = block.axis.buckets.map((b) => formatBucket(b, block.axis.grain, locale));
     const valueWidth = series.map((s) =>
       Math.max(
         0,
@@ -122,52 +122,47 @@ export function renderLine(
         ),
       ),
     );
-    const items = [
-      { width: Math.max(0, ...headers.map((h) => textWidth(h, style))), k: -1 },
-      ...series.map((s, k) => ({
-        width: LEGEND_NAME_X + textWidth(s.label, style) + 6 + (valueWidth[k] as number),
-        k,
-      })),
+    const parts = [
+      svgText(
+        paint,
+        0,
+        LABEL_LINE / 2,
+        last >= 0 ? formatBucket(block.axis.buckets[last] as string, block.axis.grain, locale) : "",
+        {
+          ...style,
+          color: "textSubtle",
+          className: "hm-rh",
+        },
+      ),
     ];
-    const parts: string[] = [];
     let x = 0;
-    let row = 0;
-    for (const item of items) {
-      if (x > 0 && x + item.width > size.width) {
+    let row = 1;
+    series.forEach((s, k) => {
+      const width = LEGEND_NAME_X + textWidth(s.label, style) + 6 + (valueWidth[k] as number);
+      if (x > 0 && x + width > size.width) {
         x = 0;
         row++;
       }
       const cy = row * LEGEND_ROW + LABEL_LINE / 2;
-      const s = series[item.k];
-      if (s === undefined) {
-        parts.push(
-          svgText(paint, x, cy, last >= 0 ? (headers[last] as string) : "", {
-            ...style,
-            color: "textSubtle",
-            className: "hm-rh",
-          }),
-        );
-      } else {
-        const room = size.width - x - LEGEND_NAME_X - 6 - (valueWidth[item.k] as number);
-        const name = truncateEnd(s.label, room, style);
-        parts.push(
-          `<circle cx="${r(x + 4)}" cy="${r(cy)}" r="4"${paint.attrs(seriesColor(item.k))}/>`,
-          svgText(paint, x + LEGEND_NAME_X, cy, name, {
-            ...style,
-            color: "textMuted",
-            ...(name === s.label ? {} : { title: s.label }),
-          }),
-          svgText(
-            paint,
-            x + LEGEND_NAME_X + textWidth(name, style) + 6,
-            cy,
-            formatValue(s.values[last] ?? null, metricOf(ctx, s.metric), locale, "compact"),
-            { ...style, color: "text", className: `hm-rv hm-rv-${item.k}` },
-          ),
-        );
-      }
-      x += item.width + LEGEND_GAP;
-    }
+      const room = size.width - x - LEGEND_NAME_X - 6 - (valueWidth[k] as number);
+      const name = truncateEnd(s.label, room, style);
+      parts.push(
+        `<circle cx="${r(x + 4)}" cy="${r(cy)}" r="4"${paint.attrs(seriesColor(k))}/>`,
+        svgText(paint, x + LEGEND_NAME_X, cy, name, {
+          ...style,
+          color: "textMuted",
+          ...(name === s.label ? {} : { title: s.label }),
+        }),
+        svgText(
+          paint,
+          x + LEGEND_NAME_X + textWidth(name, style) + 6,
+          cy,
+          formatValue(s.values[last] ?? null, metricOf(ctx, s.metric), locale, "compact"),
+          { ...style, color: "text", className: `hm-rv hm-rv-${k}` },
+        ),
+      );
+      x += width + LEGEND_GAP;
+    });
     legendHeight = row * LEGEND_ROW + LABEL_LINE;
     readout = `<g class="hm-readout">${parts.join("")}</g>`;
   }

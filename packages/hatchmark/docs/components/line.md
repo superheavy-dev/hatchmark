@@ -28,7 +28,8 @@ What it draws:
 - Up to six lines are named by direct labels at their ends (name and latest value), stacked 2 px
   apart with leader lines when they would overlap. When the plot is narrower than 320 px or there
   are more than six lines, a key above the plot names them instead: the period in small subtle
-  text, then "● Name $Value" for every line, flowing across the card and wrapping like a sentence.
+  text on its own line, then "● Name $Value" for every line, flowing across the card and wrapping
+  like a sentence, every row starting flush left under the period.
   Values are in the body text colour, names muted, both at the same size and weight. The period
   and values update as the reader hovers, drags or steps with the keys. The plot keeps its height:
   a longer key makes the chart taller. Line names are never shortened; only a name wider than the

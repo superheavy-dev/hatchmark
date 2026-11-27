@@ -352,6 +352,40 @@ describe("browser runtime", () => {
     });
   }
 
+  for (const width of [390, 1440]) {
+    it(`puts the period on its own line above the key, with every key row starting under it at ${width} px`, async () => {
+      const page = await browser.newPage({ viewport: { width, height: 900 } });
+      await page.goto(allUrl);
+      const layouts = await page.locator(".hm-card svg[data-hm-readout]").evaluateAll((svgs) =>
+        svgs
+          .filter((svg) => svg.getBoundingClientRect().width > 0 && svg.querySelector(".hm-rh"))
+          .map((svg) => {
+            const period = (svg.querySelector(".hm-rh") as SVGTextElement).getBoundingClientRect();
+            const rows = new Map<number, number>();
+            for (const dot of svg.querySelectorAll(".hm-readout circle")) {
+              const box = dot.getBoundingClientRect();
+              const key = Math.round(box.top);
+              rows.set(key, Math.min(rows.get(key) ?? Number.POSITIVE_INFINITY, box.left));
+            }
+            const tops = [...rows.keys()].sort((a, b) => a - b);
+            return {
+              periodLeft: period.left,
+              periodBottom: period.bottom,
+              firstTop: tops[0] ?? 0,
+              rowLefts: tops.map((top) => rows.get(top) as number),
+            };
+          }),
+      );
+      expect(layouts.length).toBeGreaterThan(0);
+      for (const layout of layouts) {
+        expect(layout.firstTop).toBeGreaterThanOrEqual(layout.periodBottom - 0.5);
+        for (const left of layout.rowLefts) {
+          expect(Math.abs(left - layout.periodLeft)).toBeLessThanOrEqual(0.5);
+        }
+      }
+    });
+  }
+
   it("switches to dark with data-theme", async () => {
     const page = await browser.newPage();
     await page.goto(`${url}?theme=dark`);
