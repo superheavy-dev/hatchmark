@@ -68,7 +68,7 @@ try {
     body.svg,
     /^<svg xmlns="http:\/\/www\.w3\.org\/2000\/svg" font-family="IBM Plex Sans/,
   );
-  assert.match(body.svg, /stroke="#87c0ff"/);
+  assert.match(body.svg, /stroke="#afd3fe"/);
   assert.ok(body.width > 40 && body.width < 50, `text width ${body.width}`);
   console.log(
     "workerd smoke test passed:",

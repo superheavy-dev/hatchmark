@@ -159,9 +159,10 @@ function attach(figure: HTMLElement, chart: RuntimeChart): void {
       const row = element("div", "hm-tip-r");
       const name = element("span", "hm-tip-n");
       const slot = chart.colors ? chart.colors[index] : s.color;
-      if (s.partial?.includes(index)) name.append(element("i", `hm-tip-hatch hm-h-c${slot}`));
+      const key = `${chart.swatch === "square" ? "f" : "c"}${slot}`;
+      if (s.partial?.includes(index)) name.append(element("i", `hm-tip-hatch hm-h-f${slot}`));
       else if (rows.length > 1 && !scatter)
-        name.append(element("i", slot === 0 ? "hm-b-context" : `hm-b-c${slot}`));
+        name.append(element("i", slot === 0 ? "hm-b-context" : `hm-b-${key}`));
       name.append(s.label);
       const value = element("span", "hm-tip-v", s.text[index] ?? "");
       if (s.pct) value.append(element("span", "hm-tip-p", s.pct[index] ?? ""));

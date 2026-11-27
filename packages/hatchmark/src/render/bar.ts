@@ -21,7 +21,7 @@ import { thinTicks } from "./labels.js";
 import { textWidth, truncateEnd, wrapLines } from "./measure.js";
 import { hatchDefs, hollowPoint, partialBar, partialId } from "./partial.js";
 import { r, svgLine, svgText } from "./svg.js";
-import { type Paint, seriesColor } from "./theme.js";
+import { type Paint, seriesColor, seriesFill } from "./theme.js";
 
 const BAR_THICKNESS = 10;
 const GROUPED_THICKNESS = 8;
@@ -98,7 +98,7 @@ function drawKey(
     }
     const cy = row * LABEL_LINE + LABEL_LINE / 2;
     parts.push(
-      `<rect x="${r(x)}" y="${r(cy - 4)}" width="8" height="8" rx="1"${paint.attrs(seriesColor(k))}/>`,
+      `<rect x="${r(x)}" y="${r(cy - 4)}" width="8" height="8" rx="1"${paint.attrs(seriesFill(k))}/>`,
       svgText(paint, x + 14, cy, text, {
         size: CAPTION,
         color: "textMuted",
@@ -217,7 +217,7 @@ export function renderBar(
       ? hatchDefs(
           paint,
           hatch,
-          series.map((_, k) => seriesColor(k)),
+          series.map((_, k) => seriesFill(k)),
           ctx.theme.partial.spacing,
           x,
           y,
@@ -281,8 +281,8 @@ export function renderBar(
         const w = Math.max(1, Math.abs(scale(b) - scale(a)));
         parts.push(
           partial[k]?.has(i)
-            ? partialBar(ctx, hatch, seriesColor(k), x0, cy + offset - thick / 2, w, thick, w)
-            : `<rect x="${r(x0)}" y="${r(cy + offset - thick / 2)}" width="${r(w)}" height="${thick}" rx="${ctx.theme.radius.bar}"${paint.attrs(seriesColor(k))}/>`,
+            ? partialBar(ctx, hatch, seriesFill(k), x0, cy + offset - thick / 2, w, thick, w)
+            : `<rect x="${r(x0)}" y="${r(cy + offset - thick / 2)}" width="${r(w)}" height="${thick}" rx="${ctx.theme.radius.bar}"${paint.attrs(seriesFill(k))}/>`,
         );
         if (markers[k]?.has(i)) marks.push(hollowPoint(ctx, seriesColor(k), scale(b), cy + offset));
         if (grouped) {
@@ -383,8 +383,8 @@ export function renderBar(
       const h = Math.max(1, Math.abs(y(b) - y(a)));
       parts.push(
         partial[k]?.has(i)
-          ? partialBar(ctx, hatch, seriesColor(k), x, top1, w, h, h)
-          : `<rect x="${r(x)}" y="${r(top1)}" width="${r(w)}" height="${r(h)}" rx="${ctx.theme.radius.bar}"${paint.attrs(seriesColor(k))}/>`,
+          ? partialBar(ctx, hatch, seriesFill(k), x, top1, w, h, h)
+          : `<rect x="${r(x)}" y="${r(top1)}" width="${r(w)}" height="${r(h)}" rx="${ctx.theme.radius.bar}"${paint.attrs(seriesFill(k))}/>`,
       );
       if (markers[k]?.has(i)) marks.push(hollowPoint(ctx, seriesColor(k), x + w / 2, y(b)));
     });

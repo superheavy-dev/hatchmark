@@ -7,6 +7,7 @@ Start with [cli.md](cli.md) for the commands. Then, in the order you write the f
 - [dashboards.md](dashboards.md): `dashboards/<name>.json`: period, blocks, span, filters.
 - [components/](components/): each block type, [kpi](components/kpi.md), [line](components/line.md), [bar](components/bar.md), [stacked](components/stacked.md), [pie and donut](components/pie.md), [scatter](components/scatter.md) and [table](components/table.md).
 - [build.md](build.md): `hatchmark build` and the pages it writes.
+- [theme.md](theme.md): the Default theme's series colours, light and dark.
 - [numbers.md](numbers.md): exactly how every number is computed.
 - [diagnostics.md](diagnostics.md): the diagnostic format; `hatchmark explain <code>` explains one code.
 

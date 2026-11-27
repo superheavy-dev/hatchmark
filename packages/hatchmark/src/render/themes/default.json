@@ -2,14 +2,15 @@
   "$schema": "hatchmark-tokens/0.2",
   "id": "default",
   "name": "Default",
-  "version": "1.0.1",
+  "version": "1.1.0",
   "status": "final",
-  "finalized": "2026-11-27 (HAT-8, approved by Gunwoo: good/bad variant A, brand rule warn-not-replace)",
+  "finalized": "2026-11-27: good/bad variant A (cerulean / vermilion); brand colours are kept and warned about, never replaced",
   "changelog": {
-    "1.0.1": "HAT-19: names are never middle-truncated (legends, keys and direct labels reflow, bar categories wrap), KPI sparklines get the line tooltip, KPI note to sparkline gap 8 to 12 px."
+    "1.1.0": "Categorical palette adapted from the FT's g-chartcolour 0.8.26 (BSD-3-Clause), with separate stroke and fill sets. Strokes (lines, points, line keys) use data.<mode>.categorical, built from FT categorical_line; fills (bars, areas, pie and donut slices, square keys) use data.<mode>.categoricalFill, built from FT categorical_bar and re-ordered so slot n matches the stroke hue of slot n. Light values keep FT's hues, with lightness adjusted where a slot missed 3:1 contrast or the colour-vision separation bar; the dark set is derived. Context grey unchanged.",
+    "1.0.1": "Names are never middle-truncated (legends, keys and direct labels reflow, bar categories wrap), KPI sparklines get the line tooltip, KPI note to sparkline gap 8 to 12 px."
   },
   "license": "Apache-2.0",
-  "origin": "Exported from Paper file 01M8DTB9YYV2B57MQKB6B0M0G2 (Paper tokens are the source of truth for values; rules and metadata carried from the HAT-8 builder).",
+  "origin": "Designed for Hatchmark. Categorical colours are adapted from the FT's g-chartcolour 0.8.26 (BSD-3-Clause).",
   "layers": {
     "theme": "fixed by the theme (this file)",
     "brand": "overridable through brand-layer.schema.json; see brandable flags"
@@ -113,14 +114,24 @@
   "data": {
     "light": {
       "categorical": [
-        "#1f58b6",
-        "#ae8100",
-        "#923965",
-        "#3b9d82",
-        "#486a00",
-        "#9f72c5",
-        "#006d78",
-        "#cb6574"
+        "#0f5499",
+        "#b3275f",
+        "#06848d",
+        "#557002",
+        "#208fce",
+        "#7f062e",
+        "#968b84",
+        "#ce3140"
+      ],
+      "categoricalFill": [
+        "#0f497f",
+        "#c03b6e",
+        "#478497",
+        "#6e892c",
+        "#2392cf",
+        "#a42251",
+        "#968a81",
+        "#f34d5b"
       ],
       "sequential": [
         "#e4efff",
@@ -145,14 +156,24 @@
     },
     "dark": {
       "categorical": [
-        "#87c0ff",
-        "#bb8d1c",
-        "#e2acc2",
-        "#44ad73",
-        "#bac860",
-        "#a281d9",
-        "#40d9c1",
-        "#d6708c"
+        "#afd3fe",
+        "#da4e7f",
+        "#1b97a1",
+        "#749427",
+        "#41a8e8",
+        "#fec7cd",
+        "#7b736d",
+        "#fc7e7f"
+      ],
+      "categoricalFill": [
+        "#afd4fe",
+        "#ad4669",
+        "#5490a3",
+        "#718c2f",
+        "#39a2e0",
+        "#fd90ab",
+        "#8e847d",
+        "#f6505d"
       ],
       "sequential": [
         "#1e2e47",
@@ -176,21 +197,33 @@
       ]
     },
     "categoricalNames": [
-      "ultramarine",
-      "ochre",
-      "plum",
-      "jade",
-      "olive",
-      "lilac",
-      "petrol",
-      "rose"
+      "navy blue",
+      "pink",
+      "cyan",
+      "green",
+      "blue",
+      "claret",
+      "warm grey",
+      "red"
+    ],
+    "categoricalFillNames": [
+      "navy blue",
+      "pink",
+      "light blue",
+      "green",
+      "blue",
+      "raspberry",
+      "warm grey",
+      "red"
     ],
     "rules": {
       "directLabelsUpTo": 6,
       "moreThan6": "group into Other or small multiples (check error HM-C006)",
-      "alternation": "odd slots dark, even slots mid lightness",
+      "strokeAndFill": "categorical paints strokes: lines, points, line legend keys and series-coloured text. categoricalFill paints fills: bars, stacked and 100% segments, areas, pie and donut slices and square legend keys. Slot n is the same hue family in both sets, so a series keeps its colour across chart types.",
+      "order": "fixed slot order c1..c8: categorical follows FT categorical_line order; categoricalFill takes, for each line slot, FT's categorical_bar colour of the nearest hue (bar indices 1,5,2,7,3,4,6,8). Series wrap after c8.",
       "highlightOne": "c1 for the highlighted item, context for the rest"
-    }
+    },
+    "attribution": "Categorical colours are adapted from the FT's g-chartcolour."
   },
   "density": {
     "default": "compact",
@@ -514,68 +547,170 @@
       "borderVsCard": 1.26,
       "landVsCard": 1.18,
       "seriesContrastVsCard": {
-        "c1": 6.71,
-        "c2": 3.54,
-        "c3": 7.01,
-        "c4": 3.32,
-        "c5": 6.29,
-        "c6": 3.69,
-        "c7": 6.07,
-        "c8": 3.71
+        "c1": 7.64,
+        "c2": 6.23,
+        "c3": 4.47,
+        "c4": 5.67,
+        "c5": 3.57,
+        "c6": 10.67,
+        "c7": 3.32,
+        "c8": 5.08
+      },
+      "seriesFillContrastVsCard": {
+        "c1": 9.21,
+        "c2": 5.13,
+        "c3": 4.19,
+        "c4": 3.98,
+        "c5": 3.45,
+        "c6": 7.18,
+        "c7": 3.36,
+        "c8": 3.49
       },
       "categoricalCVD": {
         "first3": {
           "normal": {
-            "min": 30.7,
+            "min": 26.5,
             "pair": "c1/c3"
           },
           "deutan": {
-            "min": 17.7,
+            "min": 17.4,
             "pair": "c1/c3"
           },
           "protan": {
-            "min": 14.3,
-            "pair": "c1/c3"
+            "min": 14,
+            "pair": "c1/c2"
           },
           "tritan": {
-            "min": 19.2,
-            "pair": "c2/c3"
+            "min": 14.5,
+            "pair": "c1/c3"
           }
         },
         "first6": {
           "normal": {
-            "min": 23.6,
-            "pair": "c3/c6"
+            "min": 13.5,
+            "pair": "c2/c6"
           },
           "deutan": {
-            "min": 17.7,
-            "pair": "c1/c3"
+            "min": 12.8,
+            "pair": "c3/c5"
           },
           "protan": {
-            "min": 12.7,
-            "pair": "c2/c5"
+            "min": 14,
+            "pair": "c1/c2"
           },
           "tritan": {
-            "min": 19.1,
-            "pair": "c1/c5"
+            "min": 8.2,
+            "pair": "c3/c5"
           }
         },
         "all8": {
           "normal": {
-            "min": 19.5,
-            "pair": "c3/c8"
+            "min": 13.5,
+            "pair": "c2/c6"
           },
           "deutan": {
-            "min": 9.7,
-            "pair": "c3/c7"
+            "min": 8.4,
+            "pair": "c4/c8"
           },
           "protan": {
-            "min": 9.6,
+            "min": 13.5,
             "pair": "c3/c7"
           },
           "tritan": {
+            "min": 8.2,
+            "pair": "c3/c5"
+          }
+        },
+        "adjacent": {
+          "normal": {
+            "min": 27.7,
+            "pair": "c7/c8"
+          },
+          "deutan": {
+            "min": 17.4,
+            "pair": "c7/c8"
+          },
+          "protan": {
+            "min": 14,
+            "pair": "c1/c2"
+          },
+          "tritan": {
+            "min": 17.9,
+            "pair": "c3/c4"
+          }
+        }
+      },
+      "categoricalFillCVD": {
+        "first3": {
+          "normal": {
+            "min": 23.8,
+            "pair": "c1/c3"
+          },
+          "deutan": {
+            "min": 20.5,
+            "pair": "c2/c3"
+          },
+          "protan": {
+            "min": 12.2,
+            "pair": "c1/c2"
+          },
+          "tritan": {
+            "min": 18.6,
+            "pair": "c1/c3"
+          }
+        },
+        "first6": {
+          "normal": {
+            "min": 8.5,
+            "pair": "c2/c6"
+          },
+          "deutan": {
+            "min": 9.2,
+            "pair": "c2/c6"
+          },
+          "protan": {
             "min": 8.3,
-            "pair": "c2/c8"
+            "pair": "c2/c6"
+          },
+          "tritan": {
+            "min": 8.1,
+            "pair": "c3/c5"
+          }
+        },
+        "all8": {
+          "normal": {
+            "min": 8.5,
+            "pair": "c2/c6"
+          },
+          "deutan": {
+            "min": 8.3,
+            "pair": "c2/c7"
+          },
+          "protan": {
+            "min": 8.3,
+            "pair": "c2/c6"
+          },
+          "tritan": {
+            "min": 8.1,
+            "pair": "c3/c5"
+          }
+        },
+        "adjacent": {
+          "normal": {
+            "min": 25.8,
+            "pair": "c7/c8"
+          },
+          "deutan": {
+            "min": 15,
+            "pair": "c7/c8"
+          },
+          "protan": {
+            "min": 10.9,
+            "pair": "c7/c8"
+          },
+          "tritan": {
+            "min": 16.2,
+            "pair": "c3/c4"
           }
         }
       },
@@ -632,68 +767,170 @@
       "borderVsCard": 1.24,
       "landVsCard": 1.16,
       "seriesContrastVsCard": {
-        "c1": 9.22,
-        "c2": 5.81,
-        "c3": 9.14,
-        "c4": 6.25,
-        "c5": 9.64,
-        "c6": 5.59,
-        "c7": 9.97,
-        "c8": 5.49
+        "c1": 11.36,
+        "c2": 4.5,
+        "c3": 5.01,
+        "c4": 5.03,
+        "c5": 6.69,
+        "c6": 11.94,
+        "c7": 3.78,
+        "c8": 7.06
+      },
+      "seriesFillContrastVsCard": {
+        "c1": 11.45,
+        "c2": 3.23,
+        "c3": 4.94,
+        "c4": 4.6,
+        "c5": 6.21,
+        "c6": 8.17,
+        "c7": 4.81,
+        "c8": 5.21
       },
       "categoricalCVD": {
         "first3": {
           "normal": {
-            "min": 32.2,
+            "min": 26.9,
             "pair": "c1/c3"
           },
           "deutan": {
-            "min": 19.2,
-            "pair": "c1/c3"
+            "min": 21.5,
+            "pair": "c2/c3"
           },
           "protan": {
-            "min": 14.1,
-            "pair": "c1/c3"
+            "min": 12.3,
+            "pair": "c2/c3"
           },
           "tritan": {
-            "min": 16.1,
-            "pair": "c2/c3"
+            "min": 20.4,
+            "pair": "c1/c3"
           }
         },
         "first6": {
           "normal": {
-            "min": 21.5,
-            "pair": "c4/c5"
+            "min": 15.7,
+            "pair": "c1/c5"
           },
           "deutan": {
-            "min": 11,
-            "pair": "c1/c6"
+            "min": 13.1,
+            "pair": "c3/c5"
           },
           "protan": {
-            "min": 13.6,
-            "pair": "c2/c4"
+            "min": 12.3,
+            "pair": "c2/c3"
           },
           "tritan": {
-            "min": 13.6,
-            "pair": "c1/c4"
+            "min": 8.8,
+            "pair": "c3/c5"
           }
         },
         "all8": {
           "normal": {
             "min": 15.7,
-            "pair": "c3/c8"
+            "pair": "c1/c5"
           },
           "deutan": {
-            "min": 8.1,
+            "min": 8.8,
+            "pair": "c2/c7"
+          },
+          "protan": {
+            "min": 12.3,
+            "pair": "c2/c3"
+          },
+          "tritan": {
+            "min": 8.8,
+            "pair": "c3/c5"
+          }
+        },
+        "adjacent": {
+          "normal": {
+            "min": 28.7,
+            "pair": "c7/c8"
+          },
+          "deutan": {
+            "min": 21.5,
+            "pair": "c2/c3"
+          },
+          "protan": {
+            "min": 12.3,
+            "pair": "c2/c3"
+          },
+          "tritan": {
+            "min": 16.4,
+            "pair": "c3/c4"
+          }
+        }
+      },
+      "categoricalFillCVD": {
+        "first3": {
+          "normal": {
+            "min": 23.4,
+            "pair": "c1/c3"
+          },
+          "deutan": {
+            "min": 21,
+            "pair": "c2/c3"
+          },
+          "protan": {
+            "min": 19.3,
+            "pair": "c2/c3"
+          },
+          "tritan": {
+            "min": 21.4,
+            "pair": "c1/c3"
+          }
+        },
+        "first6": {
+          "normal": {
+            "min": 12.4,
+            "pair": "c3/c5"
+          },
+          "deutan": {
+            "min": 11.5,
+            "pair": "c3/c5"
+          },
+          "protan": {
+            "min": 10,
+            "pair": "c3/c6"
+          },
+          "tritan": {
+            "min": 8.6,
+            "pair": "c3/c5"
+          }
+        },
+        "all8": {
+          "normal": {
+            "min": 12.4,
+            "pair": "c3/c5"
+          },
+          "deutan": {
+            "min": 8.2,
             "pair": "c4/c8"
           },
           "protan": {
-            "min": 10.5,
-            "pair": "c3/c7"
+            "min": 9.3,
+            "pair": "c7/c8"
           },
           "tritan": {
-            "min": 8.3,
-            "pair": "c2/c8"
+            "min": 8.6,
+            "pair": "c3/c5"
+          }
+        },
+        "adjacent": {
+          "normal": {
+            "min": 25.9,
+            "pair": "c7/c8"
+          },
+          "deutan": {
+            "min": 15.5,
+            "pair": "c6/c7"
+          },
+          "protan": {
+            "min": 9.3,
+            "pair": "c7/c8"
+          },
+          "tritan": {
+            "min": 16.3,
+            "pair": "c3/c4"
           }
         }
       },

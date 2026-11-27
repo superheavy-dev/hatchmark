@@ -109,17 +109,17 @@ describe("partial buckets drawn (option B)", () => {
     expect(html).not.toMatch(/stroke-dasharray/);
   });
 
-  it("hatches a partial area slice in the series colour, with no flat fill there", () => {
+  it("hatches a partial area slice in the series fill colour, with no flat fill there", () => {
     const html = svg("area-incomplete-mark");
     expect(count(html, /clip-path="url\(#hm-p-[^)]*-whole0\)"/g)).toBe(charts(html));
     expect(
-      count(html, /fill="url\(#hm-p-[^)]*-c1\)"[^>]*clip-path="url\(#hm-p-[^)]*-part0\)"/g),
+      count(html, /fill="url\(#hm-p-[^)]*-f1\)"[^>]*clip-path="url\(#hm-p-[^)]*-part0\)"/g),
     ).toBe(charts(html));
   });
 
   it("tints, hatches and outlines every part of a partial stack, square-cornered", () => {
     const html = svg("bar-incomplete-stacked");
-    for (const c of ["c1", "c2", "c3"]) {
+    for (const c of ["f1", "f2", "f3"]) {
       expect(count(html, new RegExp(`fill="url\\(#hm-p-[^)]*-${c}\\)"`, "g")), c).toBe(
         charts(html),
       );
