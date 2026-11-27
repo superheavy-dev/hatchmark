@@ -1,3 +1,4 @@
+import { normalizePath } from "./common.js";
 import type { Metric } from "./metric.js";
 import type { Project } from "./project.js";
 
@@ -18,6 +19,24 @@ function metricRefs(project: Project, name: string): string[] {
       for (const m of block.markdown.matchAll(/\{\{\s*([a-z][a-z0-9_]*)/g))
         if (m[1]) out.push(m[1]);
     } else out.push(...block.metrics);
+  }
+  return out;
+}
+
+/** The sources a metric reads, through ratios; cycle-safe. */
+export function metricSources(
+  project: Project,
+  name: string,
+  seen = new Set<string>(),
+): Set<string> {
+  const out = new Set<string>();
+  if (seen.has(name)) return out;
+  seen.add(name);
+  const metric = project.metrics.get(name)?.spec;
+  if (metric === undefined) return out;
+  if (metric.type !== "ratio") return out.add(metric.table);
+  for (const side of [metric.numerator, metric.denominator]) {
+    for (const source of metricSources(project, side, seen)) out.add(source);
   }
   return out;
 }
@@ -46,13 +65,14 @@ export function dashboardDependencies(project: Project, dashboard: string): Dash
  * Dashboards to recompile after a project-relative file changes: everything for hatchmark.json,
  * the dashboards that use a metric or a data file, or the dashboard itself.
  */
-export function dashboardsAffectedBy(project: Project, file: string): string[] {
+export function dashboardsAffectedBy(project: Project, changed: string): string[] {
+  const file = normalizePath(changed);
   const all = [...project.dashboards.keys()].sort();
   if (file === project.config.file) return all;
   for (const [name, spec] of project.dashboards) if (spec.file === file) return [name];
   const metric = [...project.metrics.values()].find((m) => m.file === file)?.name;
   const sources = Object.entries(project.config.spec?.sources ?? {})
-    .filter(([, source]) => source.path === file)
+    .filter(([, source]) => normalizePath(source.path) === file)
     .map(([name]) => name);
   if (metric === undefined && sources.length === 0) return [];
   return all.filter((name) => {

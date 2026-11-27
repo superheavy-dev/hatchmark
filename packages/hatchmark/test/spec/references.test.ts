@@ -97,10 +97,12 @@ describe("checkReferences", () => {
       metrics: ["revenue", "orders", "avg_order_value", "merchants", "net_revenue"],
       percentOfTotal,
     });
-    expect(refs({ dashboards: withBlocks(table(["revenue", "orders", "net_revenue"])) })).toEqual(
-      [],
-    );
+    const columns = { orders: ["region", "country"], merchants: ["region", "country"] };
+    expect(
+      refs({ columns, dashboards: withBlocks(table(["revenue", "orders", "net_revenue"])) }),
+    ).toEqual([]);
     const ds = refs({
+      columns,
       dashboards: withBlocks(table(["avg_order_value", "merchants"]), {
         type: "table",
         by: ["country"],
@@ -118,7 +120,10 @@ describe("checkReferences", () => {
       projectFrom({
         dashboards: withBlocks(table(["avg_order_value", "merchants"])),
       }).dashboards.get("sales")?.document.text ?? "";
-    const [first] = refs({ dashboards: withBlocks(table(["avg_order_value", "merchants"])) });
+    const [first] = refs({
+      columns,
+      dashboards: withBlocks(table(["avg_order_value", "merchants"])),
+    });
     const fixed = JSON.parse(applyFix(text, first?.fix));
     expect(fixed.blocks[0].percentOfTotal).toEqual(["merchants"]);
   });
@@ -179,6 +184,22 @@ describe("checkReferences", () => {
     expect(ds[0]?.range?.end.column).toBe(col("{{revenue.chnage}}") + "{{revenue.chnage}}".length);
   });
 
+  it("rejects comparison fields in text when the dashboard compares nothing", () => {
+    const dashboard = (compare: string) => ({
+      sales: {
+        title: "Sales",
+        period: { asOf: "2026-04-30", range: "last_7_days", compare },
+        blocks: [{ type: "text", markdown: "{{orders}} {{orders.previous}} {{orders.value}}" }],
+      },
+    });
+    const ds = refs({ dashboards: dashboard("none") });
+    expect(ds.map((d) => [d.code, d.range?.start.column])).toEqual([
+      ["HM2011", expect.any(Number)],
+    ]);
+    expect(ds[0]?.message).toContain("{{orders.previous}}");
+    expect(refs({ dashboards: dashboard("previous_year") })).toEqual([]);
+  });
+
   it("skips source checks when the config itself is invalid", () => {
     const { sources: _, ...config } = CONFIG;
     expect(refs({ config })).toEqual([]);
@@ -213,5 +234,18 @@ describe("dependency graph", () => {
     expect(dashboardsAffectedBy(project, "data/merchants.parquet")).toEqual(["merchants", "sales"]);
     expect(dashboardsAffectedBy(project, "dashboards/notes.json")).toEqual(["notes"]);
     expect(dashboardsAffectedBy(project, "README.md")).toEqual([]);
+  });
+
+  it("matches equivalent spellings of a source path", () => {
+    const config = {
+      ...CONFIG,
+      sources: { ...CONFIG.sources, orders: { type: "csv", path: "./data/orders.csv" } },
+    };
+    const p = projectFrom({ config });
+    expect(p.config.diagnostics).toEqual([]);
+    expect(dashboardsAffectedBy(p, "data/orders.csv")).toEqual(["sales"]);
+    expect(dashboardsAffectedBy(p, "./data/orders.csv")).toEqual(["sales"]);
+    expect(dashboardsAffectedBy(p, "data\\orders.csv")).toEqual(["sales"]);
+    expect(dashboardsAffectedBy(p, "./hatchmark.json")).toEqual(["sales"]);
   });
 });

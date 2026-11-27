@@ -10,6 +10,7 @@ import {
 } from "../diagnostics/index.js";
 import { type Block, blockId, type Dashboard, DEFAULT_PERIOD } from "./dashboard.js";
 import { removeItemFix, replaceValueFix } from "./fixes.js";
+import { metricSources } from "./graph.js";
 import { isAdditive, type Metric } from "./metric.js";
 import type { Project, SpecFile } from "./project.js";
 
@@ -119,6 +120,7 @@ function checkMetrics(project: Project, out: Diagnostic[]): void {
       }
       continue;
     }
+    let cyclic = false;
     for (const side of ["numerator", "denominator"] as const) {
       const ref = metric[side];
       if (!project.metrics.has(ref)) {
@@ -129,7 +131,27 @@ function checkMetrics(project: Project, out: Diagnostic[]): void {
         });
       } else if (reaches(ref, name, metrics)) {
         r.report("HM2004", `/${side}`, `metric "${name}" refers back to itself through "${ref}"`);
+        cyclic = true;
       }
+    }
+    if (cyclic) continue;
+    const { numerator, denominator } = metric;
+    if (!metrics.has(numerator) || !metrics.has(denominator)) continue;
+    const timed = {
+      numerator: metricHasTime(numerator, metrics),
+      denominator: metricHasTime(denominator, metrics),
+    };
+    if (timed.numerator !== timed.denominator) {
+      const side = timed.numerator ? "denominator" : "numerator";
+      r.report(
+        "HM2012",
+        `/${side}`,
+        `"${metric[side]}" has no time column, but the other side of the ratio does`,
+        {
+          label: "a dashboard period would window only one side",
+          help: `add "time" to metrics/${metric[side]}.json, or remove it from the other side`,
+        },
+      );
     }
   }
 }
@@ -313,7 +335,20 @@ function checkDashboard(project: Project, file: SpecFile<"dashboard">, out: Diag
           });
           continue;
         }
-        if (field !== undefined && field !== "value" && !metricHasTime(name, metrics)) {
+        if (field === undefined || field === "value") continue;
+        if ((dashboard.period?.compare ?? DEFAULT_PERIOD.compare) === "none") {
+          r.report(
+            "HM2011",
+            pointer,
+            `"${match[0]}" needs a comparison, but the dashboard's period.compare is "none"`,
+            {
+              ...at,
+              help: 'set period.compare to "previous_period" or "previous_year", or use {{metric}} alone',
+            },
+          );
+          continue;
+        }
+        if (!metricHasTime(name, metrics)) {
           r.report(
             "HM2005",
             pointer,
@@ -322,6 +357,43 @@ function checkDashboard(project: Project, file: SpecFile<"dashboard">, out: Diag
           );
         }
       }
+    }
+  });
+
+  dashboard.blocks.forEach((block, index) => {
+    const names =
+      block.type === "text"
+        ? [...block.markdown.matchAll(TEXT_REFERENCE)].flatMap(
+            (m) => TEXT_REFERENCE_BODY.exec((m[1] ?? "").trim())?.[1] ?? [],
+          )
+        : blockMetricRefs(block).map((ref) => ref.name);
+    const configured = project.config.spec?.sources ?? {};
+    const sources = new Set(
+      names
+        .flatMap((name) => [...metricSources(project, name)])
+        .filter((s) => Object.hasOwn(configured, s)),
+    );
+    if (sources.size < 2) return;
+    for (const filter of dashboard.filters ?? []) {
+      if (filter.type !== "select") continue;
+      const list = [...sources].sort();
+      const unknown = list.filter((s) => !project.columns.has(s));
+      const lacking = list.filter((s) => project.columns.get(s)?.includes(filter.column) === false);
+      if (unknown.length === 0 && (lacking.length === 0 || lacking.length === list.length))
+        continue;
+      r.report(
+        "HM2013",
+        `/blocks/${index}`,
+        unknown.length > 0
+          ? `cannot confirm that every source of this block (${list.join(", ")}) has column "${filter.column}" for filter "${filter.id}"`
+          : `filter "${filter.id}" would apply to ${list.filter((s) => !lacking.includes(s)).join(", ")} but not to ${lacking.join(", ")} in this block`,
+        {
+          help:
+            unknown.length > 0
+              ? `column names are known for CSV sources only; until the others can be read, keep metrics from different sources in separate blocks when the dashboard has select filters`
+              : `a filter must apply to every source a block reads, or its numbers mix filtered and unfiltered rows; split the block or drop the filter`,
+        },
+      );
     }
   });
 

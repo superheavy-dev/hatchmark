@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { columnName, customIssue, identifier, scalar, schemaRef } from "./common.js";
+import { columnName, currencyCode, customIssue, identifier, scalar, schemaRef } from "./common.js";
 
 const comparisonFilter = z.strictObject({
   column: columnName,
@@ -35,11 +35,7 @@ export const formatSchema = z
     }),
     z.strictObject({
       type: z.literal("currency"),
-      currency: z
-        .string()
-        .length(3)
-        .optional()
-        .meta({ description: "Overrides the project currency." }),
+      currency: currencyCode.optional().meta({ description: "Overrides the project currency." }),
       decimals: decimals.optional(),
       compact: z.boolean().optional(),
     }),
@@ -85,7 +81,10 @@ const aggregateMetric = z
     type: z.literal("aggregate"),
     table: identifier.meta({ description: "A source name from hatchmark.json." }),
     aggregate: z.enum(AGGREGATES),
-    column: columnName.optional().meta({ description: "Column to aggregate. Not used by count." }),
+    column: columnName.optional().meta({
+      description:
+        "Column to aggregate. Required except for count, where it counts non-null values; without it, count counts rows.",
+    }),
     filters: z.array(filterSchema).optional(),
     time: timeColumn,
   })

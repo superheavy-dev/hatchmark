@@ -127,6 +127,22 @@ describe("spec schemas", () => {
     );
   });
 
+  it("validate a metric's currency override like the project currency", () => {
+    const withCurrency = (currency: string) => ({
+      ...(METRICS.revenue as object),
+      format: { type: "currency", currency },
+    });
+    for (const bad of ["123", "usd", "XYZ"]) {
+      expect(diagnose("metric", withCurrency(bad)), bad).toMatchObject([
+        { code: "HM3005", pointer: "/format/currency" },
+      ]);
+    }
+    expect(diagnose("metric", withCurrency("EUR"))).toEqual([]);
+    expect(() =>
+      new Intl.NumberFormat("en-US", { style: "currency", currency: "EUR" }).format(1),
+    ).not.toThrow();
+  });
+
   it("require a column for every aggregate except count", () => {
     const { column: _, ...metric } = METRICS.revenue as Record<string, unknown>;
     expect(diagnose("metric", metric)).toMatchObject([

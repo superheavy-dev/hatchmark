@@ -74,6 +74,21 @@ export const CODES = {
     explanation:
       "A source in hatchmark.json points at a file that does not exist. Paths are relative to hatchmark.json.",
   },
+  HM2011: {
+    title: "comparison is turned off",
+    explanation:
+      'A text reference asks for {{metric.previous}}, {{metric.change}} or {{metric.change_pct}}, but the dashboard\'s period.compare is "none", so there is no comparison period to read. Set period.compare, or insert only {{metric}}.',
+  },
+  HM2012: {
+    title: "ratio sides placed in time differently",
+    explanation:
+      "One side of a ratio has a time column and the other does not, so a dashboard period would window the numerator and the denominator differently and the ratio would mix periods. Give both sides a time column, or neither.",
+  },
+  HM2013: {
+    title: "filter applies to only some sources of a block",
+    explanation:
+      "A dashboard select filter must apply to every source a block reads. If a ratio's numerator comes from a source with the filter column and its denominator from one without, the block would divide filtered rows by unfiltered rows. Hatchmark knows the columns of CSV sources from their header; for other sources it cannot confirm the column yet and reports this too. Keep such metrics in separate blocks, or drop the filter.",
+  },
   HM3001: {
     title: "missing required property",
     explanation:

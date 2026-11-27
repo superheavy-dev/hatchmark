@@ -134,9 +134,7 @@
       "additionalProperties": false
     },
     "__schema8": {
-      "type": "string",
-      "minLength": 3,
-      "maxLength": 3
+      "type": "string"
     },
     "__schema9": {
       "type": "object",
@@ -195,7 +193,7 @@
       ]
     },
     "__schema17": {
-      "description": "Column to aggregate. Not used by count.",
+      "description": "Column to aggregate. Required except for count, where it counts non-null values; without it, count counts rows.",
       "$ref": "#/$defs/__schema18"
     },
     "__schema18": {

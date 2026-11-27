@@ -43,7 +43,9 @@ export interface MeasureComponent {
 
 /**
  * An aggregate or SQL metric as one query computes it: components plus how to combine them. avg
- * becomes sum / count, so it stays correct after the browser re-aggregates a filter.
+ * becomes sum(column) / count(column), both skipping nulls like avg does, so it stays correct after
+ * the browser re-aggregates a filter. count with a column is count(column), non-null values only;
+ * count without a column is count(*).
  */
 export interface PlannedMeasure {
   metric: string;
@@ -66,8 +68,22 @@ export type PlannedDimension =
   | { kind: "column"; column: string }
   | { kind: "time"; column: string; grain: TimeGrain };
 
-/** Which window of the dashboard period a query reads. */
-export type PlannedWindow = "current" | "comparison" | "all";
+/**
+ * The time window a query reads, explicit enough that the executor needs nothing else from the
+ * spec: two queries that read different spans always differ here, and so do their ids.
+ */
+export interface PlannedWindow {
+  /** The span, ending at the plan's asOf: the block's or filter's range, or "all_time". */
+  range: PeriodRange;
+  /**
+   * "none" reads the range itself. "previous_period" reads the span of the same length just
+   * before it, and "previous_year" the same span one year earlier; KPI and text comparisons use
+   * these, with each block's own compare override.
+   */
+  shift: Comparison;
+  /** The metric's time column that places rows in the window. Absent only for "all_time". */
+  column?: string;
+}
 
 export interface PlannedQuery {
   /** Content hash of the query shape. Identical queries from different blocks share one id. */
@@ -82,7 +98,11 @@ export interface PlannedQuery {
    */
   groupingSets: number[][];
   window: PlannedWindow;
-  /** Dashboard filter ids that bind into this query. Filters on columns the source lacks are left out. */
+  /**
+   * Dashboard filter ids that bind into this query. A filter binds to a block only when every
+   * source the block reads has its column; check rejects blocks where only some do (HM2013), so a
+   * ratio never divides filtered rows by unfiltered ones.
+   */
   params: string[];
   orderBy?: { key: string; order: "asc" | "desc" }[];
   limit?: number;
@@ -118,6 +138,10 @@ export interface QueryPlan {
   version: typeof PLAN_VERSION;
   dashboard: string;
   period: { asOf: string; range: PeriodRange; compare: Comparison };
+  /** IANA time zone that dates are bucketed and windowed in, from hatchmark.json. */
+  timezone: string;
+  /** First day of a week bucket, from hatchmark.json. */
+  weekStart: "monday" | "sunday";
   params: PlanParam[];
   blocks: BlockPlan[];
   queries: PlannedQuery[];
@@ -143,6 +167,19 @@ export interface Compiler {
   ): PlanResult<{ block: BlockPlan; queries: PlannedQuery[] }>;
 }
 
+/**
+ * What an execution needs besides the query. asOf is resolved once per plan before execution
+ * ("latest_data" becomes the last date in the data), so every query of one build or request reads
+ * the same end date; timezone and weekStart are copied from the QueryPlan.
+ */
+export interface ExecutionContext {
+  asOf: string;
+  timezone: string;
+  weekStart: "monday" | "sunday";
+  bindings: ParamBindings;
+  materialization?: Materialization;
+}
+
 /** Filter values bound for one execution: absent means the filter's default. */
 export type ParamBindings = Readonly<Record<string, unknown>>;
 
@@ -161,8 +198,5 @@ export interface QueryResult {
  * this; the plan is the only input that decides what SQL runs.
  */
 export interface QueryExecutor {
-  execute(
-    query: PlannedQuery,
-    context: { asOf: string; bindings: ParamBindings; materialization?: Materialization },
-  ): Promise<QueryResult>;
+  execute(query: PlannedQuery, context: ExecutionContext): Promise<QueryResult>;
 }

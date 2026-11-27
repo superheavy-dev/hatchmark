@@ -42,6 +42,26 @@ export const COMPARISONS = ["previous_period", "previous_year", "none"] as const
 export const comparison = z.enum(COMPARISONS);
 export type Comparison = z.infer<typeof comparison>;
 
+const CURRENCIES = new Set(Intl.supportedValuesOf("currency"));
+
+/** An ISO 4217 code that Intl.NumberFormat can format, such as USD. */
+export const currencyCode = z
+  .string()
+  .refine((c) => CURRENCIES.has(c), { error: "must be an ISO 4217 currency code, such as USD" });
+
+/**
+ * A project-relative path with forward slashes and without "." segments, empty segments or a
+ * leading "./", so equivalent spellings compare equal. ".." is kept; the config rejects it.
+ */
+export function normalizePath(file: string): string {
+  const parts: string[] = [];
+  for (const part of file.replaceAll("\\", "/").split("/")) {
+    if (part === "" || part === ".") continue;
+    parts.push(part);
+  }
+  return parts.join("/");
+}
+
 /** Records a Hatchmark diagnostic code on a custom Zod issue, read back by the issue mapper. */
 export function customIssue(
   code: "HM3001" | "HM3007",

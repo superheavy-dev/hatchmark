@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { identifier, schemaRef } from "./common.js";
+import { currencyCode, identifier, schemaRef } from "./common.js";
 
 const relativePath = z
   .string()
@@ -37,9 +37,7 @@ export const sourceSchema = z
   .meta({ description: "A table read from a file in the project." });
 export type Source = z.infer<typeof sourceSchema>;
 
-const supported = (key: "currency" | "timeZone"): Set<string> =>
-  new Set(Intl.supportedValuesOf(key));
-const currencies = supported("currency");
+const supported = (key: "timeZone"): Set<string> => new Set(Intl.supportedValuesOf(key));
 const timeZones = supported("timeZone");
 
 function isLocale(tag: string): boolean {
@@ -90,10 +88,9 @@ export const projectConfigSchema = z
         error: "must be a supported BCP 47 locale tag in canonical form, such as en-US",
       })
       .meta({ description: "Locale for number and date formatting." }),
-    currency: z
-      .string()
-      .refine((c) => currencies.has(c), { error: "must be an ISO 4217 currency code, such as USD" })
-      .meta({ description: "Default currency for currency-formatted metrics." }),
+    currency: currencyCode.meta({
+      description: "Default currency for currency-formatted metrics.",
+    }),
     timezone: z
       .string()
       .refine((t) => t === "UTC" || timeZones.has(t), {

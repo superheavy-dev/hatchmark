@@ -2,6 +2,7 @@ import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
+import { nodeProjectHost } from "../../src/node/index.js";
 import { loadProject, parseDiagnostics } from "../../src/spec/index.js";
 import { CONFIG, DASHBOARD, METRICS } from "./helpers.js";
 
@@ -23,7 +24,7 @@ async function tempProject(files: Record<string, string>): Promise<string> {
 describe("loadProject", () => {
   it("reports a missing config", async () => {
     const root = await tempProject({});
-    const { project, diagnostics } = await loadProject(root);
+    const { project, diagnostics } = await loadProject(nodeProjectHost(root));
     expect(project).toBeUndefined();
     expect(diagnostics).toMatchObject([{ code: "HM1005" }]);
   });
@@ -31,13 +32,13 @@ describe("loadProject", () => {
   it("loads metrics and dashboards in name order and checks data files", async () => {
     const root = await tempProject({
       "hatchmark.json": JSON.stringify(CONFIG),
-      "data/orders.csv": "amount\n1\n",
+      "data/orders.csv": '\ufeffamount,"region, US"\r\n1,West\n',
       "metrics/revenue.json": JSON.stringify(METRICS.revenue),
       "metrics/orders.json": JSON.stringify(METRICS.orders),
       "metrics/notes.txt": "ignored",
       "dashboards/sales.json": JSON.stringify(DASHBOARD),
     });
-    const { project, diagnostics } = await loadProject(root);
+    const { project, diagnostics } = await loadProject(nodeProjectHost(root));
     expect([...(project?.metrics.keys() ?? [])]).toEqual(["orders", "revenue"]);
     expect(project?.dashboards.get("sales")?.file).toBe("dashboards/sales.json");
     expect(project && parseDiagnostics(project)).toEqual([]);
@@ -45,6 +46,7 @@ describe("loadProject", () => {
       { code: "HM2010", pointer: "/sources/merchants/path", file: "hatchmark.json" },
     ]);
     expect([...(project?.missingData ?? [])]).toEqual(["merchants"]);
+    expect(project?.columns.get("orders")).toEqual(["amount", "region, US"]);
   });
 
   it("falls back to the configured directories when the config is invalid", async () => {
@@ -52,7 +54,7 @@ describe("loadProject", () => {
       "hatchmark.json": JSON.stringify({ ...CONFIG, metricsDir: "defs", locale: 1, sources: {} }),
       "defs/orders.json": JSON.stringify(METRICS.orders),
     });
-    const { project } = await loadProject(root);
+    const { project } = await loadProject(nodeProjectHost(root));
     expect(project?.config.spec).toBeUndefined();
     expect([...(project?.metrics.keys() ?? [])]).toEqual(["orders"]);
   });
