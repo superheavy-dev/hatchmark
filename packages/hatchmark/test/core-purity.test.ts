@@ -1,7 +1,7 @@
 import { readdirSync, readFileSync } from "node:fs";
 import { builtinModules } from "node:module";
 import { fileURLToPath } from "node:url";
-import { build } from "esbuild";
+import { build, transform } from "esbuild";
 import { describe, expect, it } from "vitest";
 
 const CORE = ["compiler", "diagnostics", "spec"];
@@ -52,6 +52,22 @@ async function imports(
   return found;
 }
 
+const HIDDEN =
+  /\bimport\s*\((?!\s*(?:\/\*[\s\S]*?\*\/\s*)*["'])|\brequire\s*\(|\beval\s*\(|\bFunction\s*\(/g;
+
+/**
+ * Lines that load code the import graph cannot follow. esbuild strips comments and types first and
+ * prints every literal import() as import("..."), so a remaining import( without a quote is computed.
+ */
+async function hiddenImports(source: string, name: string): Promise<string[]> {
+  const { code } = await transform(source, { loader: "ts", legalComments: "none" });
+  const lines = code.split("\n");
+  return [...code.matchAll(HIDDEN)].map((match) => {
+    const line = code.slice(0, match.index).split("\n").length;
+    return `${name}: ${lines[line - 1]?.trim()}`;
+  });
+}
+
 describe("engine core", () => {
   it("imports no Node built-in in any form, so it runs in browsers and workers", async () => {
     const found = await imports();
@@ -77,6 +93,26 @@ describe("engine core", () => {
       "require.ts require-call node:os",
       "side-effect.ts import-statement node:fs",
       "subpath.ts import-statement fs/promises",
+    ]);
+  });
+
+  it("has no import the graph cannot see: computed import(), require, eval or Function", async () => {
+    const offenders: string[] = [];
+    for (const file of coreFiles) {
+      offenders.push(...(await hiddenImports(readFileSync(file, "utf8"), label(file.pathname))));
+    }
+    expect(offenders).toEqual([]);
+    const probe = [
+      "export async function probe() {",
+      '  const moduleName = "node:fs/promises";',
+      "  return import(moduleName);",
+      "}",
+      'export const literal = () => import(/* fine */ "./plan.js");',
+      "export const run = (code: string) => new Function(code);",
+    ].join("\n");
+    expect(await hiddenImports(probe, "probe.ts")).toEqual([
+      "probe.ts: return import(moduleName);",
+      "probe.ts: export const run = (code) => new Function(code);",
     ]);
   });
 

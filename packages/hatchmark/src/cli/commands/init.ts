@@ -48,6 +48,14 @@ async function readOptional(file: string): Promise<string | undefined> {
   return readFile(file, "utf8").catch(() => undefined);
 }
 
+/** The deepest directory that contains both paths (both absolute). */
+function commonAncestor(a: string, b: string): string {
+  let dir = a;
+  while (path.relative(dir, b).startsWith("..") && dir !== path.dirname(dir))
+    dir = path.dirname(dir);
+  return dir;
+}
+
 type Entry = "missing" | "file" | "directory" | "other";
 
 /** What is at a path, without following symlinks: init never writes through a link. */
@@ -57,9 +65,19 @@ async function entry(file: string): Promise<Entry> {
   return info.isFile() ? "file" : info.isDirectory() ? "directory" : "other";
 }
 
-/** 1-based line numbers of every line containing marker. */
-function markerLines(text: string, marker: string): number[] {
-  return text.split("\n").flatMap((line, i) => (line.includes(marker) ? [i + 1] : []));
+/**
+ * Marker lines in AGENTS.md: a marker is a line that is exactly the marker after trimming. Any
+ * other line containing marker text is "stray", which makes init refuse to edit the file.
+ */
+function markerLines(text: string): { starts: number[]; ends: number[]; stray: number[] } {
+  const found = { starts: [] as number[], ends: [] as number[], stray: [] as number[] };
+  text.split("\n").forEach((raw, i) => {
+    const line = raw.trim();
+    if (line === AGENTS_START) found.starts.push(i + 1);
+    else if (line === AGENTS_END) found.ends.push(i + 1);
+    else if (raw.includes(AGENTS_START) || raw.includes(AGENTS_END)) found.stray.push(i + 1);
+  });
+  return found;
 }
 
 export async function init(
@@ -93,8 +111,12 @@ export async function init(
 
   const blocked: string[] = [];
   const existing: string[] = [];
+  const base = commonAncestor(ctx.root, target);
+  for (let dir = target; dir !== base && dir !== path.dirname(dir); dir = path.dirname(dir)) {
+    if ((await entry(dir)) === "other") blocked.push(dir);
+  }
   const dirs = new Set(["data", "metrics", "dashboards"]);
-  for (const file of owned.keys()) dirs.add(path.posix.dirname(file));
+  for (const file of owned.keys()) if (file.includes("/")) dirs.add(path.posix.dirname(file));
   for (const dir of dirs) {
     const kind = await entry(path.join(target, dir));
     if (kind !== "missing" && kind !== "directory") blocked.push(dir);
@@ -110,7 +132,7 @@ export async function init(
       `init cannot write ${blocked.length} path${blocked.length === 1 ? "" : "s"} in ${target}: something other than a regular file or directory, such as a symlink, is there`,
       {
         expected: blocked,
-        help: "init never writes through symlinks; move or remove these paths, or choose another directory",
+        help: "init never writes through symlinks; move or remove these paths, pass the real path of the target directory, or choose another directory",
       },
     );
   }
@@ -129,22 +151,30 @@ export async function init(
   const agents = await readOptional(path.join(target, "AGENTS.md"));
   let nextAgents = `${block}\n`;
   if (agents !== undefined) {
-    const starts = markerLines(agents, AGENTS_START);
-    const ends = markerLines(agents, AGENTS_END);
-    const start = agents.indexOf(AGENTS_START);
-    const end = agents.indexOf(AGENTS_END);
-    if (starts.length === 0 && ends.length === 0) {
+    const { starts, ends, stray } = markerLines(agents);
+    const [startLine] = starts;
+    const [endLine] = ends;
+    if (starts.length === 0 && ends.length === 0 && stray.length === 0) {
       nextAgents = `${agents.replace(/\n*$/, "")}\n\n${block}\n`;
-    } else if (starts.length === 1 && ends.length === 1 && start < end) {
-      nextAgents = agents.slice(0, start) + block + agents.slice(end + AGENTS_END.length);
+    } else if (
+      stray.length === 0 &&
+      starts.length === 1 &&
+      ends.length === 1 &&
+      startLine !== undefined &&
+      endLine !== undefined &&
+      startLine < endLine
+    ) {
+      const lines = agents.split("\n");
+      nextAgents = [...lines.slice(0, startLine - 1), block, ...lines.slice(endLine)].join("\n");
     } else {
       return usageError(
         "HM0005",
-        `AGENTS.md does not have exactly one ${AGENTS_START} line followed by one ${AGENTS_END} line`,
+        `AGENTS.md does not have exactly one ${AGENTS_START} line followed by one ${AGENTS_END} line, each alone on its line`,
         {
           expected: [
             ...starts.map((line) => `AGENTS.md:${line}: ${AGENTS_START}`),
             ...ends.map((line) => `AGENTS.md:${line}: ${AGENTS_END}`),
+            ...stray.map((line) => `AGENTS.md:${line}: marker text that is not alone on its line`),
           ].sort((x, y) => Number(x.split(":")[1]) - Number(y.split(":")[1])),
           help: "keep one start line before one end line around the Hatchmark block, or delete every marker line so init appends a fresh block",
         },

@@ -331,6 +331,67 @@ describe("review regressions (HAT-16)", () => {
     }
   });
 
+  it("counts a marker only when it is alone on its line (HAT-16 round 3)", async () => {
+    const cases: [string, string[]][] = [
+      [
+        "<!-- hatchmark:start --> <!-- hatchmark:start -->\nKeep me\n<!-- hatchmark:end -->\n",
+        [
+          "AGENTS.md:3: <!-- hatchmark:end -->",
+          "AGENTS.md:1: marker text that is not alone on its line",
+        ],
+      ],
+      [
+        "See <!-- hatchmark:start --> below\n<!-- hatchmark:start -->\nx\n<!-- hatchmark:end -->\n",
+        [
+          "AGENTS.md:2: <!-- hatchmark:start -->",
+          "AGENTS.md:4: <!-- hatchmark:end -->",
+          "AGENTS.md:1: marker text that is not alone on its line",
+        ],
+      ],
+    ];
+    for (const [text, expected] of cases) {
+      const cwd = await tempDir();
+      await writeFile(path.join(cwd, "AGENTS.md"), text);
+      const out = await cli(["init", "--template", "minimal"], { cwd });
+      expect(out.code, text).toBe(2);
+      expect(out.json().diagnostics[0], text).toMatchObject({ code: "HM0005" });
+      expect([...out.json().diagnostics[0].expected].sort(), text).toEqual([...expected].sort());
+      expect(await readFile(path.join(cwd, "AGENTS.md"), "utf8")).toBe(text);
+    }
+    const indented = await tempDir();
+    await writeFile(
+      path.join(indented, "AGENTS.md"),
+      "Intro\n  <!-- hatchmark:start -->\nold\n<!-- hatchmark:end -->  \nAfter\n",
+    );
+    expect((await cli(["init", "--template", "minimal"], { cwd: indented })).code).toBe(0);
+    const merged = await readFile(path.join(indented, "AGENTS.md"), "utf8");
+    expect(merged.startsWith("Intro\n<!-- hatchmark:start -->")).toBe(true);
+    expect(merged.endsWith("<!-- hatchmark:end -->\nAfter\n")).toBe(true);
+    expect(merged).not.toContain("old");
+  });
+
+  it("refuses a symlinked directory between the project root and the target", async () => {
+    const cwd = await tempDir();
+    await mkdir(path.join(cwd, "real"));
+    await symlink("real", path.join(cwd, "link"));
+    for (const dir of ["link/new", "link"]) {
+      const out = await cli(["init", dir, "--template", "minimal"], { cwd });
+      expect(out.code, dir).toBe(2);
+      expect(out.json().diagnostics[0], dir).toMatchObject({
+        code: "HM0004",
+        expected: [path.join(cwd, "link")],
+      });
+    }
+    const outside = await tempDir();
+    const fromOutside = await cli(["init", path.join(cwd, "link/new"), "--template", "minimal"], {
+      cwd: outside,
+    });
+    expect(fromOutside.code).toBe(2);
+    expect(fromOutside.json().diagnostics[0].expected).toContain(path.join(cwd, "link"));
+    await expect(readFile(path.join(cwd, "real/new/hatchmark.json"))).rejects.toThrow();
+    expect((await cli(["init", "real/new", "--template", "minimal"], { cwd })).code).toBe(0);
+  });
+
   it("checks hatchmark.json first, whatever the path scope", async () => {
     const cwd = await tempDir();
     await cli(["init"], { cwd });
