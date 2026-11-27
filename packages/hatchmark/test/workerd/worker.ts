@@ -1,0 +1,78 @@
+import { planHash, resolveParams, windowBounds } from "../../src/compiler/index.js";
+import { createReport, renderHuman } from "../../src/diagnostics/index.js";
+import {
+  checkReferences,
+  jsonSchema,
+  loadProject,
+  PROJECT_DEFAULTS,
+  type ProjectHost,
+  parseDiagnostics,
+} from "../../src/spec/index.js";
+
+const files: Record<string, string> = {
+  "hatchmark.json": JSON.stringify({
+    ...PROJECT_DEFAULTS,
+    name: "Worker smoke",
+    sources: { orders: { type: "csv", path: "data/orders.csv" } },
+  }),
+  "data/orders.csv": "ordered_at,region,amount\n2026-10-01,West,10\n",
+  "metrics/revenue.json": JSON.stringify({
+    label: "Revenue",
+    type: "aggregate",
+    table: "orders",
+    aggregate: "sum",
+    column: "amount",
+    time: "ordered_at",
+    format: { type: "currency" },
+    better: "up",
+  }),
+  "dashboards/sales.json":
+    '{\n  "title": "Sales",\n  "blocks": [{"type": "kpi", "metric": "revenu"}]\n}\n',
+};
+
+const host: ProjectHost = {
+  label: "memory",
+  readText: async (file) => files[file],
+  listFiles: async (dir) =>
+    Object.keys(files)
+      .filter((f) => f.startsWith(`${dir}/`) && !f.slice(dir.length + 1).includes("/"))
+      .map((f) => f.slice(dir.length + 1)),
+  isFile: async (file) => file in files,
+  readHead: async (file, bytes) => {
+    const text = files[file];
+    return text === undefined
+      ? undefined
+      : { text: text.slice(0, bytes), complete: text.length <= bytes };
+  },
+};
+
+export default {
+  async fetch(): Promise<Response> {
+    const { project, diagnostics } = await loadProject(host);
+    if (project === undefined) return Response.json({ error: "no project" }, { status: 500 });
+    const report = createReport([
+      ...parseDiagnostics(project),
+      ...diagnostics,
+      ...checkReferences(project),
+    ]);
+    return Response.json({
+      report,
+      human: renderHuman(report),
+      columns: project.columns.get("orders"),
+      schemaTitle: jsonSchema("dashboard").title,
+      params: resolveParams(project, "sales"),
+      window: windowBounds("last_complete_month", "previous_period", "2026-11-15"),
+      planHash: planHash({
+        version: 1,
+        dashboard: "sales",
+        period: { asOf: "2026-11-15", range: "last_complete_month", compare: "previous_period" },
+        timezone: "America/New_York",
+        weekStart: "monday",
+        params: [],
+        blocks: [],
+        queries: [],
+        materialization: {},
+      }),
+    });
+  },
+};

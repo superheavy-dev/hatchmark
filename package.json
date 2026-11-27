@@ -13,11 +13,14 @@
     "lint": "biome check .",
     "format": "biome check --write .",
     "test": "vitest run",
-    "gen:schema": "pnpm --filter hatchmark gen:schema"
+    "gen:schema": "pnpm --filter hatchmark gen:schema",
+    "test:workerd": "node scripts/workerd-smoke.mjs"
   },
   "devDependencies": {
     "@biomejs/biome": "2.6.9",
     "@types/node": "^22.19.0",
+    "esbuild": "0.28.2",
+    "miniflare": "4.20260730.0",
     "typescript": "^7.0.2",
     "vitest": "^5.1.2"
   }
