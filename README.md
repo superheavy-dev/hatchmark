@@ -1,7 +1,8 @@
-<p>
+<p align="center">
+  <br>
   <picture>
-    <source media="(prefers-color-scheme: dark)" srcset="assets/brand/hatchmark-lockup-horizontal-dark.svg">
-    <img alt="Hatchmark" src="assets/brand/hatchmark-lockup-horizontal-light.svg" width="224" height="32">
+    <source media="(prefers-color-scheme: dark)" srcset="assets/brand/hatchmark-lockup-stacked-dark.svg">
+    <img alt="Hatchmark" src="assets/brand/hatchmark-lockup-stacked-light.svg" width="164" height="128">
   </picture>
   <br>
   <br>
