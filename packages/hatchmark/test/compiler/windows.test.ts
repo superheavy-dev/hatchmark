@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { bucketStart, resolveRange, timeBuckets } from "../../src/compiler/index.js";
-import { comparison, DEFAULT_ANCHORS } from "../../src/spec/index.js";
+import { comparison, DEFAULT_ANCHORS, PERIOD_RANGES } from "../../src/spec/index.js";
 
 const days = (start: string, end: string) => (Date.parse(end) - Date.parse(start)) / 86_400_000;
 
@@ -311,15 +311,16 @@ describe("resolveRange (review of #14)", () => {
         for (const by of [-25, -13, -12, -1, 1, 3, 12, 24]) {
           const moved = resolveRange(window, shift("month", by), "2026-01-01", DEFAULT_ANCHORS);
           if (moved?.kind !== "bounded") throw new Error("unbounded");
+          const aligned = window.start.endsWith("-01") && window.end.endsWith("-01");
           const expected = {
             start: oracle(window.start, by),
-            end: iso(Date.parse(oracle(lastDay, by)) + DAY),
+            end: aligned ? oracle(window.end, by) : iso(Date.parse(oracle(lastDay, by)) + DAY),
           };
           expect(moved, `${window.start} +${days}d by ${by}`).toMatchObject(expected);
           const delta = length(moved) - days;
           expect(length(moved)).toBeGreaterThan(0);
           if (by % 12 === 0) expect(Math.abs(delta)).toBeLessThanOrEqual(1);
-          if (window.start.slice(0, 7) === lastDay.slice(0, 7)) {
+          if (!aligned && window.start.slice(0, 7) === lastDay.slice(0, 7)) {
             expect(delta).toBeLessThanOrEqual(0);
             expect(delta).toBeGreaterThanOrEqual(-3);
           }
@@ -328,6 +329,72 @@ describe("resolveRange (review of #14)", () => {
       }
     }
     expect(checked).toBeGreaterThan(50_000);
+    for (let y = 2023; y <= 2028; y++) {
+      for (let m = 1; m <= 12; m++) {
+        for (const months of [1, 2, 3, 12]) {
+          const start = `${y}-${String(m).padStart(2, "0")}-01`;
+          const window = { start, end: oracle(start, months) };
+          for (const s of [
+            shift("month", -1),
+            shift("month", 5),
+            shift("year", -1),
+            { shift: { unit: "quarter", by: -1 } } as const,
+          ]) {
+            const moved = resolveRange(window, s, "2026-01-01", DEFAULT_ANCHORS);
+            if (moved?.kind !== "bounded") throw new Error("unbounded");
+            const by =
+              s.shift.by * (s.shift.unit === "year" ? 12 : s.shift.unit === "quarter" ? 3 : 1);
+            expect(moved, `${start} +${months}mo ${JSON.stringify(s)}`).toEqual(
+              b(oracle(start, by), oracle(window.end, by)),
+            );
+          }
+        }
+      }
+    }
+  });
+
+  it("makes previous_year exactly a shift by -1 year for every range kind", () => {
+    const kinds = [
+      ...PERIOD_RANGES.filter((r) => r !== "all_time"),
+      { last: 7, unit: "day" },
+      { last: 3, unit: "week" },
+      { last: 2, unit: "month" },
+      { to_date: "day" },
+      { to_date: "week" },
+      { last_complete: "day" },
+      { last_complete: "week" },
+      { start: "2024-02-29", end: "2024-03-02" },
+      { start: "2024-02-01", end: "2024-03-01" },
+    ] as const;
+    for (let t = Date.UTC(2023, 0, 1); t < Date.UTC(2029, 0, 1); t += 86_400_000) {
+      const asOf = new Date(t).toISOString().slice(0, 10);
+      for (const range of kinds) {
+        expect(
+          resolveRange(range, "previous_year", asOf, DEFAULT_ANCHORS),
+          `${JSON.stringify(range)} ${asOf}`,
+        ).toEqual(resolveRange(range, shift("year", -1), asOf, DEFAULT_ANCHORS));
+      }
+    }
+  });
+
+  it("keeps whole months whole and rolling days exact (review round 3 repros)", () => {
+    expect(
+      resolveRange("last_complete_month", "previous_year", "2021-03-15", DEFAULT_ANCHORS),
+    ).toEqual(b("2020-02-01", "2020-03-01"));
+    expect(
+      resolveRange({ last_complete: "month" }, shift("month", -1), "2023-03-30", DEFAULT_ANCHORS),
+    ).toEqual(b("2023-01-01", "2023-02-01"));
+    expect(
+      resolveRange(
+        { start: "2026-04-01", end: "2026-05-01" },
+        shift("month", -1),
+        "2026-05-15",
+        DEFAULT_ANCHORS,
+      ),
+    ).toEqual(b("2026-03-01", "2026-04-01"));
+    expect(resolveRange("last_7_days", "previous_year", "2025-02-28", DEFAULT_ANCHORS)).toEqual(
+      b("2024-02-22", "2024-02-29"),
+    );
   });
 
   it("shifts every range kind exactly like its resolved window", () => {

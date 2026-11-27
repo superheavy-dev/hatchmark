@@ -138,9 +138,11 @@ function anchored(unit: TimeGrain, anchors: Anchors): ResolvedGrain {
  *   previous bucket through the same elapsed day, clamped to its length.
  * - {last_complete: unit} is the last bucket that has ended by the end of asOf. previous_period is
  *   the bucket before it.
- * - previous_year and {shift: {unit, by}} move the range's first and last day by whole units,
- *   clamping each to the target month (Mar 31 minus a month is Feb 28/29), so a shifted window is
- *   never empty and a to-date range covers the same elapsed days.
+ * - {shift: {unit, by}} moves the range by whole units, and previous_year is {unit: "year", by: -1}.
+ *   A window of whole months (start and end on the 1st) shifted by months, quarters or years moves
+ *   both ends and stays whole months. Any other window moves its first and last day, each clamped
+ *   to the target month (Mar 31 minus a month is Feb 28/29), so it is never empty and keeps its
+ *   day count except for that clamping; a to-date range covers the same elapsed days.
  * - all_time is unbounded and has no comparison: undefined for any shift but "none".
  * - Throws a RangeError for a window that reaches outside SUPPORTED_DATES, current or shifted.
  */
@@ -171,7 +173,9 @@ export function resolveRange(
           ? moved(shift.shift.unit, shift.shift.by)
           : undefined;
   const move = (start: Ymd, end: Ymd, s: { unit: TimeGrain; n: number }) =>
-    result(addUnits(start, s.unit, s.n), addDays(addUnits(addDays(end, -1), s.unit, s.n), 1));
+    s.unit !== "day" && s.unit !== "week" && start.d === 1 && end.d === 1
+      ? result(addUnits(start, s.unit, s.n), addUnits(end, s.unit, s.n))
+      : result(addUnits(start, s.unit, s.n), addDays(addUnits(addDays(end, -1), s.unit, s.n), 1));
 
   if ("start" in spec) {
     const start = parse(spec.start);
