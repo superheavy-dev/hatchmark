@@ -1,10 +1,17 @@
 import { afterAll, expect, it } from "vitest";
-import { runDashboard } from "../../src/compiler/index.js";
+import {
+  assemble,
+  executionContext,
+  planDashboard,
+  type QueryResult,
+  queryBounds,
+  runDashboard,
+} from "../../src/compiler/index.js";
 import { runPeriodData } from "../../src/compiler/period-build.js";
 import { customRangeDashboard } from "../../src/compiler/period-data.js";
 import { createDuckDbExecutor } from "../../src/node/index.js";
 import { PROJECT_DEFAULTS } from "../../src/spec/index.js";
-import { metric, removeProjects, writeProject } from "./fixture.js";
+import { EXAMPLE, loadAt, metric, removeProjects, writeProject } from "./fixture.js";
 
 afterAll(removeProjects);
 
@@ -59,6 +66,29 @@ it("keeps the exact series cutoff for a timestamp source with a freshness lag", 
     expect(values(sql.data!)).toEqual([4, oracle]);
     expect(custom.blocks.find((b) => b.id === "k")).toMatchObject({ value: 4 });
     expect(values(custom)).toEqual([4, oracle]);
+  } finally {
+    await db.close();
+  }
+});
+
+it("keeps the four-argument assemble, equal to runDashboard, on the explorer example", async () => {
+  const root = EXAMPLE;
+  const { project } = await loadAt(root);
+  const config = project.config.spec;
+  if (config === undefined) throw new Error("invalid hatchmark.json");
+  const db = await createDuckDbExecutor({ root, config });
+  try {
+    const { plan } = planDashboard(project, "explorer");
+    if (plan === undefined) throw new Error("no explorer plan");
+    const { context } = await executionContext(project, plan, db);
+    if (context === undefined) throw new Error("no execution context");
+    const results = new Map<string, QueryResult>();
+    for (const q of plan.queries) {
+      if (queryBounds(q, context) !== undefined) results.set(q.id, await db.execute(q, context));
+    }
+    const assembled = assemble(project, plan, results, context);
+    expect(assembled.data?.metrics.revenue).toBeDefined();
+    expect(assembled.data).toEqual((await runDashboard(project, "explorer", db)).data);
   } finally {
     await db.close();
   }

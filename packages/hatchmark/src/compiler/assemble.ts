@@ -1239,12 +1239,10 @@ function columnLabel(column: string): string {
 }
 
 /**
- * Turns a plan and its query results into DashboardData. Pure and deterministic: the same plan,
- * results and context give the same data, byte for byte. Totals come from each query's grand
- * total grouping set, never from summing rows; ratio rows match on grouping set and dimension
- * values with null as a real value; limit cuts leaf rows only.
+ * assemble with the point-in-time metrics given rather than derived from the metric specs, for
+ * callers whose project carries portable metrics instead of full specs.
  */
-export function assemble(
+export function assembleWith(
   project: Project,
   plan: QueryPlan,
   results: ReadonlyMap<string, QueryResult>,

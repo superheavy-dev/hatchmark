@@ -1,5 +1,5 @@
 import type { Dashboard, Format, Project } from "../spec/index.js";
-import { assemble } from "./assemble.js";
+import { assembleWith } from "./assemble.js";
 import type { DashboardData, DateSpan, Value } from "./dashboard-data.js";
 import { formatWall, parseInstant, toLocal } from "./instants.js";
 import type {
@@ -253,7 +253,7 @@ export function customRangeDashboard(
       .filter(([, m]) => m.nature === "point")
       .map(([name]) => name),
   );
-  const { data } = assemble(project, custom.plan, results, context, points);
+  const { data } = assembleWith(project, custom.plan, results, context, points);
   if (data === undefined) throw new Error("custom range assembly produced no data");
   const presetOnly = new Set(custom.presetOnly);
   const blocks = data.blocks.map((b) =>

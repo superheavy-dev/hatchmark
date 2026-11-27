@@ -91,7 +91,6 @@ export default {
           anchors: { ...DEFAULT_ANCHORS, week: "monday" },
           bindings: {},
         },
-        new Set(),
       );
     return Response.json({
       report,

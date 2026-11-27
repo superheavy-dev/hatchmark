@@ -8,7 +8,7 @@ import {
   resolveGrain,
   timeNature,
 } from "../spec/index.js";
-import { assemble } from "./assemble.js";
+import { assembleWith } from "./assemble.js";
 import type { DashboardData } from "./dashboard-data.js";
 import {
   type PlannedHorizon,
@@ -445,7 +445,7 @@ export async function runDashboard(
       };
     }
   }
-  const assembled = assemble(project, plan, results, context, pointMetrics(project));
+  const assembled = assemble(project, plan, results, context);
   return {
     ...(assembled.data ? { data: assembled.data } : {}),
     diagnostics: [
@@ -496,6 +496,21 @@ function largeResults(
     }
   }
   return out;
+}
+
+/**
+ * Turns a plan and its query results into DashboardData. Pure and deterministic: the same plan,
+ * results and context give the same data, byte for byte. Totals come from each query's grand
+ * total grouping set, never from summing rows; ratio rows match on grouping set and dimension
+ * values with null as a real value; limit cuts leaf rows only.
+ */
+export function assemble(
+  project: Project,
+  plan: QueryPlan,
+  results: ReadonlyMap<string, QueryResult>,
+  context: ExecutionContext,
+): { data?: DashboardData; diagnostics: Diagnostic[] } {
+  return assembleWith(project, plan, results, context, pointMetrics(project));
 }
 
 /** The metrics whose time nature is point-in-time, which assembly labels "as of". */
