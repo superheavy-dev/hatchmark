@@ -1,5 +1,14 @@
 import { createHash } from "node:crypto";
-import { mkdir, mkdtemp, readdir, readFile, rm, writeFile } from "node:fs/promises";
+import {
+  mkdir,
+  mkdtemp,
+  readdir,
+  readFile,
+  rename,
+  rm,
+  symlink,
+  writeFile,
+} from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -171,6 +180,77 @@ describe("hatchmark build", () => {
     const result = await build(ctx(root), {}, deps);
     expect(result.exitCode).toBe(2);
     expect(await readFile(path.join(dist, "sales/index.html"), "utf8")).toBe("hand-written");
+  });
+
+  describe("never follows a symbolic link", () => {
+    /** A built project and a directory outside it with a hand-written index.html. */
+    async function linked(): Promise<{ root: string; dist: string; other: string }> {
+      const root = await project();
+      const other = await mkdtemp(path.join(tmpdir(), "hatchmark-other-"));
+      dirs.push(other);
+      await writeFile(path.join(other, "index.html"), "hand-authored\n");
+      expect((await build(ctx(root), {}, deps)).exitCode).toBe(0);
+      return { root, dist: path.join(root, "dist"), other };
+    }
+
+    async function expectRefused(root: string, other: string): Promise<void> {
+      const result = await build(ctx(root), {}, deps);
+      expect(result.exitCode).toBe(2);
+      expect(result.json).toMatchObject({ diagnostics: [{ code: "HM0004" }] });
+      expect(await readdir(other)).toEqual(["index.html"]);
+      expect(await readFile(path.join(other, "index.html"), "utf8")).toBe("hand-authored\n");
+    }
+
+    it("to remove a stale page through a symlinked dashboard directory", async () => {
+      const { root, dist, other } = await linked();
+      await rename(path.join(dist, "sales"), path.join(root, "previous"));
+      await symlink(other, path.join(dist, "sales"));
+      await rename(
+        path.join(root, "dashboards/sales.json"),
+        path.join(root, "dashboards/renamed.json"),
+      );
+      await expectRefused(root, other);
+    });
+
+    it("to overwrite a page through a symlinked directory with the dashboard's name", async () => {
+      const { root, dist, other } = await linked();
+      await rm(path.join(dist, "sales"), { recursive: true });
+      await symlink(other, path.join(dist, "sales"));
+      await expectRefused(root, other);
+    });
+
+    it("to overwrite or remove a page that is itself a symlinked file", async () => {
+      const { root, dist, other } = await linked();
+      const page = path.join(dist, "sales/index.html");
+      await rm(page);
+      await symlink(path.join(other, "index.html"), page);
+      await expectRefused(root, other);
+      await rename(
+        path.join(root, "dashboards/sales.json"),
+        path.join(root, "dashboards/renamed.json"),
+      );
+      await expectRefused(root, other);
+    });
+
+    it("to write into an output directory that is a symlink, even to an earlier build", async () => {
+      const root = await project();
+      const other = await mkdtemp(path.join(tmpdir(), "hatchmark-other-"));
+      dirs.push(other);
+      expect((await build(ctx(root), { out: other }, deps)).exitCode).toBe(0);
+      const before = await tree(other);
+      await rename(
+        path.join(root, "dashboards/sales.json"),
+        path.join(root, "dashboards/renamed.json"),
+      );
+      await symlink(other, path.join(root, "dist"));
+      const direct = await build(ctx(root), {}, deps);
+      expect(direct.exitCode).toBe(2);
+      expect(direct.json).toMatchObject({ diagnostics: [{ code: "HM0004" }] });
+      await mkdir(path.join(root, "site"));
+      await symlink(other, path.join(root, "site/out"));
+      expect((await build(ctx(root), { out: "site/out" }, deps)).exitCode).toBe(2);
+      expect(await tree(other)).toEqual(before);
+    });
   });
 
   it("reports HM2018 for a chart narrower than 3 columns and still builds it", async () => {

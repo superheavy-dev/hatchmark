@@ -43,7 +43,10 @@ dist/
   `_hatchmark/manifest.json`, and the next build removes exactly those before writing; anything
   else in the directory stays. Build refuses (`HM0004`, exit 2) a directory that is not empty
   and has no manifest, a file it would write that the manifest does not list, and an output
-  directory that contains the project.
+  directory that contains the project. Build never follows a symbolic link: it also refuses an
+  output directory that is a link (or sits under one inside the project), and any link where it
+  would read, remove or write under the output directory. Each file is written fresh and renamed
+  into place.
 
 ## The page
 

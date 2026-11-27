@@ -1,5 +1,15 @@
 import { createHash } from "node:crypto";
-import { mkdir, readdir, readFile, rm, rmdir, writeFile } from "node:fs/promises";
+import {
+  lstat,
+  mkdir,
+  readdir,
+  readFile,
+  realpath,
+  rename,
+  rm,
+  rmdir,
+  writeFile,
+} from "node:fs/promises";
 import path from "node:path";
 import { type DashboardData, type DashboardExecutor, runDashboard } from "../../compiler/index.js";
 import { createReport, type Diagnostic, renderHuman } from "../../diagnostics/index.js";
@@ -72,8 +82,10 @@ async function readAsset(relative: string): Promise<Uint8Array> {
  * Build never deletes a file it did not write. Every build records its files in
  * _hatchmark/manifest.json; the next build removes exactly those and nothing else. A non-empty
  * directory without a readable manifest is refused, as is one where a file build would write
- * exists but is not in the manifest, and the project directory itself. Returns the previous
- * build's files, or a reason to refuse.
+ * exists but is not in the manifest, and the project directory itself. Build never follows a
+ * symbolic link: the output directory, every directory between it and the project, and every
+ * path under it that build reads, removes or writes must be a real directory or file. Returns
+ * the previous build's files, or a reason to refuse.
  */
 async function checkOutDir(
   root: string,
@@ -81,15 +93,31 @@ async function checkOutDir(
   writing: ReadonlySet<string>,
 ): Promise<{ previous: string[] } | { refused: string }> {
   const label = path.relative(root, outDir) || outDir;
-  const relative = path.relative(outDir, root);
+  const relative = path.relative(await realLocation(outDir), await realLocation(root));
   if (relative === "" || !relative.startsWith("..")) {
     return {
       refused:
         "the output directory must not contain the project; choose a directory inside it, such as dist",
     };
   }
+  const inside = path.relative(root, outDir);
+  const steps =
+    inside.startsWith("..") || path.isAbsolute(inside)
+      ? [outDir]
+      : inside.split(path.sep).map((_, i, parts) => path.join(root, ...parts.slice(0, i + 1)));
+  for (const at of steps) {
+    const stat = await lstat(at).catch(() => undefined);
+    if (stat === undefined) break;
+    if (stat.isSymbolicLink()) {
+      return {
+        refused: `${path.relative(root, at) || at} is a symbolic link, and build never writes through one; choose a real directory for --out`,
+      };
+    }
+  }
   const entries = await readdir(outDir).catch(() => undefined);
   if (entries === undefined || entries.length === 0) return { previous: [] };
+  const linked = await unsafeTarget(outDir, MANIFEST);
+  if (linked !== undefined) return { refused: `${label}/${linked}` };
   const manifest = await readFile(path.join(outDir, ...MANIFEST.split("/")), "utf8")
     .then((text) => JSON.parse(text) as { files?: unknown })
     .catch(() => undefined);
@@ -100,9 +128,11 @@ async function checkOutDir(
     };
   }
   const previous = new Set<string>(files);
-  for (const file of writing) {
+  for (const file of new Set([...previous, ...writing])) {
+    const unsafe = await unsafeTarget(outDir, file);
+    if (unsafe !== undefined) return { refused: `${label}/${unsafe}` };
     if (previous.has(file) || file === MANIFEST) continue;
-    const exists = await readFile(path.join(outDir, ...file.split("/"))).then(
+    const exists = await lstat(path.join(outDir, ...file.split("/"))).then(
       () => true,
       (error: NodeJS.ErrnoException) => error.code !== "ENOENT",
     );
@@ -113,6 +143,43 @@ async function checkOutDir(
     }
   }
   return { previous: [...previous] };
+}
+
+/**
+ * Walks file from outDir one component at a time with lstat, so nothing is followed: each
+ * directory on the way must be a real directory and the file itself a regular file, or the walk
+ * stops at the first one that does not exist yet. Returns why the path is unsafe, or undefined.
+ */
+async function unsafeTarget(outDir: string, file: string): Promise<string | undefined> {
+  const parts = file.split("/");
+  for (let i = 1; i <= parts.length; i++) {
+    const shown = parts.slice(0, i).join("/");
+    const stat = await lstat(path.join(outDir, ...parts.slice(0, i))).catch(
+      (error: NodeJS.ErrnoException) => {
+        if (error.code === "ENOENT") return undefined;
+        throw error;
+      },
+    );
+    if (stat === undefined) return undefined;
+    if (stat.isSymbolicLink()) {
+      return `${shown} is a symbolic link, and build never follows one; remove the link or choose another --out`;
+    }
+    if (i < parts.length ? !stat.isDirectory() : !stat.isFile()) {
+      return `${shown} is not the ${i < parts.length ? "directory" : "file"} hatchmark build wrote; move it or choose another --out`;
+    }
+  }
+  return undefined;
+}
+
+/** The real path of p, through its deepest existing ancestor when p does not exist yet. */
+async function realLocation(p: string): Promise<string> {
+  const missing: string[] = [];
+  for (let at = p; ; at = path.dirname(at)) {
+    const real = await realpath(at).catch(() => undefined);
+    if (real !== undefined) return path.join(real, ...missing);
+    if (path.dirname(at) === at) return p;
+    missing.unshift(path.basename(at));
+  }
 }
 
 /** A relative POSIX path that stays inside the output directory. */
@@ -199,8 +266,12 @@ export async function build(
   files.set(MANIFEST, `${JSON.stringify({ format_version: "1", files: owned }, null, 2)}\n`);
   const checked = await checkOutDir(ctx.root, outDir, new Set(files.keys()));
   if ("refused" in checked) return usageError("HM0004", checked.refused);
+  const refuse = (unsafe: string) =>
+    usageError("HM0004", `${path.relative(ctx.root, outDir) || outDir}/${unsafe}`);
   for (const file of checked.previous) {
     if (files.has(file)) continue;
+    const unsafe = await unsafeTarget(outDir, file);
+    if (unsafe !== undefined) return refuse(unsafe);
     const target = path.join(outDir, ...file.split("/"));
     await rm(target, { force: true });
     for (
@@ -220,7 +291,12 @@ export async function build(
   for (const [file, content] of [...files].sort(([a], [b]) => (a < b ? -1 : 1))) {
     const target = path.join(outDir, ...file.split("/"));
     await mkdir(path.dirname(target), { recursive: true });
-    await writeFile(target, content);
+    const unsafe = await unsafeTarget(outDir, file);
+    if (unsafe !== undefined) return refuse(unsafe);
+    const fresh = `${target}.${process.pid}.tmp`;
+    await rm(fresh, { force: true });
+    await writeFile(fresh, content, { flag: "wx" });
+    await rename(fresh, target);
   }
 
   const report = createReport(diagnostics);
