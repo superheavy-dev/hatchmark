@@ -10,7 +10,7 @@ import type {
   QueryResult,
 } from "./plan.js";
 import { planDashboard } from "./planner.js";
-import { queryBounds } from "./windows.js";
+import { queryBounds, resolveRange, SUPPORTED_DATES } from "./windows.js";
 
 /** A time column a plan reads, by source. */
 export interface TimeColumn {
@@ -106,15 +106,42 @@ export async function runDashboard(
   const context: ExecutionContext = {
     asOf,
     timezone: plan.timezone,
-    weekStart: plan.weekStart,
+    anchors: plan.anchors,
     bindings: {},
   };
+  try {
+    if (!(asOf >= SUPPORTED_DATES.first && asOf <= SUPPORTED_DATES.last)) {
+      throw new RangeError(
+        `the as-of date ${asOf} is outside the supported dates ${SUPPORTED_DATES.first} to ${SUPPORTED_DATES.last}`,
+      );
+    }
+    for (const query of plan.queries) queryBounds(query, context);
+    for (const shift of ["none", plan.period.compare] as const) {
+      resolveRange(plan.period.range, shift, asOf, plan.anchors);
+    }
+  } catch (error) {
+    if (!(error instanceof RangeError)) throw error;
+    return { diagnostics: [...diagnostics, failure(error.message)] };
+  }
   const results = new Map<string, QueryResult>();
   const imprecise = new Map<string, Diagnostic>();
   for (const query of plan.queries) {
     if (queryBounds(query, context) === undefined) continue;
     try {
       const result = await executor.execute(query, context);
+      query.dimensions.forEach((dimension, i) => {
+        if (dimension.kind !== "time") return;
+        const bad = result.rows.find(
+          (row) =>
+            row[i] !== null &&
+            !(/^\d{4}-\d{2}-\d{2}$/.test(String(row[i])) && String(row[i]) <= SUPPORTED_DATES.last),
+        );
+        if (bad !== undefined) {
+          throw new RangeError(
+            `column "${dimension.column}" has dates in a bucket (${String(bad[i])}) outside the supported dates ${SUPPORTED_DATES.first} to ${SUPPORTED_DATES.last}`,
+          );
+        }
+      });
       results.set(query.id, result);
       for (const { column, maxAbs } of result.imprecise ?? []) {
         imprecise.set(JSON.stringify([query.source, column]), {

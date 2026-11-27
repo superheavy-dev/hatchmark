@@ -166,6 +166,70 @@ describe("spec schemas", () => {
     ]);
   });
 
+  it("accept anchors, grains with an anchor, range shorthands and shift comparisons", () => {
+    const { weekStart: _, ...config } = CONFIG;
+    expect(
+      diagnose("project", {
+        ...config,
+        anchors: { week: "sunday", quarter: "02-01", year: "02-01" },
+      }),
+    ).toEqual([]);
+    const dashboard = {
+      ...DASHBOARD,
+      period: {
+        asOf: "latest_data",
+        range: { last: 6, unit: "week" },
+        compare: { shift: { unit: "week", by: -1 } },
+      },
+      blocks: [
+        { type: "line", metrics: ["revenue"], grain: { unit: "week", anchor: "sunday" } },
+        { type: "bar", metrics: ["orders"], grain: { unit: "quarter", anchor: "02-01" } },
+        { type: "kpi", metric: "revenue", compare: { shift: { unit: "year", by: -1 } } },
+      ],
+    };
+    expect(diagnose("dashboard", dashboard)).toEqual([]);
+    for (const range of [
+      { start: "2026-01-01", end: "2026-04-01" },
+      { to_date: "quarter" },
+      { last_complete: "week" },
+    ]) {
+      const period = { asOf: "latest_data", range, compare: "previous_period" };
+      expect(diagnose("dashboard", { ...DASHBOARD, period }), JSON.stringify(range)).toEqual([]);
+    }
+  });
+
+  it("reject anchors that conflict or do not fit their unit (HM3005, HM3007)", () => {
+    const conflict = { ...CONFIG, anchors: { week: "sunday" } };
+    const quarter = {
+      ...CONFIG,
+      weekStart: undefined,
+      anchors: { quarter: "02-15", year: "01-01" },
+    };
+    expect(diagnose("project", conflict).map((d) => [d.code, d.pointer])).toEqual([
+      ["HM3007", "/weekStart"],
+    ]);
+    expect(diagnose("project", quarter).map((d) => d.code)).toEqual(["HM3007"]);
+    const grain = (g: unknown) =>
+      diagnose("dashboard", {
+        ...DASHBOARD,
+        blocks: [{ type: "line", metrics: ["revenue"], grain: g }],
+      });
+    expect(grain({ unit: "week", anchor: "01-01" }).map((d) => d.code)).toEqual(["HM3007"]);
+    expect(grain({ unit: "month", anchor: "monday" }).map((d) => d.code)).toEqual(["HM3007"]);
+    expect(grain({ unit: "quarter", anchor: "02-30" }).map((d) => d.code)).not.toEqual([]);
+    const range = (r: unknown) =>
+      diagnose("dashboard", {
+        ...DASHBOARD,
+        period: { asOf: "latest_data", range: r, compare: "none" },
+      });
+    expect(range({ start: "2026-04-01", end: "2026-04-01" }).map((d) => d.code)).toEqual([
+      "HM3005",
+    ]);
+    expect(range({ to_date: "hour" }).map((d) => d.code)).not.toEqual([]);
+    expect(range({ to_date: "day" })).toEqual([]);
+    expect(range({ last: 0, unit: "day" }).map((d) => d.code)).not.toEqual([]);
+  });
+
   it("reject invalid file names", () => {
     expect(diagnose("metric", METRICS.orders, "Net-Revenue")[0]).toMatchObject({ code: "HM1004" });
     expect(diagnose("dashboard", DASHBOARD, "sales-overview")).toEqual([]);

@@ -55,7 +55,7 @@
           "description": "\"latest_data\" (the last date in the data) or a fixed YYYY-MM-DD, so builds are reproducible."
         },
         "range": {
-          "$ref": "#/$defs/PeriodRange"
+          "$ref": "#/$defs/Range"
         },
         "compare": {
           "$ref": "#/$defs/Comparison"
@@ -68,6 +68,78 @@
       ],
       "additionalProperties": false,
       "description": "Defaults to {\"asOf\": \"latest_data\", \"range\": \"last_12_months\", \"compare\": \"previous_period\"}."
+    },
+    "Range": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/PeriodRange"
+        },
+        {
+          "type": "object",
+          "properties": {
+            "start": {
+              "type": "string",
+              "format": "date",
+              "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))$",
+              "description": "First local date, inclusive."
+            },
+            "end": {
+              "type": "string",
+              "format": "date",
+              "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))$",
+              "description": "Local date after the last, exclusive."
+            }
+          },
+          "required": [
+            "start",
+            "end"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "last": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 3660
+            },
+            "unit": {
+              "$ref": "#/$defs/TimeGrain"
+            }
+          },
+          "required": [
+            "last",
+            "unit"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "to_date": {
+              "$ref": "#/$defs/TimeGrain"
+            }
+          },
+          "required": [
+            "to_date"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "last_complete": {
+              "$ref": "#/$defs/TimeGrain"
+            }
+          },
+          "required": [
+            "last_complete"
+          ],
+          "additionalProperties": false
+        }
+      ],
+      "description": "A date range [start, end) in the project time zone: {\"start\": \"2026-02-01\", \"end\": \"2026-11-01\"}, or a shorthand resolved at the as-of date: {\"last\": 30, \"unit\": \"day\"}, {\"to_date\": \"quarter\"}, {\"last_complete\": \"month\"}, or a named range such as \"last_12_months\"."
     },
     "PeriodRange": {
       "type": "string",
@@ -85,14 +157,59 @@
         "all_time"
       ]
     },
-    "Comparison": {
+    "TimeGrain": {
       "type": "string",
       "enum": [
-        "previous_period",
-        "previous_year",
-        "none"
+        "day",
+        "week",
+        "month",
+        "quarter",
+        "year"
+      ]
+    },
+    "Comparison": {
+      "anyOf": [
+        {
+          "type": "string",
+          "enum": [
+            "previous_period",
+            "previous_year",
+            "none"
+          ]
+        },
+        {
+          "type": "object",
+          "properties": {
+            "shift": {
+              "type": "object",
+              "properties": {
+                "unit": {
+                  "$ref": "#/$defs/TimeGrain"
+                },
+                "by": {
+                  "type": "integer",
+                  "minimum": -9007199254740991,
+                  "maximum": 9007199254740991,
+                  "description": "Units to move the first and last day by; negative is earlier. The moved window must stay within 0001-01-01 to 9998-12-31.",
+                  "not": {
+                    "const": 0
+                  }
+                }
+              },
+              "required": [
+                "unit",
+                "by"
+              ],
+              "additionalProperties": false
+            }
+          },
+          "required": [
+            "shift"
+          ],
+          "additionalProperties": false
+        }
       ],
-      "description": "previous_period: the previous calendar unit for calendar ranges (October vs September; to-date ranges compare the same elapsed span), or the same length just before for rolling ranges (last N days, last 12 months). previous_year: the same span one year earlier. none: no comparison."
+      "description": "previous_period: the previous calendar unit for calendar ranges (October vs September; to-date ranges compare the same elapsed span), or the same length just before for rolling ranges (last N days, last 12 months). previous_year: the same span one year earlier. {\"shift\": {\"unit\": \"week\", \"by\": -1}}: the range moved by whole units. none: no comparison."
     },
     "DashboardFilter": {
       "oneOf": [
@@ -278,7 +395,7 @@
           }
         },
         "grain": {
-          "$ref": "#/$defs/TimeGrain"
+          "$ref": "#/$defs/Grain"
         },
         "split": {
           "description": "Column that splits one metric into series.",
@@ -297,14 +414,49 @@
       ],
       "additionalProperties": false
     },
-    "TimeGrain": {
+    "Grain": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/TimeGrain"
+        },
+        {
+          "type": "object",
+          "properties": {
+            "unit": {
+              "$ref": "#/$defs/TimeGrain"
+            },
+            "anchor": {
+              "description": "Overrides the project anchor: a weekday for weeks, MM-DD for quarters and years, such as \"07-01\" for a year from July 1.",
+              "anyOf": [
+                {
+                  "$ref": "#/$defs/Weekday"
+                },
+                {
+                  "type": "string",
+                  "pattern": "^(0[1-9]|1[0-2])-(0[1-9]|1[0-9]|2[0-8])$",
+                  "description": "Where a quarter or year bucket begins, such as \"02-01\"."
+                }
+              ]
+            }
+          },
+          "required": [
+            "unit"
+          ],
+          "additionalProperties": false
+        }
+      ],
+      "description": "A bucket unit, such as \"month\", or {\"unit\": \"year\", \"anchor\": \"02-01\"} to override the project anchors."
+    },
+    "Weekday": {
       "type": "string",
       "enum": [
-        "day",
-        "week",
-        "month",
-        "quarter",
-        "year"
+        "monday",
+        "tuesday",
+        "wednesday",
+        "thursday",
+        "friday",
+        "saturday",
+        "sunday"
       ]
     },
     "AreaBlock": {
@@ -336,7 +488,7 @@
           }
         },
         "grain": {
-          "$ref": "#/$defs/TimeGrain"
+          "$ref": "#/$defs/Grain"
         },
         "split": {
           "description": "Column that splits one metric into series.",
@@ -397,7 +549,7 @@
         },
         "grain": {
           "description": "Time buckets on the axis. Use either by or grain.",
-          "$ref": "#/$defs/TimeGrain"
+          "$ref": "#/$defs/Grain"
         },
         "split": {
           "type": "string",

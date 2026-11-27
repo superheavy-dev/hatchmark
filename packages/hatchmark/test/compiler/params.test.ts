@@ -7,6 +7,7 @@ import {
   type QueryPlan,
   resolveParams,
 } from "../../src/compiler/index.js";
+import { DEFAULT_ANCHORS } from "../../src/spec/index.js";
 import { CONFIG, METRICS, projectFrom } from "../spec/helpers.js";
 
 const dashboard = (filters: unknown[]) => ({
@@ -145,7 +146,7 @@ describe("paramsForQuery", () => {
   const context: ExecutionContext = {
     asOf: "2026-04-30",
     timezone: "UTC",
-    weekStart: "monday",
+    anchors: { ...DEFAULT_ANCHORS, week: "monday" },
     bindings: {},
   };
 
@@ -173,11 +174,11 @@ describe("paramsForQuery", () => {
   it("changes the query and the plan hash whenever a default changes (property)", () => {
     const defaults: unknown[] = [undefined, "West", "East", ["West"], ["West", "East"], 1, true];
     const plan = (regionDefault: unknown): QueryPlan => ({
-      version: 1,
+      version: 2,
       dashboard: "sales",
       period: { asOf: "latest_data", range: "all_time", compare: "none" },
       timezone: "UTC",
-      weekStart: "monday",
+      anchors: { ...DEFAULT_ANCHORS, week: "monday" },
       params: [],
       blocks: [],
       queries: [regionQuery(regionDefault)],

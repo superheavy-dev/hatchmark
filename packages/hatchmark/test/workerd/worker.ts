@@ -4,12 +4,13 @@ import {
   planDashboard,
   planHash,
   resolveParams,
-  windowBounds,
+  resolveRange,
 } from "../../src/compiler/index.js";
 import { createReport, renderHuman } from "../../src/diagnostics/index.js";
 import { renderChartSvg, renderDashboardPage, textWidth } from "../../src/render/index.js";
 import {
   checkReferences,
+  DEFAULT_ANCHORS,
   jsonSchema,
   loadProject,
   PROJECT_DEFAULTS,
@@ -82,7 +83,12 @@ export default {
             { columns: [{ name: "revenue__sum", type: "number" as const }], rows: [[10]] },
           ],
         ]),
-        { asOf: "2026-10-31", timezone: "UTC", weekStart: "monday", bindings: {} },
+        {
+          asOf: "2026-10-31",
+          timezone: "UTC",
+          anchors: { ...DEFAULT_ANCHORS, week: "monday" },
+          bindings: {},
+        },
       );
     return Response.json({
       report,
@@ -91,13 +97,13 @@ export default {
       columns: project.columns.get("orders"),
       schemaTitle: jsonSchema("dashboard").title,
       params: resolveParams(project, "sales"),
-      window: windowBounds("last_complete_month", "previous_period", "2026-11-15"),
+      window: resolveRange("last_complete_month", "previous_period", "2026-11-15", DEFAULT_ANCHORS),
       planHash: planHash({
-        version: 1,
+        version: 2,
         dashboard: "sales",
         period: { asOf: "2026-11-15", range: "last_complete_month", compare: "previous_period" },
         timezone: "America/New_York",
-        weekStart: "monday",
+        anchors: { ...DEFAULT_ANCHORS, week: "monday" },
         params: [],
         blocks: [],
         queries: [],

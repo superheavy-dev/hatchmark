@@ -103,7 +103,7 @@ describe("planner", () => {
     expect(query(p, ref(year?.previous?.revenue)).window.shift).toBe("previous_year");
     expect(none?.previous).toBeUndefined();
     expect(query(p, ref(spark?.sparkline?.revenue)).dimensions).toEqual([
-      { kind: "time", column: "ordered_at", grain: "month" },
+      { kind: "time", column: "ordered_at", grain: { unit: "month" } },
     ]);
     const allTime = plan(
       dash([{ type: "kpi", metric: "revenue" }], {
@@ -170,7 +170,7 @@ describe("planner", () => {
     };
     expect(shape(0)).toEqual([
       [
-        { kind: "time", column: "ordered_at", grain: "week" },
+        { kind: "time", column: "ordered_at", grain: { unit: "week", anchor: "monday" } },
         { kind: "column", column: "plan" },
       ],
       [[0, 1], [1]],
@@ -182,7 +182,10 @@ describe("planner", () => {
       ],
       [[0, 1], [0], [1]],
     ]);
-    expect(shape(2)).toEqual([[{ kind: "time", column: "ordered_at", grain: "month" }], [[0]]]);
+    expect(shape(2)).toEqual([
+      [{ kind: "time", column: "ordered_at", grain: { unit: "month" } }],
+      [[0]],
+    ]);
   });
 
   it("divides a ratio across sources with one query per source, both in the same scope", () => {
@@ -254,7 +257,7 @@ describe("planner", () => {
       projectFrom({ columns: { orders: ["ordered_at", "region"] } }),
       "sales",
     ).plan;
-    expect([p?.timezone, p?.weekStart]).toEqual(["America/New_York", "monday"]);
+    expect([p?.timezone, p?.anchors.week]).toEqual(["America/New_York", "monday"]);
     expect(p?.materialization).toEqual({});
     const kpi = p && query(p, p.blocks[0]?.queryIds[0]);
     expect(kpi?.params).toEqual([

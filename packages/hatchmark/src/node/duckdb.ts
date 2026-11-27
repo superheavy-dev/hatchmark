@@ -24,6 +24,7 @@ import {
   type ProjectConfig,
   parseTemporal,
   sameColumn,
+  WEEKDAYS,
 } from "../spec/index.js";
 
 /**
@@ -46,7 +47,7 @@ import {
  * is its time column in the project time zone: TIMESTAMP WITH TIME ZONE values are converted,
  * TIMESTAMP values without an offset are read as UTC and converted, DATE values are calendar dates
  * as they are. Windows compare the local time with the window's dates (start inclusive, end
- * exclusive); buckets truncate it, with weeks starting on weekStart.
+ * exclusive); buckets truncate it, at the grain's anchor.
  *
  * Filters. A value compared with a DATE or timestamp column must be strict ISO 8601 (parseTemporal;
  * check reports HM3009 for the metric's time column). A day (YYYY-MM-DD) compares the row's local
@@ -433,11 +434,18 @@ function dimensionSql(
 ): string {
   if (dimension.kind === "time") {
     const local = `CAST(${localTime(source, dimension.column, context.timezone, sql)} AS DATE)`;
-    if (dimension.grain === "day") return local;
-    if (dimension.grain === "week" && context.weekStart === "sunday") {
-      return `CAST(date_trunc('week', ${local} + 1) AS DATE) - 1`;
+    const { grain } = dimension;
+    if (!("anchor" in grain)) {
+      return grain.unit === "day" ? local : `CAST(date_trunc('month', ${local}) AS DATE)`;
     }
-    return `CAST(date_trunc(${sql.bind(dimension.grain)}, ${local}) AS DATE)`;
+    if (grain.unit === "week") {
+      const isoDay = WEEKDAYS.indexOf(grain.anchor) + 1;
+      return `(${local} - CAST((isodow(${local}) - ${sql.bind(isoDay)} + 7) % 7 AS INTEGER))`;
+    }
+    const months = sql.bind(Number(grain.anchor.slice(0, 2)) - 1);
+    const days = sql.bind(Number(grain.anchor.slice(3)) - 1);
+    const shifted = `${local} - to_months(${months}) - to_days(${days})`;
+    return `CAST(date_trunc(${sql.bind(grain.unit)}, ${shifted}) + to_months(${months}) + to_days(${days}) AS DATE)`;
   }
   const { name, type } = column(source, dimension.column);
   const q = quote(name);

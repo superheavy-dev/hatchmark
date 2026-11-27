@@ -9,13 +9,19 @@ Every number on a page comes from one query plan, compiled from the specs and ru
 - **Time zone.** Rows are placed in time in hatchmark.json's `timezone`. A `TIMESTAMP WITH TIME
   ZONE` value is converted to it. A timestamp without an offset (`2026-01-31 18:30:00`) is read as
   UTC and converted. A `DATE` is a calendar date and is used as it is.
-- **Windows.** A range such as `last_12_months` is a span of calendar dates in that time zone, start
-  inclusive and end exclusive; `windowBounds()` in `src/compiler/windows.ts` is the definition of
-  every range and comparison. A row is in the window when its local time is.
+- **Windows.** A range is a span of calendar dates in that time zone, start inclusive and
+  end exclusive: `{"start", "end"}` dates, a shorthand (`{"last": 30, "unit": "day"}`,
+  `{"to_date": "quarter"}`, `{"last_complete": "month"}`) or a named alias of one
+  (`last_30_days`). A comparison is the range shifted by whole units (`previous_period`,
+  `previous_year` or `{"shift": {"unit": "week", "by": -1}}`), with days clamped to the target
+  month. `resolveRange()` in `src/compiler/windows.ts` is the definition of every range and
+  comparison. A row is in the window when its local time is.
 - **latest_data** resolves once per dashboard, before any query runs: the last local date in any
   time column the dashboard reads, across all its sources. Every block's window ends on that day.
   If one source's data ends earlier, its short windows are partial.
-- **Buckets.** Time series bucket by local date; weeks start on `weekStart`. The axis lists every
+- **Buckets.** Time series bucket by local date; weeks start on the week anchor, and quarters and
+  years on their `MM-DD` anchors (hatchmark.json `anchors`, or a block's `{"unit", "anchor"}`
+  grain). The axis lists every
   bucket of the window, empty ones included. The first and last buckets may be partial.
 
 ## Filters

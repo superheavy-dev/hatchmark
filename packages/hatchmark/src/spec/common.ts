@@ -60,12 +60,147 @@ export const PERIOD_RANGES = [
 export const periodRange = z.enum(PERIOD_RANGES).meta({ id: "PeriodRange" });
 export type PeriodRange = z.infer<typeof periodRange>;
 
+export const WEEKDAYS = [
+  "monday",
+  "tuesday",
+  "wednesday",
+  "thursday",
+  "friday",
+  "saturday",
+  "sunday",
+] as const;
+export const weekday = z.enum(WEEKDAYS).meta({ id: "Weekday" });
+export type Weekday = z.infer<typeof weekday>;
+
+/** A month and day that starts a quarter or year bucket; 29 to 31 don't exist every month. */
+export const monthDay = z
+  .string()
+  .regex(/^(0[1-9]|1[0-2])-(0[1-9]|1[0-9]|2[0-8])$/, {
+    error: "must be MM-DD with a day from 01 to 28, such as 02-01",
+  })
+  .meta({ description: 'Where a quarter or year bucket begins, such as "02-01".' });
+
+/** Where week, quarter and year buckets begin. */
+export interface Anchors {
+  week: Weekday;
+  quarter: string;
+  year: string;
+}
+export const DEFAULT_ANCHORS: Anchors = { week: "monday", quarter: "01-01", year: "01-01" };
+
+/** A grain with its anchor resolved: weeks by a weekday, quarters and years by a month-day. */
+export type ResolvedGrain =
+  | { unit: "day" | "month" }
+  | { unit: "week"; anchor: Weekday }
+  | { unit: "quarter" | "year"; anchor: string };
+
+export const grainSchema = z
+  .union([
+    timeGrain,
+    z
+      .strictObject({
+        unit: timeGrain,
+        anchor: z.union([weekday, monthDay]).optional().meta({
+          description:
+            'Overrides the project anchor: a weekday for weeks, MM-DD for quarters and years, such as "07-01" for a year from July 1.',
+        }),
+      })
+      .superRefine((g, ctx) => {
+        if (g.anchor === undefined) return;
+        const isWeekday = (WEEKDAYS as readonly string[]).includes(g.anchor);
+        const fits =
+          g.unit === "week"
+            ? isWeekday
+            : g.unit === "quarter" || g.unit === "year"
+              ? !isWeekday
+              : false;
+        if (!fits) {
+          ctx.addIssue(
+            customIssue(
+              "HM3007",
+              ["anchor"],
+              g.unit === "day" || g.unit === "month"
+                ? `${g.unit} buckets have no anchor; remove "anchor"`
+                : `a ${g.unit} anchor is ${g.unit === "week" ? "a weekday, such as sunday" : "MM-DD, such as 02-01"}`,
+            ),
+          );
+        }
+      }),
+  ])
+  .meta({
+    id: "Grain",
+    description:
+      'A bucket unit, such as "month", or {"unit": "year", "anchor": "02-01"} to override the project anchors.',
+  });
+export type Grain = z.infer<typeof grainSchema>;
+
+/** The unit of a grain as written. */
+export function grainUnit(grain: Grain): TimeGrain {
+  return typeof grain === "string" ? grain : grain.unit;
+}
+
+/** A grain with the anchor a bucket uses: its own, else the project's. */
+export function resolveGrain(grain: Grain, anchors: Anchors): ResolvedGrain {
+  const unit = grainUnit(grain);
+  const own = typeof grain === "string" ? undefined : grain.anchor;
+  if (unit === "day" || unit === "month") return { unit };
+  if (unit === "week") return { unit, anchor: (own as Weekday | undefined) ?? anchors.week };
+  return { unit, anchor: own ?? anchors[unit] };
+}
+
+const isoDay = z.iso.date();
+
+export const rangeSchema = z
+  .union([
+    periodRange,
+    z
+      .strictObject({
+        start: isoDay.meta({ description: "First local date, inclusive." }),
+        end: isoDay.meta({ description: "Local date after the last, exclusive." }),
+      })
+      .superRefine((r, ctx) => {
+        if (r.start >= r.end) {
+          ctx.addIssue(customIssue("HM3005", ["end"], "the range ends before it starts"));
+        }
+      }),
+    z.strictObject({
+      last: z.number().int().min(1).max(3660),
+      unit: timeGrain,
+    }),
+    z.strictObject({ to_date: timeGrain }),
+    z.strictObject({ last_complete: timeGrain }),
+  ])
+  .meta({
+    id: "Range",
+    description:
+      'A date range [start, end) in the project time zone: {"start": "2026-02-01", "end": "2026-11-01"}, or a shorthand resolved at the as-of date: {"last": 30, "unit": "day"}, {"to_date": "quarter"}, {"last_complete": "month"}, or a named range such as "last_12_months".',
+  });
+export type RangeSpec = z.infer<typeof rangeSchema>;
+
 export const COMPARISONS = ["previous_period", "previous_year", "none"] as const;
-export const comparison = z.enum(COMPARISONS).meta({
-  id: "Comparison",
-  description:
-    "previous_period: the previous calendar unit for calendar ranges (October vs September; to-date ranges compare the same elapsed span), or the same length just before for rolling ranges (last N days, last 12 months). previous_year: the same span one year earlier. none: no comparison.",
-});
+export const comparison = z
+  .union([
+    z.enum(COMPARISONS),
+    z.strictObject({
+      shift: z.strictObject({
+        unit: timeGrain,
+        by: z
+          .number()
+          .int()
+          .refine((n) => n !== 0, { error: "must not be 0" })
+          .meta({
+            description:
+              "Units to move the first and last day by; negative is earlier. The moved window must stay within 0001-01-01 to 9998-12-31.",
+            not: { const: 0 },
+          }),
+      }),
+    }),
+  ])
+  .meta({
+    id: "Comparison",
+    description:
+      'previous_period: the previous calendar unit for calendar ranges (October vs September; to-date ranges compare the same elapsed span), or the same length just before for rolling ranges (last N days, last 12 months). previous_year: the same span one year earlier. {"shift": {"unit": "week", "by": -1}}: the range moved by whole units. none: no comparison.',
+  });
 export type Comparison = z.infer<typeof comparison>;
 
 const CURRENCIES = new Set(Intl.supportedValuesOf("currency"));
