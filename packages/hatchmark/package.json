@@ -32,6 +32,10 @@
     "prepack": "node -e \"for (const f of ['LICENSE', 'NOTICE']) require('fs').copyFileSync('../../' + f, f)\""
   },
   "dependencies": {
+    "@vercel/detect-agent": "^1.2.7",
     "zod": "^4.6.7"
+  },
+  "bin": {
+    "hatchmark": "./dist/cli/bin.js"
   }
 }
