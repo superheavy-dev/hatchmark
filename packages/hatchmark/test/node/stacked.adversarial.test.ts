@@ -393,6 +393,8 @@ const close = (a: Value | undefined, e: Value | undefined) =>
 let oracle: Oracle;
 let project: Awaited<ReturnType<typeof writeProject>>;
 let main: Awaited<ReturnType<typeof run>>;
+/** Category charts end at the last complete day: the local midnight at or before the horizon. */
+let categoryEnd: string;
 
 async function grouped(sql: string, keys: string[]): Promise<Map<string, number | null>> {
   const out = new Map<string, number | null>();
@@ -522,6 +524,10 @@ beforeAll(async () => {
   await oracle.rows(
     `CREATE TABLE o AS SELECT order_id, CAST(ordered_at AS TIMESTAMPTZ) AS ts, NULLIF(region, '') AS region, NULLIF(channel, '') AS channel, status, CAST(amount AS DOUBLE) AS amount, customer_id FROM read_csv('${orders}', all_varchar = true)`,
   );
+  const [end] = await oracle.rows(
+    `SELECT strftime(least(date_trunc('day', max(${LOCAL})), TIMESTAMP '2026-07-01'), '%Y-%m-%d %H:%M:%S') AS d FROM o`,
+  );
+  categoryEnd = String(end?.d);
   main = await run(project.root, project.project, "main");
 });
 afterAll(async () => {
@@ -564,11 +570,11 @@ describe("stacked charts against a SQL oracle (HAT-58 harness)", () => {
     const b = block(main.data, "net_pct");
     const pos = b.axis.categories ?? [];
     const t = await grouped(
-      `SELECT region, sum(amount) AS v FROM o WHERE ${win("2026-07-01")} GROUP BY ALL`,
+      `SELECT region, sum(amount) AS v FROM o WHERE ${win(categoryEnd)} GROUP BY ALL`,
       ["region"],
     );
     const p = await grouped(
-      `SELECT region, channel, sum(amount) AS v FROM o WHERE ${win("2026-07-01")} GROUP BY ALL`,
+      `SELECT region, channel, sum(amount) AS v FROM o WHERE ${win(categoryEnd)} GROUP BY ALL`,
       ["region", "channel"],
     );
     expect(new Set(pos.map((x) => K(x)))).toEqual(new Set(t.keys()));
@@ -593,11 +599,11 @@ describe("stacked charts against a SQL oracle (HAT-58 harness)", () => {
   it("orders_stack: a count stack with null groups", async () => {
     const b = block(main.data, "orders_stack");
     const t = await grouped(
-      `SELECT region, count(*) AS v FROM o WHERE ${win("2026-07-01")} GROUP BY ALL`,
+      `SELECT region, count(*) AS v FROM o WHERE ${win(categoryEnd)} GROUP BY ALL`,
       ["region"],
     );
     const p = await grouped(
-      `SELECT region, channel, count(*) AS v FROM o WHERE ${win("2026-07-01")} GROUP BY ALL`,
+      `SELECT region, channel, count(*) AS v FROM o WHERE ${win(categoryEnd)} GROUP BY ALL`,
       ["region", "channel"],
     );
     expect(compare(b, b.axis.categories ?? [], t, p, { share: true, sumsToOne: true })).toEqual([]);
@@ -606,7 +612,7 @@ describe("stacked charts against a SQL oracle (HAT-58 harness)", () => {
   it("multi_pct: several metrics total as their sum", async () => {
     const b = block(main.data, "multi_pct");
     const rows = await oracle.rows(
-      `SELECT region, sum(amount) FILTER (WHERE status = 'paid') AS rev, sum(amount) AS net FROM o WHERE ${win("2026-07-01")} GROUP BY ALL`,
+      `SELECT region, sum(amount) FILTER (WHERE status = 'paid') AS rev, sum(amount) AS net FROM o WHERE ${win(categoryEnd)} GROUP BY ALL`,
     );
     const by = new Map(rows.map((x) => [K(x.region), x]));
     (b.axis.categories ?? []).forEach((c, i) => {
@@ -661,7 +667,7 @@ describe("stacked charts against a SQL oracle (HAT-58 harness)", () => {
   it("rev_h_top3: limit keeps the top positions, each with its full total", async () => {
     const b = block(main.data, "rev_h_top3");
     const top = await oracle.rows(
-      `SELECT channel, sum(amount) FILTER (WHERE status = 'paid') AS v FROM o WHERE ${win("2026-07-01")} GROUP BY ALL ORDER BY v DESC NULLS LAST, channel NULLS LAST LIMIT 3`,
+      `SELECT channel, sum(amount) FILTER (WHERE status = 'paid') AS v FROM o WHERE ${win(categoryEnd)} GROUP BY ALL ORDER BY v DESC NULLS LAST, channel NULLS LAST LIMIT 3`,
     );
     expect(b.axis.categories).toEqual(top.map((r) => r.channel ?? null));
     top.forEach((r, i) => {
@@ -707,7 +713,7 @@ describe("stacked charts against a SQL oracle (HAT-58 harness)", () => {
   it("a multi-select default on the split column", async () => {
     const result = await run(project.root, project.project, "filtered");
     const b = block(result.data, "f_pct");
-    const where = `${win("2026-07-01")} AND region IN ('Europe', 'Asia-Pacific')`;
+    const where = `${win(categoryEnd)} AND region IN ('Europe', 'Asia-Pacific')`;
     const t = await grouped(
       `SELECT channel, sum(amount) FILTER (WHERE status = 'paid') AS v FROM o WHERE ${where} GROUP BY ALL`,
       ["channel"],

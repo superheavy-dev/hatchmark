@@ -152,6 +152,8 @@ let stacked: Awaited<ReturnType<typeof run>>;
 let csv: string;
 const LOCAL = `(ordered_at AT TIME ZONE '${NY}')`;
 const WINDOW = `${LOCAL} >= TIMESTAMP '2026-01-01' AND ${LOCAL} < TIMESTAMP '2026-07-01'`;
+/** Category charts read whole local days through the last complete one: the midnight at or before the data's horizon. */
+let CATEGORY: string;
 
 function block<T>(data: DashboardData | undefined, id: string): T {
   const found = data?.blocks.find((b) => b.id === id);
@@ -189,6 +191,10 @@ beforeAll(async () => {
     ...Object.fromEntries(Object.entries(DASHBOARDS).map(([n, d]) => [`dashboards/${n}.json`, d])),
   });
   csv = path.join(project.root, "data/orders.csv");
+  const [end] = await oracle.rows(
+    `SELECT strftime(least(date_trunc('day', max(${LOCAL})), TIMESTAMP '2026-07-01'), '%Y-%m-%d %H:%M:%S') AS d FROM read_csv('${csv}')`,
+  );
+  CATEGORY = `${LOCAL} >= TIMESTAMP '2026-01-01' AND ${LOCAL} < TIMESTAMP '${end?.d}'`;
   stacked = await run(project.root, project.project, "stacked");
 });
 afterAll(async () => {
@@ -212,12 +218,12 @@ describe("stacked blocks against a SQL oracle", () => {
     expect(b.stack).toBe(true);
     const totals = await grouped(
       `SELECT region, CAST(sum(amount) FILTER (WHERE status = 'paid') AS DOUBLE) AS v
-       FROM read_csv('${csv}') WHERE ${WINDOW} GROUP BY region`,
+       FROM read_csv('${csv}') WHERE ${CATEGORY} GROUP BY region`,
       ["region"],
     );
     const parts = await grouped(
       `SELECT region, channel, CAST(sum(amount) FILTER (WHERE status = 'paid') AS DOUBLE) AS v
-       FROM read_csv('${csv}') WHERE ${WINDOW} GROUP BY region, channel`,
+       FROM read_csv('${csv}') WHERE ${CATEGORY} GROUP BY region, channel`,
       ["region", "channel"],
     );
     if (b.axis.kind !== "category") throw new Error("category axis expected");
@@ -242,7 +248,7 @@ describe("stacked blocks against a SQL oracle", () => {
     const b = block<BarData>(stacked.data, "top2");
     const totals = await oracle.rows(
       `SELECT region, CAST(sum(amount) FILTER (WHERE status = 'paid') AS DOUBLE) AS v
-       FROM read_csv('${csv}') WHERE ${WINDOW} GROUP BY region ORDER BY v DESC NULLS LAST, region LIMIT 2`,
+       FROM read_csv('${csv}') WHERE ${CATEGORY} GROUP BY region ORDER BY v DESC NULLS LAST, region LIMIT 2`,
     );
     if (b.axis.kind !== "category") throw new Error("category axis expected");
     expect(b.axis.categories).toEqual(totals.map((r) => r.region ?? null));
@@ -254,7 +260,7 @@ describe("stacked blocks against a SQL oracle", () => {
     const b = block<BarData>(stacked.data, "multi");
     const rows = await grouped(
       `SELECT region, CAST(coalesce(sum(amount) FILTER (WHERE status = 'paid'), 0) + coalesce(sum(refund), 0) AS DOUBLE) AS v
-       FROM read_csv('${csv}') WHERE ${WINDOW} GROUP BY region`,
+       FROM read_csv('${csv}') WHERE ${CATEGORY} GROUP BY region`,
       ["region"],
     );
     if (b.axis.kind !== "category") throw new Error("category axis expected");
@@ -333,7 +339,7 @@ describe("stacked blocks against a SQL oracle", () => {
     const b = block<BarData>(filtered.data, "pct_filtered");
     const totals = await grouped(
       `SELECT region, CAST(sum(amount) FILTER (WHERE status = 'paid') AS DOUBLE) AS v
-       FROM read_csv('${csv}') WHERE ${WINDOW} AND channel = 'Marketplace' GROUP BY region`,
+       FROM read_csv('${csv}') WHERE ${CATEGORY} AND channel = 'Marketplace' GROUP BY region`,
       ["region"],
     );
     if (b.axis.kind !== "category") throw new Error("category axis expected");
