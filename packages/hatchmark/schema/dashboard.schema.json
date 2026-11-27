@@ -499,6 +499,23 @@
             "$ref": "#/$defs/Grain"
           }
         },
+        "edges": {
+          "type": "string",
+          "enum": [
+            "snap",
+            "clip"
+          ],
+          "description": "Where the first bucket starts. \"snap\" (default) starts the window at the start of the bucket it falls in, so the first bucket is whole; \"clip\" keeps the window start and marks the first bucket partial."
+        },
+        "incomplete": {
+          "type": "string",
+          "enum": [
+            "mark",
+            "hide",
+            "show"
+          ],
+          "description": "Buckets the data doesn't fully cover. \"mark\" (default) lists them in each series' partial; \"hide\" leaves them out; \"show\" draws them as complete buckets (check warns with HM4014 for a flow metric)."
+        },
         "split": {
           "description": "Column that splits one metric into series.",
           "type": "string",
@@ -555,6 +572,23 @@
           "items": {
             "$ref": "#/$defs/Grain"
           }
+        },
+        "edges": {
+          "type": "string",
+          "enum": [
+            "snap",
+            "clip"
+          ],
+          "description": "Where the first bucket starts. \"snap\" (default) starts the window at the start of the bucket it falls in, so the first bucket is whole; \"clip\" keeps the window start and marks the first bucket partial."
+        },
+        "incomplete": {
+          "type": "string",
+          "enum": [
+            "mark",
+            "hide",
+            "show"
+          ],
+          "description": "Buckets the data doesn't fully cover. \"mark\" (default) lists them in each series' partial; \"hide\" leaves them out; \"show\" draws them as complete buckets (check warns with HM4014 for a flow metric)."
         },
         "split": {
           "description": "Column that splits one metric into series.",
@@ -635,6 +669,23 @@
             "$ref": "#/$defs/Grain"
           }
         },
+        "edges": {
+          "description": "With grain only. Defaults to snap.",
+          "type": "string",
+          "enum": [
+            "snap",
+            "clip"
+          ]
+        },
+        "incomplete": {
+          "description": "With grain only. Defaults to mark.",
+          "type": "string",
+          "enum": [
+            "mark",
+            "hide",
+            "show"
+          ]
+        },
         "split": {
           "type": "string",
           "minLength": 1,
@@ -672,7 +723,34 @@
         "type",
         "metrics"
       ],
-      "additionalProperties": false
+      "additionalProperties": false,
+      "allOf": [
+        {
+          "if": {
+            "not": {
+              "required": [
+                "grain"
+              ]
+            }
+          },
+          "then": {
+            "not": {
+              "anyOf": [
+                {
+                  "required": [
+                    "edges"
+                  ]
+                },
+                {
+                  "required": [
+                    "incomplete"
+                  ]
+                }
+              ]
+            }
+          }
+        }
+      ]
     },
     "Sort": {
       "type": "object",

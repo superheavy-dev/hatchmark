@@ -49,11 +49,22 @@ const kpiBlock = z
   })
   .meta({ id: "KpiBlock" });
 
+const edges = z.enum(["snap", "clip"]).meta({
+  description:
+    'Where the first bucket starts. "snap" (default) starts the window at the start of the bucket it falls in, so the first bucket is whole; "clip" keeps the window start and marks the first bucket partial.',
+});
+const incomplete = z.enum(["mark", "hide", "show"]).meta({
+  description:
+    'Buckets the data doesn\'t fully cover. "mark" (default) lists them in each series\' partial; "hide" leaves them out; "show" draws them as complete buckets (check warns with HM4014 for a flow metric).',
+});
+
 const timeSeriesFields = {
   ...blockCommon,
   metrics: metricList,
   grain: grainSchema,
   grains: grainsField(),
+  edges: edges.optional(),
+  incomplete: incomplete.optional(),
   split: columnName.optional().meta({ description: "Column that splits one metric into series." }),
 };
 
@@ -127,6 +138,8 @@ const barBlock = z
       .optional()
       .meta({ description: "Time buckets on the axis. Use either by or grain." }),
     grains: grainsField(),
+    edges: edges.optional().meta({ description: "With grain only. Defaults to snap." }),
+    incomplete: incomplete.optional().meta({ description: "With grain only. Defaults to mark." }),
     split: columnName.optional(),
     stack: stackField,
     orientation: z.enum(["vertical", "horizontal"]).optional(),
@@ -145,6 +158,18 @@ const barBlock = z
           : customIssue("HM3007", ["grain"], 'use either "by" or "grain", not both'),
       );
     }
+    if (b.grain === undefined) {
+      for (const key of ["edges", "incomplete"] as const) {
+        if (b[key] === undefined) continue;
+        ctx.addIssue(
+          customIssue(
+            "HM3007",
+            [key],
+            `"${key}" shapes time buckets; use it with "grain", not "by"`,
+          ),
+        );
+      }
+    }
     if (b.grain !== undefined) {
       for (const key of ["sort", "limit"] as const) {
         if (b[key] === undefined) continue;
@@ -160,7 +185,16 @@ const barBlock = z
     oneMetricWhenSplit(b, ctx);
     grainInGrains(b, ctx);
   })
-  .meta({ id: "BarBlock" });
+  .meta({
+    id: "BarBlock",
+    allOf: [
+      {
+        if: { not: { required: ["grain"] } },
+        // biome-ignore lint/suspicious/noThenProperty: a JSON Schema keyword, not a thenable
+        then: { not: { anyOf: [{ required: ["edges"] }, { required: ["incomplete"] }] } },
+      },
+    ],
+  });
 
 /** Slices a pie or donut shows before grouping the rest into "Other". */
 export const PIE_DEFAULT_LIMIT = 5;

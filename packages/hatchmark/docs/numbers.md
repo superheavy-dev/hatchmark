@@ -46,8 +46,11 @@ ZONE` value is converted to it. A timestamp without an offset (`2026-01-31 18:30
   grain). The axis lists every
   bucket of the window, empty ones included. Each series ends at its own horizon instant: buckets
   after it have no value, and the bucket it cuts is listed in `partial` with the share elapsed in
-  local wall-clock time. The cutoff is compared as a UTC instant, so it stays exact inside a
-  repeated fall-back hour, and `axis.window.endAt` gives its local time. The first bucket may also begin before the window.
+  local wall-clock time (`incomplete: "hide"` leaves such buckets out, `"show"` draws them plainly,
+  with HM4014 for a flow metric). The window starts at the start of its first bucket, so that
+  bucket is whole, unless the block sets `edges: "clip"`, which marks it partial instead. The cutoff
+  is compared as a UTC instant, so it stays exact inside a
+  repeated fall-back hour, and `axis.window.endAt` gives its local time.
 
 ## Filters
 

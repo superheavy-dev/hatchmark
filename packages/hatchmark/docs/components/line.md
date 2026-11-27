@@ -12,15 +12,17 @@ A metric over time.
 }
 ```
 
-| Field          | Meaning                                                                                                                                                         |
-| -------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `metrics`      | One to eight metrics, one line each. Lines share one y axis, so pick metrics with the same unit.                                                                |
-| `grain`        | `day`, `week`, `month`, `quarter` or `year`, or `{ "unit": "year", "anchor": "07-01" }` to start buckets elsewhere than the project `anchors`.                  |
-| `grains`       | Optional. Two to six grains the card switches between, such as `["week", "month", "quarter"]`. `grain` is the one shown first and must be in the list (HM3007). |
-| `split`        | A column that splits one metric into a line per value, such as `region`. Needs exactly one metric.                                                              |
-| `type: "area"` | Fills under each line. Add `"stack": true` to stack the areas, or `"stack": "percent"` to stack them to 100% ([stacked](stacked.md)).                           |
-| `title`        | State the finding ("Asia-Pacific is the fastest-growing region"). The subtitle says what is measured.                                                           |
-| `span`         | Width in the 12-column grid. Default 12. At least 3: a smaller span is drawn 3 wide, with HM2024.                                                               |
+| Field          | Meaning                                                                                                                                                                                                                                             |
+| -------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `metrics`      | One to eight metrics, one line each. Lines share one y axis, so pick metrics with the same unit.                                                                                                                                                    |
+| `grain`        | `day`, `week`, `month`, `quarter` or `year`, or `{ "unit": "year", "anchor": "07-01" }` to start buckets elsewhere than the project `anchors`.                                                                                                      |
+| `grains`       | Optional. Two to six grains the card switches between, such as `["week", "month", "quarter"]`. `grain` is the one shown first and must be in the list (HM3007).                                                                                     |
+| `edges`        | `snap` (default) starts the window at the start of the bucket it falls in, so the first week of "last 30 days" is a whole week. `clip` keeps the window's own start and marks that first bucket partial.                                            |
+| `incomplete`   | Buckets the data covers only part of. `mark` (default) keeps them, listed in the series' `partial`; `hide` leaves them out; `show` draws them like the others, and check --sql and build warn (HM4014) when a flow metric's last bucket is partial. |
+| `split`        | A column that splits one metric into a line per value, such as `region`. Needs exactly one metric.                                                                                                                                                  |
+| `type: "area"` | Fills under each line. Add `"stack": true` to stack the areas, or `"stack": "percent"` to stack them to 100% ([stacked](stacked.md)).                                                                                                               |
+| `title`        | State the finding ("Asia-Pacific is the fastest-growing region"). The subtitle says what is measured.                                                                                                                                               |
+| `span`         | Width in the 12-column grid. Default 12. At least 3: a smaller span is drawn 3 wide, with HM2024.                                                                                                                                                   |
 
 What it draws:
 

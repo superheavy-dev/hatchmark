@@ -432,14 +432,14 @@ describe("DuckDB executor against a SQL ROLLUP oracle", () => {
     expect(block<KpiData>(data, "orders").value).toBe(3);
   });
 
-  it("clips partial weeks at the window edges and buckets Sunday weeks in New York", async () => {
+  it("snaps the first week back to its Sunday and buckets Sunday weeks in New York", async () => {
     const { data } = await run(edge.root, edge.project, "weeks");
     const line = block<LineData>(data, "weekly");
     expect(line.axis).toEqual({
       kind: "time",
       grain: "week",
       buckets: ["2026-03-29", "2026-04-05", "2026-04-12", "2026-04-19", "2026-04-26"],
-      window: { start: "2026-04-01", end: "2026-05-01" },
+      window: { start: "2026-03-29", end: "2026-05-01" },
     });
     expect(line.series.map((s) => s.values)).toEqual([
       [0, 110, 0, 0, 150],

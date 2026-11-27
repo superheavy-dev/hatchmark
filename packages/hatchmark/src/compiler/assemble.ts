@@ -278,24 +278,90 @@ class Assembler {
     expression: MeasureExpression | undefined,
     buckets: string[],
     grain: ResolvedGrain,
+    clipFrom?: string,
   ): T & { partial?: PartialBucket[] } {
     const at = this.horizon(expression);
-    if (at === undefined) return series;
-    const horizon = toLocal(at, this.context.timezone);
+    const clip = clipFrom === undefined ? undefined : parseInstant(clipFrom);
+    if (at === undefined && clip === undefined) return series;
+    const horizon = at === undefined ? undefined : toLocal(at, this.context.timezone);
     const partial: PartialBucket[] = [];
     const values = series.values.map((value, index) => {
       const start = parseInstant(buckets[index] ?? "");
       const end = parseInstant(bucketEnd(buckets[index] ?? "", grain));
-      if (start >= horizon) return null;
-      if (horizon < end) {
+      const from = index === 0 && clip !== undefined && clip > start ? clip : start;
+      if (horizon !== undefined && from >= horizon) return null;
+      const to = horizon !== undefined && horizon < end ? horizon : end;
+      if (from > start || to < end) {
         partial.push({
           index,
-          elapsed: Number(((horizon - start) * 1_000_000n) / (end - start)) / 1e6,
+          elapsed: Number(((to - from) * 1_000_000n) / (end - start)) / 1e6,
+          ...(from > start ? { edge: "start" as const } : {}),
         });
       }
       return value;
     });
     return { ...series, values, ...(partial.length > 0 ? { partial } : {}) };
+  }
+
+  /**
+   * A time-series block's incomplete option (RFC 0001 section 6.5): "mark" keeps each series'
+   * partial buckets; "show" drops the markers (executionContext warns with HM4014 when a flow
+   * metric's last bucket is partial); "hide" gives partial buckets no value and drops the leading
+   * buckets that are then empty in every series and the trailing ones that are also partial or past
+   * every series' horizon, ending the axis window where the kept buckets do. hidden
+   * lists the kept positions where a value was hidden, so a stack has no total there.
+   */
+  incomplete<S extends Series>(
+    block: Block & { type: "line" | "area" | "bar" },
+    plan: BlockPlan,
+    axis: TimeAxis,
+    series: S[],
+  ): { axis: TimeAxis; series: S[]; hidden: number[] } {
+    const mode = block.incomplete ?? "mark";
+    if (mode === "mark") return { axis, series, hidden: [] };
+    const plain = series.map(({ partial: _, ...rest }) => rest as S);
+    if (mode === "show") return { axis, series: plain, hidden: [] };
+    const hidden = series.map((s, k) => {
+      const cut = new Set((s.partial ?? []).map((p) => p.index));
+      return { ...plain[k], values: s.values.map((v, i) => (cut.has(i) ? null : v)) } as S;
+    });
+    const partialAt = new Set(series.flatMap((s) => (s.partial ?? []).map((p) => p.index)));
+    const horizons = series.map((s) => this.horizon(plan.measures[s.metric]));
+    const past = (i: number) => {
+      const bucket = axis.buckets[i] ?? "";
+      const from = i === 0 && axis.window.start > bucket ? axis.window.start : bucket;
+      return horizons.every(
+        (h) => h !== undefined && parseInstant(from) >= toLocal(h, this.context.timezone),
+      );
+    };
+    const empty = (i: number) => hidden.every((s) => s.values[i] === null);
+    let first = 0;
+    while (first < axis.buckets.length && (partialAt.has(first) || past(first)) && empty(first)) {
+      first++;
+    }
+    let last = axis.buckets.length;
+    while (last > first && (partialAt.has(last - 1) || past(last - 1)) && empty(last - 1)) last--;
+    const { startAt, endAt, ...window } = axis.window;
+    const start = first > 0 && first < last ? axis.buckets[first] : undefined;
+    const end =
+      first === last
+        ? (start ?? window.start)
+        : last < axis.buckets.length
+          ? axis.buckets[last]
+          : undefined;
+    return {
+      axis: {
+        ...axis,
+        buckets: axis.buckets.slice(first, last),
+        window: {
+          ...window,
+          ...(start !== undefined ? { start } : startAt !== undefined ? { startAt } : {}),
+          ...(end !== undefined ? { end } : endAt !== undefined ? { endAt } : {}),
+        },
+      },
+      series: hidden.map((s) => ({ ...s, values: s.values.slice(first, last) })),
+      hidden: [...partialAt].filter((i) => i >= first && i < last).map((i) => i - first),
+    };
   }
 
   /** Distinct dimension values of a grouping set across queries, sorted by key. */
@@ -426,19 +492,22 @@ class Assembler {
 
   /**
    * A stack's totals cut at the horizon of every stacked metric, like its series: a bucket past any
-   * of them has no total and no shares, since a part of the whole is missing there.
+   * of them has no total and no shares, since a part of the whole is missing there. So has a
+   * position in hidden, where incomplete "hide" left a value out.
    */
   cutTotals(
     stacked: { series: Series[]; extra: StackTotals },
     expressions: (MeasureExpression | undefined)[],
     buckets: string[],
     grain: ResolvedGrain,
+    hidden: number[] = [],
   ): { series: Series[]; extra: StackTotals } {
     const { totals } = stacked.extra;
     if (totals === undefined) return stacked;
+    const gone = new Set(hidden);
     const cut = expressions.reduce(
       (values, expression) => this.cut({ values }, expression, buckets, grain).values,
-      totals,
+      totals.map((v, i) => (gone.has(i) ? null : v)),
     );
     return {
       series: stacked.series.map((s) =>
@@ -514,6 +583,7 @@ class Assembler {
   }
 
   line(block: Block & { type: "line" | "area" }, plan: BlockPlan, common: Common): LineData {
+    const clip = (axis: TimeAxis) => (block.edges === "clip" ? axis.window.start : undefined);
     const expressions = block.metrics.map((m) => plan.measures[m]);
     const axis = this.timeAxis(
       expressions,
@@ -526,31 +596,34 @@ class Assembler {
       block.split === undefined
         ? this.metricSeries(block.metrics, plan.measures, axis.buckets)
         : this.splitSeries(first, plan.measures[first], axis.buckets, stack ? 2 : 1, 2)
-    ).map((one) => this.cut(one, plan.measures[one.metric], axis.buckets, grain));
+    ).map((one) => this.cut(one, plan.measures[one.metric], axis.buckets, grain, clip(axis)));
+    const shown = this.incomplete(block, plan, axis, series);
     const stacked = this.cutTotals(
       this.stacked(
         stack,
-        series,
+        shown.series,
         block.split === undefined
           ? undefined
-          : (i) => this.evaluate(plan.measures[first], 1, [axis.buckets[i] ?? null, null]),
+          : (i) => this.evaluate(plan.measures[first], 1, [shown.axis.buckets[i] ?? null, null]),
         plan,
       ),
-      block.metrics.map((m) => plan.measures[m]),
-      axis.buckets,
+      expressions,
+      shown.axis.buckets,
       grain,
+      shown.hidden,
     );
     return {
       ...common,
       type: block.type,
       ...(block.type === "area" ? { stack: Boolean(stack) } : {}),
-      axis,
+      axis: shown.axis,
       series: stacked.series,
       ...stacked.extra,
     };
   }
 
   bar(block: Block & { type: "bar" }, plan: BlockPlan, common: Common): BarData {
+    const clip = (axis: TimeAxis) => (block.edges === "clip" ? axis.window.start : undefined);
     const expressions = block.metrics.map((m) => plan.measures[m]);
     const [first = ""] = block.metrics;
     const split = block.split !== undefined;
@@ -575,19 +648,23 @@ class Assembler {
         plan.grain ?? resolveGrain(block.grain, this.plan.anchors),
       );
       const grain = plan.grain ?? resolveGrain(block.grain, this.plan.anchors);
-      const { series, extra } = this.cutTotals(
-        stacked(
-          (split
-            ? this.splitSeries(first, plan.measures[first], axis.buckets, 2, 2)
-            : this.metricSeries(block.metrics, plan.measures, axis.buckets)
-          ).map((one) => this.cut(one, plan.measures[one.metric], axis.buckets, grain)),
-          axis.buckets,
-        ),
-        expressions,
-        axis.buckets,
-        grain,
+      const shown = this.incomplete(
+        block,
+        plan,
+        axis,
+        (split
+          ? this.splitSeries(first, plan.measures[first], axis.buckets, 2, 2)
+          : this.metricSeries(block.metrics, plan.measures, axis.buckets)
+        ).map((one) => this.cut(one, plan.measures[one.metric], axis.buckets, grain, clip(axis))),
       );
-      return { ...base, axis, series, ...extra };
+      const { series, extra } = this.cutTotals(
+        stacked(shown.series, shown.axis.buckets),
+        expressions,
+        shown.axis.buckets,
+        grain,
+        shown.hidden,
+      );
+      return { ...base, axis: shown.axis, series, ...extra };
     }
     const column = block.by ?? "";
     const all = this.keys(expressions, 0).map((keys) => keys[0] ?? null);

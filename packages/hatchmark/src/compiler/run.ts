@@ -1,5 +1,13 @@
 import { type Diagnostic, docsCommand } from "../diagnostics/index.js";
-import { checkReferences, type Project, parseDiagnostics } from "../spec/index.js";
+import {
+  blockId,
+  checkReferences,
+  type Metric,
+  type Project,
+  parseDiagnostics,
+  resolveGrain,
+  timeNature,
+} from "../spec/index.js";
 import { assemble } from "./assemble.js";
 import type { DashboardData } from "./dashboard-data.js";
 import {
@@ -25,7 +33,16 @@ import type {
   QueryResult,
 } from "./plan.js";
 import { planDashboard } from "./planner.js";
-import { measureHorizon, nextDay, queryBounds, resolveRange, SUPPORTED_DATES } from "./windows.js";
+import {
+  bucketEnd,
+  bucketStart,
+  measureHorizon,
+  nextDay,
+  queryBounds,
+  resolveRange,
+  SUPPORTED_DATES,
+  windowAt,
+} from "./windows.js";
 
 /**
  * A QueryExecutor that can also measure source horizons (RFC 0001 section 6.1). horizon returns the
@@ -306,6 +323,56 @@ export async function executionContext(
       ...location,
       help: "pick a range that ends after the data does, or set period.asOf",
       docs: docsCommand("HM4013"),
+    });
+  }
+  const specs = new Map<string, Metric>();
+  for (const [name, metricFile] of project.metrics) {
+    if (metricFile.spec) specs.set(name, metricFile.spec);
+  }
+  const ids = (e: MeasureExpression): string[] =>
+    e.op === "ref" ? [e.queryId] : [...ids(e.numerator), ...ids(e.denominator)];
+  const local = (text: string) =>
+    text.endsWith("Z") ? toLocal(parseInstant(text), tz) : parseInstant(text);
+  for (const block of plan.blocks) {
+    const spec = file?.spec?.blocks.find((b, i) => blockId(b, i) === block.blockId);
+    if (spec === undefined || !("incomplete" in spec) || spec.incomplete !== "show") continue;
+    const grain = block.grain ?? (spec.grain && resolveGrain(spec.grain, plan.anchors));
+    const readings = block.grains ?? (grain ? [{ grain, measures: block.measures }] : []);
+    const partial = readings.flatMap(({ grain, measures }) =>
+      Object.entries(measures)
+        .filter(
+          ([name, expression]) =>
+            timeNature(name, specs) === "flow" &&
+            ids(expression).some((id) => {
+              const query = queries.get(id);
+              const horizon = query && measureHorizon(query, context);
+              const bounds =
+                query && windowAt(query, context, parseInstant(context.asOfInstant ?? ""));
+              if (horizon === undefined || bounds === undefined) return false;
+              const at = toLocal(horizon, tz);
+              const start = bounds.kind === "bounded" ? local(bounds.start) : undefined;
+              if (start !== undefined && at <= start) return false;
+              const end = bounds.end === undefined ? at : local(bounds.end);
+              const last = formatWall((end < at ? end : at) - 1n).slice(0, 10);
+              const bucket = bucketStart(last, grain);
+              return (
+                (start !== undefined && start > parseInstant(bucket)) ||
+                at < parseInstant(bucketEnd(bucket, grain))
+              );
+            }),
+        )
+        .map(([name]) => ({ name, unit: grain.unit })),
+    );
+    const [first] = partial;
+    if (first === undefined) continue;
+    const pointer = `${block.pointer}/incomplete`;
+    notes.push({
+      code: "HM4014",
+      severity: "warning",
+      message: `block "${block.blockId}" shows its last ${first.unit} as complete, but the data for "${first.name}" covers only part of it, so it reads low`,
+      ...(file ? { file: file.file, pointer, ...file.document.locationOf(pointer) } : {}),
+      help: 'use "mark" (the default) to show it as in progress, or "hide" to leave it out',
+      docs: docsCommand("HM4014"),
     });
   }
   return { context, diagnostics: notes };

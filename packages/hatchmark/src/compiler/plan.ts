@@ -95,6 +95,11 @@ export interface PlannedWindow {
    * with column.
    */
   horizons?: TimeColumn[];
+  /**
+   * "clip" keeps a time series' window start (RFC 0001 section 6.5); absent, the start snaps back to
+   * the start of its first bucket. Only on a query with a time dimension.
+   */
+  edges?: "clip";
 }
 
 export interface PlannedQuery {

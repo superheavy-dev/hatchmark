@@ -31,7 +31,16 @@ import {
   series,
   span,
 } from "./fixtures.js";
-import { FISCAL_BARS, MONTH, QUARTER_BARS, REGION_SWITCH, revenueSwitch, WEEK } from "./grains.js";
+import {
+  FISCAL_BARS,
+  incompleteBars,
+  incompleteLine,
+  MONTH,
+  QUARTER_BARS,
+  REGION_SWITCH,
+  revenueSwitch,
+  WEEK,
+} from "./grains.js";
 import {
   TABLE_GROUP_CAMPAIGNS,
   TABLE_GROUP_CITIES,
@@ -679,6 +688,43 @@ const GRAIN_LINES: GalleryVariant[] = [
     "line-grains-split",
     "Grain switch on a split line (quarter selected)",
     REGION_SWITCH,
+  ),
+];
+
+/** The edges and incomplete options over a quarter whose data ends mid-week (RFC 0001 6.5). */
+const INCOMPLETE_LINES: GalleryVariant[] = [
+  one(
+    "line",
+    "line-incomplete-mark",
+    "Data through Sep 23: the last week is partial (incomplete: mark, the default)",
+    incompleteLine("weeks_mark", "Weekly revenue, third quarter", {}),
+  ),
+  one(
+    "line",
+    "line-incomplete-hide",
+    "The partial last week left out (incomplete: hide)",
+    incompleteLine("weeks_hide", "Weekly revenue, third quarter", { hide: true }),
+  ),
+  one(
+    "line",
+    "line-edges-clip",
+    "The first week clipped at Jul 1 (edges: clip) instead of starting on Jun 29",
+    incompleteLine("weeks_clip", "Weekly revenue, third quarter", { clip: true }),
+  ),
+];
+
+const INCOMPLETE_BARS: GalleryVariant[] = [
+  one(
+    "bar",
+    "bar-incomplete-mark",
+    "September is 23 of 30 days in (incomplete: mark, the default)",
+    incompleteBars("months_mark", "Monthly revenue, third quarter", {}),
+  ),
+  one(
+    "bar",
+    "bar-incomplete-hide",
+    "The partial month left out (incomplete: hide)",
+    incompleteBars("months_hide", "Monthly revenue, third quarter", { hide: true }),
   ),
 ];
 
@@ -1356,9 +1402,11 @@ export const GALLERY: GalleryVariant[] = [
   ...KPIS,
   ...LINES,
   ...GRAIN_LINES,
+  ...INCOMPLETE_LINES,
   ...BARS,
   ...GRAIN_BARS,
   ...STACKED,
+  ...INCOMPLETE_BARS,
   ...PIES,
   ...SCATTER,
   ...TABLES,

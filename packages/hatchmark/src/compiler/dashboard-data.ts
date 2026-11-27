@@ -45,6 +45,11 @@ export type EmptyWindow = "no_complete_day" | "no_data";
 export interface PartialBucket {
   index: number;
   elapsed: number;
+  /**
+   * "start" when a clipped window (block option edges: "clip") begins inside this first bucket;
+   * elapsed is then the share of the bucket inside the window.
+   */
+  edge?: "start";
 }
 
 export interface MetricInfo {

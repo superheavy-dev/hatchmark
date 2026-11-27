@@ -173,6 +173,7 @@ function planReading(
   groupingSets: number[][],
   shift: Comparison,
   oneWindow = false,
+  edges?: "clip",
 ): Reading {
   const groups = new Map<
     string,
@@ -224,6 +225,7 @@ function planReading(
   for (const [key, group] of groups) {
     const input = ctx.sources[group.source];
     if (input === undefined || input.type === "lookup") continue;
+    const grainAxis = axes.some((axis) => axis.kind === "time");
     const dimensions: PlannedDimension[] = axes.map((axis) =>
       axis.kind === "column" ? axis : { kind: "time", column: group.time ?? "", grain: axis.grain },
     );
@@ -240,7 +242,13 @@ function planReading(
       window:
         group.time === undefined
           ? { range: "all_time", shift: "none" }
-          : { range: ctx.range, shift, column: group.time, horizons: group.horizons },
+          : {
+              range: ctx.range,
+              shift,
+              column: group.time,
+              horizons: group.horizons,
+              ...(edges !== undefined && grainAxis ? { edges } : {}),
+            },
       params: paramsForQuery(ctx.params, group.source, group.time),
     };
     const id = queryId(shape);
@@ -282,7 +290,15 @@ function seriesReading(
   if (block.split !== undefined) axes.push({ kind: "column", column: block.split });
   const perPosition = block.type === "bar" || (block.type === "area" && Boolean(block.stack));
   const sets = block.split === undefined ? [[0]] : perPosition ? [[0, 1], [0], [1]] : [[0, 1], [1]];
-  return planReading(ctx, block.metrics, axes, sets, "none");
+  return planReading(
+    ctx,
+    block.metrics,
+    axes,
+    sets,
+    "none",
+    false,
+    grain !== undefined && block.edges === "clip" ? "clip" : undefined,
+  );
 }
 
 /**

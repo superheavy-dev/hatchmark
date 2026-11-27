@@ -4,6 +4,7 @@ import type {
   DateSpan,
   GrainSwitch,
   LineData,
+  PartialBucket,
   Series,
   Value,
 } from "../src/compiler/dashboard-data.js";
@@ -46,18 +47,23 @@ MONTHS.forEach((month, i) => {
   for (const d of days) DAILY.set(d.date, ((MONTHLY_REVENUE[i] as number) * d.weight) / total);
 });
 
-/** One series' values per bucket of a grain over a window, summed from the daily values. */
+/**
+ * One series' values per bucket of a grain over a window, summed from the daily values. The window
+ * starts at its first bucket, as edges "snap" (the default) does; clip keeps the window's own start.
+ */
 function bucketed(
   window: DateSpan,
   grain: ResolvedGrain,
   share = 1,
+  clip = false,
 ): { buckets: string[]; values: Value[] } {
   const buckets = timeBuckets(window.start, window.end, grain);
+  const from = clip ? window.start : (buckets[0] ?? window.start);
   const values = buckets.map((start, i) => {
     const end = buckets[i + 1] ?? window.end;
     let sum = 0;
     for (const [date, v] of DAILY)
-      if (date >= start && date < end && date >= window.start && date < window.end) sum += v;
+      if (date >= start && date < end && date >= from && date < window.end) sum += v;
     return round(sum * share);
   });
   return { buckets, values };
@@ -80,7 +86,10 @@ function grainSwitch(
         kind: "time",
         grain: grain.unit,
         buckets: timeBuckets(window.start, window.end, grain),
-        window,
+        window: {
+          ...window,
+          start: timeBuckets(window.start, window.end, grain)[0] ?? window.start,
+        },
       },
       series: make(grain),
     })),
@@ -170,5 +179,71 @@ export const FISCAL_BARS: BarData = withGrains<BarData>(
   },
   grainSwitch(RETAIL, [QUARTER, RETAIL_QUARTER], RETAIL_QUARTER, revenue(RETAIL)),
 );
+
+/**
+ * The third quarter with data through Wednesday, Sep 23, 2026, the way the engine writes a series
+ * whose horizon cuts its last bucket (RFC 0001 section 6.5): by week (Sep 21 is 3 of 7 days in) or
+ * by month (September is 23 of 30). edges "clip" keeps the Jul 1 start, so the first week (Jun 29)
+ * is 5 of 7 days in; incomplete "hide" leaves the partial buckets out.
+ */
+const Q3_TO_SEP_23 = span("2026-07-01", "2026-09-24");
+
+function incompleteSeries(
+  grain: ResolvedGrain,
+  options: { clip?: boolean; hide?: boolean },
+): { axis: LineData["axis"]; series: Series[] } {
+  const { buckets, values } = bucketed(Q3_TO_SEP_23, grain, 1, options.clip);
+  const last = buckets.length - 1;
+  const partial: PartialBucket[] = [
+    ...(options.clip && buckets[0] !== Q3_TO_SEP_23.start
+      ? [{ index: 0, elapsed: grain.unit === "week" ? 0.714285 : 1, edge: "start" as const }]
+      : []),
+    { index: last, elapsed: grain.unit === "week" ? 0.428571 : 0.766666 },
+  ];
+  const window = options.clip
+    ? Q3_TO_SEP_23
+    : { ...Q3_TO_SEP_23, start: buckets[0] ?? Q3_TO_SEP_23.start };
+  if (!options.hide) {
+    return {
+      axis: { kind: "time", grain: grain.unit, buckets, window },
+      series: [{ ...series("revenue", "Revenue", values), partial }],
+    };
+  }
+  const keep = buckets.map((_, i) => !partial.some((p) => p.index === i));
+  const kept = buckets.filter((_, i) => keep[i]);
+  const shown = { start: kept[0] ?? window.start, end: buckets[last] ?? window.end };
+  return {
+    axis: { kind: "time", grain: grain.unit, buckets: kept, window: shown },
+    series: [
+      series(
+        "revenue",
+        "Revenue",
+        values.filter((_, i) => keep[i]),
+      ),
+    ],
+  };
+}
+
+/** Weekly revenue lines over the partial third quarter: marked (default), clipped, or hidden. */
+export function incompleteLine(
+  id: string,
+  title: string,
+  options: { clip?: boolean; hide?: boolean },
+): LineData {
+  return { type: "line", id, title, span: 6, ...incompleteSeries(WEEK, options) };
+}
+
+/** Monthly revenue bars over the partial third quarter, September marked or hidden. */
+export function incompleteBars(id: string, title: string, options: { hide?: boolean }): BarData {
+  return {
+    type: "bar",
+    id,
+    title,
+    span: 6,
+    orientation: "vertical",
+    stack: false,
+    ...incompleteSeries(MONTH, options),
+  };
+}
 
 export { MONTH, QUARTER, WEEK };

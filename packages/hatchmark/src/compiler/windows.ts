@@ -286,8 +286,26 @@ function daysBetween(from: string, to: string): number {
  * bucket is marked (section 6.5): its window ends at the horizon instant, and its comparison is
  * cut to the same elapsed local time. Such a bound is a UTC instant "YYYY-MM-DDTHH:MM:SS.ffffffZ",
  * so a cutoff inside a repeated hour stays exact; every other bound is a local date.
+ *
+ * A time series' window then starts at the start of the bucket its start falls in (section 6.5,
+ * leading edge), so its first bucket is whole, unless the window clips (window.edges "clip") or is
+ * empty. The snapped start is taken before the horizon ends the window, so a source that ends
+ * before the range starts still reads the snapped bucket up to its horizon.
  */
 export function windowAt(
+  query: PlannedQuery,
+  context: BoundsContext,
+  horizon: bigint | undefined,
+): WindowBounds | undefined {
+  const bounds = endedWindow(query, context, horizon);
+  const time = query.dimensions.find((d) => d.kind === "time");
+  if (time?.kind !== "time" || query.window.edges === "clip" || bounds?.kind !== "bounded")
+    return bounds;
+  if (bounds.start === bounds.end || bounds.start.endsWith("Z")) return bounds;
+  return { ...bounds, start: bucketStart(bounds.start, time.grain) };
+}
+
+function endedWindow(
   query: PlannedQuery,
   context: BoundsContext,
   horizon: bigint | undefined,
@@ -314,10 +332,17 @@ export function windowAt(
   const empty: WindowBounds = { kind: "bounded", start: base.start, end: base.start };
   const spec = typeof range === "string" ? NAMED[range] : range;
 
+  if (timeAxis && window.shift === "none") {
+    const time = query.dimensions.find((d) => d.kind === "time");
+    const first =
+      time?.kind === "time" && window.edges !== "clip"
+        ? bucketStart(base.start, time.grain)
+        : base.start;
+    return hw <= parseInstant(first) ? empty : { kind: "bounded", start: first, end: exact };
+  }
   if (timeAxis) {
     const start = parseInstant(base.start);
-    if (hw <= start) return window.shift === "none" ? empty : { ...target, end: target.start };
-    if (window.shift === "none") return { kind: "bounded", start: base.start, end: exact };
+    if (hw <= start) return { ...target, end: target.start };
     const from = parseInstant(target.start);
     const cut = from + (hw - start);
     if (cut >= parseInstant(target.end)) return target;
