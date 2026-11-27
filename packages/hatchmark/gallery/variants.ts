@@ -642,7 +642,7 @@ const TABLES: GalleryVariant[] = [
   one(
     "table",
     "table-tall-shared-page",
-    'Sharing a row with "overflow": "page": grows, and the chart beside it stretches (check warns HM2025)',
+    'Sharing a row with "overflow": "page": grows, and the chart beside it stretches (check warns HM2026)',
     { ...TABLE_TALL, id: "tall_shared_page", span: 8, overflow: "page" },
     { ...COUNTRY_BAR, id: "beside_page", span: 4 },
   ),

@@ -37,7 +37,7 @@ describe("HM2024", () => {
   });
 });
 
-describe("HM2025", () => {
+describe("HM2026", () => {
   const withTables = (blocks: Record<string, unknown>[]) =>
     projectFrom({ dashboards: { sales: { ...DASHBOARD, blocks } } });
   const table = (extra: Record<string, unknown>) => ({
@@ -48,7 +48,7 @@ describe("HM2025", () => {
   });
   const codes = (blocks: Record<string, unknown>[]) =>
     checkReferences(withTables(blocks))
-      .filter((d) => d.code === "HM2025")
+      .filter((d) => d.code === "HM2026")
       .map((d) => [d.pointer, d.severity]);
 
   it('warns on "overflow": "page" for a table that shares its grid row', () => {

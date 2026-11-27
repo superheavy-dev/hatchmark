@@ -113,7 +113,7 @@ A table with more than 15 rows keeps its header row and total row in view, in on
   thin scrollbar in the theme's colours. The row's cards stay the same height.
 
 `"overflow": "page"` or `"scroll"` overrides the default. `"page"` in a shared row makes the
-other cards in the row stretch to the table's height, so check warns with HM2025. "Alone in its row"
+other cards in the row stretch to the table's height, so check warns with HM2026. "Alone in its row"
 follows the 12-column grid as the spec lays it out: a run of KPIs counts as one card, a chart is
 counted at its drawn width (at least 3 columns), and a block that does not fit in what is left of
 a row starts the next one. Below 1024 px every block takes the full width, but the mode stays the

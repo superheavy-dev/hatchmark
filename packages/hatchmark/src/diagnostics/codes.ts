@@ -170,7 +170,7 @@ export const CODES = {
     explanation:
       'A line, area, bar, pie, donut or scatter block has "span" 1 or 2. At that width the axis labels, the key and the plot cannot all fit, so Hatchmark draws the chart 3 columns wide anyway and the grid row reflows around it. Set "span" to 3 or more to say what the page will show; the fix sets it to 3 and is safe. Use a kpi block (with "sparkline": true for a trend) when the space is meant for one number.',
   },
-  HM2025: {
+  HM2026: {
     title: "table grows with the page in a shared row",
     explanation:
       'A table with "overflow": "page" grows as tall as its rows, but this one shares its grid row with other blocks, and a grid row is as tall as its tallest card. Its neighbours stretch to the table\'s height with empty space below their content. Remove "overflow" (a table in a shared row scrolls inside its card by default), or give the table its own row with "span": 12.',

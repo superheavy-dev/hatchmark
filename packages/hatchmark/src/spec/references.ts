@@ -1131,7 +1131,7 @@ function checkDashboard(project: Project, file: SpecFile<"dashboard">, out: Diag
     const base = `/blocks/${index}`;
     if (block.type === "table" && block.overflow === "page" && shared.has(index)) {
       r.report(
-        "HM2025",
+        "HM2026",
         `${base}/overflow`,
         'a table with "overflow": "page" shares its grid row, so the other cards in the row stretch to its height',
         {
