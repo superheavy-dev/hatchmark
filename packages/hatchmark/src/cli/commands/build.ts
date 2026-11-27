@@ -259,7 +259,11 @@ export async function build(
     ),
   });
   const sources = [
-    ...new Set(Object.values(config.sources).map((s) => path.posix.basename(s.path))),
+    ...new Set(
+      Object.values(config.sources).flatMap((s) =>
+        s.type === "lookup" ? [] : [path.posix.basename(s.path)],
+      ),
+    ),
   ].sort();
   for (const data of pages) {
     files.set(
