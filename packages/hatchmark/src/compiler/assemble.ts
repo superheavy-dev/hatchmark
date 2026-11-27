@@ -533,16 +533,21 @@ class Assembler {
     const percent = block.percentOfTotal ?? [];
     const hasTotal = block.totals !== false || percent.length > 0;
     const blank: Key[] = block.by.map(() => null);
-    const empty = this.empty(expressions[0]);
+    const emptyOf = new Map(block.metrics.map((m) => [m, this.empty(plan.measures[m])]));
+    const filled = block.metrics.filter((m) => emptyOf.get(m) === undefined);
+    const empty = filled.length === 0 ? emptyOf.get(block.metrics[0] ?? "") : undefined;
+    const value = (m: string, set: number, keys: Key[]) =>
+      emptyOf.get(m) === undefined ? this.evaluate(plan.measures[m], set, keys) : null;
     const totals: Record<string, Value> = {};
-    if (hasTotal)
-      for (const m of block.metrics)
-        totals[m] = empty ? null : this.evaluate(plan.measures[m], 1, blank);
+    if (hasTotal) for (const m of block.metrics) totals[m] = value(m, 1, blank);
     const shares = (values: Record<string, Value>): Record<string, Value> =>
       Object.fromEntries(percent.map((m) => [m, divide(values[m] ?? null, totals[m] ?? null)]));
-    const rows: TableRow[] = (empty ? [] : this.keys(expressions, 0)).map((keys) => {
+    const rows: TableRow[] = this.keys(
+      filled.map((m) => plan.measures[m]),
+      0,
+    ).map((keys) => {
       const values: Record<string, Value> = {};
-      for (const m of block.metrics) values[m] = this.evaluate(plan.measures[m], 0, keys);
+      for (const m of block.metrics) values[m] = value(m, 0, keys);
       return { keys, values, ...(percent.length > 0 ? { share: shares(values) } : {}) };
     });
     if (hasTotal) this.checkAdditive(block, common.id, rows, totals);

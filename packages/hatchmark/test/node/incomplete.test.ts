@@ -308,6 +308,26 @@ describe("whole days in KPIs, instants in series", () => {
     expect(diagnostics[0]?.message).toContain("no complete day yet");
   });
 
+  it("fills a table from its other metrics when one metric's window is empty, in either order", async () => {
+    const { block } = await dashboard({
+      sources: {
+        stale: rows(["2026-11-01T09:00:00Z", 20]),
+        fresh: rows(["2026-11-01T10:00:00Z", 5], ["2026-11-03T10:00:00Z", 7]),
+      },
+      period: { asOf: "2026-11-03", range: "month_to_date", compare: "none" },
+      blocks: [
+        { type: "table", id: "a", by: ["v"], metrics: ["stale", "fresh"], totals: true },
+        { type: "table", id: "b", by: ["v"], metrics: ["fresh", "stale"], totals: true },
+      ],
+    });
+    for (const id of ["a", "b"]) {
+      const table = block<TableData>(id);
+      expect(table.rows.map((r) => [r.keys, r.values])).toEqual([[[5], { stale: null, fresh: 5 }]]);
+      expect(table.total?.values).toEqual({ stale: null, fresh: 5 });
+      expect(table).not.toHaveProperty("empty");
+    }
+  });
+
   it("shifts a slid window a month back from March 31 by its first and last day", async () => {
     const pairs: [string, number][] = [
       ["2026-02-27T11:00:00Z", 1],

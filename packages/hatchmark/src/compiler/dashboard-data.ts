@@ -189,7 +189,10 @@ export interface TableData extends BlockCommon {
    */
   total?: { values: Record<string, Value>; share?: Record<string, Value> };
   window?: DateSpan;
-  /** Set when the window is empty: no rows, and every total is null. */
+  /**
+   * Set when every metric's window is empty: no rows, and every total is null. A metric whose own
+   * window is empty is null in every row and in the total, while the others fill the rows.
+   */
   empty?: EmptyWindow;
 }
 
