@@ -71,6 +71,22 @@ beforeAll(async () => {
     bars: variant("table-bars-negative"),
     tricky: dashboard("tricky", "Tricky", [TRICKY]),
     numeric: keyed("numeric", [2, -2, 1000, -10]),
+    mixed: dashboard("mixed", "Mixed", [
+      {
+        ...TRICKY,
+        id: "mixed",
+        by: [
+          { column: "label", label: "Label" },
+          { column: "item", label: "Item" },
+        ],
+        rows: [
+          { keys: [1000, "a"], values: { revenue: 10 } },
+          { keys: ["1000", "b"], values: { revenue: 20 } },
+          { keys: ["zzz", "z"], values: { revenue: 30 } },
+        ],
+        rowCount: 3,
+      },
+    ]),
     lines: keyed("lines", [
       1000.1234567,
       0.0044,
@@ -227,6 +243,22 @@ describe("review regressions (HAT-55)", () => {
       "2",
       "1.000",
     ]);
+    await page.close();
+  });
+
+  it("keeps the number 1000 and the text 1000 as two groups after a sort", async () => {
+    const page = await open("mixed");
+    const labels = () =>
+      page
+        .locator("tbody th span")
+        .evaluateAll((spans) => spans.map((s) => [s.textContent, s.classList.contains("hm-sr")]));
+    const expected = [
+      ["1,000", false],
+      ["1000", false],
+      ["zzz", false],
+    ];
+    await page.getByRole("button", { name: "Item", exact: true }).click();
+    expect(await labels()).toEqual(expected);
     await page.close();
   });
 

@@ -14,6 +14,10 @@ interface RowNode {
 
 const value = (cell: Element | undefined | null): string => cell?.getAttribute("data-v") ?? "";
 
+/** Two key cells hold the same group: equal raw value and equal kind (the number 1000 is not the text "1000"). */
+const sameKey = (a: Element | undefined | null, b: Element | undefined | null): boolean =>
+  value(a) === value(b) && a?.getAttribute("data-t") === b?.getAttribute("data-t");
+
 /** The tbody rows as a tree: each subtotal row owns the rows after it, down to the next group. */
 function rowTree(rows: HTMLTableRowElement[]): RowNode {
   const root: RowNode = { row: undefined, index: -1, children: [] };
@@ -83,8 +87,8 @@ function groupRepeats(table: HTMLTableElement): void {
     for (let i = 0; i < width - 1; i++) {
       const same =
         previous !== undefined &&
-        Array.from({ length: i + 1 }, (_, j) => j).every(
-          (j) => value(previous?.cells[j]) === value(row.cells[j]),
+        Array.from({ length: i + 1 }, (_, j) => j).every((j) =>
+          sameKey(previous?.cells[j], row.cells[j]),
         );
       const cell = row.cells[i];
       const span = cell?.querySelector("span");
