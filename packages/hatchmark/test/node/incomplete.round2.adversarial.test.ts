@@ -4,11 +4,6 @@ import type { KpiData, LineData } from "../../src/compiler/index.js";
 import { PROJECT_DEFAULTS } from "../../src/spec/index.js";
 import { metric, Oracle, removeProjects, run, writeProject } from "./fixture.js";
 
-// Ported from HAT-51's round-2 adversarial harness on hatchmark#20 (whole-day ruling B, RFC 0001
-// sections 6.1, 6.4, 6.5). An empty window shows no value, never 0. The oracle never calls the planner, windows.ts or the
-// executor: windows come from the RFC's wording, sums are plain SQL over the CSV compared as
-// instants, and partial shares are wall-clock arithmetic done with Intl.
-
 let oracle: Oracle;
 beforeAll(async () => {
   oracle = await Oracle.open();
@@ -54,7 +49,6 @@ async function dashboard(options: {
 const csv = (pairs: [string, number][]) =>
   `at,v\n${pairs.map(([at, v]) => `${at},${v}`).join("\n")}\n`;
 
-/** One row of value 1 every hour in [from, to] (UTC ISO, inclusive), so a sum counts hours. */
 function hourly(from: string, to: string): [string, number][] {
   const out: [string, number][] = [];
   for (let t = Date.parse(from); t <= Date.parse(to); t += 3_600_000) {
@@ -63,7 +57,6 @@ function hourly(from: string, to: string): [string, number][] {
   return out;
 }
 
-/** Oracle sum over [from, to) compared as instants (TIMESTAMPTZ), never as local wall time. */
 async function sumInstants(root: string, source: string, from: string, to: string) {
   const [r] = await oracle.rows(`
     SELECT coalesce(sum(v), 0) AS v FROM read_csv('${path.join(root, `${source}.csv`)}')
@@ -72,7 +65,6 @@ async function sumInstants(root: string, source: string, from: string, to: strin
   return Number(r?.v);
 }
 
-/** Oracle sum over local dates [from, to) in a zone, by the row's instant converted with DuckDB. */
 async function sumDays(root: string, source: string, tz: string, from: string, to: string) {
   const [r] = await oracle.rows(`
     SELECT coalesce(sum(v), 0) AS v FROM read_csv('${path.join(root, `${source}.csv`)}')
@@ -83,10 +75,6 @@ async function sumDays(root: string, source: string, tz: string, from: string, t
 const days = (from: string, to: string) => (Date.parse(to) - Date.parse(from)) / 86_400_000;
 
 describe("R2 blockers: a slid last N months or weeks keeps its length (RFC 6.4)", () => {
-  // Fixed as-of Feb 15, 2026, UTC. Run a has one row after the as-of, so its horizon is past T and
-  // the window is resolveRange's: Mar 1, 2025 to Feb 16, 2026 (352 days). Run b ends 11 p.m. Feb 15,
-  // so the window slides to end at Feb 15 (exclusive) "keeping its length": 352 days, Feb 28, 2025
-  // to Feb 15, 2026. One hour less data must not add 13 days to the window.
   for (const [range, label, asOf] of [
     ["last_12_months", "12 months", "2026-02-15"],
     [{ last: 4, unit: "week" }, "4 weeks", "2026-02-11"],
@@ -113,10 +101,6 @@ describe("R2 blockers: a slid last N months or weeks keeps its length (RFC 6.4)"
 });
 
 describe("R2 invariants (a) whole local days ending at the last complete day, (b) same number of days", () => {
-  // America/New_York, horizon in the repeated fall-back hour (05:30Z = 01:30 EDT on Nov 1, 2026)
-  // and at 14:03 on Nov 26. Every KPI bound must be a date, the window must end at the horizon's
-  // local date (exclusive) or earlier, the value and previous value must equal SQL over those local
-  // dates, and previous must cover as many days as current (to-date: day clamp, reported apart).
   const tz = "America/New_York";
   const ranges: unknown[] = [
     "last_7_days",

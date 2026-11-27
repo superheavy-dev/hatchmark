@@ -50,7 +50,6 @@ const freshnessSchema = z
       "How complete the source is. Default: through its latest timestamp, or through the whole latest date of a date column.",
   });
 
-/** Options every file source shares: how its rows relate to time. */
 const fileSourceOptions = {
   snapshot: columnName.optional().meta({
     description:

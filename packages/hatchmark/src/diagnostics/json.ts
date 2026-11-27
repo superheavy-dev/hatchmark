@@ -39,7 +39,6 @@ export interface JsonSyntaxError {
 const FRAME_BEFORE = 80;
 const FRAME_AFTER = 160;
 
-/** Thrown internally to stop parsing at the first syntax error. */
 class StopParsing extends Error {}
 
 const NUMBER = /-?(?:0|[1-9][0-9]*)(?:\.[0-9]+)?(?:[eE][+-]?[0-9]+)?/y;
@@ -73,13 +72,6 @@ type Container =
     }
   | { kind: "array"; start: number; items: JsonNode[]; value: unknown[] };
 
-/**
- * A strict RFC 8259 JSON parser that keeps the source offset of every value and key, so a
- * diagnostic found on the parsed value (through a JSON Pointer) can point back to file:line:col.
- * It accepts exactly what JSON.parse accepts and builds the same value, at any nesting depth
- * (it keeps its own stack instead of recursing). It stops at the first syntax error, and also
- * reports duplicate object keys, which JSON.parse accepts by keeping the last one.
- */
 class Parser {
   private pos = 0;
   private lastComma = -1;
@@ -155,10 +147,6 @@ class Parser {
     }
   }
 
-  /**
-   * Comments are rejected with a repair that never joins the tokens around them: a block comment
-   * becomes one space, and a line comment is cut up to (not including) its line break.
-   */
   private failComment(): never {
     const start = this.pos;
     if (this.text[start + 1] === "/") {
@@ -249,7 +237,6 @@ class Parser {
         };
   }
 
-  /** Starts a container (pushing a frame and returning undefined) or parses a scalar value. */
   private openOrScalar(stack: Container[]): Built | undefined {
     const start = this.pos;
     const ch = this.text[start];
@@ -415,7 +402,8 @@ class Parser {
   }
 }
 
-/** Splits text into lines at \n, \r\n and \r, the line breaks JSON allows as whitespace. */
+// RFC 8259 allows only \n, \r\n and \r as line breaks; U+2028 and U+2029 are ordinary
+// characters.
 export function splitLines(text: string): string[] {
   return text.split(/\r\n|\r|\n/);
 }
@@ -427,7 +415,6 @@ export class JsonDocument {
   readonly value: unknown;
   readonly errors: readonly JsonSyntaxError[];
   private readonly lineStarts: number[] = [0];
-  /** Offsets of the high surrogate of every surrogate pair, ascending. */
   private readonly astral: number[] = [];
 
   constructor(
@@ -460,14 +447,12 @@ export class JsonDocument {
     return { line: line + 1, column: offset - lineStart - pairs + 1 };
   }
 
-  /** Moves an offset off the low half of a surrogate pair. */
   private snap(offset: number): number {
     const low = this.text.charCodeAt(offset);
     const high = this.text.charCodeAt(offset - 1);
     return low >= 0xdc00 && low <= 0xdfff && high >= 0xd800 && high <= 0xdbff ? offset - 1 : offset;
   }
 
-  /** Clamps UTF-16 offsets to 0 <= start <= end <= length, on code point boundaries. */
   private clamp(start: number, end: number): [number, number] {
     const length = this.text.length;
     const s = this.snap(Math.min(Math.max(Math.trunc(start) || 0, 0), length));
@@ -515,7 +500,6 @@ export class JsonDocument {
     return this.location(node.start, node.end);
   }
 
-  /** A window of the line holding offset, at most FRAME_BEFORE + FRAME_AFTER code units long. */
   private frameAt(offset: number, position: Position): Frame {
     const lineStart = this.lineStarts[position.line - 1] ?? 0;
     const lineEnd = this.lineEnd(position.line);
@@ -535,7 +519,6 @@ export class JsonDocument {
     return this.text.slice(start, this.lineEnd(line));
   }
 
-  /** Offset just past the last character of a line, before its line break. */
   private lineEnd(line: number): number {
     const next = this.lineStarts[line];
     if (next === undefined) return this.text.length;
@@ -578,7 +561,6 @@ export class JsonDocument {
   }
 }
 
-/** First index whose value is greater than target. */
 function upperBound(sorted: readonly number[], target: number): number {
   let lo = 0;
   let hi = sorted.length;
@@ -590,7 +572,6 @@ function upperBound(sorted: readonly number[], target: number): number {
   return lo;
 }
 
-/** First index whose value is greater than or equal to target. */
 function lowerBound(sorted: readonly number[], target: number): number {
   let lo = 0;
   let hi = sorted.length;

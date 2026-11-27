@@ -156,10 +156,6 @@ function print(io: CliIO, mode: OutputMode, result: CommandResult): number {
   return result.exitCode;
 }
 
-/**
- * Runs the CLI and returns the exit code. Never prompts and never reads stdin. Results go to
- * stdout (one line of JSON in json mode); nothing else is written there.
- */
 export async function run(argv: readonly string[], io: CliIO): Promise<number> {
   const everyOption: Options = Object.assign(
     {},

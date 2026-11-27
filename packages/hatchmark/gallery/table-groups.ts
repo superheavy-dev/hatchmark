@@ -1,12 +1,6 @@
 import type { TableData, TableRow } from "../src/compiler/dashboard-data.js";
 import { OCT, round } from "./fixtures.js";
 
-/**
- * Grouped tables on data other than region and country, for the narrow layouts: long product and
- * campaign names, a team with one person, three levels, numeric and date-like groups, and an empty
- * group value. Rows, subtotals, Other rows and totals are all sums of the same leaf parts.
- */
-
 type Key = string | number | null;
 interface Leaf {
   keys: Key[];
@@ -81,7 +75,6 @@ function grouped(
   };
 }
 
-/** Leaf parts from [keys, revenue, average order value]. */
 const leaves = (rows: [Key[], number, number][]): Leaf[] =>
   rows.map(([keys, revenue, aov]) => ({ keys, revenue, orders: round(revenue / aov) }));
 

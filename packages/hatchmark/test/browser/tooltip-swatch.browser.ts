@@ -7,8 +7,6 @@ import { afterAll, beforeAll, expect, it } from "vitest";
 import { GALLERY } from "../../gallery/variants.js";
 import { renderDashboardPage } from "../../src/render/index.js";
 
-// Tooltip swatches tell several series apart, so a single-row tooltip has none, and each swatch
-// takes the shape of its mark: a line for lines, a square for bars, areas and slices.
 let browser: Browser;
 let dir: string;
 beforeAll(async () => {

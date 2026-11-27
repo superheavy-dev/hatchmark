@@ -7,7 +7,6 @@ import {
 } from "../diagnostics/index.js";
 import { type CommandResult, EXIT } from "./io.js";
 
-/** A command line problem, reported in the same diagnostic format as file problems. */
 export function usageError(
   code: "HM0001" | "HM0002" | "HM0003" | "HM0004" | "HM0005" | "HM0006",
   message: string,

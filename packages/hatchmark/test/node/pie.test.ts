@@ -4,12 +4,6 @@ import type { DashboardData, PieData } from "../../src/compiler/index.js";
 import { checkReferences, PROJECT_DEFAULTS } from "../../src/spec/index.js";
 import { metric, Oracle, removeProjects, run, writeProject } from "./fixture.js";
 
-/**
- * Pie and donut blocks against an independent SQL oracle: slices are the largest positive
- * categories, Other sums the rest of the positive ones, shares divide by their sum, the total is the
- * metric over all rows, and negative or empty categories are left out and reported.
- */
-
 const NY = "America/New_York";
 const COUNTRIES = [
   "United States",
@@ -44,7 +38,6 @@ function orders(): string {
     const channel = rand() < 0.6 ? "Online store" : rand() < 0.7 ? "Marketplace" : "Wholesale";
     const status = rand() < 0.1 ? "refunded" : "paid";
     const amount = (15 + rand() * 200).toFixed(2);
-    // Wholesale refunds outweigh its sales, so net revenue is negative for that channel.
     const refund =
       channel === "Wholesale" ? (300 + rand() * 100).toFixed(2) : rand() < 0.1 ? "20" : "0";
     lines.push(
@@ -128,7 +121,6 @@ let project: Awaited<ReturnType<typeof writeProject>>;
 let pies: Awaited<ReturnType<typeof run>>;
 let csv: string;
 const LOCAL = `(ordered_at AT TIME ZONE '${NY}')`;
-/** A pie reads whole local days through the last complete one: the midnight at or before the data's horizon. */
 let WINDOW: string;
 
 function block(data: DashboardData | undefined, id: string): PieData {
@@ -147,7 +139,6 @@ function close(actual: number | null | undefined, expected: number | null | unde
   );
 }
 
-/** Categories by value, largest first, ties by key, from plain SQL. */
 async function ranked(sql: string): Promise<{ key: string | null; v: number | null }[]> {
   const rows = await oracle.rows(sql);
   return rows.map((r) => ({

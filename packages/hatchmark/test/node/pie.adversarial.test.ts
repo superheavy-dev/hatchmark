@@ -1,11 +1,3 @@
-// Adopted from the HAT-60 adversarial review of hatchmark#25 (pie and donut): harness.mjs. A hostile
-// orders table (signed amounts in exact quarters, real ties, a net-zero country, a refunds-only
-// country, a country paid only on the incomplete last day, New York local-midnight and fall-back
-// edges), a DATE source ending earlier, a ties table and a source with no complete day run through
-// the real engine and renderer. Every pie and donut is checked against plain SQL on the oracle's own
-// DuckDB connection; ranking, Other, whole and shares come from the documented rules, and windows are
-// computed here from docs/numbers.md, never from the engine's windows.ts. HM_SWEEP=full adds the
-// remaining date ranges.
 import { rm, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
@@ -48,8 +40,7 @@ const COUNTRIES = [
 const CHANNELS = ["Online store", "Marketplace", "Retail partners", "Wholesale"];
 const DEVICES = ["Desktop", "Mobile", "Tablet", "Smart TV", "Console", "Watch", "Car", "Kiosk"];
 
-// Amounts are multiples of $0.25, so every sum is exact in a double and ties are real ties. The
-// random draws follow harness.mjs in the same order, so the data is the same.
+// Amounts are multiples of $0.25, so every sum is exact in a double and ties are real ties.
 function data(): Record<string, string> {
   const rand = rng(60);
   const quarter = (lo: number, hi: number) =>
@@ -74,7 +65,6 @@ function data(): Record<string, string> {
       ),
     );
   };
-  // 1,800 random orders, Jan 1 through Nov 25 2026 (UTC), skewed so a few countries dominate.
   for (let i = 0; i < 1800; i++) {
     const t =
       Date.UTC(2026, 0, 1) + Math.floor(rand() * (Date.UTC(2026, 10, 25) - Date.UTC(2026, 0, 1)));
@@ -86,24 +76,19 @@ function data(): Record<string, string> {
     const amount = `${refund ? "-" : ""}${quarter(10, 250)}`;
     push(at, country, channel, device, refund ? "refunded" : "paid", amount);
   }
-  // Net exactly zero in November; refunds only; paid only on the incomplete last day (Nov 26).
   push("2026-11-10T15:00:00Z", "Zeroland", "Online store", "Desktop", "paid", "120.00");
   push("2026-11-11T15:00:00Z", "Zeroland", "Online store", "Desktop", "refunded", "-120.00");
   push("2026-11-12T15:00:00Z", "Refundia", "Marketplace", "Desktop", "refunded", "-80.00");
   push("2026-11-12T16:00:00Z", "Refundia", "Marketplace", "Desktop", "refunded", "-45.50");
   push("2026-11-26T12:00:00Z", "Lateland", "Online store", "Desktop", "paid", "5000.00");
-  // New York edges: Oct 31 23:59 EDT (out), Nov 1 00:00 EDT (in), both 01:30s of the Nov 1
-  // fall-back (in), Nov 25 23:59 EST (in), Nov 26 00:00 EST (out).
   push("2026-11-01T03:59:00Z", "Edgeland", "Online store", "Desktop", "paid", "1000.00");
   push("2026-11-01T04:00:00Z", "Edgeland", "Online store", "Desktop", "paid", "1.00");
   push("2026-11-01T05:30:00Z", "Edgeland", "Online store", "Desktop", "paid", "2.00");
   push("2026-11-01T06:30:00Z", "Edgeland", "Online store", "Desktop", "paid", "4.00");
   push("2026-11-26T04:59:00Z", "Edgeland", "Online store", "Desktop", "paid", "8.00");
   push("2026-11-26T05:00:00Z", "Edgeland", "Online store", "Desktop", "paid", "16.00");
-  // The horizon: data runs through Nov 26 14:03 New York, so the last complete day is Nov 25.
   push("2026-11-26T19:03:00Z", "United States", "Online store", "Desktop", "paid", "33.25");
 
-  // Returns: a DATE column that ends on Nov 20, with a country orders never has.
   const ret = ["returned_on,country,amount"];
   for (let i = 0; i < 400; i++) {
     const d = new Date(Date.UTC(2026, 0, 1) + Math.floor(rand() * 324) * 86400e3)
@@ -113,7 +98,6 @@ function data(): Record<string, string> {
   }
   ret.push("2026-11-20,Iceland,40.00", "2026-11-20,Canada,12.50");
 
-  // Three categories tie on 30 at the limit boundary, plus a null one and a lowercase one.
   const ties = ["at,cat,amount"];
   for (const [cat, amount] of [
     ["Alpha", "50"],
@@ -129,7 +113,6 @@ function data(): Record<string, string> {
     ties.push(`2026-11-05T15:00:00Z,${cat},${amount}`);
   ties.push("2026-11-26T19:03:00Z,Alpha,1");
 
-  // Newest row Nov 1 10:00 New York: month-to-date has no complete day yet.
   const early = [
     "at,cat,amount",
     "2026-10-30T15:00:00Z,Alpha,10",
@@ -137,7 +120,6 @@ function data(): Record<string, string> {
     "2026-11-01T14:00:00Z,Alpha,5",
   ];
 
-  // Point-in-time balances: semi-additive, each region snapshots through a different day.
   const bal = ["snap_date,region,account_id,balance"];
   for (let d = 1; d <= 25; d++)
     for (const [region, n, stop] of [
@@ -301,8 +283,6 @@ const HORIZONS = [
   Dn("rev_less_returns", "rev_less_returns", "country", { limit: 6 }),
   P("rev_country_h", "revenue", "country"),
 ];
-// One range of each kind at CI size (to_date is month_to_date on the main dashboard); the rest with
-// HM_SWEEP=full.
 const RANGES = ["last_7_days", "all_time", "last_complete_month"].concat(
   FULL ? ["last_30_days", "year_to_date", "quarter_to_date"] : [],
 );
@@ -434,9 +414,6 @@ const DASHBOARDS: Record<string, unknown> = {
   checks: { title: "Checks", period: MTD, blocks: CHECKS },
 };
 
-// Windows from docs/numbers.md, by hand: a source is complete through its newest time value (a date
-// through the end of that day); a category window ends at the local midnight at or before that
-// horizon and never past the as-of; latest_data's as-of is the newest horizon's local date.
 type Window = [string, string];
 const day = (s: string) => s.slice(0, 10);
 const addDays = (d: string, n: number) =>
@@ -506,7 +483,6 @@ let asOfLatest: string;
 let main: Built;
 const end = (src: keyof typeof H) => day(H[src]);
 
-// The oracle's pie: plain GROUP BY on raw rows, then the documented rules applied here.
 async function oraclePie(o: {
   table: string;
   value: string;
@@ -551,7 +527,6 @@ const pieOf = (d: DashboardData | undefined, id: string) =>
 const at = (blocks: { id: string }[], id: string) =>
   `/blocks/${blocks.findIndex((b) => b.id === id)}`;
 
-// Every way the engine's pie differs from the oracle's, as readable lines.
 function comparePie(
   b: PieData | undefined,
   o: OraclePie,

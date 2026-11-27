@@ -1,10 +1,3 @@
-/**
- * The expression grammar shared by formula metrics, row expressions and per_entity expressions.
- * One tokenizer and one precedence-climbing parser; the mode decides which names, literals,
- * operators and functions are allowed, so every error comes from one place and carries the
- * offsets of the offending token in the decoded string.
- */
-
 export type ExprMode = "formula" | "row" | "entity";
 
 export type BinaryOp = "+" | "-" | "*" | "/" | "=" | "!=" | "<" | "<=" | ">" | ">=" | "and" | "or";
@@ -26,7 +19,6 @@ export interface ExprError {
 
 export type ParseResult = { ok: true; expr: Expr } | { ok: false; error: ExprError };
 
-/** Functions by mode, with their arity: [min, max]. */
 const FUNCTIONS: Record<ExprMode, Record<string, [number, number]>> = {
   formula: { coalesce: [2, 16], min: [2, 16], max: [2, 16], abs: [1, 1] },
   row: {

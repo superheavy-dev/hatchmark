@@ -1,6 +1,5 @@
 import type { Applicability, Fix, JsonDocument } from "../diagnostics/index.js";
 
-/** Replaces the value at a pointer with a JSON value, written as compact JSON text. */
 export function replaceValueFix(
   document: JsonDocument,
   pointer: string,
@@ -18,10 +17,6 @@ export function replaceValueFix(
   };
 }
 
-/**
- * Adds a property to the object at a pointer, after its last member and with the same
- * indentation, so the edited file still parses and reads naturally.
- */
 export function addPropertyFix(
   document: JsonDocument,
   objectPointer: string,
@@ -58,7 +53,6 @@ export function addPropertyFix(
   };
 }
 
-/** Removes one item from the array at a pointer, together with the comma that separates it. */
 export function removeItemFix(
   document: JsonDocument,
   arrayPointer: string,

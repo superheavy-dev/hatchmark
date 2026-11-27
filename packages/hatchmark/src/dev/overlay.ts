@@ -2,7 +2,6 @@ import { type DiagnosticReport, renderHuman } from "../diagnostics/index.js";
 import { esc } from "../render/svg.js";
 import { DEFAULT_THEME, type Theme } from "../render/theme.js";
 
-/** The ANSI styles renderHuman paints with, as the overlay's classes. */
 const STYLES: Record<string, string> = {
   "1": "hm-dx-strong",
   "31": "hm-dx-error",
@@ -16,10 +15,6 @@ const ANSI_RUN = new RegExp(
   "g",
 );
 
-/**
- * renderHuman's rustc-style text as HTML: the same characters, with each coloured run in a span
- * whose class maps the colour to a theme token instead of an ANSI code.
- */
 export function diagnosticsHtml(report: DiagnosticReport): string {
   return esc(renderHuman(report, { color: true })).replace(
     ANSI_RUN,
@@ -28,11 +23,6 @@ export function diagnosticsHtml(report: DiagnosticReport): string {
   );
 }
 
-/**
- * The error overlay hatchmark dev lays over the page while check or run reports errors. It uses
- * the theme's custom properties, so it follows light and dark like the page under it. Dev only:
- * hatchmark build never writes it.
- */
 export function overlayHtml(report: DiagnosticReport, theme: Theme = DEFAULT_THEME): string {
   const count = `${report.error_count} error${report.error_count === 1 ? "" : "s"}`;
   const style = [

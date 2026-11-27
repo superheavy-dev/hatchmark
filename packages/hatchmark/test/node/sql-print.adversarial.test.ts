@@ -1,6 +1,3 @@
-// Adopted from the HAT-42 adversarial review of hatchmark#17 (hatchmark explain and check --sql):
-// harness.mjs. Printed SQL (printSql) must return what the bound SQL returns, binding the way the
-// executor binds (boundParams), for every literal kind and every query a hostile project prints.
 import { rm, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { type DuckDBConnection, DuckDBInstance } from "@duckdb/node-api";

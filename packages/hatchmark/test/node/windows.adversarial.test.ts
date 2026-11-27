@@ -1,6 +1,3 @@
-// Adopted from the HAT-36 adversarial review of hatchmark#14 (time ranges, anchored grains and shift
-// comparisons): executor.mjs, plan.mjs, boundary.mjs and asof.mjs, run through the DuckDB executor.
-// HM_SWEEP=full runs the review's executor sweep: every quarter and year anchor, 1995 to 2044.
 import { afterAll, describe, expect, it } from "vitest";
 import {
   bucketStart,

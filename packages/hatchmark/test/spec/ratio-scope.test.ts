@@ -8,7 +8,6 @@ import {
 } from "../../src/spec/index.js";
 import { CONFIG, METRICS, projectFrom } from "./helpers.js";
 
-// Regression tests for HAT-14's numbers-path blockers on hatchmark#5.
 const config = {
   ...CONFIG,
   sources: { ...CONFIG.sources, sessions: { type: "csv", path: "data/sessions.csv" } },

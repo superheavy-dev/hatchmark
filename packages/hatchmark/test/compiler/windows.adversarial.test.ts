@@ -1,6 +1,3 @@
-// Adopted from the HAT-36 adversarial review of hatchmark#14 (time ranges, anchored grains and shift
-// comparisons): core.mjs, invariant.mjs, edges.mjs and months.mjs, swept over resolveRange and
-// bucketStart against an oracle written here. HM_SWEEP=full runs the review's span, 2023 to 2028.
 import { describe, expect, it } from "vitest";
 import { bucketStart, resolveRange, type WindowBounds } from "../../src/compiler/index.js";
 import type {
@@ -31,7 +28,6 @@ function bounded(w: WindowBounds | undefined): { start: string; end: string } {
 
 const shift = (unit: TimeGrain, by: number): Comparison => ({ shift: { unit, by } });
 
-/** Oracle: moves a date by whole units, clamping the day to the target month. */
 function shiftDay(d: string, unit: TimeGrain, by: number): string {
   if (unit === "day") return addDays(d, by);
   if (unit === "week") return addDays(d, 7 * by);
@@ -48,11 +44,6 @@ function shiftDay(d: string, unit: TimeGrain, by: number): string {
   ].join("-");
 }
 
-/**
- * Oracle for the shift ruling (HAT-36 round 4): whole-month windows shifted by months, quarters or
- * years move both exclusive ends; every other window moves its start and its last included day,
- * each clamped, and ends the day after.
- */
 function oracle(w: { start: string; end: string }, unit: TimeGrain, by: number) {
   const whole = w.start.endsWith("-01") && w.end.endsWith("-01");
   if (whole && unit !== "day" && unit !== "week") {

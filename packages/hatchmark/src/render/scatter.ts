@@ -29,12 +29,10 @@ const HEADER_GAP = 16;
 
 type Placeable = ScatterPoint & { x: number; y: number };
 
-/** Points with a finite x and y: the ones a scatter plot can place. */
 export function scatterPoints(block: ScatterData): Placeable[] {
   return block.points.filter((p): p is Placeable => isNumber(p.x) && isNumber(p.y));
 }
 
-/** Indices into scatterPoints from left to right, then bottom to top, then by name: keyboard order. */
 export function scatterOrder(block: ScatterData): number[] {
   const points = scatterPoints(block);
   return points
@@ -46,7 +44,6 @@ export function scatterOrder(block: ScatterData): number[] {
     });
 }
 
-/** Ticks for a scatter axis, formatted as the metric's axis labels. */
 function axisFor(
   values: readonly number[],
   length: number,
@@ -82,13 +79,6 @@ interface Placed {
   r: number;
 }
 
-/**
- * A scatter plot: one circle per category at its x and y, area-proportional to size when the block
- * sets one. Linear axes around the data (zero only when it is close), y gridlines as in bar and line
- * charts, the y metric named above the plot and the x metric under the axis, and up to five points
- * (three on narrow plots) named directly where the name collides with nothing. The plot is as tall
- * as size.height allows, like a line chart's; header rows make the chart taller.
- */
 export function renderScatter(
   block: ScatterData,
   ctx: RenderContext,
@@ -254,11 +244,6 @@ export function renderScatter(
   );
 }
 
-/**
- * Names next to the largest points (by size; without size, the extremes of y and x first), placed
- * right, left, above or below the circle, wherever the name overlaps no other circle and no placed
- * name and stays inside the chart. A name that fits nowhere is left out, never shortened.
- */
 function directLabels(
   ctx: RenderContext,
   placed: Placed[],

@@ -18,7 +18,6 @@ export const doctorHelp: CommandHelp = {
   },
 };
 
-/** The package root: dist/cli/commands or src/cli/commands, three levels up. */
 const PACKAGE_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../../..");
 
 type Status = "ok" | "warn" | "fail";

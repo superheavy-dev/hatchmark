@@ -1,4 +1,3 @@
-// Adopted from the HAT-61 review of hatchmark#28 (scatter): nearest.browser.ts.
 /// <reference lib="dom" />
 import { fileURLToPath } from "node:url";
 import { chromium } from "playwright";

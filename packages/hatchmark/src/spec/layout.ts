@@ -1,10 +1,7 @@
-/** Line, area and bar charts are drawn at least this many of the 12 grid columns wide. */
 export const MIN_CHART_SPAN = 3;
 
-/**
- * Whether each grid item sits alone in its row of the 12-column grid: items fill a row left to right,
- * and one that does not fit in what is left of the row starts the next one, as the grid places them.
- */
+// Mirrors CSS Grid auto-placement: an item that does not fit in what is left of a row starts the
+// next row.
 export function aloneInRow(spans: readonly number[]): boolean[] {
   const rows: number[][] = [];
   let used = 12;

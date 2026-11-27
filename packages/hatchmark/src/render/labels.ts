@@ -1,13 +1,3 @@
-/**
- * Deterministic label placement: pure functions of the data and the bounds, never of interaction
- * state, so labels never jump on hover and every build places them the same way.
- */
-
-/**
- * Stacks labels of equal height near their targets without overlap: labels are sorted by target,
- * overlapping neighbours are merged into groups centred on the mean of their targets, and groups
- * are kept inside [top, bottom]. Returns each label's centre, in the input order.
- */
 export function stackLabels(
   targets: readonly number[],
   height: number,
@@ -47,18 +37,11 @@ export function stackLabels(
 }
 
 export interface TickCandidate {
-  /** Position of the label's anchor along the axis. */
   pos: number;
   width: number;
-  /** Labels are kept on multiples of the step counted from this phase, such as January. */
   phase: number;
 }
 
-/**
- * Picks the smallest step (from steps, in order) at which every kept candidate fits between
- * minX and maxX with at least gap px between neighbours. Candidates are centred on pos; the first
- * and last may shift inward to stay inside the bounds. Returns the kept indices and their centres.
- */
 export function thinTicks(
   candidates: readonly TickCandidate[],
   steps: readonly number[],

@@ -48,10 +48,6 @@ async function readOptional(file: string): Promise<string | undefined> {
   return readFile(file, "utf8").catch(() => undefined);
 }
 
-/**
- * The directory init initialises, with symlinks above it resolved: the deepest existing ancestor
- * goes through realpath, and the components that do not exist yet are appended.
- */
 async function resolveRoot(dir: string): Promise<string> {
   const missing: string[] = [];
   let existing = dir;
@@ -70,17 +66,12 @@ async function resolveRoot(dir: string): Promise<string> {
 
 type Entry = "missing" | "file" | "directory" | "other";
 
-/** What is at a path, without following symlinks: init never writes through a link. */
-async function entry(file: string): Promise<Entry> {
+async function lstatEntry(file: string): Promise<Entry> {
   const info = await lstat(file).catch(() => undefined);
   if (info === undefined) return "missing";
   return info.isFile() ? "file" : info.isDirectory() ? "directory" : "other";
 }
 
-/**
- * Marker lines in AGENTS.md: a marker is a line that is exactly the marker after trimming. Any
- * other line containing marker text is "stray", which makes init refuse to edit the file.
- */
 function markerLines(text: string): { starts: number[]; ends: number[]; stray: number[] } {
   const found = { starts: [] as number[], ends: [] as number[], stray: [] as number[] };
   text.split("\n").forEach((raw, i) => {
@@ -127,11 +118,11 @@ export async function init(
   const dirs = new Set(["data", "metrics", "dashboards"]);
   for (const file of owned.keys()) if (file.includes("/")) dirs.add(path.posix.dirname(file));
   for (const dir of dirs) {
-    const kind = await entry(path.join(target, dir));
+    const kind = await lstatEntry(path.join(target, dir));
     if (kind !== "missing" && kind !== "directory") blocked.push(dir);
   }
   for (const file of [...owned.keys(), "AGENTS.md", "CLAUDE.md", ".gitignore"]) {
-    const kind = await entry(path.join(target, file));
+    const kind = await lstatEntry(path.join(target, file));
     if (kind === "file" && owned.has(file)) existing.push(file);
     else if (kind !== "missing" && kind !== "file") blocked.push(file);
   }

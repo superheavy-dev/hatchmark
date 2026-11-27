@@ -173,10 +173,7 @@ export async function describeColumns(
 
 const TYPES = { VARCHAR, BOOLEAN, INTEGER, BIGINT, HUGEINT, DOUBLE };
 
-/**
- * The parameters as DuckDB binds them: each with its sqlType, so printSql's literals have the
- * types that run, and BIGINT and HUGEINT values as bigint, which DuckDB needs for HUGEINT.
- */
+// DuckDB binds HUGEINT parameters only from bigint.
 export function boundParams(params: Record<string, SqlValue>): {
   values: Record<string, DuckDBValue>;
   types: Record<string, DuckDBType>;
@@ -191,13 +188,10 @@ export function boundParams(params: Record<string, SqlValue>): {
   return { values, types };
 }
 
-/** A source loaded into a temporary table (relation), with ORDINAL. */
 interface LoadedSource extends SqlSource {
-  /** Largest finite magnitude of each floating column, once per executor. */
   magnitudes: Map<string, Promise<number | null>>;
 }
 
-/** A reader over the files in the given order; withFile adds each row's path as __hm_file. */
 function readerSql(
   source: FileSource,
   files: string[],
@@ -229,13 +223,8 @@ function readerSql(
 
 const utf8Order = (a: string, b: string) => Buffer.compare(Buffer.from(a), Buffer.from(b));
 
-/**
- * Loads a source into a temporary table once, in file order, and numbers its rows in ORDINAL.
- * The files are the ones DuckDB lists for the path (one, since check rejects glob characters
- * with HM2016), sorted here by UTF-8 bytes. With preserve_insertion_order, CREATE TABLE AS keeps
- * each file's rows in order, so the load table's rowid orders rows within a file. A source column
- * named rowid would hide that rowid, so it is renamed for the load and back afterwards.
- */
+// DuckDB's CREATE TABLE AS keeps each file's rows in order only with preserve_insertion_order,
+// and a source column named rowid hides the table's rowid, so it is renamed for the load.
 async function loadSource(
   connection: DuckDBConnection,
   name: string,
@@ -287,12 +276,12 @@ async function loadSource(
   };
 }
 
-/** Rounds a floating result to 15 significant digits, the digits every summation order agrees on. */
+// DuckDB sums floats in a thread-dependent order; 15 significant digits are the ones every order
+// agrees on.
 function canonicalFloat(value: number): number | null {
   return Number.isFinite(value) ? Number(value.toPrecision(15)) : null;
 }
 
-/** A measure as a number: exact types converted once, floating ones canonicalized; else null. */
 function measureValue(value: DuckDBValue, type: string): number | null {
   if (typeof value === "number") {
     return type === "DOUBLE" || type === "FLOAT" ? canonicalFloat(value) : value;
@@ -370,7 +359,7 @@ async function execute(
   const large = shownMetrics.flatMap((metric, i) => {
     const value = all[0]?.[windows + i];
     const maxAbs = typeof value === "number" ? canonicalFloat(value) : null;
-    return maxAbs !== null && maxAbs >= FLOAT_RESULT_LIMIT ? [{ metric, maxAbs }] : [];
+    return maxAbs !== null && maxAbs >= FLOAT_CENTS_LIMIT ? [{ metric, maxAbs }] : [];
   });
   return {
     columns: [
@@ -387,13 +376,10 @@ async function execute(
   };
 }
 
-/** The accuracy limit: floating sums are promised only for values within ±1e15. */
 const FLOAT_ACCURACY_LIMIT = 1e15;
 
-/** From ±1e13 on, a floating result shown with 15 significant digits loses its cents. */
-const FLOAT_RESULT_LIMIT = 1e13;
+const FLOAT_CENTS_LIMIT = 1e13;
 
-/** Summed floating columns of a query whose largest finite magnitude is above FLOAT_ACCURACY_LIMIT. */
 async function impreciseColumns(
   connection: DuckDBConnection,
   source: LoadedSource,

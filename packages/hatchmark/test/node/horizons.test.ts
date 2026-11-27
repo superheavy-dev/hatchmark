@@ -4,8 +4,6 @@ import { createDuckDbExecutor } from "../../src/node/index.js";
 import { PROJECT_DEFAULTS } from "../../src/spec/index.js";
 import { metric, removeProjects, run, writeProject } from "./fixture.js";
 
-// Source horizons and latest_data (RFC 0001 sections 6.1 and 6.3).
-
 afterAll(removeProjects);
 
 const ORDERS = "ordered_at,amount\n2026-04-28T10:00:00Z,10\n2026-04-29T15:30:00Z,20\n";
@@ -82,7 +80,6 @@ describe("source horizons", () => {
     expect(data?.asOf).toBe("2026-04-29");
     expect(codes).toEqual([]);
     expect(value("sessions")).toBe(0);
-    // Orders end at 3:30 p.m. Apr 29, so the KPI reads whole days through Apr 28.
     expect(value("revenue")).toBe(10);
   });
 
@@ -230,7 +227,6 @@ describe("source horizons", () => {
       ["HM4013", "warning", "/blocks/0"],
       ["HM4013", "warning", "/blocks/1"],
     ]);
-    // An empty window is a gap, not 0.
     expect(value("revenue")).toBeNull();
     expect(data?.blocks[0]).toMatchObject({ empty: "no_data" });
   });
@@ -277,7 +273,6 @@ describe("time zones of timestamps without an offset", () => {
   });
 });
 
-/** A project of one CSV source per entry, a sum metric per source and a KPI block each. */
 async function sources(
   csv: Record<string, { text: string; options?: Record<string, unknown>; column?: string }>,
   period: Record<string, unknown>,
@@ -323,7 +318,6 @@ describe("horizon edges (HAT-44 and HAT-45 on #19)", () => {
       ),
     );
     expect(one.data?.asOf).toBe("2026-06-02");
-    // Jun 2 has begun but isn't complete, so last 1 day is Jun 1, the last complete day.
     expect(one.value("orders")).toBe(5);
     const week = await build(
       await sources(
@@ -339,8 +333,6 @@ describe("horizon edges (HAT-44 and HAT-45 on #19)", () => {
     expect(week.value("orders")).toBe(3);
   });
 
-  // HAT-45's two newest-day cases, moved to whole days (RFC 0001 section 6.4): the newest row is at
-  // midnight on Apr 30, so Apr 30 has begun but isn't complete and last 7 days ends with Apr 29.
   it("leaves the newest, begun day out of last 7 days, with latest_data or a fixed as-of", async () => {
     const text = "at,v\n2026-04-28T00:00:00Z,1\n2026-04-29T00:00:00Z,2\n2026-04-30T00:00:00Z,4\n";
     for (const asOf of ["latest_data", "2026-04-30"]) {
@@ -541,7 +533,6 @@ describe("horizon edges (HAT-44 and HAT-45 on #19)", () => {
       [],
       [],
     ]);
-    // all_time reads whole days through May 31, 2099, the last complete day before 6 p.m. Jun 1.
     expect(runs[0]?.value("orders")).toBe(3);
     const bytes = runs.map((r) => JSON.stringify(r.data));
     expect(new Set([...bytes, JSON.stringify((await build(fixture)).data)]).size).toBe(1);

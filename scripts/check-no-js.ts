@@ -1,6 +1,3 @@
-// Fails when the repository tracks a JavaScript source file (.js, .mjs or .cjs). Hatchmark is
-// written in TypeScript, which Node runs directly, so there is no reason to hand-write JavaScript.
-// Only git-tracked files count, so build output such as dist/ never trips it.
 import { execFileSync } from "node:child_process";
 
 const ALLOWED = new Set<string>([]);

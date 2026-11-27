@@ -9,12 +9,6 @@ import type {
   Value,
 } from "../src/compiler/dashboard-data.js";
 
-/**
- * Sample DashboardData for the component gallery, golden tests and the workerd smoke test: a
- * fictional global online store ("Northwind Outfitters") with realistic seasonality, written by a
- * seeded generator so every run produces the same numbers.
- */
-
 function random(seed: number): () => number {
   let state = seed >>> 0;
   return () => {
@@ -75,7 +69,6 @@ export const CHANNELS = [
   { name: "Retail partners", share: 0.15 },
 ];
 
-/** Monthly revenue over the 24 months, with seasonality, growth and noise. */
 export const MONTHLY_REVENUE = MONTHS.map((m, i) =>
   round(1_220_000 * season(m) * trend(i, MONTHS.length) * (0.97 + rand() * 0.06)),
 );
@@ -164,7 +157,6 @@ function kpi(
 const lastOct = MONTHLY_REVENUE[23] as number;
 const lastSep = MONTHLY_REVENUE[22] as number;
 
-/** The KPI strip of the example dashboard. */
 export const SALES_KPIS: KpiData[] = [
   kpi("revenue", "revenue", lastOct, lastSep),
   kpi("orders", "orders", 21_874, 21_102),
@@ -301,7 +293,6 @@ function dashboard(
   };
 }
 
-/** The example dashboard: KPI strip, revenue line, top countries and the country table. */
 export const SALES: DashboardData = dashboard("sales", "Sales overview", [
   ...SALES_KPIS,
   REVENUE_LINE,

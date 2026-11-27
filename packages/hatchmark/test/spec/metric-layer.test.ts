@@ -11,11 +11,6 @@ import {
 import { jsonSchema } from "../../src/spec/json-schema.js";
 import { applyFix, CONFIG, projectFrom } from "./helpers.js";
 
-/**
- * The expressiveness test from RFC 0001: a synthetic US SaaS company (Larkspur) shaped like a
- * Stripe export, with every common ARR method written in the grammar. No keyword in the schema is
- * SaaS-specific; these files must validate with no errors.
- */
 const larkspurConfig = {
   ...CONFIG,
   name: "Larkspur",

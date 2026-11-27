@@ -36,10 +36,6 @@ export const checkHelp: CommandHelp = {
   },
 };
 
-/**
- * Errors in hatchmark.json are configuration errors (exit 2); errors that only mean the machine is
- * missing something are environment errors (exit 3); any other error is in the user's files (1).
- */
 const ENVIRONMENT_CODES = new Set(["HM1001", "HM2010"]);
 
 export function exitCodeFor(diagnostics: readonly Diagnostic[], strict: boolean): ExitCode {

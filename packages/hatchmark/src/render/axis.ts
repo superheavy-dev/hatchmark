@@ -7,10 +7,6 @@ import { textWidth } from "./measure.js";
 export const TICK_STYLE = { size: 12 } as const;
 const MIN_LABEL_GAP = 8;
 
-/**
- * A nice linear domain that always includes zero, with 3 to 6 ticks: one per 48 px of plot
- * height, as the Default theme's axis tokens ask. An all-zero or empty domain becomes [0, 1].
- */
 export function yTicks(
   values: readonly number[],
   plotHeight: number,
@@ -22,11 +18,6 @@ export function yTicks(
   return niceTicks(min, max, Math.max(3, Math.min(6, Math.floor(plotHeight / 48))));
 }
 
-/**
- * A scatter axis: a nice domain around the data that starts at zero only when zero is close (the
- * smallest value under a third of the largest, all on one side of zero), with 3 to 6 ticks, one per
- * 48 px of length on y or per 96 px on x. One distinct value gets a span around it.
- */
 export function scatterTicks(
   values: readonly number[],
   length: number,
@@ -75,12 +66,6 @@ export interface AxisLabel {
   text: string;
 }
 
-/**
- * Labels for a time axis. Months (or quarters, or years) are the label units: month and coarser
- * grains label buckets, day and week grains label the first bucket of each month. The smallest
- * step that fits is kept, aligned on January, and the year appears on January and on the first
- * label.
- */
 export function timeLabels(
   axis: TimeAxis,
   x: (index: number) => number,

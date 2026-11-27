@@ -1,7 +1,6 @@
 import type { DateSpan, MetricInfo, Value } from "../compiler/dashboard-data.js";
 import type { TimeGrain } from "../spec/index.js";
 
-/** Where a number is shown: each place has its own precision rules (Default theme tokens). */
 export type NumberStyle = "full" | "compact" | "axis" | "headline";
 
 const formatters = new Map<string, Intl.NumberFormat>();
@@ -16,15 +15,8 @@ function numberFormat(locale: string, options: Intl.NumberFormatOptions): Intl.N
   return format;
 }
 
-/** Hyphen-minus to the typographic minus sign the theme asks for. */
 const minus = (text: string): string => text.replaceAll("-", "\u2212");
 
-/**
- * Formats a metric value. null is the em dash; 0 is a real zero. Headline (KPI) values switch to
- * compact notation at 100,000 for currency and 1,000,000 for plain numbers unless the metric's
- * format sets compact. Compact text switches to scientific notation from 10^15, past the
- * largest compact unit (T).
- */
 export function formatValue(
   value: Value,
   metric: Pick<MetricInfo, "format">,
@@ -73,7 +65,6 @@ export function formatValue(
   );
 }
 
-/** Axis tick labels: compact, with the fewest decimals that show every tick exactly. */
 export function formatTicks(
   ticks: number[],
   metric: Pick<MetricInfo, "format">,
@@ -91,11 +82,6 @@ export function formatTicks(
   return ticks.map((t) => formatValue(t, metric, locale, "full"));
 }
 
-/**
- * A KPI change: relative changes as a signed percent with one decimal, percentage-point changes
- * with two decimals and " pp". The sign uses the typographic minus. Returns undefined when there
- * is no change to show.
- */
 export function formatChange(
   change: Value | undefined,
   kind: "relative" | "points",
@@ -120,7 +106,6 @@ export function formatChange(
   );
 }
 
-/** A YYYY-MM-DD date as a UTC Date; calendar dates carry no time zone of their own. */
 export function parseDate(date: string): Date {
   const [y, m, d] = date.split("-").map(Number);
   return new Date(Date.UTC(y as number, (m as number) - 1, d as number));
@@ -153,8 +138,6 @@ export const formatDay = (date: Date, locale: string, withYear = true): string =
 
 const quarter = (date: Date): string => `Q${Math.floor(date.getUTCMonth() / 3) + 1}`;
 
-/** A bucket as the tooltip header and data table name it: "Oct 2026", "Week of Oct 5, 2026". */
-/** Whether a quarter or year bucket starts on a calendar quarter or year, so Q3 2026 or 2026 names it. */
 const calendarStart = (date: Date, grain: "quarter" | "year") =>
   date.getUTCDate() === 1 && date.getUTCMonth() % (grain === "year" ? 12 : 3) === 0;
 
@@ -177,7 +160,6 @@ export function formatBucket(bucket: string, grain: TimeGrain, locale: string): 
   }
 }
 
-/** An axis label for a bucket; the year is added on January (or Q1) and on the first label. */
 export function formatBucketTick(
   bucket: string,
   grain: TimeGrain,
@@ -199,10 +181,6 @@ export function formatBucketTick(
 
 const addDays = (date: Date, days: number): Date => new Date(date.getTime() + days * 86_400_000);
 
-/**
- * A date span in words, end exclusive: "Oct 2026" for one calendar month, "Nov 2025 – Oct 2026"
- * for whole months, "Q3 2026", "2026", else days: "Sep 7 – Nov 1, 2026".
- */
 export function formatSpan(span: DateSpan, locale: string): string {
   const start = parseDate(span.start);
   const end = parseDate(span.end);
@@ -223,10 +201,6 @@ export function formatSpan(span: DateSpan, locale: string): string {
   return `${formatDay(start, locale, !sameYear)} \u2013 ${formatDay(last, locale)}`;
 }
 
-/**
- * The previous window as a KPI note names it: "Sep" when it is one month of the current
- * window's year, else the full span.
- */
 export function formatPreviousSpan(
   previous: DateSpan,
   current: DateSpan | undefined,
@@ -247,7 +221,6 @@ export function formatPreviousSpan(
   return formatSpan(previous, locale);
 }
 
-/** A YYYY-MM-DD date as "Oct 31, 2026". */
 export const formatDate = (date: string, locale: string): string =>
   formatDay(parseDate(date), locale);
 
@@ -255,10 +228,6 @@ function formatIso(date: Date): string {
   return date.toISOString().slice(0, 10);
 }
 
-/**
- * A category key as text: null is "(empty)", booleans as written. A number in a grouping column is
- * a label, not a quantity (a year, a seat count, a store id), so it has no thousands separator.
- */
 export function formatKey(key: string | number | boolean | null, locale: string): string {
   if (key === null) return "(empty)";
   if (typeof key === "number") {

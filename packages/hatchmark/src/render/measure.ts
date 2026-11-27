@@ -2,7 +2,6 @@ import { FONT_METRICS, UNITS_PER_EM } from "./text-metrics.js";
 
 export type FontWeight = 400 | 500 | 600;
 
-/** A text style to measure: the theme font at a size in px and a weight. */
 export interface TextStyle {
   size: number;
   weight?: FontWeight;
@@ -32,11 +31,8 @@ function table(weight: FontWeight): Table {
   return found;
 }
 
-/**
- * Width of a code point outside the bundled subsets, in font units: browsers draw it with a
- * fallback font, so this is an estimate. Wide (CJK, emoji) characters take a full em, combining
- * marks none, everything else the theme font's average lowercase advance.
- */
+// Browsers draw code points outside the bundled subsets with a fallback font, so this is an
+// estimate.
 function fallbackAdvance(cp: number): number {
   if (cp >= 0x0300 && cp <= 0x036f) return 0;
   if (cp >= 0x1100 && (cp <= 0x115f || (cp >= 0x2e80 && cp <= 0xa4cf) || cp >= 0xac00)) {
@@ -45,11 +41,6 @@ function fallbackAdvance(cp: number): number {
   return 560;
 }
 
-/**
- * Width in px of one line of text in the theme font, from advance widths and kerning generated
- * offline from the bundled font files (scripts/gen-text-metrics.ts). No canvas or DOM, so it
- * runs anywhere the engine core runs and gives the same answer everywhere.
- */
 export function textWidth(text: string, style: TextStyle): number {
   const { advances, kerning } = table(style.weight ?? 400);
   let units = 0;
@@ -63,11 +54,6 @@ export function textWidth(text: string, style: TextStyle): number {
   return (units * style.size) / UNITS_PER_EM;
 }
 
-/**
- * Shortens text to fit maxWidth by cutting its end and adding an ellipsis ("Middle East & No…"),
- * for names that read as words, where the start carries the meaning. Text that fits is returned
- * unchanged; when not even one character and the ellipsis fit, the result is "…".
- */
 export function truncateEnd(text: string, maxWidth: number, style: TextStyle): string {
   if (textWidth(text, style) <= maxWidth) return text;
   const chars = Array.from(text);
@@ -78,10 +64,6 @@ export function truncateEnd(text: string, maxWidth: number, style: TextStyle): s
   return textWidth(result, style) <= maxWidth ? result : "\u2026";
 }
 
-/**
- * Wraps text at spaces into at most maxLines lines of maxWidth. Text that still does not fit ends
- * in an ellipsis on the last line, and `cut` says so, so the caller can add the full text as a title.
- */
 export function wrapLines(
   text: string,
   maxWidth: number,

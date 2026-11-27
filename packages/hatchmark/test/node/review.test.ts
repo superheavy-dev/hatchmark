@@ -18,8 +18,6 @@ import {
 import { applyFix } from "../spec/helpers.js";
 import { loadAt, metric, Oracle, removeProjects, run, writeProject } from "./fixture.js";
 
-// Regression tests for the review of hatchmark#8: HAT-22's probes and HAT-23's blockers.
-
 let oracle: Oracle;
 beforeAll(async () => {
   oracle = await Oracle.open();
