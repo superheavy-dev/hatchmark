@@ -14,13 +14,14 @@ export function parseJsonFile(
   const diagnostics = document.errors.map((error): Diagnostic => {
     const code = error.kind === "duplicate-key" ? "HM1003" : "HM1002";
     const repair = error.repair;
-    const range = document.rangeAt(error.start, error.end);
+    const { range, frame } = document.location(error.start, error.end);
     return {
       code,
       severity: "error",
       message: error.message,
       file,
       range,
+      frame,
       ...(error.related === undefined
         ? {}
         : {
@@ -31,7 +32,6 @@ export function parseJsonFile(
       ...(repair
         ? {
             fix: {
-              op: "text",
               range: document.rangeAt(repair.start, repair.end),
               text: repair.text,
               applicability: "safe",

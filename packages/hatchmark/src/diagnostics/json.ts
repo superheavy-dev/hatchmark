@@ -1,4 +1,4 @@
-import type { Position, Range } from "./diagnostic.js";
+import type { Frame, Position, Range } from "./diagnostic.js";
 import { parsePointer } from "./pointer.js";
 
 interface NodeBase {
@@ -36,6 +36,9 @@ export interface JsonSyntaxError {
   repair?: { start: number; end: number; text: string };
 }
 
+const FRAME_BEFORE = 80;
+const FRAME_AFTER = 160;
+
 /** Thrown internally to stop parsing at the first syntax error. */
 class StopParsing extends Error {}
 
@@ -57,7 +60,7 @@ const ESCAPES: Readonly<Record<string, string>> = {
 
 type Built = { node: JsonNode; value: unknown };
 
-type Frame =
+type Container =
   | {
       kind: "object";
       start: number;
@@ -158,7 +161,7 @@ class Parser {
   }
 
   private parseRoot(): Built {
-    const stack: Frame[] = [];
+    const stack: Container[] = [];
     for (;;) {
       this.skipWhitespace();
       let built: Built | undefined = this.openOrScalar(stack);
@@ -216,7 +219,7 @@ class Parser {
     }
   }
 
-  private close(frame: Frame): Built {
+  private close(frame: Container): Built {
     const end = this.pos;
     return frame.kind === "object"
       ? {
@@ -230,12 +233,12 @@ class Parser {
   }
 
   /** Starts a container (pushing a frame and returning undefined) or parses a scalar value. */
-  private openOrScalar(stack: Frame[]): Built | undefined {
+  private openOrScalar(stack: Container[]): Built | undefined {
     const start = this.pos;
     const ch = this.text[start];
     if (ch === "{") {
       this.pos++;
-      const frame: Frame = {
+      const frame: Container = {
         kind: "object",
         start,
         members: [],
@@ -256,7 +259,7 @@ class Parser {
     }
     if (ch === "[") {
       this.pos++;
-      const frame: Frame = { kind: "array", start, items: [], value: [] };
+      const frame: Container = { kind: "array", start, items: [], value: [] };
       this.skipWhitespace();
       if (this.text[this.pos] === "]") {
         this.pos++;
@@ -298,7 +301,7 @@ class Parser {
     return this.fail(`expected a JSON value, found ${this.describeHere()}`);
   }
 
-  private readKey(frame: Extract<Frame, { kind: "object" }>): void {
+  private readKey(frame: Extract<Container, { kind: "object" }>): void {
     this.skipWhitespace();
     if (this.text[this.pos] !== '"') {
       const ch = this.text[this.pos];
@@ -440,18 +443,87 @@ export class JsonDocument {
     return { line: line + 1, column: offset - lineStart - pairs + 1 };
   }
 
+  /** Moves an offset off the low half of a surrogate pair. */
+  private snap(offset: number): number {
+    const low = this.text.charCodeAt(offset);
+    const high = this.text.charCodeAt(offset - 1);
+    return low >= 0xdc00 && low <= 0xdfff && high >= 0xd800 && high <= 0xdbff ? offset - 1 : offset;
+  }
+
+  /** Clamps UTF-16 offsets to 0 <= start <= end <= length, on code point boundaries. */
+  private clamp(start: number, end: number): [number, number] {
+    const length = this.text.length;
+    const s = this.snap(Math.min(Math.max(Math.trunc(start) || 0, 0), length));
+    let e = Math.min(Math.max(Math.trunc(end) || 0, s), length);
+    if (e > s && e < length && this.snap(e) !== e) e++;
+    return [s, e];
+  }
+
+  /** A range for a fix: clamped to the text, and empty when the fix inserts. */
   rangeAt(start: number, end: number): Range {
-    return { start: this.positionAt(start), end: this.positionAt(end) };
+    const [s, e] = this.clamp(start, end);
+    return { start: this.positionAt(s), end: this.positionAt(e) };
+  }
+
+  /**
+   * The range and frame for a diagnostic: clamped to the text and never empty, unless the text is
+   * empty. An empty span widens to the code point it points at, or the last one at end of file.
+   */
+  location(start: number, end: number): { range: Range; frame: Frame } {
+    let [s, e] = this.clamp(start, end);
+    const length = this.text.length;
+    if (e === s && length > 0) {
+      if (s < length) e = this.clamp(s, s + 1)[1];
+      else s = this.snap(length - 1);
+    }
+    const range = { start: this.positionAt(s), end: this.positionAt(e) };
+    return { range, frame: this.frameAt(s, range.start) };
+  }
+
+  /** Like rangeOf, with the frame captured from this text. */
+  locationOf(
+    pointer: string,
+    target: "value" | "key" = "value",
+  ): { range: Range; frame: Frame } | undefined {
+    const found = this.locate(pointer);
+    if (found === undefined) return undefined;
+    const { node, member } = found;
+    if (!found.exact) {
+      return member
+        ? this.location(member.keyStart, member.keyEnd)
+        : this.location(node.start, node.start + 1);
+    }
+    if (target === "key" && member) return this.location(member.keyStart, member.keyEnd);
+    return this.location(node.start, node.end);
+  }
+
+  /** A window of the line holding offset, at most FRAME_BEFORE + FRAME_AFTER code units long. */
+  private frameAt(offset: number, position: Position): Frame {
+    const lineStart = this.lineStarts[position.line - 1] ?? 0;
+    const lineEnd = this.lineEnd(position.line);
+    const from = this.snap(Math.min(lineEnd, Math.max(lineStart, offset - FRAME_BEFORE)));
+    const to = Math.min(lineEnd, this.snap(offset + FRAME_AFTER));
+    return {
+      text: this.text.slice(from, to),
+      column: from === lineStart ? 1 : this.positionAt(from).column,
+      more: to < lineEnd,
+    };
   }
 
   /** The source text of one line, without its line break. */
   lineText(line: number): string {
     const start = this.lineStarts[line - 1];
     if (start === undefined) return "";
+    return this.text.slice(start, this.lineEnd(line));
+  }
+
+  /** Offset just past the last character of a line, before its line break. */
+  private lineEnd(line: number): number {
     const next = this.lineStarts[line];
-    return this.text
-      .slice(start, next === undefined ? this.text.length : next)
-      .replace(/(?:\r\n|\r|\n)$/, "");
+    if (next === undefined) return this.text.length;
+    return this.text.charCodeAt(next - 1) === 10 && this.text.charCodeAt(next - 2) === 13
+      ? next - 2
+      : next - 1;
   }
 
   /**
@@ -484,17 +556,7 @@ export class JsonDocument {
    * existing ancestor.
    */
   rangeOf(pointer: string, target: "value" | "key" = "value"): Range | undefined {
-    const found = this.locate(pointer);
-    if (found === undefined) return undefined;
-    if (!found.exact) {
-      const { node, member } = found;
-      if (member) return this.rangeAt(member.keyStart, member.keyEnd);
-      return this.rangeAt(node.start, node.start + 1);
-    }
-    if (target === "key" && found.member) {
-      return this.rangeAt(found.member.keyStart, found.member.keyEnd);
-    }
-    return this.rangeAt(found.node.start, found.node.end);
+    return this.locationOf(pointer, target)?.range;
   }
 }
 

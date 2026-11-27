@@ -1,5 +1,10 @@
 import { describe, expect, it } from "vitest";
-import { JsonDocument } from "../../src/diagnostics/index.js";
+import {
+  JsonDocument,
+  type Position,
+  parseJsonFile,
+  type Range,
+} from "../../src/diagnostics/index.js";
 
 function lcg(seed: number): () => number {
   let state = seed >>> 0;
@@ -37,6 +42,8 @@ const alphabet = [
   "/",
   "*",
   "t",
+  "📈",
+  "界",
 ];
 
 describe("JsonDocument agrees with JSON.parse on mutated input", () => {
@@ -74,5 +81,69 @@ describe("JsonDocument agrees with JSON.parse on mutated input", () => {
       }
     }
     expect(accepted).toBeGreaterThan(1000);
+  });
+});
+
+const before = (a: Position, b: Position): boolean =>
+  a.line < b.line || (a.line === b.line && a.column <= b.column);
+
+function mutate(random: () => number, text: string): string {
+  let out = text;
+  const edits = 1 + Math.floor(random() * 3);
+  for (let e = 0; e < edits; e++) {
+    const at = Math.floor(random() * (out.length + 1));
+    const ch = alphabet[Math.floor(random() * alphabet.length)] ?? "";
+    out =
+      random() < 0.5 ? out.slice(0, at) + out.slice(at + 1) : out.slice(0, at) + ch + out.slice(at);
+  }
+  return out;
+}
+
+describe("span invariants", () => {
+  it("keep every range inside the text, non-empty for diagnostics, with a frame from that text", () => {
+    const random = lcg(1127);
+    const extra = ['"\\', "📈", "", " ", '"a', "[1,", "\r\n", '["\ud83d"]'];
+    const inputs = [
+      ...extra,
+      ...Array.from({ length: 5000 }, (_, i) => mutate(random, seeds[i % seeds.length] ?? "")),
+    ];
+    for (const text of inputs) {
+      const doc = new JsonDocument("x.json", text);
+      const eof = doc.positionAt(text.length);
+      const checkRange = (range: Range, allowEmpty: boolean) => {
+        expect(before({ line: 1, column: 1 }, range.start), text).toBe(true);
+        expect(before(range.start, range.end), text).toBe(true);
+        expect(before(range.end, eof), text).toBe(true);
+        const empty =
+          range.start.line === range.end.line && range.start.column === range.end.column;
+        if (empty && !allowEmpty)
+          expect(text, "only an empty file has an empty diagnostic range").toBe("");
+      };
+      const { diagnostics } = parseJsonFile("x.json", text);
+      const located = [
+        ...diagnostics,
+        ...Array.from({ length: 4 }, () => {
+          const a = Math.floor(random() * (text.length + 20)) - 10;
+          const b = Math.floor(random() * (text.length + 20)) - 10;
+          return doc.location(a, b);
+        }),
+        doc.location(Number.NaN, Number.POSITIVE_INFINITY),
+      ];
+      for (const d of located) {
+        if (!d.range) continue;
+        checkRange(d.range, false);
+        if (d.frame) {
+          const line = [...doc.lineText(d.range.start.line)];
+          expect(
+            line
+              .slice(d.frame.column - 1)
+              .join("")
+              .startsWith(d.frame.text),
+            text,
+          ).toBe(true);
+        }
+      }
+      for (const d of diagnostics) if (d.fix) checkRange(d.fix.range, true);
+    }
   });
 });

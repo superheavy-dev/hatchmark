@@ -1,9 +1,6 @@
 import type { Diagnostic, DiagnosticReport, Severity } from "./diagnostic.js";
-import { splitLines } from "./json.js";
 
 export interface HumanRenderOptions {
-  /** Source text by project-relative file path, used to print the offending line. */
-  sources?: ReadonlyMap<string, string>;
   color?: boolean;
   /** Longest expected list printed before it is cut short. Defaults to 12. */
   maxExpected?: number;
@@ -36,28 +33,6 @@ function displayWidth(text: string): number {
   return width;
 }
 
-const lineCache = new WeakMap<object, Map<string, string[]>>();
-
-function lineOf(
-  sources: ReadonlyMap<string, string>,
-  file: string,
-  line: number,
-): string | undefined {
-  let byFile = lineCache.get(sources);
-  if (byFile === undefined) {
-    byFile = new Map();
-    lineCache.set(sources, byFile);
-  }
-  let lines = byFile.get(file);
-  if (lines === undefined) {
-    const source = sources.get(file);
-    if (source === undefined) return undefined;
-    lines = splitLines(source);
-    byFile.set(file, lines);
-  }
-  return lines[line - 1];
-}
-
 function describeFix(diagnostic: Diagnostic): string | undefined {
   const fix = diagnostic.fix;
   if (fix === undefined) return undefined;
@@ -75,10 +50,7 @@ export function renderDiagnostic(diagnostic: Diagnostic, options: HumanRenderOpt
   );
 
   const range = diagnostic.range;
-  const text =
-    range && diagnostic.file !== undefined && options.sources
-      ? lineOf(options.sources, diagnostic.file, range.start.line)
-      : undefined;
+  const frame = diagnostic.frame;
   const gutterWidth = range ? String(range.start.line).length : 1;
   const pad = " ".repeat(gutterWidth);
   const bar = paint(color, "blue", "|");
@@ -87,24 +59,24 @@ export function renderDiagnostic(diagnostic: Diagnostic, options: HumanRenderOpt
     const where = range ? `:${range.start.line}:${range.start.column}` : "";
     out.push(`${pad}${paint(color, "blue", "-->")} ${diagnostic.file}${where}`);
   }
-  if (range && text !== undefined) {
-    const chars = [...text];
-    const startCol = Math.min(range.start.column - 1, chars.length);
+  if (range && frame) {
+    const chars = [...frame.text];
+    const startCol = Math.min(Math.max(range.start.column - frame.column, 0), chars.length);
     const endCol =
       range.end.line === range.start.line
         ? Math.min(
-            Math.max(range.end.column - 1, startCol + 1),
+            Math.max(range.end.column - frame.column, startCol + 1),
             Math.max(chars.length, startCol + 1),
           )
         : Math.max(chars.length, startCol + 1);
-    const lead = displayWidth(chars.slice(0, startCol).join(""));
+    const before = frame.column > 1 ? "…" : "";
+    const lead = displayWidth(before) + displayWidth(chars.slice(0, startCol).join(""));
     const width = Math.max(1, displayWidth(chars.slice(startCol, endCol).join("")));
     const carets = paint(color, style, "^".repeat(width));
     const label = diagnostic.label ? ` ${paint(color, style, diagnostic.label)}` : "";
+    const shown = `${before}${frame.text}${frame.more ? "…" : ""}`.replaceAll("\t", "    ");
     out.push(`${pad} ${bar}`);
-    out.push(
-      `${paint(color, "blue", String(range.start.line))} ${bar} ${text.replaceAll("\t", "    ")}`,
-    );
+    out.push(`${paint(color, "blue", String(range.start.line))} ${bar} ${shown}`);
     out.push(`${pad} ${bar} ${" ".repeat(lead)}${carets}${label}`);
   } else if (diagnostic.label) {
     out.push(`${pad} ${paint(color, "blue", "=")} ${diagnostic.label}`);

@@ -8,7 +8,10 @@ export interface Position {
   column: number;
 }
 
-/** A source range; end is exclusive. */
+/**
+ * A source range; end is exclusive. Always within the source (start <= end <= end of file). A
+ * diagnostic's range is empty only for an empty file; a fix's range is empty when it inserts.
+ */
 export interface Range {
   start: Position;
   end: Position;
@@ -17,20 +20,27 @@ export interface Range {
 export type Applicability = "safe" | "unsafe";
 
 /**
- * A fix for one diagnostic. Value fixes are RFC 6902 style operations on the parsed file at a JSON
- * Pointer; text fixes replace a source range and are used where the file does not parse. Only
- * "safe" fixes may be applied without a person or agent reading them first.
+ * A fix replaces the source range with text, verbatim. Only "safe" fixes may be applied without a
+ * person or agent reading them first. After applying fixes, run check again for fresh diagnostics:
+ * every range and frame describes the text that was checked, not the edited file.
  */
-export type Fix =
-  | {
-      op: "replace" | "add";
-      pointer: string;
-      value: unknown;
-      applicability: Applicability;
-      description: string;
-    }
-  | { op: "remove"; pointer: string; applicability: Applicability; description: string }
-  | { op: "text"; range: Range; text: string; applicability: Applicability; description: string };
+export interface Fix {
+  range: Range;
+  text: string;
+  applicability: Applicability;
+  description: string;
+}
+
+/**
+ * The source line a diagnostic points at, captured from the checked text when the diagnostic was
+ * made, so a later edit to the file can never redraw it against other text. Long lines are cut to
+ * a window: text starts at column, and more is true when the line continues past it.
+ */
+export interface Frame {
+  text: string;
+  column: number;
+  more: boolean;
+}
 
 export interface Diagnostic {
   code: DiagnosticCode;
@@ -41,6 +51,8 @@ export interface Diagnostic {
   /** JSON Pointer into the file's value. */
   pointer?: string;
   range?: Range;
+  /** The source line at range.start.line, as checked. */
+  frame?: Frame;
   /** Short text shown under the caret in human output. */
   label?: string;
   /** The values that would have been valid here, when there is a closed set. */
@@ -75,31 +87,9 @@ export function compareDiagnostics(a: Diagnostic, b: Diagnostic): number {
   const sevDiff = severityOrder[a.severity] - severityOrder[b.severity];
   if (sevDiff !== 0) return sevDiff;
   if (a.code !== b.code) return a.code < b.code ? -1 : 1;
-  const keyA = serialize(a);
-  const keyB = serialize(b);
+  const keyA = JSON.stringify(a);
+  const keyB = JSON.stringify(b);
   return keyA < keyB ? -1 : keyA > keyB ? 1 : 0;
-}
-
-/**
- * JSON.stringify that refuses values JSON cannot carry (NaN, Infinity, undefined in arrays,
- * functions, bigint) instead of silently turning them into null or dropping them, so a fix value
- * never changes on the wire.
- */
-function serialize(value: unknown): string {
-  return JSON.stringify(value, (key, v: unknown) => {
-    if (typeof v === "number" && !Number.isFinite(v)) {
-      throw new TypeError(`diagnostic field "${key}" holds ${v}, which JSON cannot represent`);
-    }
-    if (typeof v === "bigint" || typeof v === "function" || typeof v === "symbol") {
-      throw new TypeError(
-        `diagnostic field "${key}" holds a ${typeof v}, which JSON cannot represent`,
-      );
-    }
-    if (v === undefined && key !== "") {
-      throw new TypeError(`diagnostic field "${key}" is undefined; omit the field instead`);
-    }
-    return v;
-  });
 }
 
 /** Builds the versioned report; ok is false only when there is at least one error. */
@@ -115,10 +105,7 @@ export function createReport(diagnostics: readonly Diagnostic[]): DiagnosticRepo
   };
 }
 
-/**
- * Serializes a report as one line of JSON for stdout. Throws a TypeError when a diagnostic holds a
- * value JSON cannot represent, which is an internal bug rather than a user error.
- */
+/** Serializes a report as one line of JSON for stdout. */
 export function renderJson(report: DiagnosticReport): string {
-  return serialize(report);
+  return JSON.stringify(report);
 }

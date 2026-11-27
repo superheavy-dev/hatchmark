@@ -23,22 +23,21 @@ const sales = `{
 
 function unknownMetric(): Diagnostic {
   const doc = new JsonDocument("dashboards/sales.json", sales);
-  const range = doc.rangeOf("/charts/2/metric");
-  if (range === undefined) throw new Error("range not found");
+  const location = doc.locationOf("/charts/2/metric");
+  if (location === undefined) throw new Error("range not found");
   return {
     code: "HM1002",
     severity: "error",
     message: 'unknown metric "net_revenu"',
     file: "dashboards/sales.json",
     pointer: "/charts/2/metric",
-    range,
+    ...location,
     label: "no file metrics/net_revenu.json",
     expected: ["gross_revenue", "net_revenue", "orders", "refunds"],
     help: 'did you mean "net_revenue"? (metrics/net_revenue.json)',
     fix: {
-      op: "replace",
-      pointer: "/charts/2/metric",
-      value: "net_revenue",
+      range: location.range,
+      text: '"net_revenue"',
       applicability: "safe",
       description: 'replace with "net_revenue"',
     },
@@ -49,8 +48,7 @@ function unknownMetric(): Diagnostic {
 describe("renderHuman", () => {
   it("prints the rustc-style block with carets under the value", () => {
     const report = createReport([unknownMetric()]);
-    const sources = new Map([["dashboards/sales.json", sales]]);
-    expect(renderHuman(report, { sources })).toBe(
+    expect(renderHuman(report)).toBe(
       [
         'error[HM1002]: unknown metric "net_revenu"',
         " --> dashboards/sales.json:6:17",
@@ -66,8 +64,9 @@ describe("renderHuman", () => {
     );
   });
 
-  it("still prints the location when the source is not available", () => {
-    const text = renderHuman(createReport([unknownMetric()]));
+  it("still prints the location when there is no frame", () => {
+    const { frame: _, ...rest } = unknownMetric();
+    const text = renderHuman(createReport([rest]));
     expect(text).toContain(" --> dashboards/sales.json:6:17");
     expect(text).toContain("  = no file metrics/net_revenu.json");
   });
@@ -82,7 +81,7 @@ describe("renderHuman", () => {
   it("aligns carets after tabs", () => {
     const text = '{\n\t"a": tru\n}';
     const { diagnostics } = parseJsonFile("x.json", text);
-    const out = renderHuman(createReport(diagnostics), { sources: new Map([["x.json", text]]) });
+    const out = renderHuman(createReport(diagnostics));
     expect(out).toContain('2 |     "a": tru');
     expect(out).toContain("  |          ^^^");
   });
@@ -90,7 +89,7 @@ describe("renderHuman", () => {
   it("frames the right line in CR-only files", () => {
     const text = '{\r\t"a": tru\r}';
     const { diagnostics } = parseJsonFile("x.json", text);
-    const out = renderHuman(createReport(diagnostics), { sources: new Map([["x.json", text]]) });
+    const out = renderHuman(createReport(diagnostics));
     expect(out).toContain(" --> x.json:2:7");
     expect(out).toContain('2 |     "a": tru');
     expect(out).toContain("  |          ^^^");
@@ -103,10 +102,30 @@ describe("renderHuman", () => {
       ['{"📈": tru}', '1 | {"📈": tru}', `  | ${" ".repeat(7)}^^^`],
     ] as const) {
       const { diagnostics } = parseJsonFile("x.json", text);
-      const out = renderHuman(createReport(diagnostics), { sources: new Map([["x.json", text]]) });
+      const out = renderHuman(createReport(diagnostics));
       expect(out, text).toContain(line);
       expect(out, text).toContain(caret);
     }
+  });
+
+  it("draws each frame from the text it was checked against, even after the file changes", () => {
+    const first = parseJsonFile("x.json", '{"before": tru}').diagnostics;
+    const second = parseJsonFile("x.json", '{"after": tru}').diagnostics;
+    expect(renderHuman(createReport(first)).split("\n")[3]).toBe('1 | {"before": tru}');
+    expect(renderHuman(createReport(second)).split("\n")[3]).toBe('1 | {"after": tru}');
+    expect(renderHuman(createReport(first)).split("\n")[3]).toBe('1 | {"before": tru}');
+  });
+
+  it("windows very long lines", () => {
+    const text = `[${"1,".repeat(500)}tru, ${"2,".repeat(500)}3]`;
+    const [d] = parseJsonFile("x.json", text).diagnostics;
+    expect(d?.frame?.column).toBeGreaterThan(1);
+    expect(d?.frame?.more).toBe(true);
+    expect(d?.frame?.text.length).toBeLessThanOrEqual(240);
+    const lines = renderHuman(createReport(d ? [d] : [])).split("\n");
+    const caretAt = lines[4]?.indexOf("^") ?? -1;
+    expect(lines[3]?.slice(caretAt, caretAt + 3)).toBe("tru");
+    expect(lines[3]).toMatch(/^1 \| …1,.*…$/);
   });
 
   it("only adds ANSI colour when asked", () => {
@@ -145,19 +164,14 @@ describe("createReport and renderJson", () => {
     expect(renderJson(createReport([a, b]))).toBe(renderJson(createReport([b, a])));
   });
 
-  it("refuses values JSON cannot carry instead of changing them", () => {
-    const base = unknownMetric();
-    const fix = {
-      op: "replace" as const,
-      pointer: "/amount",
-      value: Number.POSITIVE_INFINITY,
-      applicability: "safe" as const,
-      description: "x",
-    };
-    expect(() => renderJson(createReport([{ ...base, fix }]))).toThrow(TypeError);
-    expect(() =>
-      renderJson(createReport([{ ...base, fix: { ...fix, value: [undefined] } }])),
-    ).toThrow(TypeError);
+  it("emits fix text verbatim", () => {
+    for (const text of ["-0", "1e6000", '{"": null}', "\u2028", '"\\u00e9"', ""]) {
+      const base = unknownMetric();
+      const fix = { ...(base.fix as NonNullable<Diagnostic["fix"]>), text };
+      expect(JSON.parse(renderJson(createReport([{ ...base, fix }]))).diagnostics[0].fix.text).toBe(
+        text,
+      );
+    }
   });
 
   it("is ok with warnings only", () => {
@@ -178,7 +192,12 @@ describe("createReport and renderJson", () => {
     expect(parsed.diagnostics[0]).toMatchObject({
       pointer: "/charts/2/metric",
       range: { start: { line: 6, column: 17 }, end: { line: 6, column: 29 } },
-      fix: { op: "replace", applicability: "safe", value: "net_revenue" },
+      frame: { text: '      "metric": "net_revenu",', column: 1, more: false },
+      fix: {
+        range: { start: { line: 6, column: 17 }, end: { line: 6, column: 29 } },
+        text: '"net_revenue"',
+        applicability: "safe",
+      },
     });
   });
 });

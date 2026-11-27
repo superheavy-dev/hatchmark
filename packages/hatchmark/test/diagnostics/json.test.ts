@@ -6,7 +6,7 @@ function errorsOf(text: string) {
     code: d.code,
     message: d.message,
     at: d.range ? `${d.range.start.line}:${d.range.start.column}` : undefined,
-    fix: d.fix?.op === "text" ? d.fix.text : undefined,
+    fix: d.fix?.text,
   }));
 }
 
@@ -127,7 +127,7 @@ describe("parseJsonFile syntax diagnostics", () => {
   it("never joins tokens when deleting a comment", () => {
     const apply = (text: string) => {
       const d = parseJsonFile("x.json", text).diagnostics[0];
-      if (d?.fix?.op !== "text") throw new Error("no text fix");
+      if (d?.fix === undefined) throw new Error("no fix");
       const doc = new JsonDocument("x.json", text);
       const toOffset = (line: number, column: number) => {
         let offset = 0;
@@ -178,6 +178,24 @@ describe("parseJsonFile syntax diagnostics", () => {
       expect(errorsOf(text).length, text).toBe(1);
       expect(errorsOf(text)[0]?.code, text).toBe("HM1002");
     }
+  });
+
+  it("keeps error ranges inside the file and on whole code points", () => {
+    for (const text of ['"\\', "📈", '"a', "[1,", "{", '["\\u12', "[📈]"]) {
+      const [d] = parseJsonFile("x.json", text).diagnostics;
+      const range = d?.range;
+      expect(range, text).toBeDefined();
+      if (!range) continue;
+      const lastColumn = [...text].length + 1;
+      expect(range.end.column, text).toBeLessThanOrEqual(lastColumn);
+      expect(range.start.column, text).toBeLessThanOrEqual(range.end.column);
+      if (range.start.column < lastColumn)
+        expect(range.end.column, text).toBeGreaterThan(range.start.column);
+    }
+    expect(parseJsonFile("x.json", "📈").diagnostics[0]?.range).toEqual({
+      start: { line: 1, column: 1 },
+      end: { line: 1, column: 2 },
+    });
   });
 
   it("reports duplicate keys with the first occurrence", () => {

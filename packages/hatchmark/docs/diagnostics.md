@@ -57,19 +57,22 @@ spec shape, HM4xxx data rules, HM5xxx design rules, HM9xxx internal errors.
 
 ## Fixes
 
-A fix is one of:
-
-- `{"op": "replace" | "add", "pointer", "value", "applicability", "description"}`: set the value at
-  the pointer (RFC 6902 semantics). `value` is any JSON value.
-- `{"op": "remove", "pointer", "applicability", "description"}`.
-- `{"op": "text", "range", "text", "applicability", "description"}`: replace the source range
-  with `text`. Used where the file does not parse, or to rename a key.
+A fix is `{"range", "text", "applicability", "description"}`: replace the source `range` with
+`text`, verbatim. An empty range inserts `text` at that point. The range follows the same rules as
+a diagnostic's range, except that it may be empty.
 
 `applicability` is `"safe"` when applying the fix cannot change what the file means beyond the
 repair itself (deleting a comment or trailing comma, fixing letter case, adding a documented
 default). `"unsafe"` fixes are likely but must be read first; for example, replacing a misspelled
 metric name with the closest existing one could pick the wrong metric. `hatchmark check --fix`
 applies only safe fixes.
+
+## Diagnostics describe the checked text
+
+Every `range`, `frame` and fix range refers to the exact text that was checked, and is never
+updated afterwards. After applying one fix, the other ranges may no longer match the file: apply
+fixes from the end of the file backwards, or run `check` again for fresh diagnostics after
+each edit.
 
 ## JSON syntax
 
