@@ -366,6 +366,16 @@ describe("tall tables", () => {
       });
       const head = await page.$eval("thead th", (n) => n.getBoundingClientRect().top);
       const foot = await page.$eval("tfoot th", (n) => n.getBoundingClientRect().bottom);
+      const cells = await page.$$eval("tfoot tr > *", (ns) =>
+        ns.map((n) => ({
+          position: getComputedStyle(n).position,
+          bottom: n.getBoundingClientRect().bottom,
+        })),
+      );
+      for (const cell of cells) {
+        expect(cell.position).toBe("sticky");
+        expect(Math.abs(cell.bottom - foot)).toBeLessThan(0.5);
+      }
       expect(Math.abs(head - box.top)).toBeLessThan(2);
       expect(Math.abs(foot - box.bottom)).toBeLessThan(18);
       await page.close();
