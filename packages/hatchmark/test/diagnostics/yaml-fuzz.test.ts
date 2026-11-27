@@ -5,6 +5,7 @@ import {
   parseYamlFile,
   type Range,
   SpecDocument,
+  type SpecNode,
 } from "../../src/diagnostics/index.js";
 
 function lcg(seed: number): () => number {
@@ -186,5 +187,133 @@ describe("stringOffset on every scalar style", () => {
       checked++;
     }
     expect(checked).toBeGreaterThan(300);
+  });
+});
+
+describe("stringOffset against the characters of the source", () => {
+  const MARKS = "αβγδεζηθικλμνξοπρστυφχψωΑΒΓΔΕΖΗΘΙΚΛΜΝΞΟΠΡΣΤΥΦΧΨΩабвгдежзийклмнопрстуфхцчшщъыьэюя";
+  const FILL = [
+    " ",
+    "  ",
+    "\n",
+    "\n\n",
+    "\t",
+    "'",
+    '"',
+    "\\",
+    "#",
+    ":",
+    "-",
+    "😀",
+    "é",
+    "{",
+    ",",
+    "\u0085",
+    "\u00a0",
+  ];
+  const STYLES = [
+    "PLAIN",
+    "QUOTE_SINGLE",
+    "QUOTE_DOUBLE",
+    "BLOCK_LITERAL",
+    "BLOCK_FOLDED",
+  ] as const;
+  const failures = (text: string): string[] => {
+    const doc = new SpecDocument("x.yaml", text);
+    if (doc.errors.length > 0 || doc.root === undefined) return [];
+    const found: string[] = [];
+    const walk = (node: SpecNode): void => {
+      if (node.kind === "object") for (const m of node.members) walk(m.value);
+      else if (node.kind === "array") for (const item of node.items) walk(item);
+      else if (node.kind === "string")
+        for (let i = 0; i < node.value.length; i++) {
+          const ch = node.value[i] ?? "";
+          if (!MARKS.includes(ch)) continue;
+          const start = doc.stringOffset(node, i);
+          const end = doc.stringOffset(node, i + 1, "end");
+          if (text[start] !== ch || text[end - 1] !== ch)
+            found.push(
+              `${JSON.stringify(text)} ${ch}@${i}: ${JSON.stringify(text[start])} ${JSON.stringify(text[end - 1])}`,
+            );
+        }
+    };
+    walk(doc.root);
+    return found;
+  };
+
+  it("lands on each marked character for hand-written scalars", () => {
+    const cases = [
+      'x: "\\U0001F600αβ"\n',
+      'x: "\\ud83d\\ude00αβ"\n',
+      'x: "\\x41α"\n',
+      'x: "\\N\\L\\P\\_α"\n',
+      'x: "\\ \\\tα"\n',
+      'x: "αβ\\\n  γδ"\n',
+      'x: "αβ\\\n  \tγδ"\n',
+      'x: "αβ \\\t\\\n  \t γδ"\n',
+      'x: "α \\\n   \\ β"\n',
+      'x: "α\n\n\n  β"\n',
+      'x: "α   \n  β"\n',
+      'x: "\\U0001F600α\n  β"\n',
+      "x: 'α ''β''\n\n  γ'\n",
+      "x: α\n\n  β\n   γ\n",
+      "x: |2\n    α\n   β\n",
+      "x: |+\n  α\n\n  β\n\n",
+      "x: |\n\n  α\n",
+      "x: |\n    α\n  β\n",
+      "x: |\n  \tα\n  β\n",
+      "x: |\n  \tα\n  \tβ\n",
+      "x: |\n  \u00a0α\n  \u00a0β\n",
+      "x: >\n  α\n    β\n  γ\n\n  δ\n",
+      "x: >2\n   α\n  β\n",
+      "x: >-\n  α β\n  γ\n",
+      "x: >\n  α\tβ\n  γ\n",
+      "- |\n  α\n  β\n- >\n  γ\n  δ\n",
+      "x: 😀α😀β\n",
+      'x: "😀α"\n',
+      "x: |\n  😀α\n  😀β\n",
+      "x: [α\n  β, γ]\n",
+      'x: {k: "α\n  β"}\n',
+      "x: >\r\n  α\r\n  β\r\n",
+      'x: "α\r\n  β"\r\n',
+      "x: |\r\n  α\r\n  β\r\n",
+      'x: "α\\\r\n  β"\r\n',
+      "a:\n  b:\n    - x: |-\n         α\\βγ\n",
+    ];
+    expect(cases.flatMap(failures)).toEqual([]);
+  });
+
+  it("lands on each marked character however the yaml package writes the value", () => {
+    const random = lcg(96);
+    const sweep = process.env.HM_SWEEP === "full" ? 20_000 : 600;
+    const pick = <T>(list: readonly T[]): T => list[Math.floor(random() * list.length)] as T;
+    const found: string[] = [];
+    for (let n = 0; n < sweep; n++) {
+      let mark = 0;
+      let value = "";
+      for (let i = 1 + Math.floor(random() * 14); i > 0; i--)
+        value += random() < 0.55 ? MARKS[mark++ % MARKS.length] : pick(FILL);
+      const wrap = pick(["map", "nested", "seq", "flow", "flowseq"] as const);
+      const doc =
+        wrap === "map"
+          ? { x: value, y: 1 }
+          : wrap === "nested"
+            ? { a: { b: [{ x: value }] } }
+            : wrap === "seq"
+              ? [value, "z"]
+              : wrap === "flow"
+                ? { x: value }
+                : { x: [value] };
+      const text = stringify(doc, {
+        defaultStringType: pick(STYLES),
+        defaultKeyType: "PLAIN",
+        lineWidth: pick([0, 8, 12, 20, 40]),
+        minContentWidth: 0,
+        collectionStyle: wrap.startsWith("flow") ? "flow" : "block",
+      });
+      found.push(...failures(text));
+      if (random() < 0.3) found.push(...failures(text.replace(/\n/g, "\r\n")));
+    }
+    expect(found.slice(0, 5)).toEqual([]);
   });
 });

@@ -513,23 +513,11 @@ export class SpecDocument {
     const raw = text.slice(node.start, node.end);
     if (node.style === "plain" && !/[\r\n]/.test(raw))
       return Math.min(node.start + index, node.end);
-    if ((node.style === "single" || node.style === "double") && !/[\r\n]/.test(raw)) {
-      let pos = node.start + 1;
-      for (let decoded = 0; decoded < index && pos < node.end - 1; decoded++) {
-        if (node.style === "single") pos += text.startsWith("''", pos) ? 2 : 1;
-        else if (text[pos] !== "\\") pos += 1;
-        else {
-          const esc = text[pos + 1];
-          pos += esc === "x" ? 4 : esc === "u" ? 6 : esc === "U" ? 10 : 2;
-        }
-      }
-      return Math.min(pos, node.end);
-    }
     if (node.style === "literal" && !/^\|[+-]?[1-9]/.test(raw)) {
       const header = text.slice(node.start).search(/\r\n|\r|\n/);
       let pos = header === -1 ? node.end : node.start + header;
       pos += text.startsWith("\r\n", pos) ? 2 : 1;
-      const indent = /^( *)\S/m.exec(text.slice(pos, node.end))?.[1]?.length ?? 0;
+      const indent = /^( *)[^ \r\n]/m.exec(text.slice(pos, node.end))?.[1]?.length ?? 0;
       let decoded = 0;
       while (pos < node.end) {
         let skip = 0;
