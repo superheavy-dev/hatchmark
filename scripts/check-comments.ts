@@ -1,9 +1,10 @@
 import { execFileSync } from "node:child_process";
-import { readFileSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import { pathToFileURL } from "node:url";
 
 export interface Comment {
   line: number;
+  block: boolean;
   doc: boolean;
   text: string;
 }
@@ -33,9 +34,12 @@ const REGEX_AFTER_KEYWORDS = new Set([
   "await",
 ]);
 
+const CONDITION_KEYWORDS = new Set(["if", "while", "for", "with"]);
+
 export function scanComments(source: string): Comment[] {
   const comments: Comment[] = [];
   const templateDepths: number[] = [];
+  const parens: boolean[] = [];
   let braceDepth = 0;
   let line = 1;
   let previous = "";
@@ -107,13 +111,13 @@ export function scanComments(source: string): Comment[] {
     } else if (c === "/" && next === "/") {
       const end = source.indexOf("\n", i);
       const stop = end === -1 ? source.length : end;
-      comments.push({ line, doc: false, text: source.slice(i + 2, stop) });
+      comments.push({ line, block: false, doc: false, text: source.slice(i + 2, stop) });
       advance(stop);
     } else if (c === "/" && next === "*") {
       const end = source.indexOf("*/", i + 2);
       const stop = end === -1 ? source.length : end + 2;
       const doc = source[i + 2] === "*" && source[i + 3] !== "/";
-      comments.push({ line, doc, text: source.slice(i + 2, stop - 2) });
+      comments.push({ line, block: true, doc, text: source.slice(i + 2, stop - 2) });
       advance(stop);
     } else if (c === '"' || c === "'") {
       skipQuoted(c);
@@ -139,7 +143,8 @@ export function scanComments(source: string): Comment[] {
     } else {
       if (c === "{") braceDepth++;
       if (c === "}") braceDepth--;
-      previous = c;
+      if (c === "(") parens.push(CONDITION_KEYWORDS.has(previous));
+      previous = c === ")" && parens.pop() ? "{" : c;
       advance(i + 1);
     }
   }
@@ -153,45 +158,50 @@ const TODO = /\b(?:TODO|FIXME|XXX|HACK)\b/;
 const CODE = [
   /^(?:const|let|var)\s+[\w${[{]/,
   /^(?:import|export)\s.*(?:\bfrom\s+["']|[{;]$)/,
+  /^export\s+default\b/,
   /^(?:if|for|while|switch)\s*\(.*\)\s*\{?$/,
+  /^(?:return|await|throw|yield)(?:\s+[\w$.[\]()!]+)?;?$/,
   /^(?:return|await|throw)\b.*;$/,
+  /^(?:break|continue);?$/,
   /^[\w$.[\]]+\(.*\);?$/,
   /^[\w$.[\]]+\s*[-+*/]?=\s*\S.*;$/,
   /^[{}\])]+;?$/,
 ];
-const PROSE = /[a-z]+,? [a-z]+,? [a-z]+/i;
-
-function looksLikeCode(body: string): boolean {
-  if (CODE.some((pattern) => pattern.test(body))) return true;
-  return /[;{]$/.test(body) && !PROSE.test(body);
-}
 
 function suppressionReason(directive: string, rest: string): string {
   if (directive.startsWith("biome-ignore")) {
     const colon = rest.indexOf(":");
-    return colon === -1 ? "" : rest.slice(colon + 1).trim();
+    return colon === -1 ? "" : rest.slice(colon + 1);
   }
-  return rest.replace(/^\s*(?:--|:)?/, "").trim();
+  return rest;
 }
+
+const withoutQuoted = (body: string) =>
+  body.replace(/"(?:[^"\\]|\\.)*"|'(?:[^'\\]|\\.)*'|`[^`]*`/g, "");
 
 export function checkComments(source: string): Violation[] {
   const violations: Violation[] = [];
   for (const comment of scanComments(source)) {
-    const lines = comment.text.split("\n").map((text) => text.replace(/^\s*\*?/, "").trim());
+    const lines = comment.block
+      ? comment.text.split("\n").map((text) => text.replace(/^\s*\*(?!\*)/, "").trim())
+      : [comment.text.replace(/^\/\s*/, "").trim()];
     lines.forEach((body, offset) => {
       const report = (rule: Rule) =>
         violations.push({ line: comment.line + offset, rule, text: body });
       const suppression = SUPPRESSION.exec(body);
       if (suppression) {
         const [, directive = "", rest = ""] = suppression;
-        if (directive !== "biome-ignore-end" && suppressionReason(directive, rest).length < 3) {
+        if (
+          directive !== "biome-ignore-end" &&
+          !/[a-z]{3}/i.test(suppressionReason(directive, rest))
+        ) {
           report("suppression-without-reason");
         }
       } else if (DIVIDER.test(body.replace(/\w+:\/\/\S+/g, ""))) {
         report("divider");
-      } else if (TODO.test(body)) {
+      } else if (TODO.test(withoutQuoted(body))) {
         report("todo");
-      } else if (!comment.doc && looksLikeCode(body)) {
+      } else if (!comment.doc && CODE.some((pattern) => pattern.test(body))) {
         report("commented-out-code");
       }
     });
@@ -209,11 +219,17 @@ const MESSAGES: Record<Rule, string> = {
 const GENERATED = new Set(["packages/hatchmark/src/render/text-metrics.ts"]);
 
 if (import.meta.url === pathToFileURL(process.argv[1] ?? "").href) {
-  const files = execFileSync("git", ["ls-files", "-z"], { encoding: "utf8" })
+  const files = execFileSync(
+    "git",
+    ["ls-files", "-z", "--cached", "--others", "--exclude-standard"],
+    {
+      encoding: "utf8",
+    },
+  )
     .split("\0")
-    .filter((file) => /\.[cm]?tsx?$/.test(file) && !GENERATED.has(file));
+    .filter((file) => /\.[cm]?ts$/.test(file) && !GENERATED.has(file) && existsSync(file));
   let failures = 0;
-  for (const file of files) {
+  for (const file of new Set(files)) {
     for (const violation of checkComments(readFileSync(file, "utf8"))) {
       failures++;
       console.error(

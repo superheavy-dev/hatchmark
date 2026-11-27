@@ -89,4 +89,37 @@ describe("checkComments", () => {
     ].join("\n");
     expect(rules(source)).toEqual([]);
   });
+
+  it("handles regexes after a condition and the review's edge cases", () => {
+    expect(rules('if (ok) /[//]TODO/.test("x");')).toEqual([]);
+    expect(
+      rules(
+        [
+          "// export default oldValue",
+          "// return total",
+          "// ****",
+          "/// @ts-ignore",
+          "// @ts-ignore -- ----",
+          "// biome-ignore lint/suspicious/noExplicitAny: ...",
+        ].join("\n"),
+      ),
+    ).toEqual([
+      "1:commented-out-code",
+      "2:commented-out-code",
+      "3:divider",
+      "4:suppression-without-reason",
+      "5:suppression-without-reason",
+      "6:suppression-without-reason",
+    ]);
+  });
+
+  it("accepts short external notes, RFC links and quoted markers", () => {
+    const source = [
+      "// Safari ≤17 ignores :has();",
+      "// https://www.rfc-editor.org/rfc/rfc9110.html#section-9.3.1;",
+      '/** @example setStatus("TODO"); */',
+      "// return early when the list is empty",
+    ].join("\n");
+    expect(rules(source)).toEqual([]);
+  });
 });
