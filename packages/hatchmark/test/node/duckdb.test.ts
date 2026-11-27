@@ -95,6 +95,10 @@ const METRICS = {
     aggregate: "count",
     filters: [{ column: "ordered_at", op: "gt", value: "2026-01-31" }],
   }),
+  injected: orders({
+    aggregate: "count",
+    filters: [{ column: "channel", op: "eq", value: "web' OR '1' = '1" }],
+  }),
   web_or_null: orders({
     aggregate: "count",
     filters: [{ column: "channel", op: "neq", value: "app" }],
@@ -139,9 +143,15 @@ const DASHBOARDS = {
   filters: {
     title: "Filters",
     period: { asOf: "2026-04-30", range: "all_time", compare: "none" },
-    blocks: ["not_west", "not_in_west", "jan_between", "jan_31", "after_jan", "web_or_null"].map(
-      (m) => ({ type: "kpi", id: m, metric: m }),
-    ),
+    blocks: [
+      "not_west",
+      "not_in_west",
+      "jan_between",
+      "jan_31",
+      "after_jan",
+      "web_or_null",
+      "injected",
+    ].map((m) => ({ type: "kpi", id: m, metric: m })),
   },
   weeks: {
     title: "Weeks",
@@ -387,6 +397,7 @@ describe("DuckDB executor against a SQL ROLLUP oracle", () => {
     expect(value("jan_31")).toBe(o?.jan_31);
     expect(value("after_jan")).toBe(o?.after_jan);
     expect(value("web_or_null")).toBe(o?.web_or_null);
+    expect(value("injected")).toBe(0);
   });
 
   it("sorts by a column in either direction with the null group last", async () => {
