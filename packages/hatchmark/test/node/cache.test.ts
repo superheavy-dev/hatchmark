@@ -421,6 +421,31 @@ describe("build cache", () => {
     expect(cached.files).toEqual((await build(root, false)).files);
   });
 
+  it("builds and explains when .hatchmark/tmp is inaccessible (HAT-52)", async () => {
+    const root = await example();
+    const tmp = path.join(root, ".hatchmark", "tmp");
+    await mkdir(tmp, { recursive: true });
+    await chmod(tmp, 0o000);
+    try {
+      const oracle = await build(root, false);
+      const cached = await build(root, true);
+      expect(cached.code).toBe(0);
+      expect(cached.files).toEqual(oracle.files);
+      const explained = await cliJson([
+        "explain",
+        "--cwd",
+        root,
+        "--dashboard",
+        "sales",
+        "--block",
+        "revenue",
+      ]);
+      expect(explained.code).toBe(0);
+    } finally {
+      await chmod(tmp, 0o755);
+    }
+  });
+
   it("treats corrupted, truncated and swapped entries as misses and rewrites them", async () => {
     const root = await example();
     const oracle = await build(root, false);

@@ -251,6 +251,8 @@ export async function createCachedExecutor(options: {
   /** Explain reads the project's files directly: it writes nothing, so nothing can be stored stale. */
   const snapshotting = stats.enabled && !options.readOnly;
   const snapshot = path.join(root, ".hatchmark", "tmp", randomUUID());
+  /** Whether this executor tried to create the snapshot, so close() removes only its own. */
+  let snapshotted = false;
   const projectExecutor = lazy(() => options.createInner(root));
   const snapshotExecutor = lazy(() => options.createInner(snapshot));
 
@@ -265,6 +267,7 @@ export async function createCachedExecutor(options: {
         const original = path.join(root, ...file.split("/"));
         if (!snapshotting) return { source, file, ...(await hashFile(original)) };
         const copy = path.join(snapshot, ...file.split("/"));
+        snapshotted = true;
         await mkdir(path.dirname(copy), { recursive: true });
         await copyFile(original, copy, constants.COPYFILE_FICLONE | constants.COPYFILE_EXCL);
         return { source, file, ...(await hashFile(copy)) };
@@ -579,7 +582,7 @@ export async function createCachedExecutor(options: {
         for (const executor of [projectExecutor.made(), snapshotExecutor.made()]) {
           if (executor !== undefined) await (await executor).close();
         }
-        await rm(snapshot, { recursive: true, force: true });
+        if (snapshotted) await rm(snapshot, { recursive: true, force: true }).catch(() => {});
       }
     },
   };
