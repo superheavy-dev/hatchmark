@@ -1,5 +1,6 @@
 import { afterAll, describe, expect, it } from "vitest";
-import type { KpiData } from "../../src/compiler/index.js";
+import { explainDashboard, type KpiData } from "../../src/compiler/index.js";
+import { createDuckDbExecutor } from "../../src/node/index.js";
 import { PROJECT_DEFAULTS } from "../../src/spec/index.js";
 import { metric, removeProjects, run, writeProject } from "./fixture.js";
 
@@ -68,8 +69,8 @@ describe("source horizons", () => {
     const { data, codes } = await build(await project({}));
     expect(data?.asOf).toBe("2026-05-02");
     expect(data?.horizons).toEqual([
-      { source: "orders", column: "ordered_at", through: "2026-04-29T15:30:00.000000" },
-      { source: "sessions", column: "day", through: "2026-05-03T00:00:00.000000" },
+      { source: "orders", column: "ordered_at", through: "2026-04-29T15:30:00.000001Z" },
+      { source: "sessions", column: "day", through: "2026-05-03T00:00:00.000000Z" },
     ]);
     expect(codes).toEqual([["HM4010", "warning", "/sources/orders"]]);
   });
@@ -99,7 +100,7 @@ describe("source horizons", () => {
     );
     expect(data?.asOf).toBe("2026-05-02");
     expect(data?.horizons).toEqual([
-      { source: "sessions", column: "day", through: "2026-05-03T00:00:00.000000" },
+      { source: "sessions", column: "day", through: "2026-05-03T00:00:00.000000Z" },
     ]);
   });
 
@@ -119,7 +120,7 @@ describe("source horizons", () => {
     expect(data?.horizons[0]).toEqual({
       source: "orders",
       column: "exported_at",
-      through: "2026-05-02T06:00:00.000000",
+      through: "2026-05-02T06:00:00.000001Z",
     });
     expect(codes).toEqual([]);
   });
@@ -138,14 +139,14 @@ describe("source horizons", () => {
       ).data;
     const days = await lagged({ days: 1 });
     expect(days?.horizons.map((h) => h.through)).toEqual([
-      "2026-04-28T15:30:00.000000",
-      "2026-05-02T00:00:00.000000",
+      "2026-04-28T15:30:00.000001Z",
+      "2026-05-02T00:00:00.000000Z",
     ]);
     expect(days?.asOf).toBe("2026-05-01");
     const hours = await lagged({ hours: 6 });
     expect(hours?.horizons.map((h) => h.through)).toEqual([
-      "2026-04-29T09:30:00.000000",
-      "2026-05-02T18:00:00.000000",
+      "2026-04-29T09:30:00.000001Z",
+      "2026-05-02T18:00:00.000000Z",
     ]);
     expect(hours?.asOf).toBe("2026-05-02");
   });
@@ -161,8 +162,8 @@ describe("source horizons", () => {
     );
     expect(through.data?.asOf).toBe("2026-05-10");
     expect(through.data?.horizons).toEqual([
-      { source: "orders", through: "2026-05-11T00:00:00.000000" },
-      { source: "sessions", through: "2026-05-11T00:00:00.000000" },
+      { source: "orders", through: "2026-05-11T00:00:00.000000Z" },
+      { source: "sessions", through: "2026-05-11T00:00:00.000000Z" },
     ]);
     expect(through.codes).toEqual([]);
   });
@@ -249,7 +250,7 @@ describe("time zones of timestamps without an offset", () => {
       await project({ timezone: "America/New_York", metrics: one, files: { "orders.csv": NAIVE } }),
     );
     expect(codes).toEqual([["HM4016", "note", "/sources/orders"]]);
-    expect(data?.horizons[0]?.through).toBe("2026-04-29T22:00:00.000000");
+    expect(data?.horizons[0]?.through).toBe("2026-04-30T02:00:00.000001Z");
     expect(data?.asOf).toBe("2026-04-29");
   });
 
@@ -263,12 +264,220 @@ describe("time zones of timestamps without an offset", () => {
       }),
     );
     expect(codes).toEqual([]);
-    expect(data?.horizons[0]?.through).toBe("2026-04-30T05:00:00.000000");
+    expect(data?.horizons[0]?.through).toBe("2026-04-30T09:00:00.000001Z");
     expect(data?.asOf).toBe("2026-04-30");
   });
 
   it("needs no note in a UTC project", async () => {
     const { codes } = await build(await project({ metrics: one, files: { "orders.csv": NAIVE } }));
     expect(codes).toEqual([]);
+  });
+});
+
+/** A project of one CSV source per entry, a sum metric per source and a KPI block each. */
+async function sources(
+  csv: Record<string, { text: string; options?: Record<string, unknown>; column?: string }>,
+  period: Record<string, unknown>,
+  options: { timezone?: string; files?: Record<string, unknown>; blocks?: unknown[] } = {},
+) {
+  return writeProject({
+    "hatchmark.json": {
+      ...PROJECT_DEFAULTS,
+      name: "Edges",
+      timezone: options.timezone ?? "UTC",
+      sources: Object.fromEntries(
+        Object.entries(csv).map(([n, s]) => [n, { type: "csv", path: `${n}.csv`, ...s.options }]),
+      ),
+    },
+    ...Object.fromEntries(Object.entries(csv).map(([n, s]) => [`${n}.csv`, s.text])),
+    ...Object.fromEntries(
+      Object.entries(csv).map(([n, s]) => [
+        `metrics/${n}.json`,
+        metric({
+          type: "aggregate",
+          table: n,
+          aggregate: "sum",
+          column: "v",
+          time: s.column ?? "at",
+        }),
+      ]),
+    ),
+    ...options.files,
+    "dashboards/d.json": {
+      title: "D",
+      period: { compare: "none", ...period },
+      blocks: options.blocks ?? Object.keys(csv).map((n) => ({ type: "kpi", id: n, metric: n })),
+    },
+  });
+}
+
+describe("horizon edges (HAT-44 and HAT-45 on #19)", () => {
+  it("keeps a timestamp exactly at local midnight on its own day", async () => {
+    const one = await build(
+      await sources(
+        { orders: { text: "at,v\n2026-06-01T12:00:00Z,5\n2026-06-02T00:00:00Z,17\n" } },
+        { asOf: "latest_data", range: { last: 1, unit: "day" } },
+      ),
+    );
+    expect(one.data?.asOf).toBe("2026-06-02");
+    expect(one.value("orders")).toBe(17);
+    const week = await build(
+      await sources(
+        {
+          orders: {
+            text: "at,v\n2026-04-28T00:00:00Z,1\n2026-04-29T00:00:00Z,2\n2026-04-30T00:00:00Z,4\n",
+          },
+        },
+        { asOf: "latest_data", range: "last_7_days" },
+      ),
+    );
+    expect(week.data?.asOf).toBe("2026-04-30");
+    expect(week.value("orders")).toBe(7);
+  });
+
+  it("orders horizons by instant across a fall-back hour, not by wall-clock time", async () => {
+    const { data } = await build(
+      await sources(
+        {
+          a: { text: "at,v\n2026-11-01T01:45:00-04:00,1\n" },
+          b: { text: "at,v\n2026-11-01T01:15:00-05:00,1\n" },
+          c: {
+            text: "at,v\n2026-10-01T00:00:00Z,1\n",
+            options: { freshness: { through: "as_of" } },
+          },
+        },
+        { asOf: "latest_common_data", range: "all_time" },
+        { timezone: "America/New_York" },
+      ),
+    );
+    expect(data?.horizons).toEqual([
+      { source: "a", column: "at", through: "2026-11-01T05:45:00.000001Z" },
+      { source: "b", column: "at", through: "2026-11-01T06:15:00.000001Z" },
+      { source: "c", through: "2026-11-01T05:45:00.000001Z" },
+    ]);
+    expect(data?.asOf).toBe("2026-11-01");
+  });
+
+  it("ends a DATE source at the first instant of the next day where DST starts at midnight", async () => {
+    for (const asOf of ["latest_data", "latest_common_data"]) {
+      const { data } = await build(
+        await sources(
+          { orders: { text: "at,v\n2026-09-04,1\n2026-09-05,2\n" } },
+          { asOf, range: "all_time" },
+          { timezone: "America/Santiago" },
+        ),
+      );
+      expect(data?.asOf).toBe("2026-09-05");
+      expect(data?.horizons[0]?.through).toBe("2026-09-06T04:00:00.000000Z");
+    }
+  });
+
+  it("rejects a horizon past the supported dates instead of comparing it as text", async () => {
+    const dated = await build(
+      await sources(
+        {
+          late: { text: "at,v\n9999-12-31,1\n" },
+          orders: { text: "at,v\n2026-06-01,1\n" },
+        },
+        { asOf: "latest_data", range: "all_time" },
+      ),
+    );
+    expect(dated.data).toBeUndefined();
+    expect(dated.codes).toEqual([["HM2015", "error", undefined]]);
+    const through = await build(
+      await sources(
+        {
+          late: { text: "at,v\n2026-06-01,1\n", options: { freshness: { through: "9999-12-31" } } },
+          orders: { text: "at,v\n2026-06-01,1\n" },
+        },
+        { asOf: "latest_data", range: "all_time" },
+      ),
+    );
+    expect(through.data).toBeUndefined();
+    expect(through.diagnostics[0]?.message).toContain("9999-12-31");
+  });
+
+  it("warns with HM4013 only when every query of a block starts after its horizon", async () => {
+    const fixture = await sources(
+      {
+        num: { text: "at,v\n2026-06-01,5\n" },
+        den: { text: "at,v\n2026-06-10,17\n" },
+      },
+      { asOf: "2026-06-10", range: { last: 1, unit: "day" } },
+      {
+        files: {
+          "metrics/share.json": metric({ type: "ratio", numerator: "num", denominator: "den" }),
+        },
+        blocks: [
+          { type: "kpi", id: "share", metric: "share" },
+          { type: "kpi", id: "num", metric: "num" },
+        ],
+      },
+    );
+    const { codes } = await build(fixture);
+    expect(codes).toEqual([
+      ["HM4010", "warning", "/sources/num"],
+      ["HM4013", "warning", "/blocks/1"],
+    ]);
+  });
+
+  it("notes HM4016 for a naive time column even when freshness measures something else", async () => {
+    for (const options of [
+      { freshness: { through: "2026-06-01" } },
+      { freshness: { column: "exported" } },
+    ]) {
+      const { codes } = await build(
+        await sources(
+          { orders: { text: "at,exported,v\n2026-06-01T18:00:00,2026-06-01,1\n", options } },
+          { asOf: "2026-06-01", range: "all_time" },
+          { timezone: "America/New_York" },
+        ),
+      );
+      expect(codes).toEqual([["HM4016", "note", "/sources/orders"]]);
+    }
+  });
+
+  it("warns with HM4012 next to HM4010 on the same source, listing the first future rows", async () => {
+    const fixture = await sources(
+      {
+        orders: {
+          text: "at,shipped_at,v\n2026-06-01T10:00:00Z,2099-06-01T18:00:00Z,1\n2026-06-02T10:00:00Z,2099-06-02T18:00:00Z,2\n",
+        },
+      },
+      { asOf: "latest_data", range: "all_time" },
+      {
+        files: {
+          "metrics/shipped.json": metric({
+            type: "aggregate",
+            table: "orders",
+            aggregate: "sum",
+            column: "v",
+            time: "shipped_at",
+          }),
+        },
+        blocks: [
+          { type: "kpi", id: "orders", metric: "orders" },
+          { type: "kpi", id: "shipped", metric: "shipped" },
+        ],
+      },
+    );
+    const now = new Date("2026-11-27T00:00:00Z");
+    const built = await build(fixture, now);
+    expect(built.codes).toEqual([
+      ["HM4010", "warning", "/sources/orders"],
+      ["HM4012", "warning", "/sources/orders"],
+    ]);
+    expect(built.diagnostics[1]?.message).toBe(
+      'source "orders" has rows in "shipped_at" more than a day after this machine\'s clock (2026-11-27 00:00); the first are at 2099-06-01 18:00, 2099-06-02 18:00',
+    );
+    const config = fixture.project.config.spec;
+    if (config === undefined) throw new Error("no config");
+    const executor = await createDuckDbExecutor({ root: fixture.root, config });
+    try {
+      const explained = await explainDashboard(fixture.project, "d", executor, undefined, now);
+      expect(explained.diagnostics.map((d) => d.code)).toEqual(["HM4010", "HM4012"]);
+    } finally {
+      await executor.close();
+    }
   });
 });

@@ -1,0 +1,111 @@
+/**
+ * Instants for source horizons (RFC 0001 section 6.1): microseconds since 1970-01-01T00:00:00Z as a
+ * bigint, so sub-millisecond timestamps and every supported year compare exactly. A wall-clock time
+ * in a time zone uses the same scale, read as if it were UTC.
+ */
+
+export const DAY_US = 86_400_000_000n;
+
+const floorDiv = (a: bigint, b: bigint) => (a >= 0n ? a / b : -((-a + b - 1n) / b));
+
+function daysFromCivil(y: number, m: number, d: number): number {
+  const yy = m <= 2 ? y - 1 : y;
+  const era = Math.floor(yy / 400);
+  const yoe = yy - era * 400;
+  const doy = Math.floor((153 * (m + (m > 2 ? -3 : 9)) + 2) / 5) + d - 1;
+  const doe = yoe * 365 + Math.floor(yoe / 4) - Math.floor(yoe / 100) + doy;
+  return era * 146097 + doe - 719468;
+}
+
+function civilFromDays(days: number): { y: number; m: number; d: number } {
+  const z = days + 719468;
+  const era = Math.floor(z / 146097);
+  const doe = z - era * 146097;
+  const yoe = Math.floor(
+    (doe - Math.floor(doe / 1460) + Math.floor(doe / 36524) - Math.floor(doe / 146096)) / 365,
+  );
+  const doy = doe - (365 * yoe + Math.floor(yoe / 4) - Math.floor(yoe / 100));
+  const mp = Math.floor((5 * doy + 2) / 153);
+  const d = doy - Math.floor((153 * mp + 2) / 5) + 1;
+  const m = mp < 10 ? mp + 3 : mp - 9;
+  return { y: yoe + era * 400 + (m <= 2 ? 1 : 0), m, d };
+}
+
+/** Reads "YYYY-MM-DD", or "YYYY-MM-DDTHH:MM:SS[.ffffff][Z]", as microseconds on the UTC scale. */
+export function parseInstant(text: string): bigint {
+  const match =
+    /^(\d{4,5})-(\d{2})-(\d{2})(?:[T ](\d{2}):(\d{2}):(\d{2})(?:\.(\d{1,6}))?)?Z?$/.exec(text);
+  if (match === null) throw new RangeError(`not an instant: ${text}`);
+  const [, y, mo, d, h = "0", mi = "0", s = "0", f = ""] = match;
+  const seconds =
+    BigInt(daysFromCivil(Number(y), Number(mo), Number(d))) * 86_400n +
+    BigInt(Number(h) * 3600 + Number(mi) * 60 + Number(s));
+  return seconds * 1_000_000n + BigInt(f.padEnd(6, "0"));
+}
+
+/** "YYYY-MM-DDTHH:MM:SS.ffffff", the inverse of parseInstant without the Z. */
+export function formatWall(us: bigint): string {
+  const seconds = floorDiv(us, 1_000_000n);
+  const micros = us - seconds * 1_000_000n;
+  const days = floorDiv(seconds, 86_400n);
+  const rest = Number(seconds - days * 86_400n);
+  const { y, m, d } = civilFromDays(Number(days));
+  const p = (n: number, w = 2) => String(n).padStart(w, "0");
+  return `${p(y, 4)}-${p(m)}-${p(d)}T${p(Math.floor(rest / 3600))}:${p(Math.floor(rest / 60) % 60)}:${p(rest % 60)}.${String(micros).padStart(6, "0")}`;
+}
+
+/** An instant as UTC ISO 8601 with microseconds and Z. */
+export const formatInstant = (us: bigint) => `${formatWall(us)}Z`;
+
+const formatters = new Map<string, Intl.DateTimeFormat>();
+
+/** The time zone's offset from UTC at an instant, in seconds. */
+function offsetSeconds(us: bigint, timezone: string): bigint {
+  let format = formatters.get(timezone);
+  if (format === undefined) {
+    format = new Intl.DateTimeFormat("en-US", {
+      timeZone: timezone,
+      hourCycle: "h23",
+      era: "short",
+      year: "numeric",
+      month: "numeric",
+      day: "numeric",
+      hour: "numeric",
+      minute: "numeric",
+      second: "numeric",
+    });
+    formatters.set(timezone, format);
+  }
+  const seconds = floorDiv(us, 1_000_000n);
+  const parts = Object.fromEntries(
+    format.formatToParts(new Date(Number(seconds) * 1000)).map((p) => [p.type, p.value]),
+  );
+  const year =
+    parts.era === "BC" || parts.era === "B" ? 1 - Number(parts.year) : Number(parts.year);
+  const wall =
+    BigInt(daysFromCivil(year, Number(parts.month), Number(parts.day))) * 86_400n +
+    BigInt(Number(parts.hour) * 3600 + Number(parts.minute) * 60 + Number(parts.second));
+  return wall - seconds;
+}
+
+/** The wall-clock time an instant shows in a time zone. */
+export function toLocal(us: bigint, timezone: string): bigint {
+  return us + offsetSeconds(us, timezone) * 1_000_000n;
+}
+
+/**
+ * The instant a wall-clock time names in a time zone. A time repeated when clocks go back is its
+ * first occurrence; a time skipped when they go forward is read with the offset before the change.
+ */
+export function fromLocal(wall: bigint, timezone: string): bigint {
+  const before = offsetSeconds(wall - DAY_US / 2n, timezone);
+  const after = offsetSeconds(wall + DAY_US / 2n, timezone);
+  const first = wall - before * 1_000_000n;
+  if (before === after || toLocal(first, timezone) === wall) return first;
+  const second = wall - after * 1_000_000n;
+  return toLocal(second, timezone) === wall ? second : first;
+}
+
+/** "YYYY-MM-DD HH:MM" in a time zone, for messages. */
+export const describeInstant = (us: bigint, timezone: string) =>
+  formatWall(toLocal(us, timezone)).slice(0, 16).replace("T", " ");

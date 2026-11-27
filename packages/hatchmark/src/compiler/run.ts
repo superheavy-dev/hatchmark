@@ -3,12 +3,21 @@ import { checkReferences, type Project, parseDiagnostics } from "../spec/index.j
 import { assemble } from "./assemble.js";
 import type { DashboardData } from "./dashboard-data.js";
 import {
-  type HorizonLag,
   horizonFor,
   type PlannedHorizon,
+  planTimeColumns,
   type SourceHorizon,
   type TimeColumn,
 } from "./horizons.js";
+import {
+  DAY_US,
+  describeInstant,
+  formatInstant,
+  formatWall,
+  fromLocal,
+  parseInstant,
+  toLocal,
+} from "./instants.js";
 import type {
   ExecutionContext,
   MeasureExpression,
@@ -17,20 +26,19 @@ import type {
   QueryResult,
 } from "./plan.js";
 import { planDashboard } from "./planner.js";
-import { nextDay, previousDay, queryBounds, resolveRange, SUPPORTED_DATES } from "./windows.js";
+import { nextDay, queryBounds, resolveRange, SUPPORTED_DATES } from "./windows.js";
 
 /**
- * A QueryExecutor that can also measure source horizons for "latest_data" (RFC 0001 section 6.1):
- * the latest value of a column over all rows, as a local wall-clock timestamp
- * "YYYY-MM-DDTHH:MM:SS.ffffff" in the time zone (horizonSql), undefined when the column is empty.
- * naive is true for a timestamp column without an offset.
+ * A QueryExecutor that can also measure source horizons (RFC 0001 section 6.1). horizon returns the
+ * latest value of a column over all rows, ignoring filters: "YYYY-MM-DD" for a DATE column, else the
+ * UTC instant "YYYY-MM-DDTHH:MM:SS.ffffff" (timestamps without an offset read in the source's
+ * timezone, else UTC); latest is undefined when the column is empty, and naive is true for a
+ * timestamp column without an offset. after returns the first distinct values of a column later than
+ * a UTC instant, as UTC instants (a DATE as its local midnight in the time zone), for HM4012.
  */
 export interface DashboardExecutor extends QueryExecutor {
-  horizon(
-    column: TimeColumn,
-    timezone: string,
-    lag?: HorizonLag,
-  ): Promise<{ through?: string; naive: boolean }>;
+  horizon(column: TimeColumn): Promise<{ latest?: string; date: boolean; naive: boolean }>;
+  after(column: TimeColumn, timezone: string, instant: string, limit: number): Promise<string[]>;
 }
 
 function failure(message: string): Diagnostic {
@@ -47,46 +55,24 @@ export function blockingErrors(project: Project, dashboard: string): Diagnostic[
   );
 }
 
-/** Local midnight at the start of a date, in the form horizons take. */
-const midnight = (date: string) => `${date}T00:00:00.000000`;
-
-/** The last local date before an instant: its date, or the day before when it is midnight. */
-function dateBefore(instant: string): string {
-  const date = instant.slice(0, 10);
-  return instant.slice(11) === "00:00:00.000000" ? previousDay(date) : date;
-}
-
-/** The build machine's clock as local wall-clock time in the time zone, for HM4012 only. */
-function localNow(now: Date, timezone: string): string {
-  const parts = Object.fromEntries(
-    new Intl.DateTimeFormat("en-US", {
-      timeZone: timezone,
-      hourCycle: "h23",
-      year: "numeric",
-      month: "2-digit",
-      day: "2-digit",
-      hour: "2-digit",
-      minute: "2-digit",
-      second: "2-digit",
-    })
-      .formatToParts(now)
-      .map((p) => [p.type, p.value]),
-  );
-  return `${parts.year}-${parts.month}-${parts.day}T${parts.hour}:${parts.minute}:${parts.second}.000000`;
-}
+/** The instant a local date starts in the time zone. */
+const startOf = (date: string, timezone: string) => fromLocal(parseInstant(date), timezone);
 
 /**
  * The ExecutionContext of a plan with nothing bound, and the data diagnostics of its horizons
- * (RFC 0001 sections 6.1 and 6.3). Every source horizon the plan needs is measured once. The as-of
- * instant T is the newest voting horizon for "latest_data", the oldest for "latest_common_data", and
- * the end of the date for a fixed asOf; the as-of date is T's last local date. Every window is then
- * checked against the supported dates.
+ * (RFC 0001 sections 6.1 and 6.3). Each time column the plan reads is measured once. A horizon is
+ * the exclusive instant a source is complete through: just after its latest timestamp, or the end of
+ * its latest date, moved back by the freshness lag. The as-of instant T is the newest voting horizon
+ * for "latest_data", the oldest for "latest_common_data", and the end of the date for a fixed asOf;
+ * the as-of date is the last local date before T. Every window is then checked against the supported
+ * dates.
  *
  * Errors: HM4011 when "latest_data" has no voting horizon to resolve from; HM2015 when a horizon
  * cannot be measured or a date is out of range. Warnings: HM4010 for a source more than a day
- * behind T, HM4012 for a horizon more than a day after the build machine's clock (now; the clock
- * never changes the output), HM4013 for a block whose window starts at or after its horizon. Note:
- * HM4016 for timestamps without an offset in a project whose time zone isn't UTC.
+ * behind T, HM4012 for a measured horizon more than a day after the build machine's clock (now; the
+ * clock never changes the output), with its first rows, and HM4013 for a block whose every window
+ * starts at or after its horizon. Note: HM4016 for timestamps without an offset that a source with
+ * no timezone has, in a project whose time zone isn't UTC.
  */
 export async function executionContext(
   project: Project,
@@ -96,30 +82,49 @@ export async function executionContext(
 ): Promise<{ context?: ExecutionContext; diagnostics: Diagnostic[] }> {
   const message = (error: unknown) => (error instanceof Error ? error.message : String(error));
   const config = project.config;
+  const tz = plan.timezone;
   const atSource = (source: string) => {
     const pointer = `/sources/${source}`;
     return { file: config.file, pointer, ...config.document.locationOf(pointer) };
   };
   const notes: Diagnostic[] = [];
-  const measured = new Map<PlannedHorizon, string | undefined>();
+  const latest = new Map<string, Awaited<ReturnType<DashboardExecutor["horizon"]>>>();
+  const measure = async (column: TimeColumn) => {
+    const key = JSON.stringify([column.source, column.column]);
+    let result = latest.get(key);
+    if (result === undefined) {
+      result = await executor.horizon(column);
+      latest.set(key, result);
+    }
+    return result;
+  };
+  const measured = new Map<PlannedHorizon, bigint | undefined>();
   const naive = new Set<string>();
   try {
+    for (const column of planTimeColumns(plan)) {
+      const declared = config.spec?.sources[column.source];
+      const zoned = declared !== undefined && declared.type !== "lookup" && declared.timezone;
+      if ((await measure(column)).naive && !zoned && tz !== "UTC") naive.add(column.source);
+    }
     for (const h of plan.horizons) {
       if (typeof h.rule === "object" && "through" in h.rule) {
-        if (h.rule.through !== "as_of") measured.set(h, midnight(nextDay(h.rule.through)));
+        if (h.rule.through !== "as_of") measured.set(h, startOf(nextDay(h.rule.through), tz));
         continue;
       }
       if (h.column === undefined) continue;
+      const result = await measure({ source: h.source, column: h.column });
+      if (result.latest === undefined) {
+        measured.set(h, undefined);
+        continue;
+      }
       const lag = typeof h.rule === "object" ? h.rule.lag : undefined;
-      const result = await executor.horizon(
-        { source: h.source, column: h.column },
-        plan.timezone,
-        lag,
-      );
-      measured.set(h, result.through);
-      const declared = config.spec?.sources[h.source];
-      const zoned = declared !== undefined && declared.type !== "lookup" && declared.timezone;
-      if (result.naive && !zoned && plan.timezone !== "UTC") naive.add(h.source);
+      const days = lag !== undefined && "days" in lag ? BigInt(lag.days) * DAY_US : 0n;
+      let through = result.date
+        ? fromLocal(parseInstant(nextDay(result.latest)) - days, tz)
+        : parseInstant(result.latest) + 1n;
+      if (!result.date && days > 0n) through = fromLocal(toLocal(through, tz) - days, tz);
+      if (lag !== undefined && "hours" in lag) through -= BigInt(lag.hours) * 3_600_000_000n;
+      measured.set(h, through);
     }
   } catch (error) {
     return { diagnostics: [failure(`cannot measure source horizons: ${message(error)}`)] };
@@ -128,21 +133,21 @@ export async function executionContext(
     notes.push({
       code: "HM4016",
       severity: "note",
-      message: `source "${source}" has timestamps without an offset, read as UTC, in a project whose time zone is ${plan.timezone}`,
+      message: `source "${source}" has timestamps without an offset, read as UTC, in a project whose time zone is ${tz}`,
       ...atSource(source),
-      help: `set "timezone" on the source when its timestamps are local times, such as "${plan.timezone}"`,
+      help: `set "timezone" on the source when its timestamps are local times, such as "${tz}"`,
       docs: docsCommand("HM4016"),
     });
   }
 
-  let instant: string;
+  let instant: bigint;
   const asOfRule = plan.period.asOf;
   if (asOfRule === "latest_data" || asOfRule === "latest_common_data") {
     const voting = plan.horizons
       .filter((h) => h.votes)
       .map((h) => measured.get(h))
-      .filter((v): v is string => v !== undefined)
-      .sort();
+      .filter((v): v is bigint => v !== undefined)
+      .sort((a, b) => (a < b ? -1 : a > b ? 1 : 0));
     const picked = asOfRule === "latest_data" ? voting[voting.length - 1] : voting[0];
     if (picked === undefined) {
       const empty = plan.horizons.filter((h) => h.votes && h.column !== undefined);
@@ -164,21 +169,34 @@ export async function executionContext(
     }
     instant = picked;
   } else {
-    instant = midnight(nextDay(asOfRule));
+    if (!(asOfRule >= SUPPORTED_DATES.first && asOfRule <= SUPPORTED_DATES.last)) {
+      return {
+        diagnostics: [
+          failure(
+            `the as-of date ${asOfRule} is outside the supported dates ${SUPPORTED_DATES.first} to ${SUPPORTED_DATES.last}`,
+          ),
+        ],
+      };
+    }
+    instant = startOf(nextDay(asOfRule), tz);
   }
-  const asOf =
-    typeof asOfRule === "string" && /^\d{4}-\d{2}-\d{2}$/.test(asOfRule)
-      ? asOfRule
-      : dateBefore(instant);
+  const asOf = formatWall(toLocal(instant - 1n, tz)).slice(0, 10);
 
+  const horizonOf = (h: PlannedHorizon) => measured.get(h) ?? (h.votes ? undefined : instant);
   const horizons = plan.horizons.flatMap((h): SourceHorizon[] => {
-    const through = measured.get(h) ?? (h.votes ? undefined : instant);
+    const through = horizonOf(h);
     if (through === undefined) return [];
-    return [{ source: h.source, ...(h.column !== undefined ? { column: h.column } : {}), through }];
+    return [
+      {
+        source: h.source,
+        ...(h.column !== undefined ? { column: h.column } : {}),
+        through: formatInstant(through),
+      },
+    ];
   });
   const context: ExecutionContext = {
     asOf,
-    timezone: plan.timezone,
+    timezone: tz,
     anchors: plan.anchors,
     bindings: {},
     horizons,
@@ -198,29 +216,42 @@ export async function executionContext(
     return { diagnostics: [failure(error.message)] };
   }
 
-  const behind = `${previousDay(instant.slice(0, 10))}${instant.slice(10)}`;
-  const clock = now && localNow(now, plan.timezone);
-  const ahead = clock && `${nextDay(clock.slice(0, 10))}${clock.slice(10)}`;
-  const reported = new Set<string>();
+  const behind = new Set<string>();
   for (const [h, through] of measured) {
-    if (through === undefined || reported.has(h.source)) continue;
-    if (through < behind) {
-      reported.add(h.source);
-      notes.push({
-        code: "HM4010",
-        severity: "warning",
-        message: `source "${h.source}" is complete through ${through.slice(0, 16).replace("T", " ")}, more than a day before the as-of ${instant.slice(0, 16).replace("T", " ")}`,
-        ...atSource(h.source),
-        help: 'check that the data is current, or set "freshness" on the source to say how complete it is',
-        docs: docsCommand("HM4010"),
-      });
-    }
-    if (ahead !== undefined && through > ahead) {
-      reported.add(h.source);
+    if (through === undefined || behind.has(h.source) || through >= instant - DAY_US) continue;
+    behind.add(h.source);
+    notes.push({
+      code: "HM4010",
+      severity: "warning",
+      message: `source "${h.source}" is complete through ${describeInstant(through, tz)}, more than a day before the as-of ${describeInstant(instant, tz)}`,
+      ...atSource(h.source),
+      help: 'check that the data is current, or set "freshness" on the source to say how complete it is',
+      docs: docsCommand("HM4010"),
+    });
+  }
+  if (now !== undefined) {
+    const limit = BigInt(now.getTime()) * 1000n + DAY_US;
+    const ahead = new Set<string>();
+    for (const [h, through] of measured) {
+      if (through === undefined || h.column === undefined || ahead.has(h.source)) continue;
+      if (through <= limit) continue;
+      ahead.add(h.source);
+      let rows: string[];
+      try {
+        rows = await executor.after(
+          { source: h.source, column: h.column },
+          tz,
+          formatInstant(limit),
+          3,
+        );
+      } catch (error) {
+        return { diagnostics: [failure(`cannot read future-dated rows: ${message(error)}`)] };
+      }
+      const listed = rows.map((r) => describeInstant(parseInstant(r), tz)).join(", ");
       notes.push({
         code: "HM4012",
         severity: "warning",
-        message: `source "${h.source}" has data through ${through.slice(0, 16).replace("T", " ")}, more than a day after this machine's clock (${(clock as string).slice(0, 16).replace("T", " ")})`,
+        message: `source "${h.source}" has rows in "${h.column}" more than a day after this machine's clock (${describeInstant(limit - DAY_US, tz)})${listed ? `; the first are at ${listed}` : ""}`,
         ...atSource(h.source),
         help: "look for future-dated rows, such as a typo in a year or scheduled entries, or set period.asOf",
         docs: docsCommand("HM4012"),
@@ -231,19 +262,21 @@ export async function executionContext(
   const file = project.dashboards.get(plan.dashboard);
   const queries = new Map(plan.queries.map((q) => [q.id, q]));
   for (const block of plan.blocks) {
-    const empty = block.queryIds.some((id) => {
-      const query = queries.get(id);
-      const column = query?.window.column;
-      if (query === undefined || column === undefined || query.window.shift !== "none")
-        return false;
-      const bounds = queryBounds(query, context);
-      if (bounds?.kind !== "bounded") return false;
-      const h = horizonFor(plan.horizons, query.source, column);
-      const through =
-        h === undefined ? undefined : (measured.get(h) ?? (h.votes ? undefined : instant));
-      const horizon = through === undefined || through > instant ? instant : through;
-      return midnight(bounds.start) >= horizon;
-    });
+    const current = block.queryIds
+      .map((id) => queries.get(id))
+      .filter((q) => q !== undefined && q.window.shift === "none");
+    const empty =
+      current.length > 0 &&
+      current.every((query) => {
+        const column = query?.window.column;
+        if (query === undefined || column === undefined) return false;
+        const bounds = queryBounds(query, context);
+        if (bounds?.kind !== "bounded") return false;
+        const h = horizonFor(plan.horizons, query.source, column);
+        const through = h === undefined ? undefined : horizonOf(h);
+        const horizon = through === undefined || through > instant ? instant : through;
+        return startOf(bounds.start, tz) >= horizon;
+      });
     if (!empty) continue;
     notes.push({
       code: "HM4013",

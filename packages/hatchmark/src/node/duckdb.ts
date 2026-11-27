@@ -14,11 +14,11 @@ import {
   VARCHAR,
 } from "@duckdb/node-api";
 import {
+  afterSql,
   type BuiltSql,
   canonicalJson,
   column,
   type ExecutionContext,
-  type HorizonLag,
   horizonSql,
   isFloat,
   isTimestamp,
@@ -137,11 +137,18 @@ export async function createDuckDbExecutor(options: {
       const { text, params } = querySql(await planned(query), query, context);
       return { text, params };
     },
-    async horizon({ source, column }: TimeColumn, timezone: string, lag?: HorizonLag) {
-      const { text, params, naive } = horizonSql(await load(source), column, timezone, lag);
+    async horizon({ source, column }: TimeColumn) {
+      const { text, params, date, naive } = horizonSql(await load(source), column);
       const { values, types } = boundParams(params);
       const value = (await connection.runAndReadAll(text, values, types)).getRows()[0]?.[0];
-      return { ...(typeof value === "string" ? { through: value } : {}), naive };
+      return { ...(typeof value === "string" ? { latest: value } : {}), date, naive };
+    },
+    async after({ source, column }: TimeColumn, timezone: string, instant: string, limit: number) {
+      const { text, params } = afterSql(await load(source), column, timezone, instant, limit);
+      const { values, types } = boundParams(params);
+      return (await connection.runAndReadAll(text, values, types))
+        .getRows()
+        .map((r) => String(r[0]));
     },
     async close() {
       connection.closeSync();

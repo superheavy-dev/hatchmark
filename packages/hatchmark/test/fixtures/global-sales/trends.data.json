@@ -9,7 +9,7 @@
     {
       "source": "orders",
       "column": "ordered_at",
-      "through": "2026-10-31T18:54:53.000000"
+      "through": "2026-10-31T22:54:53.000001Z"
     }
   ],
   "period": {

@@ -52,7 +52,8 @@ const ctx = (root: string): CommandContext => ({
 const deps: BuildDeps = {
   createExecutor: async () => ({
     execute: async () => ({ columns: [], rows: [] }),
-    horizon: async () => ({ through: "2026-11-01T00:00:00.000000", naive: false }),
+    horizon: async () => ({ latest: "2026-10-31", date: true, naive: false }),
+    after: async () => [],
     close: async () => {},
   }),
   runDashboard: async (_project, name) => ({

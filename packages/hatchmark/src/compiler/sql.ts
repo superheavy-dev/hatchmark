@@ -1,6 +1,5 @@
 import { type Filter, parseTemporal, sameColumn, WEEKDAYS } from "../spec/index.js";
 import { canonicalJson } from "./hash.js";
-import type { HorizonLag } from "./horizons.js";
 import { selectValues } from "./params.js";
 import type { ExecutionContext, MeasureComponent, PlannedQuery } from "./plan.js";
 import { queryBounds } from "./windows.js";
@@ -347,37 +346,54 @@ export function querySql(
 
 /**
  * The SQL of a source horizon (RFC 0001 section 6.1): the latest value of a column over all rows,
- * with no filters, as a local wall-clock timestamp "YYYY-MM-DDTHH:MM:SS.ffffff" in the time zone,
- * the instant the source is complete through. A DATE column is complete through the end of its
- * latest date. A lag in days moves that local time back by whole days; a lag in hours moves the
- * instant back. naive is true for a timestamp column without an offset.
+ * with no filters. A DATE column gives "YYYY-MM-DD"; a timestamp gives its UTC instant
+ * "YYYY-MM-DDTHH:MM:SS.ffffff", read in the source's timezone (else UTC) when it has no offset.
+ * A column of another type with no values (a header-only CSV) is empty; with values it is an error.
+ * naive is true for a timestamp column without an offset.
  */
 export function horizonSql(
   source: SqlSource,
   name: string,
-  timezone: string,
-  lag?: HorizonLag,
-): BuiltSql & { naive: boolean } {
+): BuiltSql & { date: boolean; naive: boolean } {
   const sql = new Sql();
   const { name: actual, type } = column(source, name);
   if (type !== "DATE" && !isTimestamp(type)) {
-    throw new Error(
-      `time column "${actual}" of source "${source.name}" has type ${type}; it needs DATE or TIMESTAMP`,
-    );
+    const wrong = `time column "${actual}" of source "${source.name}" has type ${type}; it needs DATE or TIMESTAMP`;
+    return {
+      text: `SELECT CASE WHEN count(${quote(actual)}) = 0 THEN NULL ELSE error(${sql.bind(wrong)}) END FROM ${source.relation}`,
+      params: sql.values(),
+      date: false,
+      naive: false,
+    };
   }
-  const latest =
+  const value =
     type === "DATE"
-      ? `timezone(${sql.bind(timezone)}, CAST(max(${quote(actual)}) AS TIMESTAMP) + INTERVAL 1 DAY)`
-      : `max(${instant(source, actual, timezone, sql)})`;
-  const moved =
-    lag !== undefined && "hours" in lag ? `${latest} - to_hours(${sql.bind(lag.hours)})` : latest;
-  const local = `timezone(${sql.bind(timezone)}, ${moved})`;
-  const back =
-    lag !== undefined && "days" in lag ? `${local} - to_days(${sql.bind(lag.days)})` : local;
+      ? `CAST(max(${quote(actual)}) AS VARCHAR)`
+      : `strftime(timezone('UTC', max(${instant(source, actual, "UTC", sql)})), '%Y-%m-%dT%H:%M:%S.%f')`;
   return {
-    text: `SELECT strftime(${back}, '%Y-%m-%dT%H:%M:%S.%f') FROM ${source.relation}`,
+    text: `SELECT ${value} FROM ${source.relation}`,
     params: sql.values(),
+    date: type === "DATE",
     naive: isTimestamp(type) && type !== "TIMESTAMP WITH TIME ZONE",
+  };
+}
+
+/**
+ * The first distinct values of a time column after a UTC instant, as UTC instants in order (a DATE
+ * as its local midnight in the time zone), for HM4012's example rows.
+ */
+export function afterSql(
+  source: SqlSource,
+  name: string,
+  timezone: string,
+  after: string,
+  limit: number,
+): BuiltSql {
+  const sql = new Sql();
+  const at = instant(source, name, timezone, sql);
+  return {
+    text: `SELECT DISTINCT strftime(timezone('UTC', ${at}), '%Y-%m-%dT%H:%M:%S.%f') AS hm_v FROM ${source.relation} WHERE ${at} > CAST(${sql.bind(after)} AS TIMESTAMPTZ) ORDER BY hm_v LIMIT ${limit}`,
+    params: sql.values(),
   };
 }
 

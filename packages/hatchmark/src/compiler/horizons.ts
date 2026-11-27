@@ -25,9 +25,9 @@ export interface PlannedHorizon {
 }
 
 /**
- * A measured horizon: the local wall-clock instant (YYYY-MM-DDTHH:MM:SS.ffffff) a source's column
- * is complete through, exclusive. A source complete through the as-of ("through": "as_of") gets the
- * as-of instant.
+ * A measured horizon: the UTC instant (YYYY-MM-DDTHH:MM:SS.ffffffZ) a source's column is complete
+ * through, exclusive: just after its latest timestamp, or the start of the day after its latest
+ * date. A source complete through the as-of ("through": "as_of") gets the as-of instant.
  */
 export interface SourceHorizon {
   source: string;
