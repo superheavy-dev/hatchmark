@@ -268,6 +268,16 @@ describe("hatchmark dev", { timeout: 30_000 }, () => {
     await hmr.next("hatchmark:ok");
   });
 
+  it("reports a leftover hatchmark.json, and clears it when the file is deleted", async () => {
+    hmr.clear();
+    await writeFile(path.join(dir, "hatchmark.json"), "{}\n");
+    const error = await hmr.next("hatchmark:error");
+    expect(error.data?.diagnostics?.map((d) => d.code)).toEqual(["HM1007"]);
+    hmr.clear();
+    await rm(path.join(dir, "hatchmark.json"));
+    await hmr.next("hatchmark:ok");
+  });
+
   it("reloads the page on a structural change", async () => {
     hmr.clear();
     await edit("dashboards/sales.yaml", (t) =>

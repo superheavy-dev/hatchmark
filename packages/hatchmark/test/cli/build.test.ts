@@ -315,6 +315,20 @@ describe("hatchmark build", () => {
     expect(result.json).toMatchObject({ ok: false, diagnostics: [{ code: "HM2003" }] });
   });
 
+  it("refuses to build a project with a leftover JSON spec file", async () => {
+    const root = await project();
+    await rename(
+      path.join(root, "dashboards/sales.yaml"),
+      path.join(root, "dashboards/sales.json"),
+    );
+    const result = await build(ctx(root), {}, { ...deps, runDashboard });
+    expect(result.exitCode).toBe(1);
+    expect(result.json).toMatchObject({
+      ok: false,
+      diagnostics: [{ code: "HM1007", file: "dashboards/sales.json" }],
+    });
+  });
+
   it("reports engine errors without writing anything", async () => {
     const root = await project();
     const failing: BuildDeps = {

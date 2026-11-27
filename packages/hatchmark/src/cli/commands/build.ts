@@ -266,6 +266,7 @@ export async function build(
     config,
     deps,
     flags.cache !== false,
+    loadDiagnostics,
   );
   if (diagnostics.some((d) => d.severity === "error")) {
     const report = createReport(diagnostics);
@@ -462,9 +463,11 @@ async function runAll(
   config: ProjectConfig,
   deps: BuildDeps,
   useCache: boolean,
+  loaded: readonly Diagnostic[],
 ): Promise<{ pages: Page[]; diagnostics: Diagnostic[]; cache?: CacheStats }> {
   const pages: Page[] = [];
   const diagnostics = new Map<string, Diagnostic>();
+  for (const d of loaded) diagnostics.set(JSON.stringify(d), d);
   for (const d of [...parseDiagnostics(project), ...checkReferences(project)]) {
     if (d.severity === "warning") diagnostics.set(JSON.stringify(d), d);
   }

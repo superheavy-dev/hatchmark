@@ -43,6 +43,7 @@ import {
   type Project,
   type ProjectConfig,
   parseDiagnostics,
+  UNREAD_CONFIG_FILES,
 } from "../spec/index.js";
 import { overlayHtml } from "./overlay.js";
 
@@ -408,7 +409,7 @@ export async function startDevServer(
   };
   const relevant = (file: string): boolean => {
     const rel = path.relative(root, file);
-    if (rel === CONFIG_FILE) return true;
+    if (rel === CONFIG_FILE || UNREAD_CONFIG_FILES.includes(rel)) return true;
     if (sourcePaths(config).has(file)) return true;
     if (rel.startsWith("..") || path.isAbsolute(rel)) return false;
     const dirs = [

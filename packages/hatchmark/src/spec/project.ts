@@ -17,6 +17,10 @@ import { issuesToDiagnostics } from "./zod-diagnostics.js";
 export const CONFIG_FILE = "hatchmark.yaml";
 const SPEC_EXTENSION = ".yaml";
 const UNREAD_EXTENSIONS = [".json", ".yml"] as const;
+/** Root config files that are not read, each reported as HM1007 naming hatchmark.yaml. */
+export const UNREAD_CONFIG_FILES = UNREAD_EXTENSIONS.map(
+  (ext) => `${CONFIG_FILE.slice(0, -SPEC_EXTENSION.length)}${ext}`,
+);
 const DASHBOARD_NAME_PATTERN = /^[a-z0-9][a-z0-9_-]*$/;
 
 export type SpecKind = "project" | "metric" | "dashboard" | "segment";
@@ -174,10 +178,7 @@ export async function loadProject(
       docs: docsCommand("HM1007"),
     });
   };
-  for (const ext of UNREAD_EXTENSIONS) {
-    const file = `${CONFIG_FILE.slice(0, -SPEC_EXTENSION.length)}${ext}`;
-    if (await host.isFile(file)) flagUnread(file);
-  }
+  for (const file of UNREAD_CONFIG_FILES) if (await host.isFile(file)) flagUnread(file);
   const configText = await host.readText(CONFIG_FILE);
   if (configText === undefined) {
     if (unread.length > 0) return { diagnostics: unread };

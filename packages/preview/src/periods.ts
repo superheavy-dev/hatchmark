@@ -1,6 +1,7 @@
 import { cpSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { stringify } from "yaml";
 
 /**
  * Dashboards that show every variant of the period filter on the global-sales sample data, built
@@ -108,7 +109,7 @@ export function periodProject(example: string): string {
   cpSync(example, root, { recursive: true });
   rmSync(join(root, "dist"), { recursive: true, force: true });
   for (const [name, spec] of Object.entries(DASHBOARDS)) {
-    writeFileSync(join(root, "dashboards", `${name}.json`), `${JSON.stringify(spec, null, 2)}\n`);
+    writeFileSync(join(root, "dashboards", `${name}.yaml`), stringify(spec));
   }
   return root;
 }
