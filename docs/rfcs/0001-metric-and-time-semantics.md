@@ -868,7 +868,14 @@ type MeasureExpression =
 
 interface BlockPlan {
   // existing: blockId, pointer, queryIds, measures
-  grains?: { grain: Grain; queryIds: string[] }[];
+  /** The grain shown first: the grain filter's default when the block lists it, else the block's grain. */
+  grain?: ResolvedGrain;
+  /** One reading per grain, built ahead; measures is the shown grain's. */
+  grains?: {
+    grain: ResolvedGrain;
+    queryIds: string[];
+    measures: Record<string, MeasureExpression>;
+  }[];
   incomplete: "mark" | "hide" | "show";
   targets?: Record<string, PlannedTarget>;
 }

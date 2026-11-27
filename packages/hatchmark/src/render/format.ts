@@ -154,8 +154,15 @@ export const formatDay = (date: Date, locale: string, withYear = true): string =
 const quarter = (date: Date): string => `Q${Math.floor(date.getUTCMonth() / 3) + 1}`;
 
 /** A bucket as the tooltip header and data table name it: "Oct 2026", "Week of Oct 5, 2026". */
+/** Whether a quarter or year bucket starts on a calendar quarter or year, so Q3 2026 or 2026 names it. */
+const calendarStart = (date: Date, grain: "quarter" | "year") =>
+  date.getUTCDate() === 1 && date.getUTCMonth() % (grain === "year" ? 12 : 3) === 0;
+
 export function formatBucket(bucket: string, grain: TimeGrain, locale: string): string {
   const date = parseDate(bucket);
+  if ((grain === "quarter" || grain === "year") && !calendarStart(date, grain)) {
+    return `${grain === "year" ? "Year" : "Quarter"} of ${formatDay(date, locale)}`;
+  }
   switch (grain) {
     case "day":
       return formatDay(date, locale);
@@ -178,6 +185,9 @@ export function formatBucketTick(
   first: boolean,
 ): string {
   const date = parseDate(bucket);
+  if ((grain === "quarter" || grain === "year") && !calendarStart(date, grain)) {
+    return date.getUTCDate() === 1 ? formatMonth(date, locale, true) : formatDay(date, locale);
+  }
   if (grain === "year") return String(date.getUTCFullYear());
   if (grain === "quarter") {
     return first || date.getUTCMonth() < 3

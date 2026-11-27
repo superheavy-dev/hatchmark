@@ -168,6 +168,59 @@ describe("checkReferences", () => {
     ]);
   });
 
+  it("allows one grain filter per dashboard (HM3007)", () => {
+    const grain = (id: string) => ({
+      type: "grain",
+      id,
+      options: ["week", "month"],
+      default: "month",
+    });
+    const dashboards = { sales: { ...DASHBOARD, filters: [grain("grain"), grain("grain_2")] } };
+    expect(refs({ dashboards }).map((d) => [d.code, d.pointer, d.message])).toEqual([
+      ["HM3007", "/filters/1", 'a dashboard takes one grain filter, and "grain" is already one'],
+    ]);
+  });
+
+  it("compares grains at the project anchors and needs the shown grain in the list (HM3007)", () => {
+    const config = { ...CONFIG, weekStart: "sunday" };
+    const line = (extra: Record<string, unknown>) => ({
+      type: "line",
+      metrics: ["revenue"],
+      grain: "month",
+      ...extra,
+    });
+    const filter = (extra: Record<string, unknown>) => ({
+      type: "grain",
+      id: "grain",
+      options: ["week", "month"],
+      default: "month",
+      ...extra,
+    });
+    const codes = (blocks: unknown[], filters: unknown[] = []) =>
+      refs({ config, dashboards: { sales: { ...DASHBOARD, filters, blocks } } }).map((d) => [
+        d.code,
+        d.pointer,
+      ]);
+    const sunday = ["week", { unit: "week", anchor: "sunday" }, "month"];
+    expect(codes([line({ grains: sunday })], [filter({ options: sunday })])).toEqual([
+      ["HM3007", "/blocks/0/grains/1"],
+      ["HM3007", "/filters/0/options/1"],
+    ]);
+    expect(codes([line({ grains: ["week", { unit: "week", anchor: "monday" }] })])).toEqual([
+      ["HM3007", "/blocks/0/grain"],
+    ]);
+    expect(codes([line({ grains: ["month", "month"] })])).toEqual([
+      ["HM3007", "/blocks/0/grains/1"],
+    ]);
+    expect(codes([line({ grains: ["week", "quarter"] })])).toEqual([["HM3007", "/blocks/0/grain"]]);
+    expect(
+      codes([line({ grain: { unit: "week", anchor: "sunday" }, grains: ["week", "month"] })]),
+    ).toEqual([]);
+    expect(codes([line({})], [filter({ default: "quarter" })])).toEqual([
+      ["HM3007", "/filters/0/default"],
+    ]);
+  });
+
   it("checks text references with exact positions inside the string", () => {
     const markdown =
       "Hi\\n{{revenue.chnage}} and {{ revenu }} and {{ 1x }} and {{merchants.previous}}";

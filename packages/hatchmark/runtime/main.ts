@@ -4,7 +4,8 @@
  * are already drawn on the server, so this only reads the chart geometry from data-hm-* attributes
  * and the formatted values from the JSON each chart's figure carries. One pointer listener per
  * chart, no dependencies. Arrow keys scroll a focused, clipped table sideways, which WebKit does
- * not do on its own.
+ * not do on its own. Grain switches show one grain's prebuilt heading and chart and hide the others;
+ * the dashboard's grain filter switches every card that lists the chosen grain.
  *
  * A KPI tooltip is position:fixed, so the strip's overflow does not clip it. It floats below the
  * sparkline; near the viewport bottom it goes beside the point, or above the card, so it never
@@ -293,7 +294,61 @@ function attach(figure: HTMLElement, chart: RuntimeChart): void {
   figure.addEventListener("focusout", hide);
 }
 
+/** Shows one grain in a card that switches grains; false when the card does not list it. */
+function selectGrain(card: Element, key: string): boolean {
+  const buttons = [...card.querySelectorAll<HTMLButtonElement>(".hm-seg button")];
+  if (!buttons.some((b) => b.dataset.hmGrain === key)) return false;
+  for (const node of card.querySelectorAll<HTMLElement>("[data-hm-grain]:not(button)")) {
+    node.hidden = node.dataset.hmGrain !== key;
+  }
+  checkButton(buttons, key);
+  return true;
+}
+
+function checkButton(buttons: HTMLButtonElement[], key: string): void {
+  for (const b of buttons) {
+    const on = b.dataset.hmGrain === key;
+    b.setAttribute("aria-checked", String(on));
+    b.tabIndex = on ? 0 : -1;
+  }
+}
+
+/** Radio-group behaviour for a segmented control: click, or arrow keys that move and select. */
+function segmented(group: HTMLElement, choose: (key: string) => void): void {
+  const buttons = [...group.querySelectorAll<HTMLButtonElement>("button")];
+  group.addEventListener("click", (event) => {
+    const key = (event.target as Element).closest("button")?.dataset.hmGrain;
+    if (key !== undefined) choose(key);
+  });
+  group.addEventListener("keydown", (event) => {
+    const step =
+      event.key === "ArrowRight" || event.key === "ArrowDown"
+        ? 1
+        : event.key === "ArrowLeft" || event.key === "ArrowUp"
+          ? -1
+          : 0;
+    if (step === 0) return;
+    event.preventDefault();
+    const at = buttons.findIndex((b) => b.getAttribute("aria-checked") === "true");
+    const next = buttons[(at + step + buttons.length) % buttons.length];
+    if (next?.dataset.hmGrain === undefined) return;
+    choose(next.dataset.hmGrain);
+    next.focus();
+  });
+}
+
 function start(): void {
+  const cards = [...document.querySelectorAll<HTMLElement>("[data-hm-grains]")];
+  for (const card of cards) {
+    const group = card.querySelector<HTMLElement>(".hm-seg");
+    if (group) segmented(group, (key) => selectGrain(card, key));
+  }
+  for (const group of document.querySelectorAll<HTMLElement>("[data-hm-grain-filter]")) {
+    segmented(group, (key) => {
+      checkButton([...group.querySelectorAll<HTMLButtonElement>("button")], key);
+      for (const card of cards) selectGrain(card, key);
+    });
+  }
   for (const figure of document.querySelectorAll<HTMLElement>("[data-hm-chart]")) {
     const source = figure.querySelector(":scope > script[type='application/json']");
     if (source?.textContent) attach(figure, JSON.parse(source.textContent) as RuntimeChart);

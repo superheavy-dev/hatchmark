@@ -689,6 +689,39 @@ describe("DuckDB executor queries", () => {
     ]);
   });
 
+  it("warns with HM5001 when a grain draws more than 1,000 points per series", async () => {
+    const dense = await writeProject({
+      ...files(),
+      "dashboards/dense.json": {
+        title: "Dense",
+        period: {
+          asOf: "2026-04-30",
+          range: { start: "2023-01-01", end: "2026-05-01" },
+          compare: "none",
+        },
+        blocks: [
+          {
+            type: "line",
+            id: "daily",
+            metrics: ["orders"],
+            grain: "day",
+            grains: ["day", "month"],
+          },
+        ],
+      },
+    });
+    const { data, diagnostics } = await run(dense.root, dense.project, "dense");
+    expect(data).toBeDefined();
+    expect(diagnostics.map((d) => [d.code, d.severity, d.pointer, d.message])).toEqual([
+      [
+        "HM5001",
+        "warning",
+        "/blocks/0/grains",
+        'block "daily" draws 1216 day points per series, more than 1000',
+      ],
+    ]);
+  });
+
   it("reports a missing column as HM2015 with the cause", async () => {
     const broken = await writeProject({
       ...files(),

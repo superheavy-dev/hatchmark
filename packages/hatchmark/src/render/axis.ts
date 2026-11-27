@@ -70,7 +70,7 @@ export function timeLabels(
           : previous.getUTCMonth() !== date.getUTCMonth();
       if (starts) units.push({ index: i, unit: month });
     } else if (axis.grain === "quarter") {
-      units.push({ index: i, unit: month / 3 });
+      units.push({ index: i, unit: Math.floor(month / 3) });
     } else if (axis.grain === "year") {
       units.push({ index: i, unit: date.getUTCFullYear() });
     } else {

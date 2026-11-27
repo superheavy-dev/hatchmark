@@ -12,14 +12,15 @@ A metric over time.
 }
 ```
 
-| Field          | Meaning                                                                                               |
-| -------------- | ----------------------------------------------------------------------------------------------------- |
-| `metrics`      | One to eight metrics, one line each. Lines share one y axis, so pick metrics with the same unit.      |
-| `grain`        | `day`, `week`, `month`, `quarter` or `year`.                                                          |
-| `split`        | A column that splits one metric into a line per value, such as `region`. Needs exactly one metric.    |
-| `type: "area"` | Fills under each line. Add `"stack": true` to stack the areas.                                        |
-| `title`        | State the finding ("Asia-Pacific is the fastest-growing region"). The subtitle says what is measured. |
-| `span`         | Width in the 12-column grid. Default 12. At least 3: a smaller span is drawn 3 wide, with HM2024.     |
+| Field          | Meaning                                                                                                                                                         |
+| -------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `metrics`      | One to eight metrics, one line each. Lines share one y axis, so pick metrics with the same unit.                                                                |
+| `grain`        | `day`, `week`, `month`, `quarter` or `year`, or `{ "unit": "year", "anchor": "07-01" }` to start buckets elsewhere than the project `anchors`.                  |
+| `grains`       | Optional. Two to six grains the card switches between, such as `["week", "month", "quarter"]`. `grain` is the one shown first and must be in the list (HM3007). |
+| `split`        | A column that splits one metric into a line per value, such as `region`. Needs exactly one metric.                                                              |
+| `type: "area"` | Fills under each line. Add `"stack": true` to stack the areas.                                                                                                  |
+| `title`        | State the finding ("Asia-Pacific is the fastest-growing region"). The subtitle says what is measured.                                                           |
+| `span`         | Width in the 12-column grid. Default 12. At least 3: a smaller span is drawn 3 wide, with HM2024.                                                               |
 
 What it draws:
 
@@ -36,5 +37,8 @@ What it draws:
   whole card is cut, at the end, with the full name on hover.
 - Hover (or tap, or the arrow keys) shows a crosshair, the points, and a tooltip with every line's
   value at that date.
+- With `grains`, a segmented control in the card header ("Week · Month · Quarter") switches the
+  chart, its title and subtitle. Every grain is built ahead, so switching re-derives nothing in the
+  browser. Two options with the same unit name their anchors ("Year from Jan 1", "Year from Jul 1").
 - Missing values leave a gap. A window with no data keeps the axis and says "No revenue in this
   period".

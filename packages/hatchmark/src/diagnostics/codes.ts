@@ -263,6 +263,11 @@ export const CODES = {
     explanation:
       "Informational. The file relies on a default for a choice that differs between companies, such as whether an interval ending exactly at a bucket end still counts in that bucket. The note names the default and the option that changes it. Setting the option explicitly, even to its default value, silences the note.",
   },
+  HM5001: {
+    title: "too many points per series",
+    explanation:
+      "A time-series block draws more than 1,000 buckets per series at one of its grains, such as day grain over several years. The chart stays correct, but the points are too dense to read and the page gets heavy. Use a coarser grain, list it in grains, or shorten the range.",
+  },
   HM9001: {
     title: "internal error",
     explanation:

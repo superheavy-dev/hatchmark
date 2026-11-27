@@ -148,6 +148,18 @@ export function resolveGrain(grain: Grain, anchors: Anchors): ResolvedGrain {
   return { unit, anchor: own ?? anchors[unit] };
 }
 
+/** A grain as one string, such as "month" or "week:sunday". Resolved grains with the same buckets share a key. */
+export function grainKey(grain: Grain): string {
+  const anchor = typeof grain === "string" ? undefined : grain.anchor;
+  return anchor === undefined ? grainUnit(grain) : `${grainUnit(grain)}:${anchor}`;
+}
+
+/**
+ * Grains a card or a grain filter switches between: two to six. check resolves them at the project
+ * anchors and rejects two that make the same buckets (HM3007).
+ */
+export const grainOptions = z.array(grainSchema).min(2).max(6);
+
 const isoDay = z.iso.date();
 
 export const rangeSchema = z

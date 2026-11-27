@@ -175,3 +175,80 @@ describe("global-sales example", () => {
     );
   });
 });
+
+describe("global-sales trends dashboard (grain switching)", () => {
+  let trends: DashboardData;
+  const T_CURRENT = `${LOCAL} >= TIMESTAMP '2025-10-01' AND ${LOCAL} < TIMESTAMP '2026-10-01'`;
+  const BUCKET: Record<string, string> = {
+    "week:sunday": `date_trunc('week', CAST(${LOCAL} AS DATE) + INTERVAL 1 DAY) - INTERVAL 1 DAY`,
+    month: `date_trunc('month', ${LOCAL})`,
+    "quarter:01-01": `date_trunc('quarter', ${LOCAL})`,
+  };
+
+  beforeAll(async () => {
+    const result = await run(example.root, example.project, "trends");
+    expect(result.diagnostics).toEqual([]);
+    if (result.data === undefined) throw new Error("no data");
+    trends = result.data;
+  });
+
+  const of = <T>(id: string) => trends.blocks.find((b) => b.id === id) as T;
+
+  it("carries the grain filter and selects its default in every block that lists it", () => {
+    expect(trends.grainFilter).toEqual({
+      id: "grain",
+      label: "Grain",
+      options: [
+        { key: "week:sunday", label: "Week" },
+        { key: "month", label: "Month" },
+        { key: "quarter:01-01", label: "Quarter" },
+      ],
+      selected: "month",
+    });
+    const line = of<LineData>("revenue_by_region");
+    const bar = of<BarData>("orders_over_time");
+    const area = of<LineData>("revenue_by_channel");
+    expect(line.grains?.selected).toBe("month");
+    expect(bar.grains?.options.map((o) => o.key)).toEqual(["month", "quarter:01-01"]);
+    expect(area.grains?.selected).toBe("month");
+    for (const b of [line, bar, area]) {
+      const shown = b.grains?.options.find((o) => o.key === b.grains?.selected);
+      expect(b.axis).toEqual(shown?.axis);
+      expect(b.series).toEqual(shown?.series);
+    }
+  });
+
+  it("matches every grain of the region line with the oracle, bucket by bucket", async () => {
+    const line = of<LineData>("revenue_by_region");
+    for (const option of line.grains?.options ?? []) {
+      const cells = await oracle.rows(`
+        SELECT region, strftime(${BUCKET[option.key]}, '%Y-%m-%d') AS b, CAST(sum(amount) AS DOUBLE) AS revenue
+        FROM read_csv('${CSV}') WHERE ${PAID} AND ${T_CURRENT} GROUP BY ALL`);
+      expect(option.series.map((s) => s.splitValue).sort()).toEqual(["APAC", "Americas", "EMEA"]);
+      for (const series of option.series) {
+        series.values.forEach((v, i) => {
+          const cell = cells.find(
+            (c) => c.region === series.splitValue && c.b === option.axis.buckets[i],
+          );
+          expect(v, `${option.key} ${series.label} ${option.axis.buckets[i]}`).toBeCloseTo(
+            (cell?.revenue as number | undefined) ?? 0,
+            6,
+          );
+        });
+      }
+      const total = option.series
+        .flatMap((s) => s.values)
+        .reduce((a: number, v) => a + (v ?? 0), 0);
+      const [all] = await oracle.rows(
+        `SELECT CAST(sum(amount) AS DOUBLE) AS v FROM read_csv('${CSV}') WHERE ${PAID} AND ${T_CURRENT}`,
+      );
+      expect(total).toBeCloseTo(all?.v as number, 6);
+    }
+  });
+
+  it("matches the committed DashboardData", async () => {
+    await expect(`${JSON.stringify(trends, null, 2)}\n`).toMatchFileSnapshot(
+      "../fixtures/global-sales/trends.data.json",
+    );
+  });
+});

@@ -94,12 +94,30 @@ export interface CategoryAxis {
   categories: (string | number | boolean | null)[];
 }
 
+/** One grain a block or the dashboard's grain filter switches to. */
+export interface GrainOption {
+  /** grainKey of the resolved grain, such as "month" or "week:sunday". */
+  key: string;
+  /** Control text: the unit ("Week"), with its anchor when two options share a unit. */
+  label: string;
+}
+
+/**
+ * A time-series block's grain switch: every option's axis and series, built ahead so switching
+ * never re-derives numbers in the browser. The block's own axis and series are the selected one's.
+ */
+export interface GrainSwitch {
+  selected: string;
+  options: (GrainOption & { axis: TimeAxis; series: Series[] })[];
+}
+
 export interface LineData extends BlockCommon {
   type: "line" | "area";
   stack?: boolean;
   axis: TimeAxis;
   /** Ordered: metric order in the spec, or split values by total descending, then by value. */
   series: Series[];
+  grains?: GrainSwitch;
 }
 
 export interface BarData extends BlockCommon {
@@ -110,6 +128,8 @@ export interface BarData extends BlockCommon {
   series: Series[];
   /** Categories removed by limit, so the renderer can say "Top 10 of 51". */
   omittedCategories?: number;
+  /** Only with a time axis. */
+  grains?: GrainSwitch;
 }
 
 export interface TableRow {
@@ -157,6 +177,8 @@ export interface DashboardData {
   timezone: string;
   /** Where week, quarter and year buckets begin (hatchmark.json anchors). */
   anchors: Anchors;
+  /** The dashboard's grain filter: one control that switches every block whose grains list the choice. */
+  grainFilter?: { id: string; label: string; options: GrainOption[]; selected: string };
   /** Every metric any block shows, by name. */
   metrics: Record<string, MetricInfo>;
   /** Blocks in spec order. Block types the engine cannot produce yet are omitted with a warning. */

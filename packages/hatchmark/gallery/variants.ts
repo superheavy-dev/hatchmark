@@ -27,6 +27,7 @@ import {
   series,
   span,
 } from "./fixtures.js";
+import { FISCAL_BARS, MONTH, QUARTER_BARS, REGION_SWITCH, revenueSwitch, WEEK } from "./grains.js";
 
 /** One gallery entry: a component variant on sample data, wrapped as a one-block dashboard. */
 export interface GalleryVariant {
@@ -617,7 +618,40 @@ const TABLES: GalleryVariant[] = [
 ];
 
 /** Every gallery variant, by component. */
-export const GALLERY: GalleryVariant[] = [...KPIS, ...LINES, ...BARS, ...TABLES];
+const GRAIN_LINES: GalleryVariant[] = [
+  one(
+    "line",
+    "line-grains",
+    "Grain switch: week, month or quarter (month selected)",
+    revenueSwitch(MONTH),
+  ),
+  one("line", "line-grains-week", "Grain switch with week selected", revenueSwitch(WEEK)),
+  one(
+    "line",
+    "line-grains-split",
+    "Grain switch on a split line (quarter selected)",
+    REGION_SWITCH,
+  ),
+];
+
+const GRAIN_BARS: GalleryVariant[] = [
+  one("bar", "bar-grains", "Time bars that switch between quarter and month", QUARTER_BARS),
+  one(
+    "bar",
+    "bar-grains-anchors",
+    "Calendar or retail quarters: options of one unit name their anchors",
+    FISCAL_BARS,
+  ),
+];
+
+export const GALLERY: GalleryVariant[] = [
+  ...KPIS,
+  ...LINES,
+  ...GRAIN_LINES,
+  ...BARS,
+  ...GRAIN_BARS,
+  ...TABLES,
+];
 
 export type { KpiData };
 /** The example dashboard rendered as a whole. */
