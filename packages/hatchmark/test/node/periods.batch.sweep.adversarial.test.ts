@@ -4,6 +4,7 @@ import path from "node:path";
 import { DuckDBInstance } from "@duckdb/node-api";
 import { afterAll, describe, expect, it, vi } from "vitest";
 import {
+  type DashboardData,
   type DashboardExecutor,
   type ParamBindings,
   rangeKey,
@@ -11,6 +12,7 @@ import {
   runDashboardBindings,
 } from "../../src/compiler/index.js";
 import { runPeriodData } from "../../src/compiler/period-build.js";
+import type { Diagnostic } from "../../src/diagnostics/index.js";
 import {
   createCachedExecutor,
   createDuckDbExecutor,
@@ -473,6 +475,38 @@ async function pageOf(project: Project, name: string, executor: DashboardExecuto
   return JSON.stringify({ base, period });
 }
 
+async function presetsAlone(
+  project: Project,
+  name: string,
+  executor: DashboardExecutor,
+  base: DashboardData,
+) {
+  const filter = project.dashboards.get(name)?.spec?.filters?.find((f) => f.type === "period");
+  if (filter?.type !== "period") return undefined;
+  const errors: Diagnostic[] = [];
+  const presets: Record<string, DashboardData> = {};
+  for (const option of filter.options) {
+    const key = rangeKey(option);
+    if (key in presets) continue;
+    if (key === base.periodFilter?.selected) {
+      presets[key] = base;
+      continue;
+    }
+    const run = await runDashboard(project, name, executor, NOW, { [filter.id]: option });
+    errors.push(...run.diagnostics.filter((d) => d.severity === "error"));
+    if (run.data) presets[key] = run.data;
+  }
+  return errors.length > 0 ? { errors } : { presets };
+}
+
+function batchedPresets(period: Awaited<ReturnType<typeof runPeriodData>>) {
+  if (period.data !== undefined) return { presets: period.data.presets };
+  if (period.diagnostics.every((d) => d.message.startsWith("day-grain query for custom ranges"))) {
+    return undefined;
+  }
+  return { errors: period.diagnostics };
+}
+
 function firstDiff(a: string, b: string) {
   let i = 0;
   while (i < a.length && a[i] === b[i]) i++;
@@ -503,6 +537,18 @@ describe(`batched presets equal one query at a time on random projects (${SEEDS}
       const cold = await createCachedExecutor({ root, config, createInner });
       try {
         for (const name of dashboards) {
+          const base = await runDashboard(project, name, db, NOW);
+          if (base.data !== undefined) {
+            const alone = await presetsAlone(project, name, oneByOne(db), base.data);
+            const batched = batchedPresets(await runPeriodData(project, name, db, base.data, NOW));
+            if (alone !== undefined && batched !== undefined) {
+              const expected = JSON.stringify(alone);
+              const got = JSON.stringify(batched);
+              if (expected !== got) {
+                mismatches.push({ seed, name, kind: "presets", ...firstDiff(expected, got) });
+              }
+            }
+          }
           const single = await pageOf(project, name, oneByOne(db));
           pages[name] = {
             single,
@@ -533,11 +579,11 @@ describe(`batched presets equal one query at a time on random projects (${SEEDS}
       }
       for (const name of dashboards) {
         const spec = project.dashboards.get(name)?.spec;
-        if (!spec?.filters?.some((f) => f.type === "select")) continue;
-        const period = spec.filters.find((f) => f.type === "period");
+        const select = spec?.filters?.some((f) => f.type === "select") === true;
+        const period = spec?.filters?.find((f) => f.type === "period");
         const options = period?.type === "period" ? period.options : [];
         const sets: ParamBindings[] = Array.from({ length: 6 }, () => ({
-          ...(r.chance(0.8)
+          ...(select && r.chance(0.8)
             ? {
                 region: r.pick([
                   r.some(["EMEA", "APAC", "Americas", "nowhere"], 1, 2),
