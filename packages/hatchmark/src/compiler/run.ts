@@ -493,7 +493,7 @@ async function runQuery(
     if (raw) return `context ${at}`;
     try {
       const selects = query.params.flatMap((p) =>
-        p.kind === "select" ? [selectValues(p, context.bindings)] : [],
+        p.kind === "select" ? [Array.from(selectValues(p, context.bindings))] : [],
       );
       return canonicalJson([bounds, selects]);
     } catch {

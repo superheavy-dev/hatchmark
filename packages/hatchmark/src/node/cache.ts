@@ -724,7 +724,6 @@ export async function createCachedExecutor(options: {
   };
 }
 
-/** Whether a query computes a raw SQL metric, whose result no key can capture. */
 function decode(storage: Storage, value: unknown): unknown {
   if (value === null) return null;
   switch (storage) {

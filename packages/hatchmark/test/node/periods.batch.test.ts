@@ -117,6 +117,12 @@ beforeAll(async () => {
         ],
         blocks: [{ type: "kpi", metric: "query_text" }],
       },
+      select: {
+        title: "Region select",
+        period: period("previous_period"),
+        filters: filters.slice(0, 2),
+        blocks: [{ type: "kpi", metric: "revenue" }],
+      },
       single: {
         title: "One preset",
         period: { asOf: "latest_data", range: "last_7_days", compare: "none" },
@@ -206,6 +212,8 @@ describe("period presets run as one batch per query", () => {
       { region: Number.NaN },
       { region: "EMEA" },
       { region: ["EMEA"] },
+      { region: [] },
+      { region: Array(1) },
     ];
     const together = await runDashboardBindings(project, "previous", db, sets);
     const alone = [];
@@ -215,6 +223,15 @@ describe("period presets run as one batch per query", () => {
     expect(JSON.stringify(together)).toBe(JSON.stringify(alone));
     expect(together[1]?.diagnostics.some((d) => d.code === "HM2015")).toBe(true);
     expect(together[2]?.diagnostics.some((d) => d.code === "HM2015")).toBe(true);
+    expect(together[6]?.diagnostics.some((d) => d.code === "HM2015")).toBe(true);
+    const sparse = [{ region: [] }, { region: Array(1) }];
+    const pair = await runDashboardBindings(project, "select", db, sparse);
+    const solo = await runDashboard(project, "select", oneByOne(db), undefined, {
+      region: Array(1),
+    });
+    expect(pair[0]?.data).toBeDefined();
+    expect(pair[1]?.diagnostics.some((d) => d.code === "HM2015")).toBe(true);
+    expect(JSON.stringify(pair[1])).toBe(JSON.stringify(solo));
   });
 
   it("returns no results for no contexts, and reads nothing when there is no other preset", async () => {
@@ -222,6 +239,7 @@ describe("period presets run as one batch per query", () => {
     const query = plan?.queries[0];
     if (query === undefined) throw new Error("no query");
     expect(await db.executeMany?.(query, [])).toEqual([]);
+    expect(await db.executeMany?.({ ...query, source: "missing" }, [])).toEqual([]);
     const { executor, calls } = counted(db);
     const base = await runDashboard(project, "single", db);
     if (base.data === undefined) throw new Error("no single data");

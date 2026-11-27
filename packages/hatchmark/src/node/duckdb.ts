@@ -136,6 +136,7 @@ export async function createDuckDbExecutor(options: {
       return execute(connection, await planned(query), query, context);
     },
     async executeMany(query, contexts) {
+      if (contexts.length === 0) return [];
       return executeMany(connection, await planned(query), query, contexts);
     },
     async sql(query, context): Promise<BuiltSql> {
