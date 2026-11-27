@@ -216,6 +216,8 @@ export function mountPeriod(root: HTMLElement, redraw: (view: PeriodView) => voi
   const open = () => {
     panel.hidden = false;
     button.setAttribute("aria-expanded", "true");
+    (presets.find((b) => b.tabIndex === 0) ?? presets[0])?.focus();
+    if (!months) return;
     const range = RANGE.exec(shown);
     if (range) {
       state.start = range[1];
@@ -229,7 +231,6 @@ export function mountPeriod(root: HTMLElement, redraw: (view: PeriodView) => voi
     state.view = monthStart(addMonths(state.focus, -(visibleMonths() - 1)));
     if (state.view < monthStart(min)) state.view = monthStart(min);
     drawCalendar();
-    (presets.find((b) => b.tabIndex === 0) ?? presets[0])?.focus();
   };
 
   const check = (key: string) => {
@@ -311,11 +312,18 @@ export function mountPeriod(root: HTMLElement, redraw: (view: PeriodView) => voi
     if (key !== undefined) void choose(key, true);
   });
   group?.addEventListener("keydown", (event) => {
-    const step = { ArrowDown: 1, ArrowRight: 1, ArrowUp: -1, ArrowLeft: -1 }[event.key];
-    if (step === undefined) return;
-    event.preventDefault();
     const at = presets.indexOf(document.activeElement as HTMLButtonElement);
-    const next = presets[(at + step + presets.length) % presets.length];
+    const to = {
+      ArrowDown: at + 1,
+      ArrowRight: at + 1,
+      ArrowUp: at - 1,
+      ArrowLeft: at - 1,
+      Home: 0,
+      End: presets.length - 1,
+    }[event.key];
+    if (to === undefined) return;
+    event.preventDefault();
+    const next = presets[(to + presets.length) % presets.length];
     if (!next) return;
     for (const b of presets) b.tabIndex = b === next ? 0 : -1;
     next.focus();

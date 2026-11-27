@@ -1,0 +1,203 @@
+/// <reference lib="dom" />
+import { readFile } from "node:fs/promises";
+import path from "node:path";
+import { type Browser, chromium, type Page } from "playwright";
+import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import type { DashboardData, KpiData } from "../../src/compiler/dashboard-data.js";
+import { runDashboard } from "../../src/compiler/index.js";
+import { createDuckDbExecutor } from "../../src/node/index.js";
+import { formatValue } from "../../src/render/index.js";
+import { buildProject, EXAMPLE, loadAt, removeProjects, writeExample } from "../node/fixture.js";
+
+/** The period control on the built explorer example: presets, calendar keyboard, URL state. */
+let browser: Browser;
+let root: string;
+
+beforeAll(async () => {
+  const explorer = JSON.parse(
+    await readFile(path.join(EXAMPLE, "dashboards/explorer.json"), "utf8"),
+  );
+  root = await writeExample({}, { explorer });
+  expect((await buildProject(root)).code).toBe(0);
+  browser = await chromium.launch();
+});
+
+afterAll(async () => {
+  await browser?.close();
+  await removeProjects();
+});
+
+const file = () => `file://${path.join(root, "dist", "explorer", "index.html")}`;
+
+async function open(query = "", width = 1280): Promise<{ page: Page; errors: string[] }> {
+  const page = await browser.newPage({ viewport: { width, height: 1000 } });
+  const errors: string[] = [];
+  page.on("pageerror", (e) => errors.push(String(e)));
+  await page.goto(`${file()}${query}`);
+  return { page, errors };
+}
+
+const settled = (page: Page) =>
+  page.waitForFunction(() => !document.querySelector("main.hm-grid")?.hasAttribute("aria-busy"));
+const caption = (page: Page) => page.locator("[data-hm-caption]").textContent();
+const kpi = (page: Page, label: string) =>
+  page.locator(".hm-kpi", { hasText: label }).locator(".hm-kpi-value").textContent();
+
+/** The SQL path's numbers for a range, through runDashboard with the filter bound. */
+async function sql(range: unknown): Promise<DashboardData> {
+  const { project } = await loadAt(root);
+  const config = project.config.spec;
+  if (!config) throw new Error("no config");
+  const executor = await createDuckDbExecutor({ root, config });
+  try {
+    const result = await runDashboard(project, "explorer", executor, undefined, { period: range });
+    if (!result.data) throw new Error(JSON.stringify(result.diagnostics));
+    return result.data;
+  } finally {
+    await executor.close();
+  }
+}
+
+const shownValue = (data: DashboardData, metric: string) => {
+  const block = data.blocks.find((b): b is KpiData => b.type === "kpi" && b.metric === metric);
+  const info = data.metrics[metric];
+  if (!block || !info) throw new Error(`no KPI ${metric}`);
+  return formatValue(block.value, info, data.locale, "headline");
+};
+
+describe("period control", () => {
+  it("opens as a dialog, picks a preset with the keyboard, and keeps it in the URL across a reload", async () => {
+    const { page, errors } = await open();
+    const button = page.locator(".hm-period-button");
+    await button.click();
+    expect(await button.getAttribute("aria-expanded")).toBe("true");
+    await expect
+      .poll(() => page.evaluate(() => document.activeElement?.getAttribute("aria-checked")))
+      .toBe("true");
+    await page.keyboard.press("End");
+    await page.keyboard.press("ArrowDown");
+    const focused = await page.evaluate(
+      () => (document.activeElement as HTMLElement).dataset.hmRange,
+    );
+    expect(focused).toBe("last_7_days");
+    await page.keyboard.press("Enter");
+    await settled(page);
+    expect(await caption(page)).toContain("Oct 25 – Oct 31, 2026");
+    expect(new URL(page.url()).searchParams.get("period")).toBe("last_7_days");
+    expect(await button.getAttribute("aria-expanded")).toBe("false");
+    expect(await page.evaluate(() => document.activeElement?.className)).toBe("hm-period-button");
+    expect(await kpi(page, "Revenue")).toBe(
+      shownValue(await sql({ last: 7, unit: "day" }), "revenue"),
+    );
+
+    await page.reload();
+    await settled(page);
+    expect(await caption(page)).toContain("Oct 25 – Oct 31, 2026");
+    expect(await page.locator("[data-hm-range=last_7_days]").getAttribute("aria-checked")).toBe(
+      "true",
+    );
+    expect(errors).toEqual([]);
+    await page.close();
+  });
+
+  it("picks a custom range on the calendar grid with arrows and Page Down, matching the SQL numbers", async () => {
+    const { page, errors } = await open();
+    await page.locator(".hm-period-button").click();
+    const day = (d: string) => page.locator(`[data-day="${d}"]`);
+    await day("2026-09-01").focus();
+    await expect
+      .poll(() => page.evaluate(() => (document.activeElement as HTMLElement).dataset.day))
+      .toBe("2026-09-01");
+    await page.keyboard.press("ArrowRight");
+    await page.keyboard.press("ArrowDown");
+    await page.keyboard.press("Enter");
+    expect(await day("2026-09-09").getAttribute("aria-selected")).toBe("true");
+    await page.keyboard.press("PageDown");
+    expect(await page.evaluate(() => (document.activeElement as HTMLElement).dataset.day)).toBe(
+      "2026-10-09",
+    );
+    await page.keyboard.press("End");
+    await page.keyboard.press("Enter");
+    expect(await page.locator(".hm-cal-status").textContent()).toContain(
+      "Sep 9, 2026 – Oct 10, 2026, 32 days",
+    );
+    await page.locator("[data-hm-cal=apply]").click();
+    await settled(page);
+    expect(new URL(page.url()).searchParams.get("period")).toBe("2026-09-09..2026-10-10");
+    expect(await caption(page)).toContain("Sep 9 – Oct 10, 2026");
+    const data = await sql({ start: "2026-09-09", end: "2026-10-11" });
+    for (const [label, metric] of [
+      ["Revenue", "revenue"],
+      ["Orders", "orders"],
+      ["Average order value", "avg_order_value"],
+      ["Refund rate", "refund_rate"],
+    ] as const) {
+      expect(await kpi(page, label)).toBe(shownValue(data, metric));
+    }
+    expect(errors).toEqual([]);
+    await page.close();
+  });
+
+  it("disables days outside the data, and Escape closes the dialog and returns focus", async () => {
+    const { page } = await open();
+    await page.locator(".hm-period-button").click();
+    await page.locator("[data-day]").first().focus();
+    await page.keyboard.press("PageDown");
+    await page.keyboard.press("PageDown");
+    expect(await page.evaluate(() => (document.activeElement as HTMLElement).dataset.day)).toBe(
+      "2026-10-31",
+    );
+    expect(await page.locator('[data-day="2026-11-01"]').count()).toBe(0);
+    await page.keyboard.press("Escape");
+    expect(await page.locator(".hm-period-panel").isHidden()).toBe(true);
+    expect(await page.evaluate(() => document.activeElement?.className)).toBe("hm-period-button");
+    await page.close();
+  });
+
+  it("ignores a range in the URL that the page cannot show and drops it from the address", async () => {
+    for (const bad of ["nonsense", "2027-01-01..2027-02-01", "2026-05-10..2026-05-01"]) {
+      const { page, errors } = await open(`?period=${encodeURIComponent(bad)}`);
+      await page.waitForTimeout(300);
+      await settled(page);
+      expect(await caption(page)).toContain("Nov 2025 – Oct 2026");
+      expect(new URL(page.url()).searchParams.get("period")).toBeNull();
+      expect(errors).toEqual([]);
+      await page.close();
+    }
+  });
+
+  it("keeps the grain in the URL, applies it to redrawn blocks, and names every switch apart", async () => {
+    const { page } = await open("?grain=month&period=last_30_days");
+    await settled(page);
+    const shown = () =>
+      page
+        .locator("section[data-hm-grains] .hm-grain-panel:not([hidden])")
+        .getAttribute("data-hm-grain");
+    expect(await shown()).toBe("month");
+    await page.locator("[data-hm-grain-filter]").getByRole("radio", { name: "Day" }).click();
+    expect(new URL(page.url()).searchParams.get("grain")).toBe("day");
+    await page.locator(".hm-period-button").click();
+    await page.locator("[data-hm-range=last_7_days]").click();
+    await settled(page);
+    expect(await shown()).toBe("day");
+    const names = await page
+      .getByRole("radiogroup")
+      .evaluateAll((groups) => groups.map((g) => g.getAttribute("aria-label")));
+    expect(new Set(names).size).toBe(names.length);
+    expect(names).toContain("Grain, all charts");
+    expect(names).toContain("Grain: Revenue by region");
+    await page.close();
+  });
+
+  it("fits a 390 px phone with the dialog open", async () => {
+    const { page } = await open("", 390);
+    await page.locator(".hm-period-button").click();
+    const overflow = await page.evaluate(
+      () => document.documentElement.scrollWidth - document.documentElement.clientWidth,
+    );
+    expect(overflow).toBe(0);
+    const box = await page.locator(".hm-period-panel").boundingBox();
+    expect(box && box.x >= 0 && box.x + box.width <= 390).toBe(true);
+    await page.close();
+  });
+});

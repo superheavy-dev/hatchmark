@@ -4,6 +4,7 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { entries, head } from "./entries.js";
 import { type BuildInfo, renderSite } from "./page.js";
+import { periodProject } from "./periods.js";
 
 /** packages/, from dist/lib/preview/src/build.js (tsc compiles the hatchmark gallery sources too). */
 const PACKAGES = fileURLToPath(new URL("../../../../../", import.meta.url));
@@ -49,23 +50,24 @@ copyFileSync(
   join(HATCHMARK, "assets", "runtime", "hatchmark.js"),
   join(site, "_hatchmark", "hatchmark.js"),
 );
-const dashboard = JSON.parse(
-  execFileSync(
-    process.execPath,
-    [
-      join(HATCHMARK, "dist", "cli", "bin.js"),
-      "build",
-      "--cwd",
-      join(HATCHMARK, "examples", "global-sales"),
-      "--out",
-      join(site, "dashboard"),
-      "--json",
-    ],
-    { encoding: "utf8", stdio: ["ignore", "pipe", "inherit"] },
-  ),
-);
-if (!dashboard.ok)
-  throw new Error(`hatchmark build failed: ${JSON.stringify(dashboard.diagnostics)}`);
+function buildDashboards(cwd: string, out: string): void {
+  const report = JSON.parse(
+    execFileSync(
+      process.execPath,
+      [join(HATCHMARK, "dist", "cli", "bin.js"), "build", "--cwd", cwd, "--out", out, "--json"],
+      { encoding: "utf8", stdio: ["ignore", "pipe", "inherit"] },
+    ),
+  );
+  if (!report.ok) throw new Error(`hatchmark build failed: ${JSON.stringify(report.diagnostics)}`);
+}
+const example = join(HATCHMARK, "examples", "global-sales");
+buildDashboards(example, join(site, "dashboard"));
+const periods = periodProject(example);
+try {
+  buildDashboards(periods, join(site, "periods"));
+} finally {
+  rmSync(periods, { recursive: true, force: true });
+}
 console.log(
   `Preview site written to ${site}: ${entries.length} gallery entries and the example dashboard.`,
 );

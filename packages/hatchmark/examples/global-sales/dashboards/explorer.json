@@ -73,8 +73,8 @@
     },
     {
       "type": "kpi",
-      "id": "customers",
-      "metric": "customers"
+      "id": "refund_rate",
+      "metric": "refund_rate"
     },
     {
       "type": "line",
