@@ -77,11 +77,11 @@ Windows are calendar dates in the project time zone; [numbers.md](numbers.md#tim
 
 Fields every block takes:
 
-| Field   | Meaning                                                                                                                                     |
-| ------- | ------------------------------------------------------------------------------------------------------------------------------------------- |
-| `id`    | Optional stable id, lowercase snake_case. Defaults to `<type>_<index>`.                                                                     |
-| `title` | Optional card title. State the finding ("Revenue reached a record in October"); the subtitle Hatchmark adds says what is measured.          |
-| `span`  | Width in the 12-column grid, 1–12. Default 3 for `kpi` (four to a row) and 12 for the rest. Below 1024 px every block takes the full width. |
+| Field   | Meaning                                                                                                                                                                                                                                                |
+| ------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `id`    | Optional stable id, lowercase snake_case. Defaults to `<type>_<index>`.                                                                                                                                                                                |
+| `title` | Optional card title. State the finding ("Revenue reached a record in October"); the subtitle Hatchmark adds says what is measured.                                                                                                                     |
+| `span`  | Width in the 12-column grid, 1–12. Default 3 for `kpi` (four to a row) and 12 for the rest. Line, area and bar charts take at least 3 columns; a smaller span gets warning HM2018 and is drawn 3 wide. Below 1024 px every block takes the full width. |
 
 Metric names in blocks are metric file names (see [metrics.md](metrics.md)); columns in `by` and
 `split` are source columns.

@@ -43,6 +43,14 @@ export function lowerFirst(text: string): string {
 export const isNumber = (v: Value | undefined): v is number =>
   typeof v === "number" && Number.isFinite(v);
 
+/**
+ * Where v sits between lo and hi, from 0 to 1. Halving first keeps hi - lo finite for any two
+ * finite numbers, and halving is exact, so ordinary values give the same result as (v - lo) / (hi - lo).
+ */
+export function fraction(v: number, lo: number, hi: number): number {
+  return (v / 2 - lo / 2) / (hi / 2 - lo / 2);
+}
+
 /** The last index where a series has a value, or -1. */
 export function lastDefined(values: readonly Value[]): number {
   for (let i = values.length - 1; i >= 0; i--) if (isNumber(values[i])) return i;

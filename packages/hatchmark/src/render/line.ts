@@ -7,6 +7,7 @@ import {
   type ChartSize,
   drawYAxis,
   emptyNote,
+  fraction,
   isNumber,
   LABEL_LINE,
   lastDefined,
@@ -32,16 +33,35 @@ const READOUT_GAP = 8;
 /** A tall readout (long names in one column) grows the chart instead of squeezing the plot below this. */
 const READOUT_MIN_PLOT = 80;
 
-/** Values as drawn: cumulative for stacked areas (missing values count as 0 there). */
+/**
+ * Each series' band as drawn: upper is the value itself, or for stacked areas the running total
+ * at that bucket, and lower is where the band starts. Stacks diverge from zero: positive values
+ * stack upward and negative values downward. A missing value is a gap in its own band, never 0.
+ */
+export function stackBands(block: LineData): { lower: Value[][]; upper: Value[][] } {
+  const upper = block.series.map((s) => s.values);
+  if (!(block.type === "area" && block.stack)) return { lower: upper.map(() => []), upper };
+  const up = block.axis.buckets.map(() => 0);
+  const down = block.axis.buckets.map(() => 0);
+  const lower: Value[][] = [];
+  const stacked: Value[][] = [];
+  for (const s of block.series) {
+    lower.push(s.values.map((v, i) => (isNumber(v) ? ((v < 0 ? down : up)[i] as number) : null)));
+    stacked.push(
+      s.values.map((v, i) => {
+        if (!isNumber(v)) return null;
+        const totals = v < 0 ? down : up;
+        totals[i] = (totals[i] as number) + v;
+        return totals[i] as number;
+      }),
+    );
+  }
+  return { lower, upper: stacked };
+}
+
+/** Values as drawn: running totals for stacked areas, with gaps where a value is missing. */
 export function plottedValues(block: LineData): Value[][] {
-  if (!(block.type === "area" && block.stack)) return block.series.map((s) => s.values);
-  const totals = block.axis.buckets.map(() => 0);
-  return block.series.map((s) =>
-    s.values.map((v, i) => {
-      totals[i] = (totals[i] ?? 0) + (isNumber(v) ? v : 0);
-      return totals[i] as number;
-    }),
-  );
+  return stackBands(block).upper;
 }
 
 /**
@@ -60,7 +80,8 @@ export function renderLine(
   const n = block.axis.buckets.length;
   const series = block.series;
   const metric = metricOf(ctx, series[0]?.metric ?? "");
-  const plotted = plottedValues(block);
+  const bands = stackBands(block);
+  const plotted = bands.upper;
   const values = plotted.flat().filter(isNumber);
   const empty = values.length === 0;
 
@@ -93,12 +114,16 @@ export function renderLine(
   let readout = "";
   let readoutHeight = 0;
   if (!direct && !empty && series.length > 0) {
+    const last = Math.max(...lastIndex);
+    const shown = series.map((s) =>
+      formatValue(s.values[last] ?? null, metricOf(ctx, s.metric), locale, "compact"),
+    );
     const inner = size.width - 2 - READOUT_PAD_X * 2;
     const needed = Math.max(
       ...series.map((s, k) =>
         Math.max(
           13 + textWidth(s.label, { size: CAPTION }),
-          textWidth(lastText[k] as string, { size: BODY, weight: 500 }),
+          textWidth(shown[k] as string, { size: BODY, weight: 500 }),
         ),
       ),
     );
@@ -109,7 +134,6 @@ export function renderLine(
     const pitch = inline ? LABEL_LINE + 6 : 40;
     readoutHeight = READOUT_PAD_Y * 2 + LABEL_LINE + 4 + rows * pitch - 6;
     const colWidth = inner / columns;
-    const last = Math.max(...lastIndex);
     const parts = [
       `<rect x="0.5" y="0.5" width="${r(size.width - 1)}" height="${readoutHeight - 1}" rx="${ctx.theme.radius.control}"${paint.attrs("cardAlt", "border")}/>`,
       svgText(
@@ -146,7 +170,7 @@ export function renderLine(
           paint,
           inline ? size.width - 1 - READOUT_PAD_X : x,
           inline ? y + 8 : y + 16 + 9,
-          lastText[k] as string,
+          shown[k] as string,
           {
             ...valueStyle,
             color: "text",
@@ -164,7 +188,7 @@ export function renderLine(
   const plotBottom = height - bottomBand;
   const axis = yAxis(values, plotBottom - top, metric, locale);
   const [d0, d1] = axis.domain;
-  const y = (v: number) => plotBottom - ((v - d0) / (d1 - d0)) * (plotBottom - top);
+  const y = (v: number) => plotBottom - fraction(v, d0, d1) * (plotBottom - top);
   const targets = series.map((_, k) => {
     const v = (plotted[k] as Value[])[lastIndex[k] ?? -1];
     return isNumber(v) ? y(v) : plotBottom;
@@ -188,11 +212,11 @@ export function renderLine(
   if (block.type === "area") {
     const order = series.map((_, k) => k).reverse();
     for (const k of order) {
-      const lower = stacked && k > 0 ? (plotted[k - 1] as Value[]) : undefined;
+      const lower = bands.lower[k] as Value[];
       const area = d3area<Value>()
         .defined((v) => isNumber(v))
         .x((_, i) => x(i))
-        .y0((_, i) => y(lower ? (lower[i] ?? 0) : Math.max(d0, Math.min(0, d1))))
+        .y0((_, i) => y(stacked ? (lower[i] as number) : Math.max(d0, Math.min(0, d1))))
         .y1((v) => y(v as number))
         .digits(1)(plotted[k] as Value[]);
       if (area) {
@@ -263,7 +287,7 @@ export function renderLine(
     block.title ?? series.map((s) => s.label).join(", "),
     {
       kind: "line",
-      x: `${r(x(0))},${r(step)},${n}`,
+      x: `${r(x(0))},${r(x(n - 1))},${n}`,
       y: `${d0},${d1},${r(plotBottom)},${r(top)}`,
       plot: `${r(plotLeft)},${r(top)},${r(plotRight)},${r(plotBottom)}`,
       ...(direct ? {} : { readout: 1 }),

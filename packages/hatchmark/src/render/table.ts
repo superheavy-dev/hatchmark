@@ -84,5 +84,5 @@ export function renderTable(block: TableData, ctx: RenderContext): string {
       ? `<p class="hm-table-note">Showing ${shown} of ${block.rowCount} rows${block.total ? `. The total covers all ${block.rowCount}` : ""}.</p>`
       : "";
   const empty = shown === 0 ? `<p class="hm-table-note">No rows in this period.</p>` : "";
-  return `<div class="hm-table-wrap"><table class="hm-table"><thead><tr>${head}</tr></thead><tbody>${rows}</tbody>${total}</table></div>${empty}${note}`;
+  return `<div class="hm-table-wrap" tabindex="0" role="region" aria-labelledby="hm-${esc(block.id)}-t"><table class="hm-table"><thead><tr>${head}</tr></thead><tbody>${rows}</tbody>${total}</table></div>${empty}${note}`;
 }

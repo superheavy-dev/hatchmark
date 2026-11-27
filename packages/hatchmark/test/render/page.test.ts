@@ -32,9 +32,10 @@ describe("dashboard page", () => {
   it("gives every chart a text alternative and a data table", () => {
     const page = renderDashboardPage(SALES, { assets: ASSETS });
     expect(page).toContain(
-      '<figcaption class="hm-sr">Line chart of Revenue by month, Nov 2024 \u2013 Oct 2026.',
+      '<figcaption class="hm-sr" id="hm-revenue_by_month-d">Line chart of Revenue by month, Nov 2024 \u2013 Oct 2026.',
     );
-    expect(page.match(/<table class="hm-sr">/g)?.length).toBe(2);
+    expect(page).toContain('aria-describedby="hm-revenue_by_month-d"');
+    expect(page.match(/<div class="hm-sr"><table>/g)?.length).toBe(2);
     expect(page.match(/role="img" aria-label=/g)?.length).toBeGreaterThan(2);
   });
 

@@ -30,6 +30,7 @@ dist/
     hatchmark.<hash>.js     the browser runtime (tooltips, crosshair, keyboard)
     IBMPlexSans-*.<hash>.woff2
     OFL.txt                 the font licence
+    manifest.json           every file this build wrote
 ```
 
 - Every URL in the output is relative, so `dist/` works on any static host, under any sub-path
@@ -38,16 +39,19 @@ dist/
 - The output is byte-identical for identical input: the page shows the date the data runs
   through ("Data through Oct 31, 2026"), never the build time. Pin `period.asOf` to a date if the
   data itself keeps growing and you want reproducible builds.
-- The output directory is deleted and rewritten on every build. Build refuses (`HM0004`, exit 2)
-  when the directory is not empty and holds no `_hatchmark/` folder, so it never deletes files
-  it did not write, and it refuses an output directory that contains the project.
+- Build never deletes a file it did not write. Each build lists its files in
+  `_hatchmark/manifest.json`, and the next build removes exactly those before writing; anything
+  else in the directory stays. Build refuses (`HM0004`, exit 2) a directory that is not empty
+  and has no manifest, a file it would write that the manifest does not list, and an output
+  directory that contains the project.
 
 ## The page
 
 - Header with the project name, dashboard title, the period ("Nov 2025 – Oct 2026 compared with
   Nov 2024 – Oct 2025 · USD"), the description, and the data date. Footer with the source files.
 - Consecutive `kpi` blocks form one KPI strip. Other blocks are cards in a 12-column grid, as
-  wide as their `span`.
+  wide as their `span`. Line, area and bar charts are at least 3 columns wide (HM2018 warns when
+  `span` is smaller); a card that no longer fits beside the cards before it starts the next row.
 - Light and dark follow the reader's system setting. `?theme=dark` or `?theme=light` in the URL,
   or `data-theme="dark"` on the `<html>` element, overrides it.
 - Layout: charts are drawn at the exact width of each layout (1392, 1232, 976, 720, 552, 358 and

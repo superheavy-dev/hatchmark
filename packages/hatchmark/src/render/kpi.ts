@@ -1,5 +1,5 @@
 import type { KpiData } from "../compiler/dashboard-data.js";
-import { isNumber, metricOf, type RenderContext } from "./chart.js";
+import { fraction, isNumber, metricOf, type RenderContext } from "./chart.js";
 import {
   formatBucket,
   formatChange,
@@ -57,13 +57,14 @@ export function renderKpi(block: KpiData, ctx: RenderContext): string {
   if (metric.better === "down") note += " \u00B7 lower is better";
   let spark = "";
   let runtime = "";
+  let table = "";
   const values = block.sparkline?.values ?? [];
   const defined = values.filter(isNumber);
   if (defined.length > 1) {
     const lo = Math.min(...defined);
     const hi = Math.max(...defined);
     const x = (i: number) => (i / (values.length - 1)) * 100;
-    const y = (v: number) => (hi === lo ? 12 : 22 - ((v - lo) / (hi - lo)) * 20);
+    const y = (v: number) => (hi === lo ? 12 : 22 - fraction(v, lo, hi) * 20);
     let d = "";
     let pen = false;
     values.forEach((v, i) => {
@@ -76,7 +77,9 @@ export function renderKpi(block: KpiData, ctx: RenderContext): string {
     });
     const sparkline = block.sparkline as NonNullable<KpiData["sparkline"]>;
     const headers = sparkline.buckets.map((b) => formatBucket(b, sparkline.grain, locale));
-    const geometry = `data-hm-kind="line" data-hm-x="0,${r(100 / (values.length - 1))},${values.length}" data-hm-y="${hi === lo ? `${lo},${lo + 1},12,12` : `${lo},${hi},22,2`}" data-hm-plot="0,0,100,24"`;
+    const text = values.map((v) => formatValue(v, metric, locale, "full"));
+    table = `<div class="hm-sr"><table><caption>${esc(`${label} by ${sparkline.grain}`)}</caption><thead><tr><th scope="col">Period</th><th scope="col">${esc(label)}</th></tr></thead><tbody>${headers.map((h, i) => `<tr><th scope="row">${esc(h)}</th><td>${esc(text[i] as string)}</td></tr>`).join("")}</tbody></table></div>`;
+    const geometry = `data-hm-kind="line" data-hm-x="0,100,${values.length}" data-hm-y="${hi === lo ? `${lo},${lo + 1},12,12` : `${lo},${hi},22,2`}" data-hm-plot="0,0,100,24"`;
     spark = `<svg class="hm-spark" viewBox="0 0 100 24" preserveAspectRatio="none" overflow="visible" tabindex="0" role="img" aria-label="${esc(`${label} by ${sparkline.grain}, ${headers[0]} to ${headers.at(-1)}`)}" ${geometry}><path d="${d}"${ctx.paint.attrs("none", "c1")} stroke-width="1.5" vector-effect="non-scaling-stroke" stroke-linejoin="round"/></svg>`;
     runtime = `<script type="application/json">${scriptJson({
       kind: "line",
@@ -86,7 +89,7 @@ export function renderKpi(block: KpiData, ctx: RenderContext): string {
           label,
           color: 1,
           v: values,
-          text: values.map((v) => formatValue(v, metric, locale, "full")),
+          text,
           short: values.map((v) => formatValue(v, metric, locale, "compact")),
         },
       ],
@@ -99,6 +102,7 @@ export function renderKpi(block: KpiData, ctx: RenderContext): string {
     `<div class="hm-kpi-figure"><span class="hm-kpi-value${block.value === null ? " hm-null" : ""}">${esc(value)}</span>${delta}</div>`,
     `<div class="hm-kpi-note">${esc(note)}</div>`,
     spark,
+    table,
     "</div>",
   ].join("");
 }

@@ -66,7 +66,7 @@ export function chartTable(block: ChartBlock, ctx: RenderContext, caption: strin
         `<tr><th scope="row">${esc(name)}</th>${block.series.map((s) => `<td>${esc(full(ctx, s.metric, s.values[i]))}</td>`).join("")}</tr>`,
     )
     .join("");
-  return `<table class="hm-sr"><caption>${esc(caption)}</caption><thead>${head}</thead><tbody>${rows}</tbody></table>`;
+  return `<div class="hm-sr"><table><caption>${esc(caption)}</caption><thead>${head}</thead><tbody>${rows}</tbody></table></div>`;
 }
 
 /** What the browser runtime needs for tooltips and the readout: labels and formatted values. */

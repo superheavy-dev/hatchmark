@@ -7,6 +7,7 @@ import {
   type ChartSize,
   drawYAxis,
   emptyNote,
+  fraction,
   isNumber,
   LABEL_LINE,
   metricOf,
@@ -190,7 +191,7 @@ export function renderBar(
     const lo = Math.min(0, ...ends);
     const hi = Math.max(0, ...ends);
     const scale = (v: number) =>
-      hi === lo ? barLeft : barLeft + ((v - lo) / (hi - lo)) * (barRight - barLeft);
+      hi === lo ? barLeft : barLeft + fraction(v, lo, hi) * (barRight - barLeft);
     const zero = scale(0);
     names.forEach((name, i) => {
       const cy = top + i * rowH + rowH / 2;
@@ -255,7 +256,7 @@ export function renderBar(
       {
         kind: "bar",
         o: "h",
-        band: `${r(top)},${r(rowH)},${n}`,
+        band: `${r(top)},${r(top + n * rowH)},${n}`,
         plot: `0,${r(top)},${r(size.width)},${r(top + n * rowH)}`,
       },
       parts.join(""),
@@ -285,7 +286,7 @@ export function renderBar(
   const plotBottom = size.height - bottomBand;
   const axis = yAxis(ends, plotBottom - top, metric, locale);
   const [d0, d1] = axis.domain;
-  const y = (v: number) => plotBottom - ((v - d0) / (d1 - d0)) * (plotBottom - top);
+  const y = (v: number) => plotBottom - fraction(v, d0, d1) * (plotBottom - top);
   parts.push(
     empty
       ? svgLine(paint, plotLeft, plotBottom, plotRight, plotBottom, "baseline")
@@ -374,7 +375,7 @@ export function renderBar(
     {
       kind: "bar",
       o: "v",
-      band: `${r((band(0) ?? plotLeft) - (step - bw) / 2)},${r(step)},${n}`,
+      band: `${r((band(0) ?? plotLeft) - (step - bw) / 2)},${r((band(0) ?? plotLeft) - (step - bw) / 2 + n * step)},${n}`,
       plot: `${r(plotLeft)},${r(top)},${r(plotRight)},${r(plotBottom)}`,
     },
     parts.join(""),

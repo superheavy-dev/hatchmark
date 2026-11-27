@@ -1,11 +1,17 @@
 import { createHash } from "node:crypto";
-import { mkdir, readdir, readFile, rm, stat, writeFile } from "node:fs/promises";
+import { mkdir, readdir, readFile, rm, rmdir, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { type DashboardData, type DashboardExecutor, runDashboard } from "../../compiler/index.js";
 import { createReport, type Diagnostic, renderHuman } from "../../diagnostics/index.js";
 import { createDuckDbExecutor, nodeProjectHost } from "../../node/index.js";
 import { FONT_FILES, renderDashboardPage, renderIndexPage } from "../../render/index.js";
-import { loadProject, type Project, type ProjectConfig } from "../../spec/index.js";
+import {
+  checkReferences,
+  loadProject,
+  type Project,
+  type ProjectConfig,
+  parseDiagnostics,
+} from "../../spec/index.js";
 import type { CommandHelp } from "../help.js";
 import { type CommandContext, type CommandResult, EXIT } from "../io.js";
 import { usageError } from "../usage.js";
@@ -20,7 +26,7 @@ export const buildHelp: CommandHelp = {
     {
       flag: "--out <dir>",
       description:
-        "Write here instead of outDir from hatchmark.json, relative to --cwd. Replaced on every build.",
+        "Write here instead of outDir from hatchmark.json, relative to --cwd. Only files an earlier build wrote are replaced.",
     },
   ],
   example: {
@@ -33,6 +39,7 @@ export const buildHelp: CommandHelp = {
 /** Where the package keeps its bundled assets: the same path from src/ and from dist/. */
 const ASSETS = new URL("../../../assets/", import.meta.url);
 const ASSET_DIR = "_hatchmark";
+const MANIFEST = `${ASSET_DIR}/manifest.json`;
 
 /** What build needs from the platform; tests inject their own. */
 export interface BuildDeps {
@@ -62,19 +69,56 @@ async function readAsset(relative: string): Promise<Uint8Array> {
 }
 
 /**
- * The output directory is deleted and rewritten on every build, so build refuses a directory it
- * did not write (no _hatchmark/ inside) unless it is empty, and never the project itself.
+ * Build never deletes a file it did not write. Every build records its files in
+ * _hatchmark/manifest.json; the next build removes exactly those and nothing else. A non-empty
+ * directory without a readable manifest is refused, as is one where a file build would write
+ * exists but is not in the manifest, and the project directory itself. Returns the previous
+ * build's files, or a reason to refuse.
  */
-async function checkOutDir(root: string, outDir: string): Promise<string | undefined> {
+async function checkOutDir(
+  root: string,
+  outDir: string,
+  writing: ReadonlySet<string>,
+): Promise<{ previous: string[] } | { refused: string }> {
+  const label = path.relative(root, outDir) || outDir;
   const relative = path.relative(outDir, root);
   if (relative === "" || !relative.startsWith("..")) {
-    return "the output directory must not contain the project; choose a directory inside it, such as dist";
+    return {
+      refused:
+        "the output directory must not contain the project; choose a directory inside it, such as dist",
+    };
   }
   const entries = await readdir(outDir).catch(() => undefined);
-  if (entries === undefined || entries.length === 0) return undefined;
-  const marker = await stat(path.join(outDir, ASSET_DIR)).catch(() => undefined);
-  if (marker?.isDirectory()) return undefined;
-  return `${path.relative(root, outDir) || outDir} is not empty and was not written by hatchmark build; empty it or choose another --out`;
+  if (entries === undefined || entries.length === 0) return { previous: [] };
+  const manifest = await readFile(path.join(outDir, ...MANIFEST.split("/")), "utf8")
+    .then((text) => JSON.parse(text) as { files?: unknown })
+    .catch(() => undefined);
+  const files = manifest?.files;
+  if (!Array.isArray(files) || !files.every((f) => typeof f === "string" && isOwnPath(f))) {
+    return {
+      refused: `${label} is not empty and has no hatchmark build manifest (${MANIFEST}); empty it or choose another --out`,
+    };
+  }
+  const previous = new Set<string>(files);
+  for (const file of writing) {
+    if (previous.has(file) || file === MANIFEST) continue;
+    const exists = await readFile(path.join(outDir, ...file.split("/"))).then(
+      () => true,
+      (error: NodeJS.ErrnoException) => error.code !== "ENOENT",
+    );
+    if (exists) {
+      return {
+        refused: `${label}/${file} exists but was not written by hatchmark build; move it or choose another --out`,
+      };
+    }
+  }
+  return { previous: [...previous] };
+}
+
+/** A relative POSIX path that stays inside the output directory. */
+function isOwnPath(file: string): boolean {
+  const normal = path.posix.normalize(file);
+  return normal === file && !path.posix.isAbsolute(file) && !normal.startsWith("..");
 }
 
 /**
@@ -96,8 +140,8 @@ export async function build(
   }
   const config = project.config.spec;
   const outDir = path.resolve(ctx.root, flags.out ?? config.outDir);
-  const refused = await checkOutDir(ctx.root, outDir);
-  if (refused !== undefined) return usageError("HM0004", refused);
+  const pending = await checkOutDir(ctx.root, outDir, new Set());
+  if ("refused" in pending) return usageError("HM0004", pending.refused);
 
   const { pages, diagnostics } = await runAll(ctx.root, project, config, deps);
   if (diagnostics.some((d) => d.severity === "error")) {
@@ -151,7 +195,28 @@ export async function build(
     );
   }
 
-  await rm(outDir, { recursive: true, force: true });
+  const owned = [...files.keys()].sort();
+  files.set(MANIFEST, `${JSON.stringify({ format_version: "1", files: owned }, null, 2)}\n`);
+  const checked = await checkOutDir(ctx.root, outDir, new Set(files.keys()));
+  if ("refused" in checked) return usageError("HM0004", checked.refused);
+  for (const file of checked.previous) {
+    if (files.has(file)) continue;
+    const target = path.join(outDir, ...file.split("/"));
+    await rm(target, { force: true });
+    for (
+      let dir = path.dirname(target);
+      dir.startsWith(outDir + path.sep);
+      dir = path.dirname(dir)
+    ) {
+      if (
+        !(await rmdir(dir).then(
+          () => true,
+          () => false,
+        ))
+      )
+        break;
+    }
+  }
   for (const [file, content] of [...files].sort(([a], [b]) => (a < b ? -1 : 1))) {
     const target = path.join(outDir, ...file.split("/"));
     await mkdir(path.dirname(target), { recursive: true });
@@ -188,6 +253,9 @@ async function runAll(
 ): Promise<{ pages: DashboardData[]; diagnostics: Diagnostic[] }> {
   const pages: DashboardData[] = [];
   const diagnostics = new Map<string, Diagnostic>();
+  for (const d of [...parseDiagnostics(project), ...checkReferences(project)]) {
+    if (d.severity === "warning") diagnostics.set(JSON.stringify(d), d);
+  }
   const executor = await deps.createExecutor({ root, config });
   try {
     for (const name of [...project.dashboards.keys()].sort()) {

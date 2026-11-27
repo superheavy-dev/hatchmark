@@ -80,12 +80,16 @@ export function thinTicks(
     });
     const fits = placed.every(
       (p, k) =>
-        k === 0 ||
-        (placed[k - 1] as (typeof placed)[number]).centre + (placed[k - 1]?.w ?? 0) / 2 + gap <=
-          p.centre - p.w / 2,
+        p.w <= maxX - minX &&
+        (k === 0 ||
+          (placed[k - 1] as (typeof placed)[number]).centre + (placed[k - 1]?.w ?? 0) / 2 + gap <=
+            p.centre - p.w / 2),
     );
     if (fits) return placed.map(({ index, centre }) => ({ index, centre }));
   }
   const first = candidates[0];
-  return first ? [{ index: 0, centre: Math.max(minX + first.width / 2, first.pos) }] : [];
+  if (!first) return [];
+  const w = width(0, [0]);
+  if (w > maxX - minX) return [];
+  return [{ index: 0, centre: Math.max(minX + w / 2, Math.min(maxX - w / 2, first.pos)) }];
 }

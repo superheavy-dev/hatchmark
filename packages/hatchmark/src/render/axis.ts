@@ -20,12 +20,16 @@ export function yTicks(
   if (min === max) max = 1;
   if (!Number.isFinite(min) || !Number.isFinite(max)) [min, max] = [0, 1];
   const wanted = Math.max(3, Math.min(6, Math.floor(plotHeight / 48)));
+  const half = Number.isFinite(max - min) ? 1 : 2;
   let best: { domain: [number, number]; ticks: number[] } | undefined;
   for (const count of [wanted, wanted - 1, wanted + 1, wanted - 2, wanted + 2, 3, 4, 5, 6]) {
     if (count < 2) continue;
-    const scale = scaleLinear().domain([min, max]).nice(count);
-    const ticks = scale.ticks(count);
-    const domain = scale.domain() as [number, number];
+    const scale = scaleLinear()
+      .domain([min / half, max / half])
+      .nice(count);
+    const ticks = scale.ticks(count).map((t) => t * half);
+    const domain = scale.domain().map((d) => d * half) as [number, number];
+    if (!domain.every(Number.isFinite)) continue;
     const candidate = { domain, ticks };
     if (ticks.length >= 3 && ticks.length <= 6) return candidate;
     if (best === undefined || Math.abs(ticks.length - 4.5) < Math.abs(best.ticks.length - 4.5)) {

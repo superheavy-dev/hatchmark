@@ -129,6 +129,11 @@ export const CODES = {
     explanation:
       "A source path in hatchmark.json contains *, ? or [. DuckDB reads such a path as a glob pattern, so it could read several files, or other files than the one named, even when a file with exactly that name exists. Hatchmark reads one file per source and does not escape these characters, so rename the file. The fix suggests a name with _ in their place, and it is unsafe because the file itself must be renamed too. Sources that read several files will come later as an explicit field, not as a pattern in path.",
   },
+  HM2018: {
+    title: "chart narrower than 3 columns",
+    explanation:
+      'A line, area or bar block has "span" 1 or 2. At that width the axis labels, the readout and the plot cannot all fit, so Hatchmark draws the chart 3 columns wide anyway and the grid row reflows around it. Set "span" to 3 or more to say what the page will show; the fix sets it to 3 and is safe. Use a kpi block (with "sparkline": true for a trend) when the space is meant for one number.',
+  },
   HM2017: {
     title: "reserved column name",
     explanation:

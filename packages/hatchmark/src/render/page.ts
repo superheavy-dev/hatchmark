@@ -6,6 +6,7 @@ import type {
   LineData,
   TableData,
 } from "../compiler/dashboard-data.js";
+import { MIN_CHART_SPAN } from "../spec/layout.js";
 import { barCategories, barHeight, renderBar } from "./bar.js";
 import type { RenderContext } from "./chart.js";
 import { chartRuntimeData, chartTable, describeChart } from "./describe.js";
@@ -136,6 +137,15 @@ export function blockHeading(
   };
 }
 
+/**
+ * The columns a chart card takes: its span, but never fewer than MIN_CHART_SPAN (check warns with
+ * HM2018). CSS grid auto-placement moves the card to the next row when the widened card no longer
+ * fits beside the cards before it, so the layout stays a function of the spec alone.
+ */
+function chartSpan(block: LineData | BarData): number {
+  return Math.max(block.span, MIN_CHART_SPAN);
+}
+
 /** Card widths per layout: the span's share of the 12-column grid, or the full width. */
 export function cardWidth(layout: Layout, span: number, theme: Theme = DEFAULT_THEME): number {
   if (!layout.grid) return layout.content;
@@ -148,7 +158,7 @@ function chartBody(block: LineData | BarData, ctx: RenderContext, label: string)
   const { theme } = ctx;
   const variants = new Map<string, { svg: string; layouts: number[] }>();
   LAYOUTS.forEach((layout, index) => {
-    const width = cardWidth(layout, block.span, theme) - 2 * theme.density.cardPadding - 2;
+    const width = cardWidth(layout, chartSpan(block), theme) - 2 * theme.density.cardPadding - 2;
     const base = layout.mobile ? MOBILE_CHART_HEIGHT : theme.density.chartHeight;
     const height = block.type === "bar" ? barHeight(block, ctx, width, base) : base;
     const key = `${width}x${height}`;
@@ -159,7 +169,10 @@ function chartBody(block: LineData | BarData, ctx: RenderContext, label: string)
     }
     const size = { width, height };
     const svg = block.type === "bar" ? renderBar(block, ctx, size) : renderLine(block, ctx, size);
-    variants.set(key, { svg: svg.replace("<svg ", '<svg tabindex="0" '), layouts: [index] });
+    variants.set(key, {
+      svg: svg.replace("<svg ", `<svg tabindex="0" aria-describedby="hm-${esc(block.id)}-d" `),
+      layouts: [index],
+    });
   });
   const description = describeChart(block, ctx);
   return [
@@ -168,7 +181,7 @@ function chartBody(block: LineData | BarData, ctx: RenderContext, label: string)
     ...[...variants.values()].map(
       (v) => `<div class="hm-v ${v.layouts.map((l) => `hm-l${l}`).join(" ")}">${v.svg}</div>`,
     ),
-    `<figcaption class="hm-sr">${esc(description)}</figcaption>`,
+    `<figcaption class="hm-sr" id="hm-${esc(block.id)}-d">${esc(description)}</figcaption>`,
     chartTable(block, ctx, label),
     "</figure>",
   ].join("");
@@ -178,7 +191,7 @@ function card(block: LineData | BarData | TableData, ctx: RenderContext): string
   const { title, subtitle } = blockHeading(block, ctx);
   const id = `hm-${block.id}-t`;
   const body = block.type === "table" ? renderTable(block, ctx) : chartBody(block, ctx, title);
-  return `<section class="hm-card hm-${block.type}" style="--span:${block.span}" aria-labelledby="${esc(id)}"><header class="hm-card-head"><h2 id="${esc(id)}">${esc(title)}</h2>${subtitle ? `<p>${esc(subtitle)}</p>` : ""}</header>${body}</section>`;
+  return `<section class="hm-card hm-${block.type}" style="--span:${block.type === "table" ? block.span : chartSpan(block)}" aria-labelledby="${esc(id)}"><header class="hm-card-head"><h2 id="${esc(id)}">${esc(title)}</h2>${subtitle ? `<p>${esc(subtitle)}</p>` : ""}</header>${body}</section>`;
 }
 
 function strip(kpis: KpiData[], ctx: RenderContext): string {
@@ -273,7 +286,7 @@ export function pageStyles(assets: PageAssets, theme: Theme = DEFAULT_THEME): st
     `.hm-kpi-value{font-size:${d.kpiSize}px;line-height:${d.kpiLineHeight}px;letter-spacing:-0.02em;white-space:nowrap}.hm-kpi-value.hm-null{color:var(--hm-text-subtle)}`,
     `.hm-delta{font-weight:500;white-space:nowrap}.hm-good{color:var(--hm-good)}.hm-bad{color:var(--hm-bad)}.hm-neutral{color:var(--hm-text-muted)}`,
     `.hm-kpi-note{font-size:12px;line-height:16px;color:var(--hm-text-subtle)}.hm-spark{display:block;width:100%;height:24px;margin-top:8px}`,
-    `.hm-chart{position:relative}.hm-v{display:none}.hm-v svg{display:block;max-width:100%;height:auto;overflow:visible;touch-action:pan-y}.hm-v svg:focus,.hm-spark:focus{outline:none}.hm-v svg:focus-visible,.hm-spark:focus-visible{outline:2px solid var(--hm-focus);outline-offset:2px;border-radius:2px}`,
+    `.hm-chart{position:relative}.hm-v{display:none}.hm-v svg{display:block;max-width:100%;height:auto;overflow:visible;touch-action:pan-y}.hm-v svg:focus,.hm-spark:focus{outline:none}.hm-v svg:focus-visible,.hm-spark:focus-visible,.hm-table-wrap:focus-visible{outline:2px solid var(--hm-focus);outline-offset:2px;border-radius:2px}`,
     `.hm-chart text{font-variant-numeric:tabular-nums}`,
     `.hm-table-wrap{overflow-x:auto}.hm-table{width:100%;border-collapse:collapse}`,
     `.hm-table th,.hm-table td{height:${d.tableRow}px;padding:0 0 0 16px;text-align:right;font-weight:400;white-space:nowrap}.hm-table .hm-key{text-align:left;padding-left:0;white-space:normal;min-width:120px}.hm-table tbody .hm-key{padding-top:6px;padding-bottom:6px}.hm-table .hm-key2{padding-left:16px}.hm-table .hm-fill{width:100%}`,

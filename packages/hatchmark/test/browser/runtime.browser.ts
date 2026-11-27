@@ -6,6 +6,7 @@ import { type Browser, chromium } from "playwright";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { SALES } from "../../gallery/fixtures.js";
 import { GALLERY } from "../../gallery/variants.js";
+import type { DashboardData, LineData } from "../../src/compiler/dashboard-data.js";
 import { FONT_FILES, renderDashboardPage } from "../../src/render/index.js";
 
 /** The browser runtime on the sample dashboard: tooltip, crosshair, readout and keyboard. */
@@ -13,6 +14,10 @@ let browser: Browser;
 let dir: string;
 let url: string;
 let sparkUrl: string;
+let allUrl: string;
+let gapUrl: string;
+let dailyUrl: string;
+let narrowUrl: string;
 type Box = { x: number; y: number; width: number; height: number };
 
 beforeAll(async () => {
@@ -37,6 +42,68 @@ beforeAll(async () => {
     renderDashboardPage(spark, { assets: { runtime: "hatchmark.js", fonts } }),
   );
   sparkUrl = `file://${path.join(dir, "spark.html")}`;
+  const page = async (name: string, data: DashboardData) => {
+    await writeFile(
+      path.join(dir, `${name}.html`),
+      renderDashboardPage(data, { assets: { runtime: "hatchmark.js", fonts } }),
+    );
+    return `file://${path.join(dir, `${name}.html`)}`;
+  };
+  const longLineData = GALLERY.find((v) => v.variant === "line-long-names")?.data;
+  const longLine = longLineData?.blocks[0] as LineData;
+  const longLineMetrics = longLineData?.metrics ?? {};
+  const eight: LineData = {
+    ...longLine,
+    id: "eight_long",
+    series: Array.from({ length: 8 }, (_, i) => ({
+      ...(longLine.series[0] as LineData["series"][number]),
+      key: `s${i}`,
+      label: `A particularly long series name for every geom ${i}`,
+      values: longLine.series[0]?.values.map((v) => (v === null ? null : v + i * 1000)) ?? [],
+    })),
+  };
+  allUrl = await page("all", {
+    ...SALES,
+    metrics: Object.assign({}, ...GALLERY.map((v) => v.data.metrics)),
+    blocks: [...GALLERY.flatMap((v) => v.data.blocks), eight],
+  });
+  const revenueLine = SALES.blocks.find((b) => b.type === "line") as LineData;
+  gapUrl = await page("gap", {
+    ...SALES,
+    blocks: [
+      {
+        ...revenueLine,
+        id: "gap",
+        axis: { ...revenueLine.axis, buckets: ["2026-01-01", "2026-02-01"] },
+        series: [
+          {
+            ...(revenueLine.series[0] as LineData["series"][number]),
+            key: "a",
+            label: "A",
+            values: [10, null],
+          },
+          {
+            ...(revenueLine.series[0] as LineData["series"][number]),
+            key: "b",
+            label: "B",
+            values: [20, 30],
+          },
+        ],
+      },
+    ],
+  });
+  const daily = GALLERY.find((v) => v.variant === "line-daily")?.data;
+  if (!daily) throw new Error("line-daily gallery variant is missing");
+  dailyUrl = await page("daily", daily);
+  const twoSeries = { ...revenueLine, series: eight.series.slice(0, 2) } as LineData;
+  narrowUrl = await page("narrow", {
+    ...SALES,
+    metrics: { ...SALES.metrics, ...longLineMetrics },
+    blocks: [
+      { ...twoSeries, id: "span_one", span: 1, axis: longLine.axis },
+      { ...twoSeries, id: "span_three", span: 3, axis: longLine.axis },
+    ],
+  });
 });
 
 afterAll(async () => {
@@ -95,51 +162,157 @@ describe("browser runtime", () => {
     expect(await page.locator(".hm-line .hm-tip").count()).toBe(0);
   });
 
-  for (const width of [1440, 390]) {
-    it(`keeps the KPI sparkline tooltip off the figure at ${width} px, on hover and with keys`, async () => {
-      const page = await browser.newPage({ viewport: { width, height: 800 } });
+  for (const width of [320, 390, 1440]) {
+    it(`keeps the KPI tooltip inside the viewport and off the figure at ${width} px`, async () => {
+      const page = await browser.newPage({ viewport: { width, height: 700 } });
       await page.goto(sparkUrl);
+      await page.evaluate(() => {
+        document.body.style.padding = "900px 0";
+      });
       const kpi = page.locator(".hm-kpi[data-hm-chart]").first();
       const spark = kpi.locator("svg.hm-spark");
       const tip = kpi.locator(".hm-tip");
-      const clear = async () => {
-        const t = (await tip.boundingBox()) as Box;
-        for (const selector of [".hm-kpi-value", ".hm-kpi-figure", ".hm-kpi-note"]) {
-          const b = (await kpi.locator(selector).boundingBox()) as Box;
-          const overlaps =
-            t.x < b.x + b.width &&
-            b.x < t.x + t.width &&
-            t.y < b.y + b.height &&
-            b.y < t.y + t.height;
-          expect(overlaps, selector).toBe(false);
+      for (const gap of [10, 30, 80, 300]) {
+        await page.evaluate((g) => {
+          const box = document.querySelector("svg.hm-spark")?.getBoundingClientRect();
+          if (box) scrollBy(0, box.bottom - (innerHeight - g));
+        }, gap);
+        const box = (await spark.boundingBox()) as Box;
+        for (const at of [0.05, 0.5, 0.95]) {
+          await page.mouse.move(box.x + box.width * at, box.y + box.height / 2);
+          await expect.poll(() => tip.isVisible()).toBe(true);
+          const t = (await tip.boundingBox()) as Box;
+          const where = `gap ${gap}, at ${at}`;
+          expect(t.x, where).toBeGreaterThanOrEqual(0);
+          expect(t.y, where).toBeGreaterThanOrEqual(0);
+          expect(t.x + t.width, where).toBeLessThanOrEqual(width);
+          expect(t.y + t.height, where).toBeLessThanOrEqual(700);
+          for (const selector of [".hm-kpi-value", ".hm-kpi-figure", ".hm-kpi-note"]) {
+            const b = (await kpi.locator(selector).boundingBox()) as Box;
+            const overlaps =
+              t.x < b.x + b.width &&
+              b.x < t.x + t.width &&
+              t.y < b.y + b.height &&
+              b.y < t.y + t.height;
+            expect(overlaps, `${selector}, ${where}`).toBe(false);
+          }
+          expect(await kpi.locator(".hm-hover line").count()).toBe(3);
+          await page.mouse.move(1, 1);
         }
-        expect(await kpi.locator(".hm-hover line").count()).toBe(3);
-      };
-      const box = (await spark.boundingBox()) as Box;
-      for (const at of [0.05, 0.5, 0.95]) {
-        await page.mouse.move(box.x + box.width * at, box.y + box.height / 2);
-        await expect.poll(() => tip.isVisible()).toBe(true);
-        expect(await tip.locator(".hm-tip-h").textContent()).toMatch(/^\w{3} 20\d\d$/);
-        await clear();
-        expect(((await tip.boundingBox()) as Box).y).toBeGreaterThanOrEqual(box.y + box.height);
       }
-      await page.mouse.move(1, 1);
-      await expect.poll(() => tip.isVisible()).toBe(false);
-      await page.evaluate((bottom) => {
-        document.body.style.paddingBottom = "800px";
-        scrollTo(0, bottom - innerHeight + 30);
-      }, box.y + box.height);
-      await spark.focus();
-      await page.keyboard.press("End");
-      const last = await tip.locator(".hm-tip-h").textContent();
-      await page.keyboard.press("ArrowLeft");
-      expect(await tip.locator(".hm-tip-h").textContent()).not.toBe(last);
-      expect(await tip.locator(".hm-tip-v").textContent()).toMatch(/^\$[\d,]+$/);
-      await clear();
-      const beside = (await tip.boundingBox()) as Box;
-      expect(beside.y + beside.height).toBeLessThanOrEqual(800);
     });
   }
+
+  it("announces keyboard steps through a polite live region, for charts and KPI sparklines", async () => {
+    const page = await browser.newPage({ viewport: { width: 1440, height: 900 } });
+    await page.goto(url);
+    const bar = page.locator(".hm-bar figure.hm-chart").first();
+    await bar.locator("svg").filter({ visible: true }).focus();
+    await page.keyboard.press("End");
+    const live = bar.locator('[aria-live="polite"]');
+    await expect.poll(() => live.textContent()).toContain("Brazil");
+    expect(await bar.ariaSnapshot()).toContain("Brazil");
+    const svgDescription = await bar
+      .locator("svg")
+      .filter({ visible: true })
+      .evaluate(
+        (svg) => document.getElementById(svg.getAttribute("aria-describedby") ?? "")?.textContent,
+      );
+    expect(svgDescription?.length).toBeGreaterThan(20);
+    await page.goto(sparkUrl);
+    await page.locator("svg.hm-spark").focus();
+    await page.keyboard.press("End");
+    const kpiLive = page.locator('.hm-kpi [aria-live="polite"]');
+    await expect.poll(() => kpiLive.textContent()).toMatch(/^Oct 2026, Revenue \$[\d,]+$/);
+    expect(await page.locator(".hm-kpi .hm-sr table tbody tr").count()).toBe(12);
+  });
+
+  for (const width of [320, 390]) {
+    it(`never scrolls the page sideways at ${width} px, with every gallery block on it`, async () => {
+      const page = await browser.newPage({ viewport: { width, height: 800 } });
+      await page.goto(allUrl);
+      const scroll = await page.evaluate(() => document.documentElement.scrollWidth);
+      expect(scroll).toBeLessThanOrEqual(width);
+    });
+  }
+
+  it("titles the pinned readout and its values with one bucket, before and after hover", async () => {
+    const page = await browser.newPage({ viewport: { width: 390, height: 800 } });
+    await page.goto(gapUrl);
+    const svg = page.locator(".hm-line svg").filter({ visible: true });
+    const read = async () => [
+      await svg.locator(".hm-rh").textContent(),
+      await svg.locator(".hm-rv-0").textContent(),
+      await svg.locator(".hm-rv-1").textContent(),
+    ];
+    expect(await read()).toEqual(["Feb 2026", "\u2014", "$30"]);
+    const box = (await svg.boundingBox()) as Box;
+    await page.mouse.move(box.x + 60, box.y + box.height - 40);
+    await expect.poll(read).toEqual(["Jan 2026", "$10", "$20"]);
+    await page.mouse.move(1, 1);
+    await expect.poll(read).toEqual(["Feb 2026", "\u2014", "$30"]);
+  });
+
+  for (const width of [390, 1440]) {
+    it(`maps the pointer at every plotted x to that day at ${width} px`, async () => {
+      const page = await browser.newPage({ viewport: { width, height: 900 } });
+      await page.goto(dailyUrl);
+      const figure = page.locator("figure.hm-chart").first();
+      const svg = figure.locator("svg").filter({ visible: true });
+      const headers = JSON.parse((await figure.locator("script").textContent()) as string)
+        .headers as string[];
+      const d = (await svg.locator("path[stroke-width]").first().getAttribute("d")) as string;
+      const xs = [...d.matchAll(/[ML]([\d.]+),/g)].map((m) => Number(m[1]));
+      expect(xs).toHaveLength(headers.length);
+      const box = (await svg.boundingBox()) as Box;
+      const scale =
+        box.width / Number(await svg.evaluate((s) => (s as SVGSVGElement).viewBox.baseVal.width));
+      const plot = ((await svg.getAttribute("data-hm-plot")) as string).split(",").map(Number);
+      const header = width < 600 ? svg.locator(".hm-rh") : figure.locator(".hm-tip-h");
+      for (const i of [0, 1, xs.length - 2, xs.length - 1]) {
+        await page.mouse.move(
+          box.x + (xs[i] as number) * scale,
+          box.y + ((plot[1] as number) + 4) * scale,
+        );
+        await expect.poll(() => header.textContent()).toBe(headers[i]);
+      }
+    });
+  }
+
+  it("draws a span-1 line 3 columns wide at 1024 px, with no text overlapping or leaving the chart", async () => {
+    const page = await browser.newPage({ viewport: { width: 1024, height: 900 } });
+    await page.goto(narrowUrl);
+    const one = page.locator(".hm-card").nth(0);
+    const three = page.locator(".hm-card").nth(1);
+    const [a, b] = [(await one.boundingBox()) as Box, (await three.boundingBox()) as Box];
+    expect(Math.abs(a.width - b.width)).toBeLessThanOrEqual(1);
+    const problems = await one
+      .locator("svg")
+      .filter({ visible: true })
+      .evaluate((svg) => {
+        const frame = svg.getBoundingClientRect();
+        const boxes = [...svg.querySelectorAll("text")]
+          .filter((t) => (t.textContent ?? "") !== "")
+          .map((t) => ({ text: t.textContent, r: t.getBoundingClientRect() }));
+        const out: string[] = [];
+        for (const { text, r } of boxes) {
+          if (r.left < frame.left - 0.5 || r.right > frame.right + 0.5)
+            out.push(`outside: ${text}`);
+        }
+        boxes.forEach((p, i) => {
+          for (const q of boxes.slice(i + 1)) {
+            const hit =
+              p.r.left < q.r.right - 0.5 &&
+              q.r.left < p.r.right - 0.5 &&
+              p.r.top < q.r.bottom - 0.5 &&
+              q.r.top < p.r.bottom - 0.5;
+            if (hit) out.push(`overlap: ${p.text} / ${q.text}`);
+          }
+        });
+        return out;
+      });
+    expect(problems).toEqual([]);
+  });
 
   it("switches to dark with data-theme", async () => {
     const page = await browser.newPage();

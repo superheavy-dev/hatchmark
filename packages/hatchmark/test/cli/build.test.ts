@@ -122,6 +122,81 @@ describe("hatchmark build", () => {
     expect(self.exitCode).toBe(2);
   });
 
+  it("never deletes a file it did not write: only files in its manifest are replaced", async () => {
+    const root = await project();
+    const dist = path.join(root, "dist");
+    expect((await build(ctx(root), {}, deps)).exitCode).toBe(0);
+    const manifestPath = path.join(dist, "_hatchmark/manifest.json");
+    const manifest = JSON.parse(await readFile(manifestPath, "utf8")) as { files: string[] };
+    expect(manifest.files).toContain("sales/index.html");
+    expect(manifest.files).not.toContain("_hatchmark/manifest.json");
+    await writeFile(path.join(dist, "keep.txt"), "mine");
+    await writeFile(path.join(dist, "_hatchmark/notes.txt"), "mine too");
+    await mkdir(path.join(dist, "old"));
+    await writeFile(path.join(dist, "old/index.html"), "stale page from an earlier build");
+    manifest.files.push("old/index.html");
+    await writeFile(manifestPath, JSON.stringify(manifest));
+    expect((await build(ctx(root), {}, deps)).exitCode).toBe(0);
+    expect(await readFile(path.join(dist, "keep.txt"), "utf8")).toBe("mine");
+    expect(await readFile(path.join(dist, "_hatchmark/notes.txt"), "utf8")).toBe("mine too");
+    expect(Object.keys(await tree(dist))).not.toContain("old/index.html");
+  });
+
+  it("refuses a non-empty directory without a manifest, even with an empty _hatchmark/", async () => {
+    const root = await project();
+    const out = await mkdtemp(path.join(tmpdir(), "hatchmark-out-"));
+    dirs.push(out);
+    await mkdir(path.join(out, "_hatchmark"));
+    await writeFile(path.join(out, "keep"), "");
+    const result = await build(ctx(root), { out }, deps);
+    expect(result.exitCode).toBe(2);
+    expect(result.json).toMatchObject({ diagnostics: [{ code: "HM0004" }] });
+    expect(await readdir(out)).toEqual(["_hatchmark", "keep"]);
+  });
+
+  it("refuses to overwrite a file it would write but did not write before", async () => {
+    const root = await project();
+    const dist = path.join(root, "dist");
+    expect((await build(ctx(root), {}, deps)).exitCode).toBe(0);
+    const manifestPath = path.join(dist, "_hatchmark/manifest.json");
+    const manifest = JSON.parse(await readFile(manifestPath, "utf8")) as { files: string[] };
+    await writeFile(
+      manifestPath,
+      JSON.stringify({
+        ...manifest,
+        files: manifest.files.filter((f) => f !== "sales/index.html"),
+      }),
+    );
+    await writeFile(path.join(dist, "sales/index.html"), "hand-written");
+    const result = await build(ctx(root), {}, deps);
+    expect(result.exitCode).toBe(2);
+    expect(await readFile(path.join(dist, "sales/index.html"), "utf8")).toBe("hand-written");
+  });
+
+  it("reports HM2018 for a chart narrower than 3 columns and still builds it", async () => {
+    const root = await project();
+    const file = path.join(root, "dashboards/sales.json");
+    const spec = JSON.parse(await readFile(file, "utf8"));
+    const chart = spec.blocks.findIndex(
+      (b: { type: string }) => b.type === "line" || b.type === "bar",
+    );
+    spec.blocks[chart].span = 1;
+    await writeFile(file, JSON.stringify(spec, null, 2));
+    const result = await build(ctx(root), {}, { ...deps, runDashboard });
+    expect(result.exitCode).toBe(0);
+    expect(result.json).toMatchObject({ ok: true });
+    expect(
+      (result.json as { diagnostics: { code: string; severity: string; pointer: string }[] })
+        .diagnostics,
+    ).toContainEqual(
+      expect.objectContaining({
+        code: "HM2018",
+        severity: "warning",
+        pointer: `/blocks/${chart}/span`,
+      }),
+    );
+  });
+
   it("refuses to build a project with check errors", async () => {
     const root = await project();
     await writeFile(

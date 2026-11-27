@@ -19,7 +19,7 @@ A metric over time.
 | `split`        | A column that splits one metric into a line per value, such as `region`. Needs exactly one metric.    |
 | `type: "area"` | Fills under each line. Add `"stack": true` to stack the areas.                                        |
 | `title`        | State the finding ("Asia-Pacific is the fastest-growing region"). The subtitle says what is measured. |
-| `span`         | Width in the 12-column grid. Default 12.                                                              |
+| `span`         | Width in the 12-column grid. Default 12. At least 3: a smaller span is drawn 3 wide, with HM2018.     |
 
 What it draws:
 

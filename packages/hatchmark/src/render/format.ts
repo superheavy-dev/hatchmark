@@ -22,7 +22,8 @@ const minus = (text: string): string => text.replaceAll("-", "\u2212");
 /**
  * Formats a metric value. null is the em dash; 0 is a real zero. Headline (KPI) values switch to
  * compact notation at 100,000 for currency and 1,000,000 for plain numbers unless the metric's
- * format sets compact.
+ * format sets compact. Compact text switches to scientific notation from 10^15, past the
+ * largest compact unit (T).
  */
 export function formatValue(
   value: Value,
@@ -54,7 +55,7 @@ export function formatValue(
     return minus(
       numberFormat(locale, {
         ...currency,
-        notation: "compact",
+        notation: Math.abs(value) >= 1e15 ? "scientific" : "compact",
         ...(style === "axis"
           ? { minimumFractionDigits: 0, maximumFractionDigits: decimals ?? 1 }
           : { maximumSignificantDigits: 3 }),
@@ -80,7 +81,9 @@ export function formatTicks(
 ): string[] {
   const at = (decimals: number) =>
     ticks.map((t) => formatValue(t, { format: { ...metric.format, decimals } }, locale, "axis"));
-  for (let decimals = 0; decimals <= 3; decimals++) {
+  const step = Math.abs((ticks[1] ?? 0) - (ticks[0] ?? 0));
+  const most = step > 0 ? Math.min(20, Math.max(3, Math.ceil(-Math.log10(step)) + 1)) : 3;
+  for (let decimals = 0; decimals <= most; decimals++) {
     const labels = at(decimals);
     const exact = at(decimals + 1).every((label, i) => label === labels[i]);
     if (exact && new Set(labels).size === labels.length) return labels;

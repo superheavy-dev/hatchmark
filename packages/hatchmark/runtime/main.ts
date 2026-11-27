@@ -1,11 +1,15 @@
 /**
  * The Hatchmark browser runtime: tooltips, the line crosshair (KPI sparklines included) and the bar
- * highlight, plus keyboard stepping through points. A KPI tooltip is position:fixed, so the strip's
- * overflow does not clip it, and floats below the sparkline (beside the point near the viewport
- * bottom) so it never covers the figure. .hm-root's container-type makes it the containing block,
- * so the runtime measures the tooltip's origin instead of assuming the viewport. Charts are already drawn on the server, so this
- * only reads the chart geometry from data-hm-* attributes and the formatted values from the JSON each
- * chart's figure carries. One pointer listener per chart, no dependencies.
+ * highlight, plus keyboard stepping through points, announced through a polite live region. Charts
+ * are already drawn on the server, so this only reads the chart geometry from data-hm-* attributes
+ * and the formatted values from the JSON each chart's figure carries. One pointer listener per
+ * chart, no dependencies. Arrow keys scroll a focused, clipped table sideways, which WebKit does
+ * not do on its own.
+ *
+ * A KPI tooltip is position:fixed, so the strip's overflow does not clip it. It floats below the
+ * sparkline; near the viewport bottom it goes beside the point, or above the card, so it never
+ * covers the figure. .hm-root's container-type makes it the containing block, so the runtime
+ * measures the tooltip's origin instead of assuming the viewport.
  */
 
 interface RuntimeSeries {
@@ -29,6 +33,12 @@ const SVG_NS = "http://www.w3.org/2000/svg";
 const numbers = (svg: Element, name: string): number[] =>
   (svg.getAttribute(`data-hm-${name}`) ?? "").split(",").map(Number);
 
+/** A start and end attribute pair as start and step, so rounding never accumulates over buckets. */
+const span = (svg: Element, name: string, parts: number): [number, number] => {
+  const [a = 0, b = 0] = numbers(svg, name);
+  return [a, parts > 0 ? (b - a) / parts : 0];
+};
+
 function element<K extends keyof HTMLElementTagNameMap>(
   tag: K,
   className: string,
@@ -49,6 +59,9 @@ function svgElement(tag: string, attrs: Record<string, string | number>): SVGEle
 function attach(figure: HTMLElement, chart: RuntimeChart): void {
   const n = chart.headers.length;
   const kpi = figure.classList.contains("hm-kpi");
+  const live = element("div", "hm-sr");
+  live.setAttribute("aria-live", "polite");
+  figure.append(live);
   let tip: HTMLDivElement | undefined;
   let overlay: SVGElement | undefined;
   let current: { svg: SVGSVGElement; index: number } | undefined;
@@ -137,12 +150,17 @@ function attach(figure: HTMLElement, chart: RuntimeChart): void {
     const px = box.left + (x * box.width) / svg.viewBox.baseVal.width;
     const width = tip.offsetWidth;
     const height = tip.offsetHeight;
-    let left = Math.max(4, Math.min(innerWidth - width - 4, px - width / 2));
+    const right = innerWidth - 4;
+    const bottom = innerHeight - 4;
+    const note = (figure.querySelector(".hm-kpi-note") ?? svg).getBoundingClientRect().bottom + 4;
+    let left = Math.max(4, Math.min(right - width, px - width / 2));
     let top = box.bottom + 8;
-    if (top + height > innerHeight) {
-      const note = figure.querySelector(".hm-kpi-note")?.getBoundingClientRect().bottom ?? box.top;
-      left = px + 14 + width <= innerWidth ? px + 14 : px - 14 - width;
-      top = Math.min(note + 4, innerHeight - height - 4);
+    if (top + height > bottom) {
+      const side = px + 14 + width <= right ? px + 14 : px - 14 - width;
+      if (note + height <= bottom && side >= 4) {
+        left = side;
+        top = note;
+      } else top = figure.getBoundingClientRect().top - height - 8;
     }
     tip.style.left = tip.style.top = "0";
     const origin = tip.getBoundingClientRect();
@@ -156,10 +174,10 @@ function attach(figure: HTMLElement, chart: RuntimeChart): void {
     current = { svg, index };
     const [left = 0, top = 0, right = 0, bottom = 0] = numbers(svg, "plot");
     if (chart.kind === "line") {
-      const [x0 = 0, step = 0] = numbers(svg, "x");
+      const [x0, step] = span(svg, "x", n - 1);
       const [d0 = 0, d1 = 1, r0 = 0, r1 = 0] = numbers(svg, "y");
-      const x = n > 1 ? x0 + index * step : x0;
-      const y = (v: number) => r0 + ((v - d0) / (d1 - d0)) * (r1 - r0);
+      const x = x0 + index * step;
+      const y = (v: number) => r0 + ((v / 2 - d0 / 2) / (d1 / 2 - d0 / 2)) * (r1 - r0);
       overlay = svgElement("g", { class: "hm-hover", "pointer-events": "none" });
       overlay.append(
         svgElement("line", {
@@ -204,7 +222,7 @@ function attach(figure: HTMLElement, chart: RuntimeChart): void {
       else place(svg, x, highest + 12);
       return;
     }
-    const [start = 0, step = 0] = numbers(svg, "band");
+    const [start, step] = span(svg, "band", n);
     const vertical = svg.getAttribute("data-hm-o") === "v";
     const from = start + index * step;
     overlay = svgElement("rect", {
@@ -227,10 +245,10 @@ function attach(figure: HTMLElement, chart: RuntimeChart): void {
     const x = ((event.clientX - box.left) * svg.viewBox.baseVal.width) / box.width;
     const y = ((event.clientY - box.top) * svg.viewBox.baseVal.height) / box.height;
     if (chart.kind === "line") {
-      const [x0 = 0, step = 0] = numbers(svg, "x");
+      const [x0, step] = span(svg, "x", n - 1);
       return n > 1 ? Math.max(0, Math.min(n - 1, Math.round((x - x0) / step))) : 0;
     }
-    const [start = 0, step = 1] = numbers(svg, "band");
+    const [start, step] = span(svg, "band", n);
     const pos = svg.getAttribute("data-hm-o") === "v" ? x : y;
     const index = Math.floor((pos - start) / step);
     return index >= 0 && index < n ? index : -1;
@@ -264,7 +282,13 @@ function attach(figure: HTMLElement, chart: RuntimeChart): void {
     const next = moves[event.key];
     if (next === undefined) return;
     event.preventDefault();
-    show(svg, Math.max(0, Math.min(n - 1, next)));
+    const index = Math.max(0, Math.min(n - 1, next));
+    show(svg, index);
+    live.textContent = [
+      chart.headers[index],
+      ...chart.series.map((s) => `${s.label} ${s.text[index]}`),
+      ...(chart.total ? [`Total ${chart.total[index]}`] : []),
+    ].join(", ");
   });
   figure.addEventListener("focusout", hide);
 }
@@ -273,6 +297,14 @@ function start(): void {
   for (const figure of document.querySelectorAll<HTMLElement>("[data-hm-chart]")) {
     const source = figure.querySelector(":scope > script[type='application/json']");
     if (source?.textContent) attach(figure, JSON.parse(source.textContent) as RuntimeChart);
+  }
+  for (const wrap of document.querySelectorAll<HTMLElement>(".hm-table-wrap")) {
+    wrap.addEventListener("keydown", (event) => {
+      const step = event.key === "ArrowRight" ? 40 : event.key === "ArrowLeft" ? -40 : 0;
+      if (step === 0) return;
+      event.preventDefault();
+      wrap.scrollLeft += step;
+    });
   }
 }
 
