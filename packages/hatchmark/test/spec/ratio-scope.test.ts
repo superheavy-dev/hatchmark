@@ -165,7 +165,7 @@ describe("parseCsvRecord", () => {
     const alphabet = ["a", "b", ",", ";", '"', '"', "\n", "\r", " "];
     let seed = 7;
     const random = (n: number) => {
-      seed = (seed * 1103515245 + 12345) % 2147483648;
+      seed = (Math.imul(seed, 1103515245) + 12345) & 0x7fffffff;
       return Math.floor((seed / 2147483648) * n);
     };
     const mismatches: string[] = [];
