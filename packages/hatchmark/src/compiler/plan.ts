@@ -301,4 +301,9 @@ export interface QueryResult {
  */
 export interface QueryExecutor {
   execute(query: PlannedQuery, context: ExecutionContext): Promise<QueryResult>;
+  /**
+   * The query in each context, in context order, each result equal to execute's for that context.
+   * Optional: an executor that has it can run the contexts as one statement.
+   */
+  executeMany?(query: PlannedQuery, contexts: ExecutionContext[]): Promise<QueryResult[]>;
 }

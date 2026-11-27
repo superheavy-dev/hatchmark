@@ -1,5 +1,5 @@
 import { type Diagnostic, docsCommand } from "../diagnostics/index.js";
-import type { Project } from "../spec/index.js";
+import type { Project, RangeSpec } from "../spec/index.js";
 import type { DashboardData } from "./dashboard-data.js";
 import {
   type CustomRangeData,
@@ -14,7 +14,12 @@ import {
 import { rangeKey } from "./periods.js";
 import type { MeasureComponent, PlannedQuery, QueryPlan, QueryResult } from "./plan.js";
 import { planDashboard, queryId } from "./planner.js";
-import { type DashboardExecutor, executionContext, pointMetrics, runDashboard } from "./run.js";
+import {
+  type DashboardExecutor,
+  executionContext,
+  pointMetrics,
+  runDashboardBindings,
+} from "./run.js";
 import { nextDay, queryBounds } from "./windows.js";
 
 /**
@@ -121,6 +126,19 @@ export async function runPeriodData(
   if (spec === undefined || filter === undefined || config === undefined)
     return { diagnostics: [] };
   const diagnostics: Diagnostic[] = [];
+  const pending = new Map<string, RangeSpec>();
+  for (const option of filter.options) {
+    const key = rangeKey(option);
+    if (key !== base.periodFilter?.selected && !pending.has(key)) pending.set(key, option);
+  }
+  const presetRuns = await runDashboardBindings(
+    project,
+    dashboard,
+    executor,
+    [...pending.values()].map((option) => ({ [filter.id]: option })),
+    now,
+  );
+  const ran = new Map([...pending.keys()].map((key, i) => [key, presetRuns[i]]));
   const presets: Record<string, DashboardData> = {};
   for (const option of filter.options) {
     const key = rangeKey(option);
@@ -129,7 +147,8 @@ export async function runPeriodData(
       presets[key] = base;
       continue;
     }
-    const run = await runDashboard(project, dashboard, executor, now, { [filter.id]: option });
+    const run = ran.get(key);
+    if (run === undefined) continue;
     diagnostics.push(...run.diagnostics.filter((d) => d.severity === "error"));
     if (run.data) presets[key] = run.data;
   }

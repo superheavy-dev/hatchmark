@@ -234,12 +234,50 @@ export function querySql(
   query: PlannedQuery,
   context: ExecutionContext,
 ): BuiltQuery {
+  return builtQuery(source, query, context, new Sql());
+}
+
+/**
+ * One statement for a query over several contexts, such as the windows of a period filter's
+ * presets: each context's SELECT as querySql builds it, tagged with the context's index as a first
+ * column, rows ordered by that index and then as querySql orders them. The other fields describe a
+ * row without the tag.
+ */
+export function batchQuerySql(
+  source: SqlSource,
+  query: PlannedQuery,
+  contexts: ExecutionContext[],
+): BuiltQuery {
+  const sql = new Sql();
+  const parts = contexts.map((context, tag) => builtQuery(source, query, context, sql, tag));
+  const first = parts[0];
+  if (first === undefined) throw new Error("a batch needs at least one context");
+  const order =
+    query.dimensions.length > 0
+      ? [`${first.groupingAt + 2}`, ...query.dimensions.map((_, i) => `${i + 2} ASC NULLS LAST`)]
+      : [];
+  return {
+    ...first,
+    text: [
+      `SELECT * FROM (${parts.map((part) => `(${part.text})`).join("\nUNION ALL\n")})`,
+      `ORDER BY ${["1", ...order].join(", ")}`,
+    ].join("\n"),
+    params: sql.values(),
+  };
+}
+
+function builtQuery(
+  source: SqlSource,
+  query: PlannedQuery,
+  context: ExecutionContext,
+  sql: Sql,
+  tag?: number,
+): BuiltQuery {
   if (query.orderBy !== undefined || query.limit !== undefined) {
     throw new Error(
       "orderBy and limit are applied by assembly; the DuckDB executor does not take them",
     );
   }
-  const sql = new Sql();
   const where: string[] = [];
   const bounds = queryBounds(query, context);
   if (bounds === undefined) {
@@ -310,6 +348,7 @@ export function querySql(
     return [{ m, e: `(${at(combine.numerator)}) / nullif(${at(combine.denominator)}, 0)` }];
   });
   const select = [
+    ...(tag === undefined ? [] : [String(tag)]),
     ...dimRefs,
     ...measureSql,
     ...(grouped ? [`GROUPING(${dimRefs.join(", ")})`] : []),
@@ -326,6 +365,10 @@ export function querySql(
           `GROUP BY GROUPING SETS (${query.groupingSets
             .map((set) => `(${set.map((i) => dimRefs[i]).join(", ")})`)
             .join(", ")})`,
+        ]
+      : []),
+    ...(grouped && tag === undefined
+      ? [
           `ORDER BY ${[`${groupingAt + 1}`, ...dimRefs.map((d) => `${d} ASC NULLS LAST`)].join(", ")}`,
         ]
       : []),

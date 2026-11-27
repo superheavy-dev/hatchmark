@@ -14,7 +14,9 @@ import {
   VARCHAR,
 } from "@duckdb/node-api";
 import {
+  type BuiltQuery,
   type BuiltSql,
+  batchQuerySql,
   canonicalJson,
   column,
   type ExecutionContext,
@@ -131,6 +133,9 @@ export async function createDuckDbExecutor(options: {
   return {
     async execute(query, context) {
       return execute(connection, await planned(query), query, context);
+    },
+    async executeMany(query, contexts) {
+      return executeMany(connection, await planned(query), query, contexts);
     },
     async sql(query, context): Promise<BuiltSql> {
       const { text, params } = querySql(await planned(query), query, context);
@@ -318,25 +323,54 @@ async function execute(
   query: PlannedQuery,
   context: ExecutionContext,
 ): Promise<QueryResult> {
-  const {
-    text,
-    params,
-    components,
-    groupingAt,
-    large: shownMetrics,
-    serial,
-  } = querySql(source, query, context);
-  const grouped = query.dimensions.length > 0;
-  const threads = serial
+  const built = querySql(source, query, context);
+  const reader = await run(connection, built);
+  return resultOf(
+    query,
+    built,
+    reader.columnTypes().map(String),
+    reader.getRows(),
+    await impreciseColumns(connection, source, built.components),
+  );
+}
+
+async function executeMany(
+  connection: DuckDBConnection,
+  source: LoadedSource,
+  query: PlannedQuery,
+  contexts: ExecutionContext[],
+): Promise<QueryResult[]> {
+  const built = batchQuerySql(source, query, contexts);
+  const reader = await run(connection, built);
+  const types = reader.columnTypes().map(String).slice(1);
+  const byTag = contexts.map((): DuckDBValue[][] => []);
+  for (const row of reader.getRows()) byTag[Number(row[0])]?.push(row.slice(1));
+  const imprecise = await impreciseColumns(connection, source, built.components);
+  return byTag.map((rows) => resultOf(query, built, types, rows, imprecise));
+}
+
+async function run(connection: DuckDBConnection, built: BuiltQuery) {
+  const threads = built.serial
     ? (await connection.runAndReadAll("SELECT current_setting('threads')")).getRows()[0]?.[0]
     : undefined;
-  if (serial) await connection.run("SET threads = 1");
-  const bound = boundParams(params);
-  const reader = await connection
-    .runAndReadAll(text, bound.values, bound.types)
-    .finally(() => (serial ? connection.run(`SET threads = ${Number(threads ?? 1)}`) : undefined));
-  const types = reader.columnTypes().map(String);
-  const imprecise = await impreciseColumns(connection, source, components);
+  if (built.serial) await connection.run("SET threads = 1");
+  const bound = boundParams(built.params);
+  return connection
+    .runAndReadAll(built.text, bound.values, bound.types)
+    .finally(() =>
+      built.serial ? connection.run(`SET threads = ${Number(threads ?? 1)}`) : undefined,
+    );
+}
+
+function resultOf(
+  query: PlannedQuery,
+  built: BuiltQuery,
+  types: string[],
+  all: DuckDBValue[][],
+  imprecise: { column: string; maxAbs: number }[],
+): QueryResult {
+  const { components, groupingAt, large: shownMetrics } = built;
+  const grouped = query.dimensions.length > 0;
   const dimCount = query.dimensions.length;
   const masks = new Map(
     query.groupingSets.map((set, i) => [
@@ -348,7 +382,6 @@ async function execute(
     ]),
   );
   const groupingSet: number[] = [];
-  const all = reader.getRows();
   const rows = all.map((row) => {
     if (grouped) groupingSet.push(masks.get(Number(row[groupingAt])) ?? -1);
     return row
