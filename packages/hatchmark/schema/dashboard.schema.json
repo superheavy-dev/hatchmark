@@ -800,9 +800,27 @@
           "$ref": "#/$defs/Sort"
         },
         "limit": {
+          "description": "Rows shown, after sort. With subtotals, rows shown in each innermost group. Tables do not paginate.",
           "type": "integer",
           "minimum": 1,
           "maximum": 1000
+        },
+        "other": {
+          "description": "With limit: fold the rows past the limit into one \"Other\" row, recomputed from those rows.",
+          "type": "boolean"
+        },
+        "subtotals": {
+          "description": "A subtotal row for every group of each outer by column, recomputed from rows (not summed). Needs two or more by columns.",
+          "type": "boolean"
+        },
+        "bars": {
+          "description": "Metrics that draw a bar in their cells, scaled across the rows shown.",
+          "type": "array",
+          "items": {
+            "type": "string",
+            "pattern": "^[a-z][a-z0-9_]*$",
+            "description": "A metric name, the file name under metrics/."
+          }
         }
       },
       "required": [

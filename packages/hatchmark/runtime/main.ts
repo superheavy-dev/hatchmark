@@ -4,7 +4,7 @@
  * are already drawn on the server, so this only reads the chart geometry from data-hm-* attributes
  * and the formatted values from the JSON each chart's figure carries. One pointer listener per
  * chart, no dependencies. Arrow keys scroll a focused, clipped table sideways, which WebKit does
- * not do on its own. Grain switches show one grain's prebuilt heading and chart and hide the others;
+ * not do on its own; table.ts sorts tables and downloads them as CSV. Grain switches show one grain's prebuilt heading and chart and hide the others;
  * the dashboard's grain filter switches every card that lists the chosen grain.
  *
  * A KPI tooltip is position:fixed, so the strip's overflow does not clip it. It floats below the
@@ -12,6 +12,8 @@
  * covers the figure. .hm-root's container-type makes it the containing block, so the runtime
  * measures the tooltip's origin instead of assuming the viewport.
  */
+
+import { wireTable } from "./table.js";
 
 interface RuntimeSeries {
   label: string;
@@ -370,6 +372,7 @@ function mount(root: ParentNode): void {
     const source = figure.querySelector(":scope > script[type='application/json']");
     if (source?.textContent) attach(figure, JSON.parse(source.textContent) as RuntimeChart);
   }
+  for (const card of all("section.hm-table")) wireTable(card);
   for (const wrap of all(".hm-table-wrap")) {
     wrap.addEventListener("keydown", (event) => {
       const step = event.key === "ArrowRight" ? 40 : event.key === "ArrowLeft" ? -40 : 0;

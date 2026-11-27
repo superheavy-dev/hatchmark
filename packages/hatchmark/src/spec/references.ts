@@ -28,6 +28,7 @@ import {
   currencyUnit,
   exprCurrency,
   groupAdditive,
+  groupFoldable,
   metricCurrency,
   metricDeps,
   timeNature,
@@ -1099,6 +1100,34 @@ function checkDashboard(project: Project, file: SpecFile<"dashboard">, out: Diag
           });
         }
       });
+      (block.bars ?? []).forEach((name, i) => {
+        const pointer = `${base}/bars/${i}`;
+        if (!checkRef(pointer, name) || block.metrics.includes(name)) return;
+        r.report("HM2006", pointer, `"${name}" is in bars but not in metrics`, {
+          expected: block.metrics,
+        });
+      });
+      if (block.other === true && block.limit !== undefined) {
+        for (const name of block.metrics) {
+          const metric = metrics.get(name);
+          if (metric === undefined || groupFoldable(name, metrics)) continue;
+          r.report("HM4063", `${base}/other`, `the Other row cannot be computed for "${name}"`, {
+            severity: "warning",
+            label: `${metric.type === "aggregate" ? metric.aggregate : metric.type} needs the rows themselves, so Other shows "—" for it`,
+            help: `remove "other", or show a metric that adds up instead of "${name}"`,
+            ...optional(
+              "fix",
+              replaceValueFix(
+                file.document,
+                `${base}/other`,
+                false,
+                "unsafe",
+                'set "other": false',
+              ),
+            ),
+          });
+        }
+      }
     }
 
     if ((block.type === "bar" || block.type === "area") && block.stack) {

@@ -92,6 +92,40 @@ export function groupAdditive(
   }
 }
 
+/**
+ * Whether the metric over a set of groups can be recomputed from the groups' own parts, the way a
+ * table's Other row folds the rows past its limit: sums and counts add up, min and max take the
+ * extreme, an average divides its summed sum by its summed count, and a ratio divides two foldable
+ * metrics. Distinct counts, medians, SQL metrics declared additive: false, sums read with over_time
+ * min or max, and formulas cannot: they need the rows again.
+ */
+export function groupFoldable(
+  name: string,
+  metrics: ReadonlyMap<string, Metric>,
+  seen: ReadonlySet<string> = new Set(),
+): boolean {
+  const metric = metrics.get(name);
+  if (metric === undefined || seen.has(name)) return false;
+  const next = new Set(seen).add(name);
+  switch (metric.type) {
+    case "aggregate":
+      return (
+        ["sum", "count", "avg", "min", "max"].includes(metric.aggregate) &&
+        metric.over_time !== "min" &&
+        metric.over_time !== "max"
+      );
+    case "sql":
+      return metric.additive;
+    case "ratio":
+      return (
+        groupFoldable(metric.numerator, metrics, next) &&
+        groupFoldable(metric.denominator, metrics, next)
+      );
+    default:
+      return false;
+  }
+}
+
 type Linearity = "const" | "linear" | "no";
 
 function linear(expr: Expr, additive: (name: string) => boolean): Linearity {

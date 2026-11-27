@@ -367,6 +367,10 @@
       "percentOfTotal": [
         "revenue"
       ],
+      "sort": {
+        "by": "revenue",
+        "order": "desc"
+      },
       "rows": [
         {
           "keys": [

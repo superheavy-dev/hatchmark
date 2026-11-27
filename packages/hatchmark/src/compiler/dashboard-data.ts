@@ -182,8 +182,22 @@ export interface BarData extends BlockCommon, StackTotals {
 }
 
 export interface TableRow {
-  /** One value per by column, in order. null is a real group (shown as "(empty)"). */
+  /**
+   * One value per by column, in order. null is a real group (shown as "(empty)"). A subtotal row
+   * holds its group's keys and null after them; an Other row holds its parent group's keys and null
+   * after them. kind, never a key value, tells those rows apart from real groups.
+   */
   keys: (string | number | boolean | null)[];
+  /**
+   * Absent for a group row. "subtotal": the group of the first level keys, recomputed from rows
+   * (SQL ROLLUP), listed before the rows it covers. "other": the rows the limit removed from its
+   * group, folded into one, listed last in that group.
+   */
+  kind?: "subtotal" | "other";
+  /** A subtotal row's depth: how many leading keys define its group (1 to by.length - 1). */
+  level?: number;
+  /** An Other row's number of folded rows. */
+  count?: number;
   /** By metric name. */
   values: Record<string, Value>;
   /** Share of the grand total for metrics in percentOfTotal (a fraction), by metric name. */
@@ -195,10 +209,22 @@ export interface TableData extends BlockCommon {
   by: { column: string; label: string }[];
   metrics: string[];
   percentOfTotal: string[];
-  /** Leaf rows after sort and limit. Limit never counts the total row. */
+  /** The order rows arrive in: the spec's sort, or the first metric descending. */
+  sort?: { by: string; order: "asc" | "desc" };
+  /** Metrics that draw an in-cell bar; absent when none. */
+  bars?: string[];
+  /**
+   * Rows in display order after sort and limit. Limit never counts the total row. With subtotals,
+   * each group's subtotal row comes first, then its groups; the limit and the Other row apply within
+   * each innermost group. An Other row's values are recomputed from the folded rows' measure
+   * components (sums add, min and max take the extreme, averages and ratios divide folded sums), or
+   * null when a metric cannot be folded (HM4063).
+   */
   rows: TableRow[];
-  /** Leaf rows before limit. */
+  /** Group rows before limit, subtotal and Other rows not counted. */
   rowCount: number;
+  /** True when rows contain subtotal rows. */
+  subtotals?: boolean;
   /**
    * The total row, recomputed from all rows in the window (SQL ROLLUP's grand total; ratios divide
    * the totals, never sum per-row ratios). Covers every row, also those limit removed. Absent when

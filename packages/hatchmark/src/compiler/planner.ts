@@ -384,10 +384,8 @@ function planBlockAt(
       }
       case "table": {
         const axes: AxisDimension[] = block.by.map((column) => ({ kind: "column", column }));
-        const leaf = block.by.map((_, i) => i);
-        const total = block.totals !== false || (block.percentOfTotal ?? []).length > 0;
         return {
-          measures: planReading(ctx, block.metrics, axes, total ? [leaf, []] : [leaf], "none"),
+          measures: planReading(ctx, block.metrics, axes, tableGroupingSets(block), "none"),
         };
       }
       default:
@@ -424,6 +422,19 @@ function planBlockAt(
     queries,
     diagnostics: [],
   };
+}
+
+/**
+ * A table's grouping sets: its rows, then with subtotals each prefix of by from the longest (ROLLUP
+ * order), then the grand total when the table shows totals or shares. Assembly finds each set by
+ * its contents, so the order is the plan's only.
+ */
+export function tableGroupingSets(block: Block & { type: "table" }): number[][] {
+  const leaf = block.by.map((_, i) => i);
+  const prefixes =
+    block.subtotals === true ? leaf.slice(1).map((_, i) => leaf.slice(0, leaf.length - 1 - i)) : [];
+  const total = block.totals !== false || (block.percentOfTotal ?? []).length > 0;
+  return [leaf, ...prefixes, ...(total ? [[]] : [])];
 }
 
 function hasTime(ctx: Context, name: string): boolean {

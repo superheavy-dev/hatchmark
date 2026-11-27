@@ -28,6 +28,16 @@ import {
   span,
 } from "./fixtures.js";
 import { FISCAL_BARS, MONTH, QUARTER_BARS, REGION_SWITCH, revenueSwitch, WEEK } from "./grains.js";
+import {
+  TABLE_BARS,
+  TABLE_BARS_NEGATIVE,
+  TABLE_OTHER_DISTINCT,
+  TABLE_SORTED,
+  TABLE_SUBTOTALS,
+  TABLE_SUBTOTALS_OTHER,
+  TABLE_TALL,
+  TABLE_TOP_OTHER,
+} from "./tables.js";
 
 /** One gallery entry: a component variant on sample data, wrapped as a one-block dashboard. */
 export interface GalleryVariant {
@@ -580,6 +590,24 @@ const TABLES: GalleryVariant[] = [
     "No rows",
     table("empty_table", "Revenue by country", { rows: [], rowCount: 0, window: LAST_12 }),
   ),
+  one("table", "table-sorted", "Sorted by a column other than the default", TABLE_SORTED),
+  one("table", "table-top-other", "Top 8 plus Other, with % of total", TABLE_TOP_OTHER),
+  one(
+    "table",
+    "table-other-distinct",
+    "Other row on a distinct count: shown as — (check warns HM4063)",
+    TABLE_OTHER_DISTINCT,
+  ),
+  one("table", "table-subtotals", "Subtotals by region, with in-cell bars", TABLE_SUBTOTALS),
+  one(
+    "table",
+    "table-subtotals-other",
+    "Subtotals with the top 3 per region and an Other row in each",
+    TABLE_SUBTOTALS_OTHER,
+  ),
+  one("table", "table-bars", "In-cell bars on two metrics", TABLE_BARS),
+  one("table", "table-bars-negative", "In-cell bars across zero", TABLE_BARS_NEGATIVE),
+  one("table", "table-tall", "50 rows: sticky header and total row", TABLE_TALL),
 ];
 
 /** Every gallery variant, by component. */
