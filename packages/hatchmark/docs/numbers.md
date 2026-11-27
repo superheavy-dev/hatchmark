@@ -27,13 +27,22 @@ ZONE` value is converted to it. A timestamp without an offset (`2026-01-31 18:30
   A source with `{"through": "as_of"}` doesn't vote; with no source left to vote, the build fails
   with HM4011. Data checks warn when a source is more than a day behind the as-of (HM4010), when a
   column's newest value is more than a day after the build machine's clock (HM4012; the clock never
-  changes the output), and when a block's window starts after every source it reads ends (HM4013). These data
+  changes the output), and when a block's window starts after the data it reads ends (HM4013). These data
   checks run wherever data is read: `hatchmark build`, `check --sql` and `explain`; a plain
   `hatchmark check` reads no data.
+- **Windows end at the horizon.** A measure is complete through the earliest horizon of the
+  sources it reads (a ratio through its laggiest operand) and never past the as-of. When that is
+  before the end of its window, a KPI or table over `last N days` slides back to end at the
+  horizon, keeping its length; every other range ends at the horizon, and its comparison covers
+  the same elapsed span (Nov 1 to Nov 26, 2:03 p.m. against Oct 1 to Oct 26, 2:03 p.m.). An
+  `all_time` window ends at the horizon too, so rows after a fixed as-of are ignored. Spans in
+  DashboardData give the exact local time of a bound inside a day as `startAt` and `endAt`.
 - **Buckets.** Time series bucket by local date; weeks start on the week anchor, and quarters and
   years on their `MM-DD` anchors (hatchmark.json `anchors`, or a block's `{"unit", "anchor"}`
   grain). The axis lists every
-  bucket of the window, empty ones included. The first and last buckets may be partial.
+  bucket of the window, empty ones included. Each series ends at its own horizon: buckets after it
+  have no value, and the bucket it cuts is listed in `partial` with the share elapsed in local
+  wall-clock time. The first bucket may also begin before the window.
 
 ## Filters
 

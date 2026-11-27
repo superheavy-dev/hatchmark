@@ -8,13 +8,18 @@ import {
   type TimeGrain,
   WEEKDAYS,
 } from "../spec/index.js";
+import { DAY_US, formatWall, parseInstant, toLocal } from "./instants.js";
 import type { ExecutionContext, PlannedParam, PlannedQuery } from "./plan.js";
 
 /**
- * A window as calendar dates in the project time zone: start inclusive, end exclusive, both
- * YYYY-MM-DD. The executor turns them into timestamps in hatchmark.json's timezone.
+ * A window in the project time zone: start inclusive, end exclusive. Each bound is a local date
+ * (YYYY-MM-DD, its midnight), or a local date-time YYYY-MM-DDTHH:MM:SS.ffffff where a measure's
+ * horizon cuts a day (RFC 0001 section 6.4). An unbounded window (all_time) may still end at the
+ * horizon. The executor compares each row's local time with them.
  */
-export type WindowBounds = { kind: "bounded"; start: string; end: string } | { kind: "unbounded" };
+export type WindowBounds =
+  | { kind: "bounded"; start: string; end: string }
+  | { kind: "unbounded"; end?: string };
 
 interface Ymd {
   y: number;
@@ -218,16 +223,68 @@ export function resolveRange(
   return move(start, addDays(day, 1), by ?? moved(unit, -count));
 }
 
+type BoundsContext = Pick<ExecutionContext, "asOf" | "bindings" | "anchors"> &
+  Partial<Pick<ExecutionContext, "timezone" | "asOfInstant" | "horizons">>;
+
 /**
- * The dates one execution of a planned query reads: its window's range, or the range a period
+ * The window one execution of a planned query reads: its window's range, or the range a period
  * filter binds (its default when nothing is bound) when that filter windows the query's time
- * column, shifted by the window's comparison. Undefined when the shift has no window (all_time
- * compared); unbounded for all_time and for queries without a time column. Executors and assembly
- * both call this, so the numbers and the spans shown next to them always agree.
+ * column, shifted by the window's comparison, and ended at the measure's horizon (measureHorizon).
+ * Undefined when the shift has no window (all_time compared); unbounded for all_time and for
+ * queries without a time column. Executors and assembly both call this, so the numbers and the
+ * spans shown next to them always agree.
  */
-export function queryBounds(
+export function queryBounds(query: PlannedQuery, context: BoundsContext): WindowBounds | undefined {
+  return windowAt(query, context, measureHorizon(query, context));
+}
+
+/**
+ * A measure's horizon as local wall-clock microseconds (instants.ts): the earliest of the as-of
+ * instant T and the horizons of the time columns its window lists. Undefined when the context
+ * carries no horizons (a context built without measuring them).
+ */
+export function measureHorizon(query: PlannedQuery, context: BoundsContext): bigint | undefined {
+  const { asOfInstant, horizons, timezone } = context;
+  if (asOfInstant === undefined || horizons === undefined || timezone === undefined)
+    return undefined;
+  let horizon = parseInstant(asOfInstant);
+  for (const { source, column } of query.window.horizons ?? []) {
+    const h =
+      horizons.find((x) => x.source === source && x.column === column) ??
+      horizons.find((x) => x.source === source);
+    const through = h === undefined ? undefined : parseInstant(h.through);
+    if (through !== undefined && through < horizon) horizon = through;
+  }
+  return toLocal(horizon, timezone);
+}
+
+/** A bound as a local date when it is midnight, else as a local date-time. */
+function bound(wall: bigint): string {
+  const text = formatWall(wall);
+  return text.endsWith("T00:00:00.000000") ? text.slice(0, 10) : text;
+}
+
+/** Moves a local wall-clock time by whole grain units, keeping its time of day. */
+function shiftWall(wall: bigint, unit: TimeGrain, n: number): bigint {
+  const text = formatWall(wall);
+  const date = text.slice(0, 10);
+  return parseInstant(format(addUnits(parse(date), unit, n))) + (wall - parseInstant(date));
+}
+
+/**
+ * A query's window ended at a horizon (local wall-clock microseconds; none keeps the window as
+ * written). When the horizon is before the end of the range as written (RFC 0001 section 6.4):
+ * - {last: N, unit: "day"} without a time axis slides back to end at the horizon, keeping its
+ *   length, and its comparison is the same shift of the slid window;
+ * - every other range ends at the horizon (a to-date, complete, explicit or anchored rolling
+ *   range, and any time series, whose axis stays the dashboard's), and its comparison window is
+ *   cut to the same elapsed span, never past its own end;
+ * - all_time ends at the horizon.
+ */
+export function windowAt(
   query: PlannedQuery,
-  context: Pick<ExecutionContext, "asOf" | "bindings" | "anchors">,
+  context: BoundsContext,
+  horizon: bigint | undefined,
 ): WindowBounds | undefined {
   const { window } = query;
   if (window.column === undefined) return { kind: "unbounded" };
@@ -235,12 +292,43 @@ export function queryBounds(
     (p): p is PlannedParam & { kind: "period" } =>
       p.kind === "period" && p.column === window.column,
   );
-  return resolveRange(
-    effectiveRange(window.range, param, context.bindings),
-    window.shift,
-    context.asOf,
-    context.anchors,
-  );
+  const range = effectiveRange(window.range, param, context.bindings);
+  const target = resolveRange(range, window.shift, context.asOf, context.anchors);
+  if (horizon === undefined || target === undefined) return target;
+  if (range === "all_time") return { kind: "unbounded", end: bound(horizon) };
+  const base = resolveRange(range, "none", context.asOf, context.anchors);
+  if (base?.kind !== "bounded") return target;
+  const start = parseInstant(base.start);
+  if (horizon >= parseInstant(base.end)) return target;
+  const checked = (from: bigint, to: bigint): WindowBounds => {
+    if (from < parseInstant(SUPPORTED_DATES.first) || to > parseInstant(format(PAST_LAST_DAY))) {
+      throw new RangeError(
+        `the window ${bound(from)} to ${bound(to)} (exclusive) reaches outside the supported dates ${SUPPORTED_DATES.first} to ${SUPPORTED_DATES.last}`,
+      );
+    }
+    return { kind: "bounded", start: bound(from), end: bound(to) };
+  };
+  const spec = typeof range === "string" ? NAMED[range] : range;
+  const timeAxis = query.dimensions.some((d) => d.kind === "time");
+  if ("last" in spec && spec.unit === "day" && !timeAxis) {
+    const from = horizon - BigInt(spec.last) * DAY_US;
+    if (window.shift === "none") return checked(from, horizon);
+    const by =
+      window.shift === "previous_period"
+        ? { unit: "day" as const, by: -spec.last }
+        : window.shift === "previous_year"
+          ? { unit: "year" as const, by: -1 }
+          : window.shift.shift;
+    return checked(shiftWall(from, by.unit, by.by), shiftWall(horizon, by.unit, by.by));
+  }
+  const end = horizon > start ? horizon : start;
+  if (window.shift === "none") return checked(start, end);
+  if (target.kind !== "bounded") return target;
+  const from = parseInstant(target.start);
+  const to = parseInstant(target.end);
+  const cut = from + (end - start);
+  if (cut < to) return checked(from, cut);
+  return checked(from, to);
 }
 
 /**
@@ -284,6 +372,11 @@ export function timeBuckets(start: string, end: string, grain: ResolvedGrain): s
     bucket = addUnits(bucket, grain.unit, 1);
   }
   return out;
+}
+
+/** The exclusive end of the bucket that starts on a date: the next bucket's start. */
+export function bucketEnd(start: string, grain: ResolvedGrain): string {
+  return format(addUnits(parse(start), grain.unit, 1));
 }
 
 /** The day before a date. */

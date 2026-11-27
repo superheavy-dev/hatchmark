@@ -21,12 +21,14 @@ import {
   type KpiData,
   type LineData,
   type MetricInfo,
+  type PartialBucket,
   type Series,
   type TableData,
   type TableRow,
   type TimeAxis,
   type Value,
 } from "./dashboard-data.js";
+import { parseInstant, toLocal } from "./instants.js";
 import type {
   BlockPlan,
   ExecutionContext,
@@ -36,12 +38,15 @@ import type {
   QueryResult,
 } from "./plan.js";
 import {
+  bucketEnd,
   effectiveRange,
+  measureHorizon,
   nextDay,
   queryBounds,
   resolveRange,
   timeBuckets,
   type WindowBounds,
+  windowAt,
 } from "./windows.js";
 
 type Key = string | number | boolean | null;
@@ -120,7 +125,14 @@ function compareValues(a: Value, b: Value, order: "asc" | "desc"): number {
 }
 
 function span(bounds: WindowBounds | undefined): DateSpan | undefined {
-  return bounds?.kind === "bounded" ? { start: bounds.start, end: bounds.end } : undefined;
+  if (bounds?.kind !== "bounded") return undefined;
+  const { start, end } = bounds;
+  return {
+    start: start.slice(0, 10),
+    end: end.includes("T") ? nextDay(end.slice(0, 10)) : end,
+    ...(start.includes("T") ? { startAt: start } : {}),
+    ...(end.includes("T") ? { endAt: end } : {}),
+  };
 }
 
 function refs(expression: MeasureExpression): string[] {
@@ -190,6 +202,45 @@ class Assembler {
     return query && queryBounds(query, this.context);
   }
 
+  /** A measure's horizon (local wall-clock microseconds): the earliest of its queries'. */
+  horizon(expression: MeasureExpression | undefined): bigint | undefined {
+    let earliest: bigint | undefined;
+    for (const id of expression ? refs(expression) : []) {
+      const query = this.queries.get(id)?.query;
+      const h = query && measureHorizon(query, this.context);
+      if (h !== undefined && (earliest === undefined || h < earliest)) earliest = h;
+    }
+    return earliest;
+  }
+
+  /**
+   * A time series cut at its measure's horizon (RFC 0001 section 6.5): buckets at or after it have
+   * no value, and the bucket it falls inside is partial, with the share of it elapsed.
+   */
+  cut<T extends { values: Value[] }>(
+    series: T,
+    expression: MeasureExpression | undefined,
+    buckets: string[],
+    grain: ResolvedGrain,
+  ): T & { partial?: PartialBucket[] } {
+    const horizon = this.horizon(expression);
+    if (horizon === undefined) return series;
+    const partial: PartialBucket[] = [];
+    const values = series.values.map((value, index) => {
+      const start = parseInstant(buckets[index] ?? "");
+      const end = parseInstant(bucketEnd(buckets[index] ?? "", grain));
+      if (start >= horizon) return null;
+      if (horizon < end) {
+        partial.push({
+          index,
+          elapsed: Number(((horizon - start) * 1_000_000n) / (end - start)) / 1e6,
+        });
+      }
+      return value;
+    });
+    return { ...series, values, ...(partial.length > 0 ? { partial } : {}) };
+  }
+
   /** Distinct dimension values of a grouping set across queries, sorted by key. */
   keys(expressions: (MeasureExpression | undefined)[], set: number): Key[][] {
     const seen = new Map<string, Key[]>();
@@ -202,13 +253,15 @@ class Assembler {
   }
 
   timeAxis(expressions: (MeasureExpression | undefined)[], grain: ResolvedGrain): TimeAxis {
-    const bounds = this.bounds(expressions[0]);
-    if (bounds?.kind === "bounded") {
-      const window = { start: bounds.start, end: bounds.end };
+    const query = expressions[0] && this.queries.get(refs(expressions[0])[0] ?? "")?.query;
+    const { asOfInstant, timezone } = this.context;
+    const at = asOfInstant === undefined ? undefined : toLocal(parseInstant(asOfInstant), timezone);
+    const window = span(query && windowAt(query, this.context, at));
+    if (window !== undefined) {
       return {
         kind: "time",
         grain: grain.unit,
-        buckets: timeBuckets(bounds.start, bounds.end, grain),
+        buckets: timeBuckets(window.start, window.end, grain),
         window,
       };
     }
@@ -302,11 +355,16 @@ class Assembler {
     const sparkline = plan.sparkline?.[name];
     if (sparkline) {
       const axis = this.timeAxis([sparkline], { unit: "month" });
-      data.sparkline = {
-        grain: "month",
-        buckets: axis.buckets,
-        values: axis.buckets.map((b) => this.evaluate(sparkline, 0, [b])),
-      };
+      data.sparkline = this.cut(
+        {
+          grain: "month",
+          buckets: axis.buckets,
+          values: axis.buckets.map((b) => this.evaluate(sparkline, 0, [b])),
+        },
+        sparkline,
+        axis.buckets,
+        { unit: "month" },
+      );
     }
     return data;
   }
@@ -318,10 +376,12 @@ class Assembler {
       plan.grain ?? resolveGrain(block.grain, this.plan.anchors),
     );
     const [first = ""] = block.metrics;
-    const series =
+    const grain = plan.grain ?? resolveGrain(block.grain, this.plan.anchors);
+    const series = (
       block.split === undefined
         ? this.metricSeries(block.metrics, plan.measures, axis.buckets)
-        : this.splitSeries(first, plan.measures[first], axis.buckets, 1, 2);
+        : this.splitSeries(first, plan.measures[first], axis.buckets, 1, 2)
+    ).map((one) => this.cut(one, plan.measures[one.metric], axis.buckets, grain));
     return {
       ...common,
       type: block.type,
@@ -346,9 +406,12 @@ class Assembler {
         expressions,
         plan.grain ?? resolveGrain(block.grain, this.plan.anchors),
       );
-      const series = split
-        ? this.splitSeries(first, plan.measures[first], axis.buckets, 2, 2)
-        : this.metricSeries(block.metrics, plan.measures, axis.buckets);
+      const grain = plan.grain ?? resolveGrain(block.grain, this.plan.anchors);
+      const series = (
+        split
+          ? this.splitSeries(first, plan.measures[first], axis.buckets, 2, 2)
+          : this.metricSeries(block.metrics, plan.measures, axis.buckets)
+      ).map((one) => this.cut(one, plan.measures[one.metric], axis.buckets, grain));
       return { ...base, axis, series };
     }
     const column = block.by ?? "";

@@ -682,6 +682,13 @@ Settled edge cases:
 
 For point-in-time metrics "through the horizon" means "at the horizon": ARR now vs ARR at the same elapsed point of the previous unit.
 
+Settled readings of the table:
+
+- Only `{ "last": N, "unit": "day" }` (and its aliases `last_7_days`, `last_30_days`, `last_90_days`) slides. Last N weeks, months, quarters and years start on an anchored bucket, so they end at the horizon like a to-date range and compare the same elapsed span. An explicit `{ start, end }` range does the same.
+- A measure's horizon is the earliest of T and the horizons of every time column it reads, so a ratio ends at its laggiest operand.
+- Time-series blocks never slide: the axis is the dashboard's window, ending at T, and each series ends at its own measure horizon (no value at or after it, its cut bucket partial). KPIs and tables slide.
+- Windows keep the precision of the horizon: a horizon at 2:03 p.m. ends the window at 2:03 p.m. local time, and a slid window starts at 2:03 p.m. N days earlier.
+
 Sliding a rolling window is the default. `period.rollingLag: "trim"` keeps the window's dates and trims both it and its comparison to the same elapsed span instead, marking the value partial.
 
 ### 6.5 Time series

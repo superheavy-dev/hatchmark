@@ -260,10 +260,15 @@ export function querySql(
   if (bounds === undefined) {
     throw new Error(`range "${query.window.range}" has no "${query.window.shift}" window`);
   }
-  if (bounds.kind === "bounded" && query.window.column !== undefined) {
+  if (
+    query.window.column !== undefined &&
+    (bounds.kind === "bounded" || bounds.end !== undefined)
+  ) {
     const local = localTime(source, query.window.column, context.timezone, sql);
-    where.push(`${local} >= CAST(${sql.bind(bounds.start)} AS DATE)`);
-    where.push(`${local} < CAST(${sql.bind(bounds.end)} AS DATE)`);
+    const at = (value: string) =>
+      `CAST(${sql.bind(value)} AS ${value.includes("T") ? "TIMESTAMP" : "DATE"})`;
+    if (bounds.kind === "bounded") where.push(`${local} >= ${at(bounds.start)}`);
+    if (bounds.end !== undefined) where.push(`${local} < ${at(bounds.end)}`);
   }
   for (const param of query.params) {
     if (param.kind !== "select") continue;

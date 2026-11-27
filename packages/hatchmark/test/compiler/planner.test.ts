@@ -98,6 +98,7 @@ describe("planner", () => {
       range: "last_12_months",
       shift: "none",
       column: "ordered_at",
+      horizons: [{ source: "orders", column: "ordered_at" }],
     });
     expect(query(p, ref(inherit?.previous?.revenue)).window.shift).toBe("previous_period");
     expect(query(p, ref(year?.previous?.revenue)).window.shift).toBe("previous_year");

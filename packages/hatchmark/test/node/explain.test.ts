@@ -245,7 +245,7 @@ describe("explain", () => {
     });
     expect(printed).toContain("date_trunc('month'");
     expect(printed).toContain(">= CAST('2025-11-01' AS DATE)");
-    expect(printed).toContain("< CAST('2026-11-01' AS DATE)");
+    expect(printed).toContain("< CAST('2026-10-31T18:54:53.000001' AS TIMESTAMP)");
     expect(printed).toContain("\"status\" = 'paid'");
   });
 

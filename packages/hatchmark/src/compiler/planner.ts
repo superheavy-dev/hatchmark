@@ -17,7 +17,7 @@ import {
   type SpecFile,
 } from "../spec/index.js";
 import { canonicalJson, sha256Hex } from "./hash.js";
-import { planHorizons } from "./horizons.js";
+import { planHorizons, type TimeColumn } from "./horizons.js";
 import { paramsForQuery, resolveParams } from "./params.js";
 import {
   type BlockPlan,
@@ -162,21 +162,47 @@ function planReading(
   groupingSets: number[][],
   shift: Comparison,
 ): Reading {
-  const groups = new Map<string, { source: string; time?: string; metrics: string[] }>();
+  const groups = new Map<
+    string,
+    { source: string; time?: string; horizons: TimeColumn[]; metrics: string[] }
+  >();
   const queryOf = new Map<string, string>();
-  for (const leaf of [...new Set(names.flatMap((n) => leaves(n, ctx.metrics)))].sort()) {
+  const horizonsOf = (name: string): TimeColumn[] => {
+    const columns = new Map<string, TimeColumn>();
+    for (const leaf of leaves(name, ctx.metrics)) {
+      const metric = ctx.metrics.get(leaf);
+      if (metric === undefined || (metric.type !== "aggregate" && metric.type !== "sql")) continue;
+      if (metric.time === undefined) continue;
+      const column = { source: metric.table, column: metric.time };
+      columns.set(canonicalJson(column), column);
+    }
+    return [...columns.entries()].sort(([a], [b]) => (a < b ? -1 : 1)).map(([, c]) => c);
+  };
+  const uses = names.flatMap((n) => {
+    const horizons = horizonsOf(n);
+    return leaves(n, ctx.metrics).map((leaf) => ({ leaf, horizons }));
+  });
+  for (const { leaf, horizons } of uses.sort((a, b) =>
+    a.leaf < b.leaf ? -1 : a.leaf > b.leaf ? 1 : 0,
+  )) {
     const metric = ctx.metrics.get(leaf);
     if (metric === undefined || (metric.type !== "aggregate" && metric.type !== "sql")) continue;
     const isolated = metric.type === "sql" && (metric.filters ?? []).length > 0;
-    const key = canonicalJson([metric.table, metric.time ?? null, isolated ? leaf : null]);
+    const key = canonicalJson([
+      metric.table,
+      metric.time ?? null,
+      isolated ? leaf : null,
+      horizons,
+    ]);
     const group = groups.get(key) ?? {
       source: metric.table,
       ...(metric.time === undefined ? {} : { time: metric.time }),
+      horizons,
       metrics: [],
     };
-    group.metrics.push(leaf);
+    if (!group.metrics.includes(leaf)) group.metrics.push(leaf);
     groups.set(key, group);
-    queryOf.set(leaf, key);
+    queryOf.set(canonicalJson([leaf, horizons]), key);
   }
 
   const ids = new Map<string, string>();
@@ -200,7 +226,7 @@ function planReading(
       window:
         group.time === undefined
           ? { range: "all_time", shift: "none" }
-          : { range: ctx.range, shift, column: group.time },
+          : { range: ctx.range, shift, column: group.time, horizons: group.horizons },
       params: paramsForQuery(ctx.params, group.source, group.time),
     };
     const id = queryId(shape);
@@ -208,19 +234,20 @@ function planReading(
     queries.push({ id, ...shape });
   }
 
-  const expression = (name: string): MeasureExpression => {
+  const expression = (name: string, horizons: TimeColumn[]): MeasureExpression => {
     const metric = ctx.metrics.get(name);
     if (metric?.type === "ratio") {
       return {
         op: "divide",
-        numerator: expression(metric.numerator),
-        denominator: expression(metric.denominator),
+        numerator: expression(metric.numerator, horizons),
+        denominator: expression(metric.denominator, horizons),
       };
     }
-    return { op: "ref", queryId: ids.get(queryOf.get(name) ?? "") ?? "", metric: name };
+    const key = queryOf.get(canonicalJson([name, horizons])) ?? "";
+    return { op: "ref", queryId: ids.get(key) ?? "", metric: name };
   };
   const measures: Record<string, MeasureExpression> = {};
-  for (const name of names) measures[name] = expression(name);
+  for (const name of names) measures[name] = expression(name, horizonsOf(name));
   return { queries, measures };
 }
 

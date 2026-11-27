@@ -219,9 +219,9 @@ describe("source horizons", () => {
     expect(JSON.stringify(behind.data)).toBe(JSON.stringify(current.data));
   });
 
-  it("warns with HM4013 when a block's window starts after every source it reads ends", async () => {
+  it("warns with HM4013 when a block's window starts after the data it reads ends", async () => {
     const { codes, value } = await build(
-      await project({ asOf: "2026-05-31", range: { last: 7, unit: "day" } }),
+      await project({ asOf: "2026-05-31", range: { start: "2026-05-10", end: "2026-05-20" } }),
     );
     expect(codes).toEqual([
       ["HM4010", "warning", "/sources/orders"],
@@ -320,7 +320,7 @@ describe("horizon edges (HAT-44 and HAT-45 on #19)", () => {
       ),
     );
     expect(one.data?.asOf).toBe("2026-06-02");
-    expect(one.value("orders")).toBe(17);
+    expect(one.value("orders")).toBe(22);
     const week = await build(
       await sources(
         {
@@ -399,28 +399,35 @@ describe("horizon edges (HAT-44 and HAT-45 on #19)", () => {
     ]);
   });
 
-  it("warns with HM4013 only when every query of a block starts after its horizon", async () => {
-    const fixture = await sources(
-      {
-        num: { text: "at,v\n2026-06-01,5\n" },
-        den: { text: "at,v\n2026-06-10,17\n" },
-      },
-      { asOf: "2026-06-10", range: { last: 1, unit: "day" } },
-      {
-        files: {
-          "metrics/share.json": metric({ type: "ratio", numerator: "num", denominator: "den" }),
+  it("ends a ratio at its laggiest operand's horizon: a last-N-days KPI slides, a fixed span is empty (HM4013)", async () => {
+    const at = (range: unknown) =>
+      sources(
+        {
+          num: { text: "at,v\n2026-06-01,5\n" },
+          den: { text: "at,v\n2026-06-01,10\n2026-06-10,17\n" },
         },
-        blocks: [
-          { type: "kpi", id: "share", metric: "share" },
-          { type: "kpi", id: "num", metric: "num" },
-        ],
-      },
-    );
-    const { codes } = await build(fixture);
-    expect(codes).toEqual([
+        { asOf: "2026-06-10", range },
+        {
+          files: {
+            "metrics/share.json": metric({ type: "ratio", numerator: "num", denominator: "den" }),
+          },
+          blocks: [
+            { type: "kpi", id: "share", metric: "share" },
+            { type: "kpi", id: "num", metric: "num" },
+            { type: "kpi", id: "den", metric: "den" },
+          ],
+        },
+      );
+    const slid = await build(await at({ last: 1, unit: "day" }));
+    expect(slid.codes).toEqual([["HM4010", "warning", "/sources/num"]]);
+    expect([slid.value("share"), slid.value("num"), slid.value("den")]).toEqual([0.5, 5, 17]);
+    const fixed = await build(await at({ start: "2026-06-10", end: "2026-06-11" }));
+    expect(fixed.codes).toEqual([
       ["HM4010", "warning", "/sources/num"],
+      ["HM4013", "warning", "/blocks/0"],
       ["HM4013", "warning", "/blocks/1"],
     ]);
+    expect(fixed.value("den")).toBe(17);
   });
 
   it("notes HM4016 for a naive time column even when freshness measures something else", async () => {

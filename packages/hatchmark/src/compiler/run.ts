@@ -3,7 +3,6 @@ import { checkReferences, type Project, parseDiagnostics } from "../spec/index.j
 import { assemble } from "./assemble.js";
 import type { DashboardData } from "./dashboard-data.js";
 import {
-  horizonFor,
   type PlannedHorizon,
   planTimeColumns,
   type SourceHorizon,
@@ -212,6 +211,7 @@ export async function executionContext(
     timezone: tz,
     anchors: plan.anchors,
     bindings: {},
+    asOfInstant: formatInstant(instant),
     horizons,
   };
   try {
@@ -269,20 +269,14 @@ export async function executionContext(
     const empty =
       current.length > 0 &&
       current.every((query) => {
-        const column = query?.window.column;
-        if (query === undefined || column === undefined) return false;
-        const bounds = queryBounds(query, context);
-        if (bounds?.kind !== "bounded") return false;
-        const h = horizonFor(plan.horizons, query.source, column);
-        const through = h === undefined ? undefined : horizonOf(h);
-        const horizon = through === undefined || through > instant ? instant : through;
-        return startOf(bounds.start, tz) >= horizon;
+        const bounds = query && queryBounds(query, context);
+        return bounds?.kind === "bounded" && parseInstant(bounds.start) >= parseInstant(bounds.end);
       });
     if (!empty) continue;
     notes.push({
       code: "HM4013",
       severity: "warning",
-      message: `block "${block.blockId}" has no data in its window: every source it reads ends before the window starts`,
+      message: `block "${block.blockId}" has no data in its window: the data it reads ends before the window starts`,
       ...(file
         ? { file: file.file, pointer: block.pointer, ...file.document.locationOf(block.pointer) }
         : {}),

@@ -18,10 +18,25 @@ export const DASHBOARD_DATA_VERSION = 2;
 
 export type Value = number | null;
 
-/** A calendar span in the project time zone: start inclusive, end exclusive, YYYY-MM-DD. */
+/**
+ * A calendar span in the project time zone: start inclusive, end exclusive, YYYY-MM-DD, covering
+ * every day the window touches. startAt and endAt give the exact local date-time
+ * (YYYY-MM-DDTHH:MM:SS.ffffff) of a bound that a horizon puts inside a day (RFC 0001 section 6.4).
+ */
 export interface DateSpan {
   start: string;
   end: string;
+  startAt?: string;
+  endAt?: string;
+}
+
+/**
+ * A bucket the horizon cuts: its index on the axis and the share of it elapsed in local wall-clock
+ * time, to six decimals rounded down.
+ */
+export interface PartialBucket {
+  index: number;
+  elapsed: number;
 }
 
 export interface MetricInfo {
@@ -60,7 +75,7 @@ export interface KpiData extends BlockCommon {
   changePct?: Value;
   changeKind?: "relative" | "points";
   /** Present when the block asks for a sparkline: the metric by month over the current window. */
-  sparkline?: { grain: TimeGrain; buckets: string[]; values: Value[] };
+  sparkline?: { grain: TimeGrain; buckets: string[]; values: Value[]; partial?: PartialBucket[] };
 }
 
 /** One drawn series: a metric, or one value of the split column for a single metric. */
@@ -72,8 +87,13 @@ export interface Series {
   label: string;
   /** The split column's value when the block splits; absent otherwise. null is a real group. */
   splitValue?: string | number | boolean | null;
-  /** One value per x position (bucket or category), same order and length as the axis. */
+  /**
+   * One value per x position (bucket or category), same order and length as the axis. On a time
+   * axis, buckets at or after the series' horizon have no value (null).
+   */
   values: Value[];
+  /** On a time axis, the bucket the series' horizon falls inside, when one does. */
+  partial?: PartialBucket[];
 }
 
 export interface TimeAxis {
@@ -81,8 +101,9 @@ export interface TimeAxis {
   grain: TimeGrain;
   /**
    * Bucket start dates (YYYY-MM-DD, project time zone, from the anchors), a complete
-   * spine over the window: every bucket appears, empty ones included. The first and last buckets
-   * may be partial (the window clips them); phase 1 does not mark incomplete periods.
+   * spine over the window: every bucket appears, empty ones included. The window ends at the as-of
+   * instant; each series marks the bucket its own horizon cuts (Series.partial). The first bucket
+   * may begin before the window, which clips it.
    */
   buckets: string[];
   window: DateSpan;

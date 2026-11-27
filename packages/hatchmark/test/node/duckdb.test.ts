@@ -461,7 +461,7 @@ describe("DuckDB executor against a SQL ROLLUP oracle", () => {
     expect(data?.asOf).toBe("2026-05-02");
     expect(block<KpiData>(data, "orders")).toMatchObject({
       value: 2,
-      current: { start: "2026-04-26", end: "2026-05-03" },
+      current: { start: "2026-04-23", end: "2026-05-01" },
     });
     expect(block<KpiData>(data, "sessions").value).toBe(1);
   });
@@ -656,20 +656,28 @@ describe("DuckDB executor queries", () => {
     expect(spine.diagnostics[0]?.message).toContain("outside the supported dates");
   });
 
-  it("rejects all_time rows past the last supported date instead of dropping them", async () => {
-    const late = await writeProject({
-      ...files(),
-      "data/orders.csv": `${ORDERS.trimEnd()}\n98,9999-12-30T12:00:00Z,West,web,paid,10,0,c98\n99,9999-12-31T12:00:00Z,West,web,paid,10,0,c99\n`,
-      "dashboards/late.json": {
-        title: "Late",
-        period: { asOf: "2026-11-21", range: "all_time", compare: "none" },
-        blocks: [{ type: "line", id: "daily", metrics: ["orders"], grain: "day" }],
-      },
-    });
-    const { data, diagnostics } = await run(late.root, late.project, "late");
-    expect(data).toBeUndefined();
-    expect(diagnostics.map((d) => d.code)).toEqual(["HM2015"]);
-    expect(diagnostics[0]?.message).toContain("outside the supported dates");
+  it("rejects all_time rows past the last supported date as of latest_data, and ignores them after a fixed as-of", async () => {
+    const at = async (asOf: string) => {
+      const late = await writeProject({
+        ...files(),
+        "data/orders.csv": `${ORDERS.trimEnd()}\n98,9999-12-30T12:00:00Z,West,web,paid,10,0,c98\n99,9999-12-31T12:00:00Z,West,web,paid,10,0,c99\n`,
+        "dashboards/late.json": {
+          title: "Late",
+          period: { asOf, range: "all_time", compare: "none" },
+          blocks: [{ type: "line", id: "daily", metrics: ["orders"], grain: "day" }],
+        },
+      });
+      return run(late.root, late.project, "late");
+    };
+    const latest = await at("latest_data");
+    expect(latest.data).toBeUndefined();
+    expect(latest.diagnostics.map((d) => d.code)).toEqual(["HM2015"]);
+    expect(latest.diagnostics[0]?.message).toContain("outside the supported dates");
+    const fixed = await at("2026-11-21");
+    expect(fixed.diagnostics.filter((d) => d.severity === "error")).toEqual([]);
+    expect(fixed.data?.blocks[0]?.type === "line" && fixed.data.blocks[0].axis.buckets.at(-1)).toBe(
+      "2026-11-21",
+    );
   });
 
   it("rejects a fixed as-of date past the last supported date", async () => {
