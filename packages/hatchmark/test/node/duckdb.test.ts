@@ -240,9 +240,11 @@ let oracle: Oracle;
 let edge: Awaited<ReturnType<typeof writeProject>>;
 let ytd: Awaited<ReturnType<typeof run>>;
 const local = `(ordered_at AT TIME ZONE '${NY}')`;
-// Order 8 is the newest, at local midnight on Apr 30, so Apr 30 has begun but isn't complete: KPIs,
-// tables and bars read whole days through Apr 29 and leave order 8 out (RFC 0001 section 6.4).
+// Order 8 is the newest, at local midnight on Apr 30, so the orders horizon is just after it. Last N
+// ranges read whole days through Apr 29 and leave order 8 out; to-date KPIs, tables and bars read
+// today's partial day up to the horizon and count it (RFC 0001 section 6.4).
 const THROUGH = "2026-04-30";
+const HORIZON = "2026-04-30T04:00:00.000001Z";
 
 beforeAll(async () => {
   oracle = await Oracle.open();
@@ -272,7 +274,7 @@ describe("DuckDB executor against a SQL ROLLUP oracle", () => {
         CAST(sum(amount) - sum(refund) AS DOUBLE) AS net,
         CAST(GROUPING(region) AS INTEGER) AS g
       FROM read_csv('${csv}')
-      WHERE ${local} >= TIMESTAMP '2026-01-01' AND ${local} < TIMESTAMP '${THROUGH}'
+      WHERE ${local} >= TIMESTAMP '2026-01-01' AND ordered_at < TIMESTAMPTZ '${HORIZON}'
       GROUP BY ROLLUP (region)`);
     const table = block<TableData>(ytd.data, "by_region");
     const values = (row: Record<string, unknown>) => ({
@@ -292,9 +294,9 @@ describe("DuckDB executor against a SQL ROLLUP oracle", () => {
     const total = expected.find((r) => r.g === 1) ?? {};
     expect(table.total?.values).toEqual(values(total));
     expect(table.rows.map((r) => r.keys)).toEqual([["West"], [null], ["East"]]);
-    expect(table.total?.values.customers).toBe(3);
-    expect(table.rows.reduce((sum, r) => sum + (r.values.customers ?? 0), 0)).toBe(5);
-    expect(table.rows.map((r) => r.share?.revenue)).toEqual([100 / 240, 90 / 240, 50 / 240]);
+    expect(table.total?.values.customers).toBe(4);
+    expect(table.rows.reduce((sum, r) => sum + (r.values.customers ?? 0), 0)).toBe(6);
+    expect(table.rows.map((r) => r.share?.revenue)).toEqual([180 / 320, 90 / 320, 50 / 320]);
     expect(table.total?.share).toEqual({ revenue: 1 });
   });
 
@@ -302,18 +304,18 @@ describe("DuckDB executor against a SQL ROLLUP oracle", () => {
     const table = block<TableData>(ytd.data, "lie");
     const sum = (m: string) => table.rows.reduce((acc, r) => acc + (r.values[m] ?? 0), 0);
     expect(sum("net")).toBe(table.total?.values.net);
-    expect(sum("users_lie")).toBe(6);
-    expect(table.total?.values.users_lie).toBe(4);
+    expect(sum("users_lie")).toBe(7);
+    expect(table.total?.values.users_lie).toBe(5);
     const warning = ytd.diagnostics.find((d) => d.code === "HM4003");
     expect(warning?.file).toBe("metrics/users_lie.yaml");
-    expect(warning?.message).toContain("add up to 6, not the total 4");
+    expect(warning?.message).toContain("add up to 7, not the total 5");
   });
 
   it("applies limit to leaf rows only; the total still covers every row", () => {
     const table = block<TableData>(ytd.data, "top_region");
-    expect(table.rows).toEqual([{ keys: ["West"], values: { revenue: 100 } }]);
+    expect(table.rows).toEqual([{ keys: ["West"], values: { revenue: 180 } }]);
     expect(table.rowCount).toBe(3);
-    expect(table.total?.values.revenue).toBe(240);
+    expect(table.total?.values.revenue).toBe(320);
   });
 
   it("matches ratio rows across sources null-safely, and divides the totals for the total row", async () => {
@@ -326,22 +328,32 @@ describe("DuckDB executor against a SQL ROLLUP oracle", () => {
     expect(sessions.find((r) => r.g === 1)?.n).toBe(5);
     const table = block<TableData>(ytd.data, "conversion_by_region");
     expect(table.rows).toEqual([
-      { keys: ["West"], values: { orders: 3, sessions: 2, conversion: 1.5 } },
+      { keys: ["West"], values: { orders: 4, sessions: 2, conversion: 2 } },
       { keys: [null], values: { orders: 2, sessions: 2, conversion: 1 } },
       { keys: ["East"], values: { orders: 1, sessions: 1, conversion: 1 } },
     ]);
-    expect(table.total?.values).toEqual({ orders: 6, sessions: 5, conversion: 6 / 5 });
-    expect(block<KpiData>(ytd.data, "conversion").value).toBe(6 / 5);
+    expect(table.total?.values).toEqual({ orders: 7, sessions: 5, conversion: 7 / 5 });
+    expect(block<KpiData>(ytd.data, "conversion").value).toBe(7 / 5);
   });
 
-  it("reads KPI windows and an empty comparison window: 0 for sums, null for ratios", () => {
+  it("reads KPI windows through the horizon and an empty comparison window over the same elapsed time: 0 for sums, null for ratios", async () => {
+    const [at] = await oracle.rows(`
+      SELECT
+        strftime(TIMESTAMPTZ '${HORIZON}' AT TIME ZONE '${NY}', '%Y-%m-%dT%H:%M:%S.%f') AS current,
+        strftime(
+          TIMESTAMP '2025-01-01' + ((TIMESTAMPTZ '${HORIZON}' AT TIME ZONE '${NY}') - TIMESTAMP '2026-01-01'),
+          '%Y-%m-%dT%H:%M:%S.%f') AS previous`);
+    expect(at).toEqual({
+      current: "2026-04-30T00:00:00.000001",
+      previous: "2025-04-30T00:00:00.000001",
+    });
     const revenue = block<KpiData>(ytd.data, "revenue");
     expect(revenue).toMatchObject({
-      value: 240,
-      current: { start: "2026-01-01", end: THROUGH },
-      previous: { start: "2025-01-01", end: "2025-04-30" },
+      value: 320,
+      current: { start: "2026-01-01", end: "2026-05-01", endAt: at?.current },
+      previous: { start: "2025-01-01", end: "2025-05-01", endAt: at?.previous },
       previousValue: 0,
-      change: 240,
+      change: 320,
       changePct: null,
       changeKind: "relative",
       sparkline: {
@@ -351,7 +363,7 @@ describe("DuckDB executor against a SQL ROLLUP oracle", () => {
       },
     });
     expect(block<KpiData>(ytd.data, "aov")).toMatchObject({
-      value: 240 / 6,
+      value: 320 / 7,
       previousValue: null,
       change: null,
       changePct: null,
@@ -379,7 +391,7 @@ describe("DuckDB executor against a SQL ROLLUP oracle", () => {
       categories: ["web", "app", null],
     });
     expect(bar.series.map((s) => [s.key, s.splitValue, s.values])).toEqual([
-      ["orders:West", "West", [2, 0, 1]],
+      ["orders:West", "West", [2, 1, 1]],
       ["orders:(empty)", null, [1, 1, 0]],
       ["orders:East", "East", [1, 0, 0]],
     ]);

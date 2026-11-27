@@ -539,13 +539,13 @@ describe("empty and null groups, non-additive metrics, and a select default with
     const q = (v: string | null) => (v === null ? "\\N" : `"${v.replaceAll('"', '""')}"`);
     await writeFile(
       file,
-      `d,region,category,status,a\n${b.rows.map((r) => [q(r.d), q(r.region), q(r.category), q(r.status), r.a === null ? "\\N" : String(r.a)].join(",")).join("\n")}\n`,
+      `t,d,region,category,status,a\n${b.rows.map((r) => [q(r.t === null ? null : new Date(r.t).toISOString()), q(r.d), q(r.region), q(r.category), q(r.status), r.a === null ? "\\N" : String(r.a)].join(",")).join("\n")}\n`,
     );
     const oracle = await Oracle.open();
     const diff = new Diff();
     try {
       await oracle.run(
-        `CREATE TABLE t AS SELECT * FROM read_csv('${file.replaceAll("'", "''")}', nullstr = '\\N', columns = {'d': 'VARCHAR', 'region': 'VARCHAR', 'category': 'VARCHAR', 'status': 'VARCHAR', 'a': 'DOUBLE'})`,
+        `CREATE TABLE t AS SELECT * FROM read_csv('${file.replaceAll("'", "''")}', nullstr = '\\N', columns = {'t': 'TIMESTAMPTZ', 'd': 'VARCHAR', 'region': 'VARCHAR', 'category': 'VARCHAR', 'status': 'VARCHAR', 'a': 'DOUBLE'})`,
       );
       const cases: [string, Case, DashboardData, Window][] = [];
       for (const c of [nulls, combo]) {
@@ -570,8 +570,9 @@ describe("empty and null groups, non-additive metrics, and a select default with
       }
       for (const [at, c, data, w] of cases) {
         const where = c.where ? "AND region IN ('EMEA', 'APAC')" : "";
+        const end = w[1].endsWith("Z") ? `t < '${w[1]}'::TIMESTAMPTZ` : `d < '${w[1]}'`;
         const got = await oracle.rows(
-          `SELECT region, category, GROUPING(region, category) AS g, coalesce(sum(a) FILTER (WHERE status = 'paid'), 0) AS revenue, count(*) FILTER (WHERE status = 'paid') AS orders, count(*) FILTER (WHERE status = 'refunded') AS refunded, count(*) AS placed FROM t WHERE d >= '${w[0]}' AND d < '${w[1]}' ${where} GROUP BY ROLLUP (region, category)`,
+          `SELECT region, category, GROUPING(region, category) AS g, coalesce(sum(a) FILTER (WHERE status = 'paid'), 0) AS revenue, count(*) FILTER (WHERE status = 'paid') AS orders, count(*) FILTER (WHERE status = 'refunded') AS refunded, count(*) AS placed FROM t WHERE d >= '${w[0]}' AND ${end} ${where} GROUP BY ROLLUP (region, category)`,
         );
         const table = data.blocks.find((x) => x.id === "region_cat") as TableData;
         const metrics = (r: Record<string, unknown>) => {
@@ -664,7 +665,7 @@ describe.each([
     ] as Window[],
   },
   {
-    name: "a horizon at 12:30 p.m. on Oct 1, the first day of a month and a quarter (to-date windows have no complete day)",
+    name: "a horizon at 12:30 p.m. on Oct 1, the first day of a month and a quarter (to-date windows cover only its partial first day)",
     config: {},
     anchors: { week: "sunday", quarter: "01-01", year: "01-01" },
     asOf: "latest_data",
@@ -752,9 +753,35 @@ describe.each([
     const partial = day?.series.map((x) => x.partial?.[0]?.elapsed);
     expect(new Set(partial)).toEqual(new Set([dayElapsed]));
     if (truncate === "2026-10-01T16:30:00Z") {
-      for (const key of ["month_to_date", "quarter_to_date"]) {
+      const revenue = (from: string, through: string) =>
+        c.rows
+          .filter(
+            (r) =>
+              r.status === "paid" &&
+              r.t !== null &&
+              r.t >= Date.parse(from) &&
+              r.t <= Date.parse(through),
+          )
+          .reduce((sum, r) => sum + (r.a ?? 0), 0);
+      for (const [key, previous] of [
+        ["month_to_date", "2026-09-01"],
+        ["quarter_to_date", "2026-07-01"],
+      ] as const) {
         const k = c.payload.presets[key]?.blocks.find((x) => x.id === "revenue");
-        expect(k, key).toMatchObject({ value: null, empty: "no_complete_day" });
+        expect(k, key).toMatchObject({
+          current: { start: "2026-10-01", end: "2026-10-02", endAt: "2026-10-01T12:30:00.000001" },
+          previous: {
+            start: previous,
+            end: addDays(previous, 1),
+            endAt: `${previous}T12:30:00.000001`,
+          },
+        });
+        expect(k?.type === "kpi" ? k.empty : "not a kpi", key).toBeUndefined();
+        const value = revenue("2026-10-01T04:00:00Z", truncate);
+        const previousValue = revenue(`${previous}T04:00:00Z`, `${previous}T16:30:00Z`);
+        expect(previousValue, key).toBeGreaterThan(0);
+        expect(k?.type === "kpi" ? k.value : undefined, key).toBeCloseTo(value, 9);
+        expect(k?.type === "kpi" ? k.previousValue : undefined, key).toBeCloseTo(previousValue, 9);
       }
     }
   });

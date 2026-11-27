@@ -37,7 +37,7 @@ export interface DateSpan {
 /**
  * Why a KPI or table shows no value although its range has dates: its window, ended at the
  * measure's horizon, is empty (RFC 0001 section 6.4). no_complete_day: the data has begun in the
- * window but no day of it is complete yet (month-to-date on the 1st); no_data: the data ends before
+ * window but no day of it is complete yet (an explicit range whose first day isn't complete); no_data: the data ends before
  * the window starts. An empty window is a gap, never 0.
  */
 export type EmptyWindow = "no_complete_day" | "no_data";

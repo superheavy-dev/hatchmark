@@ -119,7 +119,7 @@ let result: Awaited<ReturnType<typeof run>>;
 let csv: string;
 const LOCAL = `(ordered_at AT TIME ZONE '${NY}')`;
 let WINDOW: string;
-let lastDay: string;
+let endAt: string;
 
 function scatter(data: DashboardData | undefined, id: string): ScatterData {
   const found = data?.blocks.find((b) => b.id === id);
@@ -188,9 +188,9 @@ beforeAll(async () => {
   });
   csv = path.join(project.root, "data/orders.csv");
   const [end] = await oracle.rows(
-    `SELECT strftime(least(date_trunc('day', max(${LOCAL})), TIMESTAMP '2026-07-01'), '%Y-%m-%d %H:%M:%S') AS d FROM read_csv('${csv}')`,
+    `SELECT strftime(least(max(${LOCAL}) + INTERVAL 1 MICROSECOND, TIMESTAMP '2026-07-01'), '%Y-%m-%d %H:%M:%S.%f') AS d FROM read_csv('${csv}')`,
   );
-  lastDay = String(end?.d).slice(0, 10);
+  endAt = String(end?.d).replace(" ", "T");
   WINDOW = `${LOCAL} >= TIMESTAMP '2026-01-01' AND ${LOCAL} < TIMESTAMP '${end?.d}'`;
   result = await run(project.root, project.project, "scatter");
 });
@@ -232,7 +232,8 @@ describe("scatter blocks against a SQL oracle", () => {
     );
     expect(b.omittedPoints).toBe(1);
     expect(b.omittedCategories).toBeUndefined();
-    expect(b.window).toEqual({ start: "2026-01-01", end: lastDay });
+    expect(endAt).toBe("2026-06-30T19:00:00.000001");
+    expect(b.window).toEqual({ start: "2026-01-01", end: "2026-07-01", endAt });
   });
 
   it("divides each country's sums for a ratio, which differs from averaging row ratios", async () => {

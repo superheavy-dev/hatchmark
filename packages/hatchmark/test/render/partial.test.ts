@@ -228,4 +228,21 @@ describe("partial buckets: regressions", () => {
     });
     expect(count(trailing, /h0"[^>]*stroke-linecap="round"/g)).toBe(2);
   });
+
+  it("marks a KPI whose window ends inside the as-of day in progress, with the time it reads through", () => {
+    const data = find("kpi-sparkline-partial");
+    const kpi = data.blocks[0] as KpiData;
+    const at = (current: NonNullable<KpiData["current"]>, value: number | null = 120) =>
+      renderFragment({ ...data, blocks: [{ ...kpi, current, value }] }).match(
+        /<div class="hm-kpi-note">([^<]*)<\/div>/,
+      )?.[1];
+    const day = { start: "2026-11-01", end: "2026-11-27" };
+    expect(at({ ...day, end: "2026-11-28", endAt: "2026-11-27T14:03:00.000001" })).toMatch(
+      /\u00B7 in progress \(through 2:03\sPM\)/,
+    );
+    expect(at(day)).not.toMatch(/in progress/);
+    expect(at({ ...day, end: "2026-11-28", endAt: "2026-11-27T14:03:00.000001" }, null)).toBe(
+      "No data in this period",
+    );
+  });
 });

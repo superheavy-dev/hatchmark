@@ -157,7 +157,7 @@ beforeAll(async () => {
   });
   csv = path.join(project.root, "data/orders.csv");
   const [end] = await oracle.rows(
-    `SELECT strftime(least(date_trunc('day', max(${LOCAL})), TIMESTAMP '2026-07-01'), '%Y-%m-%d %H:%M:%S') AS d FROM read_csv('${csv}')`,
+    `SELECT strftime(least(max(${LOCAL}) + INTERVAL 1 MICROSECOND, TIMESTAMP '2026-07-01'), '%Y-%m-%d %H:%M:%S.%f') AS d FROM read_csv('${csv}')`,
   );
   WINDOW = `${LOCAL} >= TIMESTAMP '2026-06-01' AND ${LOCAL} < TIMESTAMP '${end?.d}'`;
   pies = await run(project.root, project.project, "pies");

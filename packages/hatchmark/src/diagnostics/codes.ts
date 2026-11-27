@@ -303,7 +303,7 @@ export const CODES = {
   HM4024: {
     title: "no complete day yet",
     explanation:
-      "A KPI, table or category chart reads whole days ending at the last complete day of its data. Its window has begun, but no day of it is complete yet, such as month-to-date on the 1st, so it shows no value rather than 0. It fills in once a day is complete. Set period.asOf to an earlier date to show a complete day instead.",
+      "Apart from to-date ranges, which read through the horizon itself, a KPI, table or category chart reads whole days ending at the last complete day of its data. Its window has begun, but no day of it is complete yet, such as an explicit range whose first day isn't complete, so it shows no value rather than 0. It fills in once a day is complete. Set period.asOf to an earlier date to show a complete day instead.",
   },
   HM4014: {
     title: "partial bucket shown as complete",

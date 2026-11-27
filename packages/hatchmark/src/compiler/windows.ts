@@ -339,7 +339,13 @@ function endedWindow(
         : base.start;
     return hw <= parseInstant(first) ? empty : { kind: "bounded", start: first, end: exact };
   }
-  if (timeAxis) {
+  const toDate = "to_date" in spec;
+  if (toDate && window.shift === "none") {
+    return hw <= parseInstant(base.start)
+      ? empty
+      : { kind: "bounded", start: base.start, end: exact };
+  }
+  if (timeAxis || toDate) {
     const start = parseInstant(base.start);
     if (hw <= start) return { ...target, end: target.start };
     const from = parseInstant(target.start);
@@ -360,7 +366,6 @@ function endedWindow(
     return resolveRange(slid, window.shift, context.asOf, anchors);
   }
   if (day <= base.start) return window.shift === "none" ? empty : { ...target, end: target.start };
-  if ("to_date" in spec) return resolveRange(range, window.shift, previousDay(day), anchors);
   if (window.shift === "none") return { kind: "bounded", start: base.start, end: day };
   const end = format(addDays(parse(target.start), daysBetween(base.start, day)));
   return end < target.end ? { kind: "bounded", start: target.start, end } : target;

@@ -7,7 +7,7 @@ import {
   formatSpan,
   formatValue,
 } from "./format.js";
-import { bucketLines, partialPositions } from "./partial.js";
+import { bucketLines, partialPositions, timeOf } from "./partial.js";
 import { esc, r, scriptJson } from "./svg.js";
 
 /**
@@ -62,6 +62,9 @@ export function renderKpi(block: KpiData, ctx: RenderContext): string {
       block.previousValue === null
         ? `${own}No ${span} data to compare`
         : `${own}vs ${formatValue(block.previousValue, metric, locale, "headline")} in ${span}`;
+  }
+  if (block.current?.endAt !== undefined && block.value !== null) {
+    note += ` \u00B7 in progress (through ${timeOf(block.current.endAt, locale)})`;
   }
   if (metric.better === "down") note += " \u00B7 lower is better";
   let spark = "";

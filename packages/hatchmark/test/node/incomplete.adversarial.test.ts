@@ -97,8 +97,8 @@ function bucketEnd(start: string, unit: string): number {
   return d.getTime();
 }
 
-describe("B: comparisons over the same whole days (RFC 6.4, day clamp as today)", () => {
-  it("B1 quarter_to_date: a row after the as-of completes the as-of day", async () => {
+describe("B: comparisons over the same span (RFC 6.4, day clamp as today)", () => {
+  it("B1 quarter_to_date: the as-of day counts up to the horizon, and a row after the as-of completes it", async () => {
     const base = hourly("2026-01-01T00:00:00Z", "2026-05-15T23:00:00Z");
     const out: KpiData[] = [];
     for (const extra of [[], [["2026-05-16T00:00:00Z", 1] as [string, number]]]) {
@@ -110,24 +110,41 @@ describe("B: comparisons over the same whole days (RFC 6.4, day clamp as today)"
       out.push(block<KpiData>("k"));
     }
     const [a, b] = out as [KpiData, KpiData];
-    expect([a.value, b.value]).toEqual([44 * 24, 45 * 24]);
-    expect(a.previousValue).toBe(45 * 24);
+    expect([a.value, b.value]).toEqual([44 * 24 + 24, 45 * 24]);
+    expect(a.current).toEqual({
+      start: "2026-04-01",
+      end: "2026-05-16",
+      endAt: "2026-05-15T23:00:00.000001",
+    });
+    expect(a.previous).toEqual({
+      start: "2026-01-01",
+      end: "2026-02-15",
+      endAt: "2026-02-14T23:00:00.000001",
+    });
+    expect(a.previousValue).toBe(44 * 24 + 24);
+    expect(b.current).toEqual({ start: "2026-04-01", end: "2026-05-16" });
     expect(b.previousValue).toBe(46 * 24);
   });
 
-  it("B2 year_to_date vs previous_year in a leap year ends on the same date last year", async () => {
+  it("B2 year_to_date vs previous_year in a leap year: the same elapsed time, clamped to the same date last year", async () => {
     const { block, root } = await dashboard({
       sources: { orders: csv(hourly("2027-01-01T00:00:00Z", "2028-03-15T14:00:00Z")) },
       period: { asOf: "latest_data", range: "year_to_date", compare: "previous_year" },
       blocks: [{ type: "kpi", id: "k", metric: "orders" }],
     });
+    const horizon = "2028-03-15 14:00:00.000001Z";
+    const [bound] = await oracle.rows(`
+      SELECT strftime(least(
+        TIMESTAMPTZ '2027-01-01 00:00:00Z' + (TIMESTAMPTZ '${horizon}' - TIMESTAMPTZ '2028-01-01 00:00:00Z'),
+        TIMESTAMPTZ '2027-03-16 00:00:00Z'), '%Y-%m-%d %H:%M:%S.%fZ') AS end`);
+    expect(bound?.end).toBe("2027-03-16 00:00:00.000000Z");
     const kpi = block<KpiData>("k");
-    expect(kpi.value).toBe(
-      await sumInstants(root, "orders", "2028-01-01 00:00:00Z", "2028-03-15 00:00:00Z"),
-    );
+    expect(kpi.value).toBe(await sumInstants(root, "orders", "2028-01-01 00:00:00Z", horizon));
+    expect(kpi.value).toBe(74 * 24 + 15);
     expect(kpi.previousValue).toBe(
-      await sumInstants(root, "orders", "2027-01-01 00:00:00Z", "2027-03-15 00:00:00Z"),
+      await sumInstants(root, "orders", "2027-01-01 00:00:00Z", String(bound?.end)),
     );
+    expect(kpi.previous).toEqual({ start: "2027-01-01", end: "2027-03-16" });
   });
 
   it("B2b last_12_months slides to the last complete day, keeping its 362 days; previous_year moves its first and last day", async () => {
@@ -194,8 +211,8 @@ describe("B3: a sub-day horizon inside the repeated DST hour (RFC 6.1 measure ho
       const den = await sumInstants(root, "den", from, horizon);
       expect(block<LineData>("l").series[0]?.values[0]).toBe(num / den);
       expect(block<KpiData>("k")).toMatchObject({
-        value: null,
-        current: { start: "2026-11-01", end: "2026-11-01" },
+        value: num / den,
+        current: { start: "2026-11-01", end: "2026-11-02", endAt: "2026-11-01T01:30:00.000001" },
       });
     });
   }
@@ -214,8 +231,8 @@ describe("C: controls (expected to hold)", () => {
       period: { asOf: "latest_data", range: "month_to_date", compare: "previous_period" },
       blocks: [{ type: "kpi", id: "k", metric: "share" }],
     });
-    const h = "2026-11-20 00:00:00Z";
-    const ph = "2026-10-20 00:00:00Z";
+    const h = "2026-11-20 09:00:00.000001Z";
+    const ph = "2026-10-20 09:00:00.000001Z";
     const kpi = block<KpiData>("k");
     expect(kpi.value).toBeCloseTo(
       (await sumInstants(root, "num", "2026-11-01 00:00:00Z", h)) /

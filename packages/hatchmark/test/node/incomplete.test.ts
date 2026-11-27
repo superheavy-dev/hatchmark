@@ -58,7 +58,7 @@ const rows = (...pairs: [string, number][]) =>
   `at,v\n${pairs.map(([at, v]) => `${at},${v}`).join("\n")}\n`;
 
 describe("windows end at the measure's horizon", () => {
-  it("reads a to-date range through the last complete day and compares the same days", async () => {
+  it("reads a to-date range through the horizon instant and compares the same elapsed time", async () => {
     const { block } = await dashboard({
       sources: {
         orders: rows(
@@ -74,12 +74,11 @@ describe("windows end at the measure's horizon", () => {
     });
     const kpi = block<KpiData>("orders");
     expect(kpi).toMatchObject({
-      value: 8,
-      previousValue: 1,
-      current: { start: "2026-11-01", end: "2026-11-26" },
-      previous: { start: "2026-10-01", end: "2026-10-26" },
+      value: 8 + 16,
+      previousValue: 1 + 2,
+      current: { start: "2026-11-01", end: "2026-11-27", endAt: "2026-11-26T14:03:00.000001" },
+      previous: { start: "2026-10-01", end: "2026-10-27", endAt: "2026-10-26T14:03:00.000001" },
     });
-    expect(kpi.current).not.toHaveProperty("endAt");
   });
 
   it("slides last N days back to end at a lagging source's horizon, keeping its length", async () => {
@@ -213,7 +212,14 @@ describe("windows at the horizon against SQL written here", () => {
   const hourly = (count: number) =>
     rows(...Array.from({ length: count }, (_, h): [string, number] => [at(h), (h % 7) + 1]));
   const ranges: [string, unknown, string, string, string, string][] = [
-    ["mtd", "month_to_date", "2026-11-01", "2026-11-29", "2026-10-01", "2026-10-29"],
+    [
+      "mtd",
+      "month_to_date",
+      "2026-11-01",
+      "2026-11-29 14:30:00.000001",
+      "2026-10-01",
+      "2026-10-29 14:30:00.000001",
+    ],
     ["l7", { last: 7, unit: "day" }, "2026-11-22", "2026-11-29", "2026-11-15", "2026-11-22"],
     ["l2m", { last: 2, unit: "month" }, "2026-09-29", "2026-11-29", "2026-07-30", "2026-09-29"],
   ];
@@ -242,13 +248,13 @@ describe("windows at the horizon against SQL written here", () => {
   }
 });
 
-describe("whole days in KPIs, instants in series", () => {
+describe("whole days in last N KPIs, instants in series and to-date KPIs", () => {
   const between = (pairs: [string, number][], from: string, to: string) =>
     pairs
       .filter(([at]) => Date.parse(at) >= Date.parse(from) && Date.parse(at) < Date.parse(to))
       .reduce((n, [, v]) => n + v, 0);
 
-  it("cuts a series inside the repeated hour of a fall-back day by instant", async () => {
+  it("cuts a series and a to-date KPI inside the repeated hour of a fall-back day by instant", async () => {
     const pairs: [string, number][] = [
       ["2026-11-01T05:40:00Z", 1],
       ["2026-11-01T05:50:00Z", 2],
@@ -270,16 +276,46 @@ describe("whole days in KPIs, instants in series", () => {
     expect(expected).toBe(11);
     expect(block<LineData>("l").series[0]?.values[0]).toBe(expected);
     expect(block<KpiData>("k")).toMatchObject({
-      value: null,
-      empty: "no_complete_day",
-      current: { start: "2026-11-01", end: "2026-11-01" },
+      value: expected,
+      current: { start: "2026-11-01", end: "2026-11-02", endAt: "2026-11-01T01:45:00.000001" },
     });
+    expect(block<KpiData>("k")).not.toHaveProperty("empty");
+  });
+
+  it("reads month to date on the 1st through the partial day, and compares the same elapsed time", async () => {
+    const pairs: [string, number][] = [
+      ["2026-10-01T08:00:00Z", 4],
+      ["2026-10-01T10:00:00Z", 8],
+      ["2026-10-31T12:00:00Z", 1],
+      ["2026-11-01T09:00:00Z", 2],
+    ];
+    const { block, diagnostics } = await dashboard({
+      sources: { orders: rows(...pairs) },
+      period: { asOf: "latest_data", range: "month_to_date", compare: "previous_period" },
+      blocks: [
+        { type: "kpi", id: "k", metric: "orders" },
+        { type: "table", id: "t", by: ["v"], metrics: ["orders"] },
+      ],
+    });
+    expect(block<KpiData>("k")).toMatchObject({
+      value: between(pairs, "2026-11-01T00:00:00Z", "2026-11-01T09:00:00.001Z"),
+      previousValue: between(pairs, "2026-10-01T00:00:00Z", "2026-10-01T09:00:00.001Z"),
+      current: { start: "2026-11-01", end: "2026-11-02", endAt: "2026-11-01T09:00:00.000001" },
+      previous: { start: "2026-10-01", end: "2026-10-02", endAt: "2026-10-01T09:00:00.000001" },
+    });
+    expect(block<KpiData>("k")).toMatchObject({ value: 2, previousValue: 4 });
+    expect(block<TableData>("t").rows).toEqual([{ keys: [2], values: { orders: 2 } }]);
+    expect(diagnostics).toEqual([]);
   });
 
   it("shows no value, never 0, for a KPI or table with no complete day yet", async () => {
     const { block, diagnostics } = await dashboard({
       sources: { orders: rows(["2026-10-31T12:00:00Z", 1], ["2026-11-01T09:00:00Z", 2]) },
-      period: { asOf: "latest_data", range: "month_to_date", compare: "previous_period" },
+      period: {
+        asOf: "latest_data",
+        range: { start: "2026-11-01", end: "2026-12-01" },
+        compare: "previous_period",
+      },
       blocks: [
         { type: "kpi", id: "k", metric: "orders" },
         { type: "table", id: "t", by: ["v"], metrics: ["orders"] },
@@ -311,7 +347,7 @@ describe("whole days in KPIs, instants in series", () => {
   it("fills a table from its other metrics when one metric's window is empty, in either order", async () => {
     const { block } = await dashboard({
       sources: {
-        stale: rows(["2026-11-01T09:00:00Z", 20]),
+        stale: rows(["2026-10-31T09:00:00Z", 20]),
         fresh: rows(["2026-11-01T10:00:00Z", 5], ["2026-11-03T10:00:00Z", 7]),
       },
       period: { asOf: "2026-11-03", range: "month_to_date", compare: "none" },
@@ -320,10 +356,15 @@ describe("whole days in KPIs, instants in series", () => {
         { type: "table", id: "b", by: ["v"], metrics: ["fresh", "stale"], totals: true },
       ],
     });
-    for (const id of ["a", "b"]) {
+    const five = [[5], { stale: null, fresh: 5 }];
+    const seven = [[7], { stale: null, fresh: 7 }];
+    for (const [id, order] of [
+      ["a", [five, seven]],
+      ["b", [seven, five]],
+    ] as const) {
       const table = block<TableData>(id);
-      expect(table.rows.map((r) => [r.keys, r.values])).toEqual([[[5], { stale: null, fresh: 5 }]]);
-      expect(table.total?.values).toEqual({ stale: null, fresh: 5 });
+      expect(table.rows.map((r) => [r.keys, r.values])).toEqual(order);
+      expect(table.total?.values).toEqual({ stale: null, fresh: 12 });
       expect(table).not.toHaveProperty("empty");
     }
   });

@@ -29,6 +29,7 @@ export type Row = {
 export type Anchors = { week: string; quarter: string; year: string };
 export type Grain = { unit: string; anchor?: string };
 export type GrainSpec = string | Grain;
+/** Start and end (exclusive): local dates, or an end at a UTC instant YYYY-MM-DDTHH:MM:SS.ffffffZ. */
 export type Window = [string, string];
 export type SpecBlock = {
   type: string;
@@ -199,15 +200,26 @@ export function windows(
 }
 
 /**
- * A measure's horizon (RFC 0001 sections 6.1 and 6.3) in local wall-clock microseconds: the
- * earlier of the as-of instant T (the end of the as-of local date) and the source horizon, which
- * is the newest instant of the time column over all rows, taken as complete through it (+1 µs, so
- * the newest row counts). cut is the local midnight at or before it, as a date: KPI and table
- * windows end there (exclusive).
+ * A measure's horizon (RFC 0001 sections 6.1 and 6.3): the earlier of the as-of instant T (the end
+ * of the as-of local date) and the source horizon, which is the newest instant of the time column
+ * over all rows, taken as complete through it (+1 µs, so the newest row counts). at is that instant
+ * in UTC microseconds, us its local wall-clock microseconds, and cut the local midnight at or before
+ * it, as a date: last N, last complete and explicit KPI and table windows end there (exclusive).
  */
-export type Horizon = { asOf: string; us: bigint; cut: string };
+export type Horizon = { asOf: string; us: bigint; cut: string; at: bigint; timeZone: string };
 export function horizonOf(rows: Row[], asOf: string, timeZone = "America/New_York"): Horizon {
   const newest = rows.reduce((m, r) => (r.t !== null && r.t > m ? r.t : m), -Infinity);
+  const source = BigInt(newest) * 1000n + 1n;
+  const day = iso(Number(wallOf(source, timeZone) / 1000n));
+  const date = asOf === "latest_data" ? day : asOf;
+  const end = fromWall(naive(addDays(date, 1)), timeZone);
+  const at = source < end ? source : end;
+  const us = wallOf(at, timeZone);
+  return { asOf: date, us, cut: iso(Number(us / 1000n)), at, timeZone };
+}
+/** A UTC instant (microseconds) as local wall-clock microseconds, by Intl. */
+function wallOf(at: bigint, timeZone: string): bigint {
+  const t = Number(at / 1000n);
   const parts = Object.fromEntries(
     new Intl.DateTimeFormat("en-CA", {
       timeZone,
@@ -219,26 +231,35 @@ export function horizonOf(rows: Row[], asOf: string, timeZone = "America/New_Yor
       second: "2-digit",
       hourCycle: "h23",
     })
-      .formatToParts(new Date(newest))
+      .formatToParts(new Date(t))
       .map((p) => [p.type, Number(p.value)]),
   ) as Record<string, number>;
-  const localMs =
-    Date.UTC(
-      parts.year ?? 0,
-      (parts.month ?? 1) - 1,
-      parts.day ?? 1,
-      parts.hour,
-      parts.minute,
-      parts.second,
-    ) +
-    (newest % 1000);
-  const source = BigInt(localMs) * 1000n + 1n;
-  const day = iso(localMs);
-  const date = asOf === "latest_data" ? day : asOf;
-  const end = naive(addDays(date, 1));
-  const us = source < end ? source : end;
-  return { asOf: date, us, cut: iso(Number(us / 1000n)) };
+  const localMs = Date.UTC(
+    parts.year ?? 0,
+    (parts.month ?? 1) - 1,
+    parts.day ?? 1,
+    parts.hour,
+    parts.minute,
+    parts.second,
+  );
+  return BigInt(localMs) * 1000n + (at % 1_000_000n);
 }
+/**
+ * The UTC instant of a local wall-clock time: of the offsets a day before and a day after, the ones
+ * that read back as that wall time; a time repeated by a fall-back takes its later occurrence (as
+ * DuckDB does), and a time skipped by a spring-forward takes the offset before the change.
+ */
+function fromWall(wall: bigint, timeZone: string): bigint {
+  const offset = (at: bigint) => wallOf(at, timeZone) - at;
+  const before = wall - offset(wall - DAY_US);
+  const after = wall - offset(wall + DAY_US);
+  const fits = [before, after].filter((at) => wallOf(at, timeZone) === wall);
+  return fits.at(-1) ?? before;
+}
+const instantText = (at: bigint) =>
+  `${new Date(Number(at / 1000n)).toISOString().slice(0, 19)}.${String(at % 1_000_000n).padStart(6, "0")}Z`;
+const instantOf = (text: string) =>
+  BigInt(Date.parse(`${text.slice(0, 19)}Z`)) * 1000n + BigInt(text.slice(20, 26));
 /** A local date's midnight in wall-clock microseconds. */
 const naive = (d: string) => BigInt(ms(d)) * 1000n;
 /** A wall-clock microsecond count as YYYY-MM-DDTHH:MM:SS.ffffff. */
@@ -248,11 +269,14 @@ function wallText(us: bigint): string {
 }
 
 /**
- * KPI, table and category windows (RFC 0001 section 6.4): the range's window ended at the last
- * complete day before the horizon. Last N slides back keeping its days and compares with the same
- * days before it (previous_year moves its first and last day); to-date is the range as of the day
- * before the cut; complete units and explicit ranges end at the cut and compare over the same
- * number of days from the comparison's own start, never past its written end.
+ * KPI, table and category windows (RFC 0001 section 6.4), when the horizon is before the range's
+ * end. To-date includes today's partial day: it ends at the horizon instant (a date when that is a
+ * local midnight), is empty only when the horizon is at or before its start, and its comparison
+ * covers the same elapsed local wall-clock time from its own start, never past its written end.
+ * The others end at the last complete day before the horizon: last N slides back keeping its days
+ * and compares with the same days before it (previous_year moves its first and last day); complete
+ * units and explicit ranges end at the cut and compare over the same number of days from the
+ * comparison's own start, never past its written end.
  */
 export function ended(
   range: Range,
@@ -275,10 +299,20 @@ export function ended(
           : [addDays(current[0], -n), current[0]],
     };
   }
-  if (typeof spec !== "string" && "to_date" in spec && h.cut > s)
-    return windows(range, addDays(h.cut, -1), anchors, compare);
-  const current: Window = [s, [s, h.cut].sort()[1] as string];
   const [ps, pe] = full.previous;
+  if (typeof spec !== "string" && "to_date" in spec) {
+    if (h.us <= naive(s)) return { current: [s, s], previous: [ps, ps] };
+    const midnight = (wall: bigint) => wall % DAY_US === 0n;
+    const cut = naive(ps) + (h.us - naive(s));
+    return {
+      current: [s, midnight(h.us) ? h.cut : instantText(h.at)],
+      previous:
+        cut >= naive(pe)
+          ? full.previous
+          : [ps, midnight(cut) ? iso(Number(cut / 1000n)) : instantText(fromWall(cut, h.timeZone))],
+    };
+  }
+  const current: Window = [s, [s, h.cut].sort()[1] as string];
   const pend = addDays(ps, daysBetween(current[0], current[1]));
   return { current, previous: [ps, [pend, pe].sort()[0] as string] };
 }
@@ -322,8 +356,15 @@ export const METRICS: Record<string, (rs: Row[]) => number | null> = {
 export const PERCENT = new Set(["refund_rate"]);
 export const metricOf = (name: string, rs: Row[]) =>
   (METRICS[name] as (rs: Row[]) => number | null)(rs);
-export const inWindow = (rows: Row[], w: Window) =>
-  rows.filter((r) => r.d !== null && r.d >= w[0] && r.d < w[1]);
+export const inWindow = (rows: Row[], w: Window) => {
+  const end = w[1].endsWith("Z") ? instantOf(w[1]) : undefined;
+  return rows.filter(
+    (r) =>
+      r.d !== null &&
+      r.d >= w[0] &&
+      (end === undefined ? r.d < w[1] : BigInt(r.t as number) * 1000n < end),
+  );
+};
 const col = (r: Row, c: string) => (r as unknown as Record<string, Key>)[c] ?? null;
 
 /** Collects compared cells and every difference. */
@@ -365,7 +406,11 @@ type Resolved = Context & {
   kpi: { current: Window; previous: Window };
   empty?: "no_complete_day" | "no_data";
 };
-const span = (w: Window) => ({ start: w[0], end: w[1] });
+const span = (w: Window, timeZone: string) => {
+  if (!w[1].endsWith("Z")) return { start: w[0], end: w[1] };
+  const wall = wallOf(instantOf(w[1]), timeZone);
+  return { start: w[0], end: addDays(iso(Number(wall / 1000n)), 1), endAt: wallText(wall) };
+};
 /** RFC 0001 section 6.5 leading edge: a series window starts at the start of its first bucket. */
 const snapped = (w: Window, g: Grain): Window => (w[0] < w[1] ? [bucket(w[0], g), w[1]] : w);
 const blind = (ctx: Resolved, m: string) => ctx.presetOnly?.has(m) === true;
@@ -387,8 +432,8 @@ export function checkDashboard(
     ...(ks < ke ? {} : { empty: context.horizon.us > naive(ks) ? "no_complete_day" : "no_data" }),
   };
   diff.same("asOf", data.asOf, ctx.horizon.asOf);
-  diff.same("period.current", data.period.current, span(ctx.current));
-  diff.same("period.previous", data.period.previous, span(ctx.previous));
+  diff.same("period.current", data.period.current, span(ctx.current, ctx.horizon.timeZone));
+  diff.same("period.previous", data.period.previous, span(ctx.previous, ctx.horizon.timeZone));
   const cur = inWindow(ctx.rows, ctx.kpi.current);
   for (const sb of blocks) {
     const b = data.blocks.find((x) => x.id === sb.id);
@@ -407,8 +452,8 @@ export function checkDashboard(
 function checkKpi(b: KpiData, sb: SpecBlock, ctx: Resolved, cur: Row[], diff: Diff): void {
   const m = sb.metric as string;
   const at = `${sb.id}`;
-  diff.same(`${at}.current`, b.current, span(ctx.kpi.current));
-  diff.same(`${at}.previous`, b.previous, span(ctx.kpi.previous));
+  diff.same(`${at}.current`, b.current, span(ctx.kpi.current, ctx.horizon.timeZone));
+  diff.same(`${at}.previous`, b.previous, span(ctx.kpi.previous, ctx.horizon.timeZone));
   diff.same(`${at}.empty`, b.empty, ctx.empty);
   if (blind(ctx, m) || ctx.empty) {
     if (ctx.empty) diff.num(`${at}.changePct`, b.changePct, null);
@@ -551,7 +596,11 @@ function checkTable(b: TableData, sb: SpecBlock, ctx: Resolved, cur: Row[], diff
     diff,
   );
   diff.same(`${sb.id}.rowCount`, b.rowCount, all.size);
-  diff.same(`${sb.id}.window`, b.window, ctx.empty ? undefined : span(ctx.kpi.current));
+  diff.same(
+    `${sb.id}.window`,
+    b.window,
+    ctx.empty ? undefined : span(ctx.kpi.current, ctx.horizon.timeZone),
+  );
   diff.same(`${sb.id}.empty`, b.empty, ctx.empty);
   const totals = Object.fromEntries(
     metrics.map((m) => [m, blind(ctx, m) || ctx.empty ? null : metricOf(m, cur)]),
@@ -629,7 +678,7 @@ function checkSeries(
     kind: "time",
     grain: g.unit,
     buckets,
-    window: { ...span(win), ...(cut ? { endAt: wallText(h) } : {}) },
+    window: { ...span(win, ctx.horizon.timeZone), ...(cut ? { endAt: wallText(h) } : {}) },
   });
   const partial = partialOf(buckets, g, ctx.horizon);
   const metrics = sb.metrics as string[];

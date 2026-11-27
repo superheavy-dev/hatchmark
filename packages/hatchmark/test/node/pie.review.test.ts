@@ -92,7 +92,7 @@ it.each(["ordinary", "filtered", "negative"])("matches raw SQL for %s", async (n
     WITH eligible AS (
       SELECT category, amount, status FROM ${raw()}
       WHERE "at" >= TIMESTAMPTZ '2026-06-01 04:00:00+00'
-        AND "at" < TIMESTAMPTZ '2026-06-03 04:00:00+00' ${segment}
+        AND "at" < TIMESTAMPTZ '2026-06-03 17:00:00.000001+00' ${segment}
     ), groups_and_total AS (
       SELECT category, sum(amount) FILTER (WHERE status = 'open') AS v, grouping(category) AS total_row
       FROM eligible GROUP BY ROLLUP(category)
@@ -111,7 +111,11 @@ it.each(["ordinary", "filtered", "negative"])("matches raw SQL for %s", async (n
       (SELECT count(*) FROM groups_and_total WHERE total_row = 0 AND v < 0) AS negative
   `);
   const expected = query[0] as Record<string, unknown>;
-  expect(pie.window).toEqual({ start: "2026-06-01", end: "2026-06-03" });
+  expect(pie.window).toEqual({
+    start: "2026-06-01",
+    end: "2026-06-04",
+    endAt: "2026-06-03T13:00:00.000001",
+  });
   expect(pie.total).toBe(expected.total);
   expect(pie.whole).toBe(expected.whole ?? 0);
   expect(pie.excluded?.empty ?? 0).toBe(expected.empty);

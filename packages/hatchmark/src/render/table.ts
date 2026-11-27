@@ -1,6 +1,7 @@
 import type { TableData, TableRow } from "../compiler/dashboard-data.js";
 import { isNumber, metricOf, type RenderContext } from "./chart.js";
 import { formatDate, formatKey, formatSpan, formatValue, parseDate } from "./format.js";
+import { timeOf } from "./partial.js";
 import { esc, r } from "./svg.js";
 
 /**
@@ -124,9 +125,11 @@ export function renderTable(
     const window = windows.get(m);
     if (window) {
       const read =
-        block.window?.start === window.start
-          ? `Data through ${formatDate(lastDay(window.end), locale)}`
-          : formatSpan(window, locale);
+        window.endAt !== undefined
+          ? `${block.window?.start === window.start ? "Data" : formatSpan(window, locale)} through ${formatDate(window.endAt.slice(0, 10), locale)}, ${timeOf(window.endAt, locale)}`
+          : block.window?.start === window.start
+            ? `Data through ${formatDate(lastDay(window.end), locale)}`
+            : formatSpan(window, locale);
       return `${read}${behind(block.window?.end, window.end)}`;
     }
     const through = throughs.get(m);

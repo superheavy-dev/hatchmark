@@ -80,7 +80,13 @@ describe("source horizons", () => {
     expect(data?.asOf).toBe("2026-04-29");
     expect(codes).toEqual([]);
     expect(value("sessions")).toBe(0);
-    expect(value("revenue")).toBe(10);
+    expect(value("revenue")).toBe(10 + 20);
+    const revenue = data?.blocks.find((b) => b.id === "revenue") as KpiData;
+    expect(revenue.current).toEqual({
+      start: "2026-01-01",
+      end: "2026-04-30",
+      endAt: "2026-04-29T15:30:00.000001",
+    });
   });
 
   it("measures a date column as complete through the end of its latest date", async () => {
