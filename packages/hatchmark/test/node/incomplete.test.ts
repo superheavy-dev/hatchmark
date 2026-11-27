@@ -497,3 +497,79 @@ describe("to-date cutoffs at zone edges", () => {
     expect(block<KpiData>("orders").previous?.endAt).toBeUndefined();
   });
 });
+
+describe("window bounds at a midnight that a fall-back repeats, against DuckDB", () => {
+  const sum = async (where: string, data: [string, number][]) => {
+    const [row] = await oracle.rows(
+      `SELECT coalesce(sum(v), 0) AS v FROM (VALUES ${data.map(([at, v]) => `(TIMESTAMPTZ '${at}', ${v})`).join(", ")}) t(ts, v) WHERE ${where}`,
+    );
+    return Number(row?.v);
+  };
+
+  it("ends a comparison at the later of two midnights", async () => {
+    const data: [string, number][] = [
+      ["2024-06-01T12:00:00Z", 2],
+      ["2024-11-03T04:30:00Z", 4],
+      ["2024-11-03T06:00:00Z", 8],
+      ["2025-06-01T12:00:00Z", 1],
+      ["2025-11-05T12:00:00Z", 16],
+    ];
+    const { block } = await dashboard({
+      timezone: "America/Havana",
+      sources: { orders: rows(...data) },
+      period: { asOf: "2025-11-02", range: "year_to_date", compare: "previous_period" },
+      blocks: [{ type: "kpi", id: "orders", metric: "orders" }],
+    });
+    const previous = await sum(
+      "ts >= timezone('America/Havana', TIMESTAMP '2024-01-01') AND ts < timezone('America/Havana', TIMESTAMP '2024-11-03')",
+      data,
+    );
+    expect(previous).toBe(6);
+    expect(block<KpiData>("orders")).toMatchObject({ value: 1, previousValue: previous });
+  });
+
+  it("starts a day window at the later of two midnights", async () => {
+    const data: [string, number][] = [
+      ["2024-11-03T04:30:00Z", 4],
+      ["2024-11-03T06:00:00Z", 8],
+      ["2024-11-03T20:00:00Z", 16],
+    ];
+    const { block } = await dashboard({
+      timezone: "America/Havana",
+      sources: { orders: rows(...data) },
+      period: { asOf: "latest_data", range: { to_date: "day" }, compare: "none" },
+      blocks: [{ type: "kpi", id: "orders", metric: "orders" }],
+    });
+    const value = await sum("ts >= timezone('America/Havana', TIMESTAMP '2024-11-03')", data);
+    expect(value).toBe(24);
+    expect(block<KpiData>("orders").value).toBe(value);
+  });
+
+  it("keeps a day bucket read only before the later midnight, partial, under mark and show", async () => {
+    const data: [string, number][] = [
+      ["2024-11-02T12:00:00Z", 2],
+      ["2024-11-03T04:59:59.999999Z", 4],
+    ];
+    const nov3 = await sum(
+      "CAST(timezone('America/Havana', ts) AS DATE) = DATE '2024-11-03'",
+      data,
+    );
+    expect(nov3).toBe(4);
+    const built = async (incomplete: string) =>
+      dashboard({
+        timezone: "America/Havana",
+        sources: { orders: rows(...data) },
+        period: { asOf: "latest_data", range: { last: 2, unit: "day" }, compare: "none" },
+        blocks: [{ type: "line", id: "trend", metrics: ["orders"], grain: "day", incomplete }],
+      });
+    const mark = await built("mark");
+    const series = mark.block<LineData>("trend").series[0];
+    expect(series?.values).toEqual([2, nov3]);
+    expect(series?.partial?.map((p) => p.index)).toEqual([1]);
+    const show = await built("show");
+    expect(show.block<LineData>("trend").series[0]?.values).toEqual([2, nov3]);
+    expect(show.diagnostics.map((d) => d.code)).toContain("HM4014");
+    const hide = await built("hide");
+    expect(hide.block<LineData>("trend").series[0]?.values).toEqual([2]);
+  });
+});

@@ -286,13 +286,21 @@ class Assembler {
     const clip = clipFrom === undefined ? undefined : parseInstant(clipFrom);
     if (at === undefined && clip === undefined) return series;
     const horizon = at === undefined ? undefined : toLocal(at, this.context.timezone);
+    const lastRead = at === undefined ? undefined : toLocal(at - 1n, this.context.timezone);
     const partial: PartialBucket[] = [];
     const values = series.values.map((value, index) => {
       const start = parseInstant(buckets[index] ?? "");
       const end = parseInstant(bucketEnd(buckets[index] ?? "", grain));
       const from = index === 0 && clip !== undefined && clip > start ? clip : start;
-      if (horizon !== undefined && from >= horizon) return null;
-      const to = horizon !== undefined && horizon < end ? horizon : end;
+      if (
+        horizon !== undefined &&
+        from >= horizon &&
+        !(lastRead !== undefined && lastRead >= from)
+      ) {
+        return null;
+      }
+      const cut = horizon !== undefined && horizon < end ? horizon : end;
+      const to = cut <= from && lastRead !== undefined ? lastRead + 1n : cut;
       if (from > start || to < end) {
         partial.push({
           index,

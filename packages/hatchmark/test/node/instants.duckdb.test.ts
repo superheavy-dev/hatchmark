@@ -8,23 +8,30 @@ beforeAll(async () => {
 });
 afterAll(() => oracle.close());
 
-const ZONES = [
-  "America/New_York",
-  "Australia/Sydney",
-  "Europe/London",
-  "America/Santiago",
-  "Pacific/Auckland",
-  "Pacific/Chatham",
-  "Antarctica/McMurdo",
-  "Australia/Lord_Howe",
+const ZONES: [string, number][] = [
+  ["America/New_York", 2026],
+  ["Australia/Sydney", 2026],
+  ["Europe/London", 2026],
+  ["America/Santiago", 2026],
+  ["Pacific/Auckland", 2026],
+  ["Pacific/Chatham", 2026],
+  ["Antarctica/McMurdo", 2026],
+  ["Australia/Lord_Howe", 2026],
+  ["America/Havana", 2024],
+  ["America/Santiago", 2024],
+  ["America/Asuncion", 2024],
+  ["Asia/Beirut", 2024],
+  ["Asia/Beirut", 2026],
+  ["Asia/Gaza", 2024],
+  ["America/Scoresbysund", 2024],
 ];
 
 describe("fromLocal reads a local wall time the way DuckDB reads a naive timestamp", () => {
   it.each(ZONES)(
-    "agrees with DuckDB every quarter hour of 2026's transition days in %s",
-    async (zone) => {
+    "agrees with DuckDB every quarter hour of the transition days in %s, %i",
+    async (zone, year) => {
       const walls: string[] = [];
-      for (let day = Date.UTC(2026, 0, 1); day < Date.UTC(2027, 0, 1); day += 86_400_000) {
+      for (let day = Date.UTC(year, 0, 1); day < Date.UTC(year + 1, 0, 1); day += 86_400_000) {
         const date = new Date(day).toISOString().slice(0, 10);
         const offsets = new Set(
           [0, 12, 23].map(

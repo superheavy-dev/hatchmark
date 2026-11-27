@@ -307,9 +307,29 @@ export function windowAt(
   const bounds = endedWindow(query, context, horizon);
   const time = query.dimensions.find((d) => d.kind === "time");
   if (time?.kind !== "time" || query.window.edges === "clip" || bounds?.kind !== "bounded")
-    return bounds;
-  if (bounds.start === bounds.end || bounds.start.endsWith("Z")) return bounds;
-  return { ...bounds, start: bucketStart(bounds.start, time.grain) };
+    return laterMidnights(bounds, context.timezone);
+  if (bounds.start === bounds.end || bounds.start.endsWith("Z")) {
+    return laterMidnights(bounds, context.timezone);
+  }
+  return laterMidnights(
+    { ...bounds, start: bucketStart(bounds.start, time.grain) },
+    context.timezone,
+  );
+}
+
+function laterMidnights(
+  bounds: WindowBounds | undefined,
+  timezone: string | undefined,
+): WindowBounds | undefined {
+  if (bounds === undefined || timezone === undefined) return bounds;
+  const exact = (bound: string) =>
+    bound.endsWith("Z") || !isRepeated(parseInstant(bound), timezone)
+      ? bound
+      : formatInstant(fromLocal(parseInstant(bound), timezone));
+  if (bounds.kind === "bounded") {
+    return { ...bounds, start: exact(bounds.start), end: exact(bounds.end) };
+  }
+  return bounds.end === undefined ? bounds : { ...bounds, end: exact(bounds.end) };
 }
 
 function endedWindow(
@@ -331,10 +351,7 @@ function endedWindow(
   const hw = toLocal(horizon, tz);
   const day = formatWall(hw).slice(0, 10);
   const timeAxis = query.dimensions.some((d) => d.kind === "time");
-  const exact =
-    formatWall(hw).endsWith("T00:00:00.000000") && !isRepeated(hw, tz)
-      ? day
-      : formatInstant(horizon);
+  const exact = formatWall(hw).endsWith("T00:00:00.000000") ? day : formatInstant(horizon);
   if (range === "all_time") return { kind: "unbounded", end: timeAxis ? exact : day };
   const base = resolveRange(range, "none", context.asOf, anchors);
   if (base?.kind !== "bounded" || target.kind !== "bounded") return target;
@@ -363,10 +380,9 @@ function endedWindow(
     const cut = from + (hw - start);
     if (cut >= parseInstant(target.end)) return target;
     const text = formatWall(cut);
-    const end =
-      text.endsWith("T00:00:00.000000") && !isRepeated(cut, tz)
-        ? text.slice(0, 10)
-        : formatInstant(fromLocal(cut, tz));
+    const end = text.endsWith("T00:00:00.000000")
+      ? text.slice(0, 10)
+      : formatInstant(fromLocal(cut, tz));
     return { kind: "bounded", start: target.start, end };
   }
 

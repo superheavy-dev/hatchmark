@@ -43,8 +43,8 @@ ZONE` value is converted to it. A timestamp without an offset (`2026-01-31 18:30
   the same elapsed time of the previous unit (Nov 1 to Nov 26, 2:03 p.m. against Oct 1 to Oct 26,
   2:03 p.m.). An `all_time` window ends there too, so
   rows after a fixed as-of are ignored. With timestamp data the newest day is left out until it is
-  complete. A window with no complete day yet, such as an explicit range whose first day isn't
-  complete, shows no value
+  complete. A window with no complete day yet, such as a last complete unit or an explicit range whose
+  first day isn't complete, shows no value
   rather than 0 (`empty: "no_complete_day"`, note HM4024).
 - **Buckets.** Time series bucket by local date; weeks start on the week anchor, and quarters and
   years on their `MM-DD` anchors (hatchmark.yaml `anchors`, or a block's `{"unit", "anchor"}`

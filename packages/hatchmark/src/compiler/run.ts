@@ -356,7 +356,7 @@ export async function executionContext(
               const start = bounds.kind === "bounded" ? local(bounds.start) : undefined;
               if (start !== undefined && at <= start) return false;
               const end = bounds.end === undefined ? at : local(bounds.end);
-              const last = formatWall((end < at ? end : at) - 1n).slice(0, 10);
+              const last = formatWall(end < at ? end - 1n : toLocal(horizon - 1n, tz)).slice(0, 10);
               const bucket = bucketStart(last, grain);
               return (
                 (start !== undefined && start > parseInstant(bucket)) ||
