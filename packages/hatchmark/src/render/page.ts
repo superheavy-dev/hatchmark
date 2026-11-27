@@ -357,7 +357,7 @@ export function renderBlocks(blocks: readonly BlockData[], ctx: RenderContext): 
  * and replace only the cards that changed.
  */
 export function gridItems(blocks: readonly BlockData[], ctx: RenderContext): GridItem[] {
-  const items: (KpiData[] | LineData | BarData | PieData | TableData)[] = [];
+  const items: (KpiData[] | LineData | BarData | PieData | ScatterData | TableData)[] = [];
   for (const block of blocks) {
     const last = items.at(-1);
     if (block.type === "kpi") {

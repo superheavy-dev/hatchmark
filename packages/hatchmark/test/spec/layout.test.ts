@@ -75,6 +75,20 @@ describe("HM2026", () => {
     ]);
   });
 
+  it("counts pie, donut and scatter charts as cards that share the row", () => {
+    expect(
+      codes([
+        table({ span: 8, overflow: "page" }),
+        { type: "pie", metric: "revenue", by: "region", span: 4 },
+        table({ span: 6, overflow: "page" }),
+        { type: "scatter", x: "orders", y: "revenue", by: "region", span: 6 },
+      ]),
+    ).toEqual([
+      ["/blocks/0/overflow", "warning"],
+      ["/blocks/2/overflow", "warning"],
+    ]);
+  });
+
   it("is quiet for a table alone in its row, for scroll, and for the default", () => {
     expect(
       codes([
