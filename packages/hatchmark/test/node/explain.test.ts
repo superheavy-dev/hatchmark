@@ -1,11 +1,21 @@
 import { fileURLToPath } from "node:url";
-import { DuckDBInstance } from "@duckdb/node-api";
+import {
+  BIGINT,
+  BOOLEAN,
+  DOUBLE,
+  type DuckDBConnection,
+  DuckDBInstance,
+  INTEGER,
+  VARCHAR,
+} from "@duckdb/node-api";
 import { afterAll, describe, expect, it } from "vitest";
 import {
   explainDashboard,
   explainMetric,
   planDashboard,
   printSql,
+  type SqlValue,
+  sqlType,
 } from "../../src/compiler/index.js";
 import { createDuckDbExecutor } from "../../src/node/index.js";
 import { PROJECT_DEFAULTS } from "../../src/spec/index.js";
@@ -14,6 +24,31 @@ import { loadAt, metric, removeProjects, writeProject } from "./fixture.js";
 const ROOT = fileURLToPath(new URL("../../examples/global-sales/", import.meta.url));
 
 afterAll(removeProjects);
+
+const TYPES = { VARCHAR, BOOLEAN, INTEGER, BIGINT, DOUBLE };
+
+/** The rows of a query run with typed parameters as the executor binds them, and as printed. */
+async function bothWays(
+  connection: DuckDBConnection,
+  query: { sql: string; params: Record<string, SqlValue> },
+): Promise<[string, string]> {
+  const rows = async (text: string, params?: Record<string, SqlValue>) =>
+    JSON.stringify(
+      (
+        await connection.runAndReadAll(
+          text,
+          params,
+          params &&
+            Object.fromEntries(Object.entries(params).map(([k, v]) => [k, TYPES[sqlType(v)]])),
+        )
+      ).getRows(),
+      (_, v) => (typeof v === "bigint" ? v.toString() : v),
+    );
+  return [
+    await rows(query.sql, query.params),
+    await rows(printSql({ text: query.sql, params: query.params })),
+  ];
+}
 
 async function withExecutor<T>(
   root: string,
@@ -60,16 +95,79 @@ describe("explain", () => {
     await connection.run(
       `CREATE TEMP TABLE "__hm_source_orders" AS SELECT *, row_number() OVER () AS "__hm_ord" FROM read_csv('${ROOT}data/orders.csv', sample_size = -1)`,
     );
-    const rows = async (text: string, params?: Record<string, string | number | boolean>) =>
-      JSON.stringify((await connection.runAndReadAll(text, params)).getRows(), (_, v) =>
-        typeof v === "bigint" ? v.toString() : v,
-      );
     for (const query of queries) {
-      const bound = await rows(query.sql, query.params);
+      const [bound, printed] = await bothWays(connection, query);
       expect(bound.length, query.id).toBeGreaterThan(2);
-      expect(await rows(printSql({ text: query.sql, params: query.params })), query.id).toBe(bound);
+      expect(printed, query.id).toBe(bound);
     }
     connection.closeSync();
+  });
+
+  it("prints a fractional filter on a FLOAT column with the type it runs with", async () => {
+    const { root } = await writeProject({
+      "hatchmark.json": {
+        ...PROJECT_DEFAULTS,
+        name: "t",
+        sources: { t: { type: "parquet", path: "data/t.parquet" } },
+      },
+      "metrics/tenths.json": metric({
+        type: "aggregate",
+        table: "t",
+        aggregate: "count",
+        time: "d",
+        filters: [{ column: "x", op: "eq", value: 0.1 }],
+      }),
+      "data/.keep": "",
+    });
+    const connection = await (await DuckDBInstance.create(":memory:")).connect();
+    await connection.run(
+      `COPY (SELECT 0.1::FLOAT AS x, DATE '2026-01-15' AS d) TO '${root}/data/t.parquet' (FORMAT parquet)`,
+    );
+    const { project } = await loadAt(root);
+    const result = await withExecutor(root, project, (e) => explainMetric(project, "tenths", e));
+    expect(result.diagnostics).toEqual([]);
+    const query = result.queries?.[0];
+    if (query === undefined) throw new Error("no query");
+    expect(printSql({ text: query.sql, params: query.params })).toContain(
+      '"x" = CAST(0.1 AS DOUBLE)',
+    );
+    await connection.run(
+      `CREATE TEMP TABLE "__hm_source_t" AS SELECT *, row_number() OVER () AS "__hm_ord" FROM read_parquet('${root}/data/t.parquet')`,
+    );
+    const [bound, printed] = await bothWays(connection, query);
+    expect(printed).toBe(bound);
+    connection.closeSync();
+  });
+
+  it("reports the planner's warning for a block it leaves out, with no queries", async () => {
+    const { root, project } = await writeProject({
+      "hatchmark.json": {
+        ...PROJECT_DEFAULTS,
+        name: "t",
+        sources: { orders: { type: "csv", path: "data/orders.csv" } },
+      },
+      "data/orders.csv": "ordered_at,status\n2026-01-01,paid\n",
+      "segments/paid.json": {
+        label: "Paid",
+        filters: [{ column: "status", op: "eq", value: "paid" }],
+      },
+      "metrics/paid.json": metric({
+        type: "aggregate",
+        table: "orders",
+        aggregate: "count",
+        time: "ordered_at",
+        segments: ["paid"],
+      }),
+      "dashboards/d.json": { title: "D", blocks: [{ type: "kpi", id: "k", metric: "paid" }] },
+    });
+    const [byMetric, byBlock] = await withExecutor(root, project, async (e) => [
+      await explainMetric(project, "paid", e),
+      await explainDashboard(project, "d", e, "k"),
+    ]);
+    expect(byMetric.queries).toBeUndefined();
+    expect(byMetric.diagnostics.map((d) => [d.code, d.file])).toEqual([["HM4023", undefined]]);
+    expect(byBlock.blocks).toBeUndefined();
+    expect(byBlock.diagnostics.map((d) => [d.code, d.pointer])).toEqual([["HM4023", "/blocks/0"]]);
   });
 
   it("reads a metric by month over the last 12 months as of latest_data", async () => {

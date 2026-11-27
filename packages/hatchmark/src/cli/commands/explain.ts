@@ -2,13 +2,18 @@ import {
   type ExplainedQuery,
   explainDashboard,
   explainMetric,
-  planDashboard,
   printSql,
   type SqlExecutor,
 } from "../../compiler/index.js";
-import { CODES, createReport, isDiagnosticCode, renderHuman } from "../../diagnostics/index.js";
+import {
+  CODES,
+  createReport,
+  type Diagnostic,
+  isDiagnosticCode,
+  renderHuman,
+} from "../../diagnostics/index.js";
 import { createDuckDbExecutor, nodeProjectHost } from "../../node/index.js";
-import { loadProject, type Project, type ProjectConfig } from "../../spec/index.js";
+import { blockId, loadProject, type Project, type ProjectConfig } from "../../spec/index.js";
 import type { CommandHelp } from "../help.js";
 import { type CommandContext, type CommandResult, EXIT } from "../io.js";
 import { usageError } from "../usage.js";
@@ -78,9 +83,12 @@ export async function explain(
       help: "run hatchmark explain HM2003, or hatchmark explain revenue, for example",
     });
   }
-  if (input !== undefined && /^hm\d+$/i.test(input)) return explainCode(input);
+  if (input !== undefined && isDiagnosticCode(input.toUpperCase())) return explainCode(input);
 
   const { project, diagnostics: loadDiagnostics } = await loadProject(nodeProjectHost(ctx.root));
+  if (input !== undefined && /^hm\d+$/i.test(input) && !project?.metrics.has(input)) {
+    return explainCode(input);
+  }
   if (project === undefined || project.config.spec === undefined) {
     const report = createReport(loadDiagnostics);
     return { exitCode: EXIT.usage, json: report, human: renderHuman(report, { color: ctx.color }) };
@@ -99,7 +107,7 @@ export async function explain(
     });
   }
   if (dashboard !== undefined && flags.block !== undefined) {
-    const blocks = planDashboard(project, dashboard).plan?.blocks.map((b) => b.blockId);
+    const blocks = project.dashboards.get(dashboard)?.spec?.blocks.map((b, i) => blockId(b, i));
     if (blocks !== undefined && !blocks.includes(flags.block)) {
       return usageError("HM0002", `unknown block "${flags.block}" in dashboard "${dashboard}"`, {
         expected: blocks,
@@ -117,15 +125,31 @@ export async function explain(
   }
 }
 
-function failed(
+/**
+ * The queries as a result. Errors print the report instead (exit 1 or 2). A block the planner
+ * leaves out has no queries; its warnings are in diagnostics, and the exit code is 0 as for check.
+ */
+function printed(
   ctx: CommandContext,
-  diagnostics: Parameters<typeof createReport>[0],
+  head: Record<string, unknown>,
+  title: string,
+  result: { queries?: ExplainedQuery[] | undefined; diagnostics: Diagnostic[] },
 ): CommandResult {
-  const report = createReport(diagnostics);
+  const report = createReport(result.diagnostics);
+  if (report.error_count > 0) {
+    return {
+      exitCode: exitCodeFor(report.diagnostics, false),
+      json: report,
+      human: renderHuman(report, { color: ctx.color }),
+    };
+  }
+  const queries = result.queries ?? [];
+  const notes = report.warning_count > 0 ? renderHuman(report, { color: ctx.color }) : "";
+  const body = queries.length > 0 ? renderQueries(queries) : "-- no queries";
   return {
-    exitCode: exitCodeFor(report.diagnostics, false),
-    json: report,
-    human: renderHuman(report, { color: ctx.color }),
+    exitCode: EXIT.ok,
+    json: { format_version: "1", ...head, queries, diagnostics: report.diagnostics },
+    human: [`-- ${title}\n\n${body}`, notes].filter((s) => s !== "").join("\n\n"),
   };
 }
 
@@ -135,15 +159,16 @@ async function metricSql(
   metric: string,
   executor: SqlExecutor,
 ): Promise<CommandResult> {
-  const { queries, asOf, diagnostics } = await explainMetric(project, metric, executor);
-  if (queries === undefined || diagnostics.some((d) => d.severity === "error")) {
-    return failed(ctx, diagnostics);
-  }
-  return {
-    exitCode: EXIT.ok,
-    json: { format_version: "1", metric, ...(asOf !== undefined ? { as_of: asOf } : {}), queries },
-    human: `-- ${metric} ${asOf !== undefined ? `by month over last_12_months as of ${asOf}` : "over all rows (it has no time column)"}, with no dashboard filters\n\n${renderQueries(queries)}`,
-  };
+  const result = await explainMetric(project, metric, executor);
+  const { asOf } = result;
+  return printed(
+    ctx,
+    { metric, ...(asOf !== undefined ? { as_of: asOf } : {}) },
+    asOf !== undefined
+      ? `${metric} by month over last_12_months as of ${asOf}, with no dashboard filters`
+      : `${metric}${result.queries?.length ? " over all rows" : ""}, with no dashboard filters`,
+    result,
+  );
 }
 
 async function blockSql(
@@ -154,15 +179,12 @@ async function blockSql(
   executor: SqlExecutor,
 ): Promise<CommandResult> {
   const { blocks, asOf, diagnostics } = await explainDashboard(project, dashboard, executor, block);
-  const queries = blocks?.[0]?.queries;
-  if (queries === undefined || diagnostics.some((d) => d.severity === "error")) {
-    return failed(ctx, diagnostics);
-  }
-  return {
-    exitCode: EXIT.ok,
-    json: { format_version: "1", dashboard, block, as_of: asOf, queries },
-    human: `-- block "${block}" of dashboard "${dashboard}" as of ${asOf}, with the filter defaults\n\n${renderQueries(queries)}`,
-  };
+  return printed(
+    ctx,
+    { dashboard, block, ...(asOf !== undefined ? { as_of: asOf } : {}) },
+    `block "${block}" of dashboard "${dashboard}"${asOf !== undefined ? ` as of ${asOf}` : ""}, with the filter defaults`,
+    { queries: blocks?.[0]?.queries, diagnostics },
+  );
 }
 
 function explainCode(input: string): CommandResult {

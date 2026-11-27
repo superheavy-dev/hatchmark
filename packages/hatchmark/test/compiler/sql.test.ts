@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { PlannedQuery } from "../../src/compiler/index.js";
-import { printSql, querySql, type SqlSource } from "../../src/compiler/index.js";
+import { printSql, querySql, type SqlSource, sqlType } from "../../src/compiler/index.js";
 
 describe("printSql", () => {
   it("inlines each parameter as a literal, and only parameters it has", () => {
@@ -14,6 +14,39 @@ describe("printSql", () => {
       "a = $hm_p1 AND b = $hm_p2 AND c > $hm_p3 AND d = $hm_p10 AND e = $hm_p4 AND f = $other";
     expect(printSql({ text, params })).toBe(
       "a = 'O''Brien' AND b = TRUE AND c > (-2) AND d = 10 AND e = 4 AND f = $other",
+    );
+  });
+
+  it("prints each number as a literal of the type it is bound as", () => {
+    const values = [3, -2, 0.1, 3e10, 1e21, -0.5, Number.NaN, -Infinity];
+    expect(values.map(sqlType)).toEqual([
+      "INTEGER",
+      "INTEGER",
+      "DOUBLE",
+      "BIGINT",
+      "DOUBLE",
+      "DOUBLE",
+      "DOUBLE",
+      "DOUBLE",
+    ]);
+    const params = Object.fromEntries(values.map((v, i) => [`hm_p${i + 1}`, v]));
+    const text = values.map((_, i) => `$hm_p${i + 1}`).join(", ");
+    expect(printSql({ text, params })).toBe(
+      "3, (-2), CAST(0.1 AS DOUBLE), CAST(30000000000 AS BIGINT), CAST(1e+21 AS DOUBLE), CAST(-0.5 AS DOUBLE), CAST(NULL AS DOUBLE), CAST(NULL AS DOUBLE)",
+    );
+  });
+
+  it("prints a NUL in a string with chr(0)", () => {
+    expect(printSql({ text: "$hm_p1", params: { hm_p1: "a\0b'c" } })).toBe(
+      "('a' || chr(0) || 'b''c')",
+    );
+  });
+
+  it("leaves quoted identifiers, string literals and comments as they are", () => {
+    const text =
+      'SELECT "$hm_p1", "a""$hm_p1" FROM t WHERE x = \'$hm_p1\' AND y = $hm_p1 -- it\'s $hm_p1\nAND z = $hm_p1 /* $hm_p1 */';
+    expect(printSql({ text, params: { hm_p1: 7 } })).toBe(
+      'SELECT "$hm_p1", "a""$hm_p1" FROM t WHERE x = \'$hm_p1\' AND y = 7 -- it\'s $hm_p1\nAND z = 7 /* $hm_p1 */',
     );
   });
 });

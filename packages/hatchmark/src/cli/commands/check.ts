@@ -1,6 +1,11 @@
 import path from "node:path";
 import { type ExplainedQuery, explainDashboard } from "../../compiler/index.js";
-import { createReport, type Diagnostic, renderHuman } from "../../diagnostics/index.js";
+import {
+  createReport,
+  type Diagnostic,
+  docsCommand,
+  renderHuman,
+} from "../../diagnostics/index.js";
 import { nodeProjectHost } from "../../node/host.js";
 import { createDuckDbExecutor } from "../../node/index.js";
 import { CONFIG_FILE, checkReferences, loadProject, parseDiagnostics } from "../../spec/index.js";
@@ -81,7 +86,24 @@ export async function check(
       for (const [name, file] of [...project.dashboards].sort(([a], [b]) => (a < b ? -1 : 1))) {
         if (!selected(file.file)) continue;
         const explained = await explainDashboard(project, name, executor);
-        diagnostics.push(...explained.diagnostics.filter((d) => d.severity === "error"));
+        const seen = new Set(diagnostics.map((d) => JSON.stringify(d)));
+        diagnostics.push(
+          ...explained.diagnostics.filter((d) => selected(d.file) && !seen.has(JSON.stringify(d))),
+        );
+        const outside = explained.diagnostics.filter(
+          (d) => d.severity === "error" && !selected(d.file),
+        );
+        if (explained.blocks === undefined && outside.length > 0) {
+          const files = [...new Set(outside.map((d) => d.file ?? "the project"))].join(", ");
+          diagnostics.push({
+            code: "HM2015",
+            severity: "error",
+            message: `cannot print the SQL of dashboard "${name}": errors in ${files} keep it from building`,
+            file: file.file,
+            help: "run hatchmark check without paths to see them",
+            docs: docsCommand("HM2015"),
+          });
+        }
         for (const block of explained.blocks ?? []) {
           sql.push({ dashboard: name, block: block.blockId, queries: block.queries });
         }

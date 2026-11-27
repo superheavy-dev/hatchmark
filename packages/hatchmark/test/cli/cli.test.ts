@@ -539,6 +539,27 @@ describe("schema, explain, version, doctor", () => {
       message: `unknown block "nope" in dashboard "${first.dashboard}"`,
     });
     expect((await cli(["check", "--cwd", "shop"], { cwd })).json()).not.toHaveProperty("sql");
+
+    await writeFile(
+      path.join(cwd, "shop/metrics/hm1.json"),
+      await readFile(path.join(cwd, "shop/metrics/orders.json"), "utf8"),
+    );
+    expect((await cli(["explain", "hm1", "--cwd", "shop"], { cwd })).json()).toMatchObject({
+      metric: "hm1",
+    });
+    expect((await cli(["explain", "hm2003", "--cwd", "shop"], { cwd })).json()).toMatchObject({
+      code: "HM2003",
+    });
+
+    await writeFile(path.join(cwd, "shop/metrics/unused.json"), "{\n");
+    const scoped = ["check", "dashboards/sales.json", "--cwd", "shop"];
+    expect((await cli(scoped, { cwd })).code).toBe(0);
+    const blocked = await cli([...scoped, "--sql"], { cwd });
+    expect(blocked.code).toBe(1);
+    expect(
+      blocked.json().diagnostics.map((d: { code: string; file: string }) => [d.code, d.file]),
+    ).toEqual([["HM2015", "dashboards/sales.json"]]);
+    expect(blocked.json().sql).toEqual([]);
   });
 
   it("reports versions and environment checks", async () => {

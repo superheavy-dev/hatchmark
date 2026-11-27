@@ -1,10 +1,16 @@
 import path from "node:path";
 import {
+  BIGINT,
+  BOOLEAN,
+  DOUBLE,
   type DuckDBConnection,
   DuckDBDateValue,
   DuckDBDecimalValue,
   DuckDBInstance,
+  type DuckDBType,
   type DuckDBValue,
+  INTEGER,
+  VARCHAR,
 } from "@duckdb/node-api";
 import {
   type BuiltSql,
@@ -22,6 +28,8 @@ import {
   quote,
   type SqlExecutor,
   type SqlSource,
+  type SqlValue,
+  sqlType,
   type TimeColumn,
 } from "../compiler/index.js";
 import { type FileSource, normalizePath, type ProjectConfig } from "../spec/index.js";
@@ -131,7 +139,7 @@ export async function createDuckDbExecutor(options: {
       let latest: string | undefined;
       for (const { source, column } of columns) {
         const { text, params } = latestDateSql(await load(source), column, timezone);
-        const reader = await connection.runAndReadAll(text, params);
+        const reader = await connection.runAndReadAll(text, params, typesOf(params));
         const value = reader.getRows()[0]?.[0];
         const date = value instanceof DuckDBDateValue ? value.toString() : undefined;
         if (date !== undefined && (latest === undefined || date > latest)) latest = date;
@@ -165,6 +173,13 @@ export async function describeColumns(
     connection.closeSync();
     instance.closeSync();
   }
+}
+
+const TYPES = { VARCHAR, BOOLEAN, INTEGER, BIGINT, DOUBLE };
+
+/** Each parameter's DuckDB type, by sqlType, so printSql's literals have the types that run. */
+function typesOf(params: Record<string, SqlValue>): Record<string, DuckDBType> {
+  return Object.fromEntries(Object.entries(params).map(([k, v]) => [k, TYPES[sqlType(v)]]));
 }
 
 /** A source loaded into a temporary table (relation), with ORDINAL. */
@@ -313,7 +328,7 @@ async function execute(
     : undefined;
   if (serial) await connection.run("SET threads = 1");
   const reader = await connection
-    .runAndReadAll(text, params)
+    .runAndReadAll(text, params, typesOf(params))
     .finally(() => (serial ? connection.run(`SET threads = ${Number(threads ?? 1)}`) : undefined));
   const types = reader.columnTypes().map(String);
   const imprecise = await impreciseColumns(connection, source, components);

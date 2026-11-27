@@ -1,5 +1,5 @@
 import { type Diagnostic, docsCommand } from "../diagnostics/index.js";
-import { type Project, parseSpecFile } from "../spec/index.js";
+import { type Project, parseSpecFile, blockId as specBlockId } from "../spec/index.js";
 import type { ExecutionContext, PlannedQuery } from "./plan.js";
 import { planDashboard } from "./planner.js";
 import { blockingErrors, type DashboardExecutor, executionContext } from "./run.js";
@@ -38,7 +38,9 @@ function failure(code: "HM1001" | "HM2015", message: string, file?: string): Dia
 /**
  * The queries of a dashboard's blocks (every block, or the one named), exactly as build runs them:
  * filter defaults bound and latest_data resolved. Comparisons that have no window are left out,
- * as build skips them. Errors that keep the dashboard from building are returned instead.
+ * as build skips them. Errors that keep the dashboard from building are returned instead. A block
+ * the planner leaves out (HM4002, HM4023) has no queries; its warnings are in diagnostics, and when
+ * it is the block asked for, blocks is undefined.
  */
 export async function explainDashboard(
   project: Project,
@@ -51,6 +53,12 @@ export async function explainDashboard(
   const { plan, diagnostics } = planDashboard(project, dashboard);
   if (plan === undefined) return { diagnostics };
   const blocks = plan.blocks.filter((b) => blockId === undefined || b.blockId === blockId);
+  const spec = project.dashboards.get(dashboard)?.spec;
+  const index = spec?.blocks.findIndex((b, i) => specBlockId(b, i) === blockId) ?? -1;
+  if (blockId !== undefined && blocks.length === 0 && index >= 0) {
+    const pointer = `/blocks/${index}`;
+    return { diagnostics: diagnostics.filter((d) => d.pointer === pointer) };
+  }
   if (blockId !== undefined && blocks.length === 0) {
     return {
       diagnostics: [
@@ -115,11 +123,20 @@ export async function explainMetric(
       { asOf: SUPPORTED_DATES.last, range: "all_time", compare: "none" },
     );
   }
-  const { blocks, asOf, diagnostics } = await explainDashboard(canonical, CANONICAL, executor);
+  const { blocks, asOf, diagnostics } = await explainDashboard(
+    canonical,
+    CANONICAL,
+    executor,
+    "metric",
+  );
   const queries = blocks?.[0]?.queries;
   return {
     ...(queries !== undefined ? { queries } : {}),
     ...(asOf !== undefined && !timeless ? { asOf } : {}),
-    diagnostics: diagnostics.filter((d) => d.file !== file),
+    diagnostics: diagnostics.map((d) => {
+      if (d.file !== file) return d;
+      const { file: _, pointer, range, frame, fix, ...rest } = d;
+      return rest;
+    }),
   };
 }

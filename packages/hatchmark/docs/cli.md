@@ -42,8 +42,11 @@ default. A grain switch prints one query per grain. A comparison window that doe
 `all_time`, is left out, the same way build skips it.
 
 The printed SQL is the text the DuckDB executor runs. The same core function builds it with the
-same values. Human output inlines the values as SQL literals. JSON output keeps the `$hm_pN`
-parameters and gives their values:
+same values. Human output inlines each value as a SQL literal of the type it is bound as.
+Strings are VARCHAR and booleans are BOOLEAN. Whole numbers are INTEGER or BIGINT. Other numbers are
+DOUBLE, such as `CAST(0.1 AS DOUBLE)`, so a comparison with a FLOAT column gives the same rows.
+Quoted identifiers, string literals and comments are left as they are. JSON output keeps the
+`$hm_pN` parameters and gives their values:
 
 ```json
 {
@@ -57,13 +60,16 @@ parameters and gives their values:
       "sql": "SELECT …",
       "params": { "hm_p1": "…" }
     }
-  ]
+  ],
+  "diagnostics": []
 }
 ```
 
 `--dashboard` and `--block` output has `dashboard` and `block` in place of `metric`. `check --json --sql`
 adds `sql: [{ dashboard, block, queries }]` to the diagnostic report. Nothing runs when check finds
-an error. `"__hm_source_<name>"` is a temporary table that holds the source's rows, in file order.
+an error. With paths, an error in a file outside them that keeps a dashboard from building is one
+HM2015 error on that dashboard. A block the planner leaves out, such as a metric with segments
+(HM4023), has no queries, and its warning is in `diagnostics`. `"__hm_source_<name>"` is a temporary table that holds the source's rows, in file order.
 `"__hm_ord"` numbers those rows, so floating-point sums always add the values in the same order.
 
 ## Global options

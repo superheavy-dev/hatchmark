@@ -347,15 +347,67 @@ export function latestDateSql(source: SqlSource, name: string, timezone: string)
   };
 }
 
-function literal(value: SqlValue): string {
-  if (typeof value === "string") return `'${value.replaceAll("'", "''")}'`;
-  if (typeof value === "boolean") return value ? "TRUE" : "FALSE";
-  return value < 0 ? `(${value})` : String(value);
+/** The SQL type a value is bound as; the executor binds each parameter with exactly this type. */
+export function sqlType(value: SqlValue): "VARCHAR" | "BOOLEAN" | "INTEGER" | "BIGINT" | "DOUBLE" {
+  if (typeof value === "string") return "VARCHAR";
+  if (typeof value === "boolean") return "BOOLEAN";
+  if (!Number.isSafeInteger(value)) return "DOUBLE";
+  return value >= -(2 ** 31) && value < 2 ** 31 ? "INTEGER" : "BIGINT";
 }
 
-/** The SQL with every $name parameter replaced by its value as a SQL literal, for reading. */
+/** The value as a literal of its sqlType. DuckDB binds a non-finite DOUBLE as NULL, so it prints NULL. */
+function literal(value: SqlValue): string {
+  const type = sqlType(value);
+  if (type === "VARCHAR") {
+    const parts = String(value)
+      .split("\0")
+      .map((part) => `'${part.replaceAll("'", "''")}'`);
+    return parts.length > 1 ? `(${parts.join(" || chr(0) || ")})` : (parts[0] as string);
+  }
+  if (type === "BOOLEAN") return value ? "TRUE" : "FALSE";
+  if (type === "INTEGER") return (value as number) < 0 ? `(${value})` : String(value);
+  return Number.isFinite(value) ? `CAST(${String(value)} AS ${type})` : "CAST(NULL AS DOUBLE)";
+}
+
+/**
+ * The SQL with every $name parameter replaced by a literal of its value's sqlType, for reading.
+ * Quoted identifiers, string literals and comments are copied as they are, so a column named
+ * "$hm_p1" or a raw SQL metric's '$hm_p1' text keeps its meaning.
+ */
 export function printSql(built: BuiltSql): string {
-  return built.text.replace(/\$(hm_p\d+)\b/g, (match, name: string) =>
-    Object.hasOwn(built.params, name) ? literal(built.params[name] as SqlValue) : match,
-  );
+  const { text, params } = built;
+  let out = "";
+  let i = 0;
+  while (i < text.length) {
+    const ch = text[i] as string;
+    const comment = text.startsWith("--", i) ? "\n" : text.startsWith("/*", i) ? "*/" : undefined;
+    if (comment !== undefined) {
+      const end = text.indexOf(comment, i + 2);
+      const stop = end < 0 ? text.length : end + comment.length;
+      out += text.slice(i, stop);
+      i = stop;
+      continue;
+    }
+    if (ch === '"' || ch === "'") {
+      let j = i + 1;
+      while (j < text.length) {
+        if (text[j] === ch) {
+          if (text[j + 1] === ch) j += 2;
+          else break;
+        } else j += 1;
+      }
+      out += text.slice(i, j + 1);
+      i = j + 1;
+      continue;
+    }
+    const name = ch === "$" ? /^hm_p\d+\b/.exec(text.slice(i + 1))?.[0] : undefined;
+    if (name !== undefined && Object.hasOwn(params, name)) {
+      out += literal(params[name] as SqlValue);
+      i += name.length + 1;
+      continue;
+    }
+    out += ch;
+    i += 1;
+  }
+  return out;
 }
