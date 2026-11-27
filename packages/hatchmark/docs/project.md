@@ -16,7 +16,8 @@ outDir: dist
 locale: en-US
 currency: USD
 timezone: America/New_York
-weekStart: sunday
+anchors:
+  week: sunday
 theme: default
 telemetry: false
 sources:
@@ -33,13 +34,48 @@ sources:
 | `metricsDir`    | Directory of `<name>.yaml` metric files. See [metrics.md](metrics.md).               |
 | `dashboardsDir` | Directory of `<name>.yaml` dashboard files. See [dashboards.md](dashboards.md).      |
 | `outDir`        | Where `hatchmark build` writes the site. See [build.md](build.md).                   |
-| `locale`        | BCP 47 tag for number and date formatting, such as `en-US` or `de-DE`.               |
+| `locale`        | BCP 47 tag for numbers and dates, such as `en-US` or `de-DE`. See [Locale](#locale). |
 | `currency`      | ISO 4217 code used by currency metrics that do not set their own, such as `USD`.     |
 | `timezone`      | IANA time zone that dates are bucketed in, such as `UTC` or `America/New_York`.      |
-| `weekStart`     | `monday` or `sunday`: the first day of a week bucket.                                |
+| `anchors`       | Optional. `week`: `monday` (default) or `sunday`; `quarter`, `year`: `MM-DD` starts. |
 | `theme`         | `default`.                                                                           |
 | `telemetry`     | `false`. Hatchmark sends nothing unless this is `true`.                              |
 | `sources`       | Tables by name. Metrics refer to these names in their `table` field.                 |
+
+## Locale
+
+`locale` sets how numbers, dates and times look on every page of the project. It is fixed per
+project: every viewer sees the same formatting, whatever their browser's language, so a dashboard
+for a German team reads `1.234,5` for everyone, and a screenshot or a link looks the same to
+everyone who opens it.
+
+What the locale formats:
+
+- Numbers: decimal and thousands separators, percent spacing (`12,5 %` in de-DE and fr-FR), the
+  minus sign, and compact units such as K, Mio., k, mil, 万 or 천. A compact value is rounded only
+  when it shows a unit; see [metrics.md](metrics.md).
+- Currency: the symbol's position and spacing (`92,51 $` in de-DE, `US$92.51` in en-GB). The
+  currency itself comes from `currency` or the metric's format, and amounts are never converted.
+- Dates and times: month names, date ranges (`25.–31. Okt. 2026` in de-DE), axis labels, tooltips,
+  "Data through" and partial-period labels, and 12- or 24-hour times.
+- The date range picker: its calendar's month and weekday names and the numeric dates in its
+  custom-range fields.
+- The order of text in a table sorted by a column, both when the page is built and when a viewer
+  clicks a header.
+
+What it doesn't change:
+
+- The interface text stays English: labels such as Total, Other, "Showing 9 of 21 rows", the
+  partial-period notes and the picker's presets.
+- The first day of the week comes from `anchors.week`, not from the locale. `hatchmark init` writes
+  the one that fits the locale it writes (`sunday` for en-US); change it to suit your team.
+  `weekStart` is the older spelling of `anchors.week`.
+- Dates are bucketed in `timezone`, and amounts are in `currency` or the metric's own currency.
+- A table's CSV download is the same in every locale: comma-separated, with `.` as the decimal point
+  and full-precision values, so other tools read it as numbers. A spreadsheet app set to a locale
+  that uses `;` as its list separator, such as German Excel, may put each row in one column when
+  you double-click the file; open it through the app's text or CSV import and choose comma as the
+  delimiter.
 
 ## Sources
 
