@@ -1,4 +1,12 @@
-# Hatchmark
+<p align="center">
+  <br>
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="assets/brand/hatchmark-lockup-stacked-dark.svg">
+    <img alt="Hatchmark" src="assets/brand/hatchmark-lockup-stacked-light.svg" width="164" height="128">
+  </picture>
+  <br>
+  <br>
+</p>
 
 Hatchmark is an open-core, agent-first dashboard renderer. An agent writes a short JSON spec; Hatchmark owns the look, the metric definitions, and the checks.
 
