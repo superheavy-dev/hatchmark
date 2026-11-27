@@ -12,7 +12,8 @@
     "typecheck": "pnpm -r typecheck",
     "lint": "biome check .",
     "format": "biome check --write .",
-    "test": "vitest run"
+    "test": "vitest run",
+    "gen:schema": "pnpm --filter hatchmark gen:schema"
   },
   "devDependencies": {
     "@biomejs/biome": "2.6.9",

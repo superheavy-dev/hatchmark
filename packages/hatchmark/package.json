@@ -20,10 +20,18 @@
   },
   "files": [
     "dist",
-    "docs"
+    "docs",
+    "schema",
+    "LICENSE",
+    "NOTICE"
   ],
   "scripts": {
     "build": "tsc -p tsconfig.build.json",
-    "typecheck": "tsc -p tsconfig.json --noEmit"
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "gen:schema": "pnpm build && node scripts/write-schemas.mjs",
+    "prepack": "node -e \"for (const f of ['LICENSE', 'NOTICE']) require('fs').copyFileSync('../../' + f, f)\""
+  },
+  "dependencies": {
+    "zod": "^4.6.7"
   }
 }
