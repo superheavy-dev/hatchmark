@@ -147,21 +147,51 @@ export const formatDay = (date: Date, locale: string, withYear = true): string =
       : { month: "short", day: "numeric" },
   ).format(date);
 
-// ICU puts thin spaces around the range dash and Chromium prints plain spaces there, so the text
-// built here and the text the browser redraws for another range use the plain space.
-export const formatRange = (
+const rangeTexts = new Map<string, string>();
+let recording = false;
+
+export function formatRange(
   start: Date,
   last: Date,
   locale: string,
   fields: { day: boolean; year: boolean },
-): string =>
-  dateFormat(locale, {
+): string {
+  const key = `${locale} ${start.toISOString().slice(0, 10)} ${last.toISOString().slice(0, 10)} ${fields.day ? "d" : ""}${fields.year ? "y" : ""}`;
+  const known = rangeTexts.get(key);
+  if (known !== undefined) return known;
+  // ICU puts thin spaces around the range dash and Chromium prints plain spaces there.
+  const text = dateFormat(locale, {
     month: "short",
     ...(fields.day ? { day: "numeric" } : {}),
     ...(fields.year ? { year: "numeric" } : {}),
   })
     .formatRange(start, last)
     .replaceAll("\u2009", " ");
+  if (recording) rangeTexts.set(key, text);
+  return text;
+}
+
+/**
+ * Runs render and returns every date range text it formatted. Browsers ship other ICU data than
+ * the build, so the page embeds these and the browser reuses them through useRanges.
+ */
+export function recordRanges<T>(render: () => T): { result: T; ranges: Record<string, string> } {
+  rangeTexts.clear();
+  recording = true;
+  try {
+    const result = render();
+    return { result, ranges: Object.fromEntries(rangeTexts) };
+  } finally {
+    recording = false;
+    rangeTexts.clear();
+  }
+}
+
+/** Makes formatRange return these texts, recorded by recordRanges, for the ranges they cover. */
+export function useRanges(ranges: Record<string, string>): void {
+  rangeTexts.clear();
+  for (const [key, text] of Object.entries(ranges)) rangeTexts.set(key, text);
+}
 
 const quarter = (date: Date): string => `Q${Math.floor(date.getUTCMonth() / 3) + 1}`;
 

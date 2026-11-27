@@ -79,6 +79,8 @@ export interface PeriodData {
   /** Every preset's data, by rangeKey. */
   presets: Record<string, DashboardData>;
   custom?: CustomRangeData;
+  /** Date range texts the build wrote into the page, from recordRanges. */
+  ranges?: Record<string, string>;
 }
 
 /** Days from 0001-01-01, for day offsets; years below 100 stay themselves. */

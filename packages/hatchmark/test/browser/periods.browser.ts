@@ -303,3 +303,47 @@ describe("period control", () => {
     await page.close();
   });
 });
+
+describe("range text the browser redraws, in a fr-FR browser", () => {
+  for (const locale of ["en-US", "ja-JP", "ko-KR", "is-IS"]) {
+    it(`is the text the build wrote for the same range, in ${locale}`, async () => {
+      const explorer = fromYaml(
+        await readFile(path.join(EXAMPLE, "dashboards/explorer.yaml"), "utf8"),
+      );
+      const at = await writeExample({ locale }, { explorer });
+      expect((await buildProject(at)).code).toBe(0);
+      const page = await browser.newPage({
+        locale: "fr-FR",
+        viewport: { width: 1280, height: 1000 },
+      });
+      await page.goto(`file://${path.join(at, "dist", "explorer", "index.html")}`);
+      const button = page.locator(".hm-period-button");
+      const shown = () => button.locator(".hm-period-dates").textContent();
+      const first = { caption: await caption(page), dates: await shown() };
+      const presets = await page.evaluate(() =>
+        [...document.querySelectorAll<HTMLElement>(".hm-period-presets [data-hm-preset]")].map(
+          (b) => ({
+            key: b.dataset.hmPreset ?? "",
+            dates: b.querySelector(".hm-period-dates")?.textContent ?? null,
+            checked: b.getAttribute("aria-checked") === "true",
+          }),
+        ),
+      );
+      expect(presets.filter((p) => p.dates).length).toBeGreaterThan(3);
+      const pick = async (key: string) => {
+        await button.click();
+        await page.locator(`[data-hm-preset="${key}"]`).click();
+        await settled(page);
+      };
+      for (const preset of presets.filter((p) => !p.checked && p.dates)) {
+        await pick(preset.key);
+        expect(await shown(), preset.key).toBe(preset.dates);
+      }
+      const start = presets.find((p) => p.checked);
+      if (!start) throw new Error("no selected preset");
+      await pick(start.key);
+      expect({ caption: await caption(page), dates: await shown() }).toEqual(first);
+      await page.close();
+    });
+  }
+});

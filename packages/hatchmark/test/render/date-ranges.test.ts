@@ -2,7 +2,12 @@ import { describe, expect, it } from "vitest";
 import { GALLERY } from "../../gallery/variants.js";
 import type { DashboardData, LineData } from "../../src/compiler/dashboard-data.js";
 import { chartRuntimeData } from "../../src/render/describe.js";
-import { formatPreviousSpan, formatSpan } from "../../src/render/format.js";
+import {
+  formatPreviousSpan,
+  formatSpan,
+  recordRanges,
+  useRanges,
+} from "../../src/render/format.js";
 import { DEFAULT_THEME } from "../../src/render/theme.js";
 
 const LOCALES = ["en-US", "en-GB", "de-DE", "fr-FR", "ja-JP", "ko-KR"] as const;
@@ -252,5 +257,26 @@ describe("partial-period labels in the project locale", () => {
       },
       covered("2026-12-30", "2027-01-02"),
     );
+  });
+});
+
+describe("date range texts the page embeds", () => {
+  it("records what a render formats, and formats a recorded range with that text", () => {
+    const week = { start: "2026-10-25", end: "2026-11-01" };
+    const { result, ranges } = recordRanges(() => formatSpan(week, "ko-KR"));
+    expect(Object.values(ranges)).toEqual([result]);
+    useRanges(Object.fromEntries(Object.keys(ranges).map((key) => [key, "built"])));
+    try {
+      expect(formatSpan(week, "ko-KR")).toBe("built");
+      expect(formatSpan({ start: "2026-10-24", end: "2026-11-01" }, "ko-KR")).not.toBe("built");
+      expect(formatSpan(week, "en-US")).toBe("Oct 25 – 31, 2026");
+    } finally {
+      useRanges({});
+    }
+  });
+
+  it("records nothing outside a render", () => {
+    recordRanges(() => formatSpan({ start: "2026-10-25", end: "2026-11-01" }, "de-DE"));
+    expect(recordRanges(() => "").ranges).toEqual({});
   });
 });

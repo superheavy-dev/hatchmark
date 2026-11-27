@@ -15,7 +15,7 @@ import { aloneInRow, MIN_CHART_SPAN } from "../spec/layout.js";
 import { barCategories, barHeight, renderBar } from "./bar.js";
 import type { RenderContext } from "./chart.js";
 import { chartRuntimeData, chartTable, describeChart } from "./describe.js";
-import { formatDate, formatSpan } from "./format.js";
+import { formatDate, formatSpan, recordRanges } from "./format.js";
 import { renderKpi } from "./kpi.js";
 import { renderLine } from "./line.js";
 import { timeOf } from "./partial.js";
@@ -569,6 +569,19 @@ export function renderFragment(data: DashboardData, theme: Theme = DEFAULT_THEME
  * element (or ?theme=dark) overrides it.
  */
 export function renderDashboardPage(data: DashboardData, options: PageOptions): string {
+  const { result: html, ranges } = recordRanges(() => dashboardPage(data, options));
+  const { periods } = options;
+  if (!periods) return html;
+  return html.replace(
+    PERIODS_SLOT,
+    () =>
+      `<script type="application/json" data-hm-periods>${scriptJson({ ...periods, ranges })}</script>`,
+  );
+}
+
+const PERIODS_SLOT = "<!--hm-periods-->";
+
+function dashboardPage(data: DashboardData, options: PageOptions): string {
   const theme = options.theme ?? DEFAULT_THEME;
   const ctx = context(data, theme);
   const locale = data.locale;
@@ -594,9 +607,7 @@ export function renderDashboardPage(data: DashboardData, options: PageOptions): 
     ? `<p class="hm-period-note" data-hm-period-note aria-live="polite" hidden></p>`
     : "";
   const header = `<header class="hm-header"><div class="hm-titles"><div class="hm-brand"><span class="hm-logo" aria-hidden="true"></span>${esc(data.project)}</div><div class="hm-title"><h1>${esc(data.title)}</h1><p class="hm-caption" data-hm-caption>${esc(periodCaption(data))}</p>${note}${data.description ? `<p class="hm-description">${esc(data.description)}</p>` : ""}</div></div>${controls ? `<div class="hm-header-side">${controls}${asOf}</div>` : asOf}</header>`;
-  const embedded = options.periods
-    ? `<script type="application/json" data-hm-periods>${scriptJson(options.periods)}</script>`
-    : "";
+  const embedded = options.periods ? PERIODS_SLOT : "";
   const sources = options.sources?.length
     ? `Source: ${options.sources.join(", ")}`
     : `Source: ${data.project}`;
