@@ -5,7 +5,7 @@ import path from "node:path";
 import { type Browser, chromium } from "playwright";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { SALES } from "../../gallery/fixtures.js";
-import { MONTH, QUARTER_BARS, revenueSwitch } from "../../gallery/grains.js";
+import { FISCAL_BARS, MONTH, QUARTER_BARS, revenueSwitch } from "../../gallery/grains.js";
 import { GALLERY } from "../../gallery/variants.js";
 import type { DashboardData, GrainSwitch, LineData } from "../../src/compiler/dashboard-data.js";
 import { FONT_FILES, renderDashboardPage } from "../../src/render/index.js";
@@ -464,5 +464,53 @@ describe("grain switches", () => {
     const tip = line.locator(".hm-grain-panel:not([hidden]) .hm-tip");
     await expect.poll(() => tip.isVisible()).toBe(true);
     expect(await tip.locator(".hm-tip-h").textContent()).toMatch(/^Week of /);
+  });
+
+  it("wrap six anchored options inside the card and the page on phones", async () => {
+    const labels = [
+      "Quarter",
+      "Quarter from Feb 1",
+      "Quarter from Mar 1",
+      "Year",
+      "Year from Jul 1",
+      "Year from Oct 1",
+    ];
+    const base = FISCAL_BARS.grains as GrainSwitch;
+    const options = labels.map((label, i) => ({
+      ...(base.options[i % 2] as GrainSwitch["options"][number]),
+      key: `option_${i}`,
+      label,
+    }));
+    const data: DashboardData = {
+      ...SALES,
+      grainFilter: {
+        id: "grain",
+        label: "Grain",
+        options: options.map(({ key, label }) => ({ key, label })),
+        selected: "option_0",
+      },
+      blocks: [{ ...FISCAL_BARS, span: 12, grains: { selected: "option_0", options } }],
+    };
+    const file = path.join(dir, "grains-wide.html");
+    await writeFile(
+      file,
+      renderDashboardPage(data, { assets: { runtime: "hatchmark.js", fonts: {} } }),
+    );
+    for (const width of [320, 390]) {
+      const page = await browser.newPage({ viewport: { width, height: 800 } });
+      await page.goto(`file://${file}`);
+      expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(
+        width,
+      );
+      const card = (await page.locator("section[data-hm-grains]").boundingBox()) as Box;
+      const seg = (await page
+        .locator("section[data-hm-grains] [role=radiogroup]")
+        .boundingBox()) as Box;
+      expect(seg.x).toBeGreaterThanOrEqual(card.x);
+      expect(seg.x + seg.width).toBeLessThanOrEqual(card.x + card.width);
+      const filter = (await page.locator("[data-hm-grain-filter]").boundingBox()) as Box;
+      expect(filter.x + filter.width).toBeLessThanOrEqual(width);
+      await page.close();
+    }
   });
 });

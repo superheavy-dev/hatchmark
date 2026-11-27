@@ -154,19 +154,11 @@ export function grainKey(grain: Grain): string {
   return anchor === undefined ? grainUnit(grain) : `${grainUnit(grain)}:${anchor}`;
 }
 
-/** Grains a card or a grain filter switches between: two to six, none listed twice (HM3007). */
-export const grainOptions = z
-  .array(grainSchema)
-  .min(2)
-  .max(6)
-  .superRefine((grains, ctx) => {
-    const keys = grains.map(grainKey);
-    keys.forEach((key, i) => {
-      if (keys.indexOf(key) !== i) {
-        ctx.addIssue(customIssue("HM3007", [i], `grain "${key}" is listed twice`));
-      }
-    });
-  });
+/**
+ * Grains a card or a grain filter switches between: two to six. check resolves them at the project
+ * anchors and rejects two that make the same buckets (HM3007).
+ */
+export const grainOptions = z.array(grainSchema).min(2).max(6);
 
 const isoDay = z.iso.date();
 

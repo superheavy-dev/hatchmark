@@ -8,8 +8,15 @@ import {
   type JsonNode,
   type Severity,
 } from "../diagnostics/index.js";
-import { foldColumn, GLOB_CHARACTERS, sameColumn } from "./common.js";
-import type { Source } from "./config.js";
+import {
+  foldColumn,
+  GLOB_CHARACTERS,
+  type Grain,
+  grainKey,
+  resolveGrain,
+  sameColumn,
+} from "./common.js";
+import { projectAnchors, type Source } from "./config.js";
 import { type Block, blockId, type Dashboard, DEFAULT_PERIOD } from "./dashboard.js";
 import { ENTITY_NAMES, type Expr, exprRefs, parseExpr, shapeError } from "./expr.js";
 import { addPropertyFix, removeItemFix, replaceValueFix } from "./fixes.js";
@@ -1127,6 +1134,45 @@ function checkDashboard(project: Project, file: SpecFile<"dashboard">, out: Diag
 
   const filterIds = new Set<string>();
   let periodFilter: string | undefined;
+  const anchors = projectAnchors(project.config.spec);
+  const resolvedKey = (g: Grain) => grainKey(resolveGrain(g, anchors));
+  /** Grain options resolved at the project anchors: none twice, and the default among them. */
+  const checkGrains = (options: Grain[], base: string, shown: Grain, at: string, what: string) => {
+    const keys = options.map(resolvedKey);
+    keys.forEach((key, i) => {
+      const first = keys.indexOf(key);
+      if (first === i) return;
+      r.report(
+        "HM3007",
+        `${base}/${i}`,
+        `grain ${JSON.stringify(options[i])} makes the same buckets as ${JSON.stringify(options[first])} (${key}) at the project anchors`,
+        { help: "list each grain once" },
+      );
+    });
+    if (!keys.includes(resolvedKey(shown))) {
+      r.report(
+        "HM3007",
+        at,
+        `${what} ${JSON.stringify(shown)} is not one of ${base.endsWith("grains") ? "grains" : "options"} (${keys.join(", ")})`,
+        { help: "add it to the list, or pick one of them" },
+      );
+    }
+  };
+  dashboard.blocks.forEach((block, i) => {
+    if (!("grains" in block) || block.grains === undefined || block.grain === undefined) return;
+    checkGrains(block.grains, `/blocks/${i}/grains`, block.grain, `/blocks/${i}/grain`, "grain");
+  });
+  (dashboard.filters ?? []).forEach((filter, i) => {
+    if (filter.type !== "grain") return;
+    checkGrains(
+      filter.options,
+      `/filters/${i}/options`,
+      filter.default,
+      `/filters/${i}/default`,
+      "default",
+    );
+  });
+
   let grainFilter: string | undefined;
   (dashboard.filters ?? []).forEach((filter, i) => {
     if (filter.type === "grain") {

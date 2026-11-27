@@ -4,7 +4,6 @@ import {
   comparison,
   customIssue,
   type Grain,
-  grainKey,
   grainOptions,
   grainSchema,
   identifier,
@@ -76,17 +75,6 @@ function grainInGrains(
         "HM3007",
         ["grains"],
         'grains switches time buckets; use it with "grain", not "by"',
-      ),
-    );
-    return;
-  }
-  const keys = b.grains.map(grainKey);
-  if (!keys.includes(grainKey(b.grain))) {
-    ctx.addIssue(
-      customIssue(
-        "HM3007",
-        ["grain"],
-        `grain "${grainKey(b.grain)}" is not in grains (${keys.join(", ")}); add it, or make one of them the grain`,
       ),
     );
   }
@@ -252,29 +240,16 @@ export const dashboardFilterSchema = z
       options: z.array(periodRange).min(1),
       default: periodRange,
     }),
-    z
-      .strictObject({
-        type: z.literal("grain"),
-        id: identifier,
-        label: z.string().optional(),
-        options: grainOptions.meta({
-          description:
-            "Grains to switch between. Drives every time-series block whose grains list the chosen grain.",
-        }),
-        default: grainSchema,
-      })
-      .superRefine((f, ctx) => {
-        const keys = f.options.map(grainKey);
-        if (!keys.includes(grainKey(f.default))) {
-          ctx.addIssue(
-            customIssue(
-              "HM3007",
-              ["default"],
-              `default "${grainKey(f.default)}" is not in options (${keys.join(", ")})`,
-            ),
-          );
-        }
+    z.strictObject({
+      type: z.literal("grain"),
+      id: identifier,
+      label: z.string().optional(),
+      options: grainOptions.meta({
+        description:
+          "Grains to switch between. Drives every time-series block whose grains list the chosen grain.",
       }),
+      default: grainSchema,
+    }),
   ])
   .meta({ id: "DashboardFilter" });
 export type DashboardFilter = z.infer<typeof dashboardFilterSchema>;

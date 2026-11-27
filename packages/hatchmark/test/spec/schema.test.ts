@@ -230,7 +230,7 @@ describe("spec schemas", () => {
     expect(range({ last: 0, unit: "day" }).map((d) => d.code)).not.toEqual([]);
   });
 
-  it("accept grain switches and one grain filter, and reject mismatches (HM3007)", () => {
+  it("accept grain switches and one grain filter, and reject a list of one or grains on a by bar", () => {
     const line = (extra: Record<string, unknown>) => ({
       type: "line",
       metrics: ["revenue"],
@@ -258,17 +258,10 @@ describe("spec schemas", () => {
         d.code,
         d.pointer,
       ]);
-    expect(codes([line({ grains: ["week", "quarter"] })])).toEqual([["HM3007", "/blocks/0/grain"]]);
-    expect(codes([line({ grains: ["month", "month"] })])).toEqual([
-      ["HM3007", "/blocks/0/grains/1"],
-    ]);
     expect(codes([line({ grains: ["month"] })]).map(([c]) => c)).toEqual(["HM3005"]);
     expect(
       codes([{ type: "bar", metrics: ["orders"], by: "plan", grains: ["month", "quarter"] }]),
     ).toEqual([["HM3007", "/blocks/0/grains"]]);
-    expect(codes([line({})], [{ ...grainFilter, default: "quarter" }])).toEqual([
-      ["HM3007", "/filters/0/default"],
-    ]);
   });
 
   it("reject invalid file names", () => {
