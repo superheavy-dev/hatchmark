@@ -11,6 +11,7 @@ describe("query plan types", () => {
     const query = (window: PlannedWindow): PlannedQuery => ({
       id: "q",
       source: "orders",
+      input: { type: "csv", path: "data/orders.csv" },
       measures: [],
       dimensions: [],
       groupingSets: [[]],

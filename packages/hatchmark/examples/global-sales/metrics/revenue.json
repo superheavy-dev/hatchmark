@@ -1,0 +1,22 @@
+{
+  "$schema": "../../../schema/metric.schema.json",
+  "label": "Revenue",
+  "description": "Paid order amounts in USD, before refunds.",
+  "type": "aggregate",
+  "table": "orders",
+  "aggregate": "sum",
+  "column": "amount",
+  "filters": [
+    {
+      "column": "status",
+      "op": "eq",
+      "value": "paid"
+    }
+  ],
+  "time": "ordered_at",
+  "format": {
+    "type": "currency",
+    "compact": true
+  },
+  "better": "up"
+}

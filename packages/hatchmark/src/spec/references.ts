@@ -8,11 +8,13 @@ import {
   type JsonNode,
   type Severity,
 } from "../diagnostics/index.js";
+import { GLOB_CHARACTERS, hasColumn, sameColumn } from "./common.js";
 import { type Block, blockId, type Dashboard, DEFAULT_PERIOD } from "./dashboard.js";
-import { removeItemFix, replaceValueFix } from "./fixes.js";
+import { addPropertyFix, removeItemFix, replaceValueFix } from "./fixes.js";
 import { metricSources } from "./graph.js";
 import { isAdditive, type Metric } from "./metric.js";
 import type { Project, SpecFile } from "./project.js";
+import { parseTemporal, temporalRepair } from "./temporal.js";
 
 export const TEXT_REFERENCE_FIELDS = ["value", "previous", "change", "change_pct"] as const;
 function optional<K extends string, V>(key: K, value: V | undefined): { [P in K]?: V } {
@@ -110,6 +112,7 @@ function checkMetrics(project: Project, out: Diagnostic[]): void {
     const metric = file.spec;
     if (metric === undefined) continue;
     const r = reporter(file, out);
+    if (metric.type !== "ratio") checkTimeFilters(file, metric, r);
     if (metric.type !== "ratio") {
       if (project.config.spec && !sources.includes(metric.table)) {
         r.report("HM2001", "/table", `unknown source "${metric.table}"`, {
@@ -154,6 +157,54 @@ function checkMetrics(project: Project, out: Diagnostic[]): void {
       );
     }
   }
+}
+
+/**
+ * HM3009: a filter on the metric's time column must be a strict ISO 8601 date or date-time, so its
+ * meaning never depends on a database's cast rules (see parseTemporal).
+ */
+function checkTimeFilters(
+  file: SpecFile<"metric">,
+  metric: Metric & { type: "aggregate" | "sql" },
+  r: Reporter,
+): void {
+  const time = metric.time;
+  if (time === undefined) return;
+  (metric.filters ?? []).forEach((filter, i) => {
+    if (!sameColumn(filter.column, time)) return;
+    const values: [string, unknown][] =
+      filter.op === "between"
+        ? [
+            ["from", filter.from],
+            ["to", filter.to],
+          ]
+        : filter.op === "in" || filter.op === "not_in"
+          ? filter.values.map((v, j) => [`values/${j}`, v])
+          : "value" in filter
+            ? [["value", filter.value]]
+            : [];
+    for (const [key, value] of values) {
+      if (typeof value === "string" && parseTemporal(value) !== undefined) continue;
+      const pointer = `/filters/${i}/${key}`;
+      const repaired = typeof value === "string" ? temporalRepair(value) : undefined;
+      r.report("HM3009", pointer, `${JSON.stringify(value)} is not a date or time`, {
+        label: `"${time}" is the metric's time column`,
+        help: "write a day as YYYY-MM-DD, a local time as YYYY-MM-DDTHH:MM:SS, or an exact moment with Z or an offset such as -05:00",
+        ...optional(
+          "fix",
+          repaired === undefined
+            ? undefined
+            : replaceValueFix(
+                file.document,
+                pointer,
+                repaired,
+                "unsafe",
+                `replace with "${repaired}"`,
+              ),
+        ),
+      });
+    }
+  });
 }
 
 function reaches(
@@ -378,7 +429,9 @@ function checkDashboard(project: Project, file: SpecFile<"dashboard">, out: Diag
       if (filter.type !== "select") continue;
       const list = [...sources].sort();
       const unknown = list.filter((s) => !project.columns.has(s));
-      const lacking = list.filter((s) => project.columns.get(s)?.includes(filter.column) === false);
+      const lacking = list.filter(
+        (s) => hasColumn(project.columns.get(s), filter.column) === false,
+      );
       if (unknown.length === 0 && (lacking.length === 0 || lacking.length === list.length))
         continue;
       r.report(
@@ -390,7 +443,7 @@ function checkDashboard(project: Project, file: SpecFile<"dashboard">, out: Diag
         {
           help:
             unknown.length > 0
-              ? `column names are known for CSV sources only; until the others can be read, keep metrics from different sources in separate blocks when the dashboard has select filters`
+              ? `Hatchmark could not read the column names of ${unknown.join(", ")}; check that the data files can be read, or keep metrics from different sources in separate blocks when the dashboard has select filters`
               : `a filter must apply to every source a block reads, or its numbers mix filtered and unfiltered rows; split the block or drop the filter`,
         },
       );
@@ -398,11 +451,67 @@ function checkDashboard(project: Project, file: SpecFile<"dashboard">, out: Diag
   });
 
   const filterIds = new Set<string>();
+  let periodFilter: string | undefined;
   (dashboard.filters ?? []).forEach((filter, i) => {
+    if (filter.type === "period") {
+      if (periodFilter !== undefined) {
+        r.report(
+          "HM3007",
+          `/filters/${i}`,
+          `a dashboard takes one period filter, and "${periodFilter}" is already one`,
+          {
+            help: "merge the options into one period filter; every block reads the same range",
+          },
+        );
+      }
+      periodFilter ??= filter.id;
+    }
     if (filterIds.has(filter.id)) {
       r.report("HM2008", `/filters/${i}/id`, `duplicate filter id "${filter.id}"`);
     }
     filterIds.add(filter.id);
+    if (filter.type !== "select" || filter.multiple === true || !Array.isArray(filter.default)) {
+      return;
+    }
+    const values = filter.default;
+    const [only] = values;
+    const fix =
+      values.length === 1 && only !== undefined
+        ? replaceValueFix(
+            file.document,
+            `/filters/${i}/default`,
+            only,
+            "safe",
+            `replace with ${JSON.stringify(only)}`,
+          )
+        : values.length > 1
+          ? addPropertyFix(
+              file.document,
+              `/filters/${i}`,
+              "multiple",
+              true,
+              "unsafe",
+              'add "multiple": true',
+            )
+          : undefined;
+    r.report(
+      "HM3008",
+      `/filters/${i}/default`,
+      `filter "${filter.id}" selects one value, but its default is a list`,
+      {
+        label:
+          values.length === 0
+            ? "an empty list"
+            : `${values.length} value${values.length === 1 ? "" : "s"}`,
+        help:
+          values.length === 1
+            ? "write the one value without brackets"
+            : values.length === 0
+              ? 'remove the default for "all", or set "multiple": true'
+              : 'set "multiple": true to select several values, or keep one value',
+        ...optional("fix", fix),
+      },
+    );
   });
 }
 
@@ -410,8 +519,58 @@ function checkDashboard(project: Project, file: SpecFile<"dashboard">, out: Diag
  * Checks references between files: metric to source, ratio to metric, dashboard to metric,
  * text references, ids and table options. Pure and cheap, so it can run on every edit.
  */
+/** HM2016: a source path with glob characters, which DuckDB would read as several files. */
+function checkSourcePaths(project: Project, out: Diagnostic[]): void {
+  const config = project.config;
+  for (const [name, source] of Object.entries(config.spec?.sources ?? {})) {
+    if (!GLOB_CHARACTERS.test(source.path)) continue;
+    const pointer = `/sources/${name}/path`;
+    const renamed = source.path.replace(/[*?[\]]/g, "_");
+    const fix = replaceValueFix(
+      config.document,
+      pointer,
+      renamed,
+      "unsafe",
+      `rename the file to "${renamed}" and point the source at it`,
+    );
+    out.push({
+      code: "HM2016",
+      severity: "error",
+      message: `the path "${source.path}" of source "${name}" contains a glob character (*, ? or [)`,
+      file: config.file,
+      pointer,
+      ...config.document.locationOf(pointer),
+      help: "rename the file so its path has no *, ? or [",
+      ...(fix ? { fix } : {}),
+      docs: docsCommand("HM2016"),
+    });
+  }
+}
+
+/** HM2017: a source column whose name starts with __hm_, which the engine reserves for its own. */
+function checkReservedColumns(project: Project, out: Diagnostic[]): void {
+  const config = project.config;
+  for (const [name, columns] of project.columns) {
+    for (const column of columns.filter((c) => c.toLowerCase().startsWith("__hm_"))) {
+      const pointer = `/sources/${name}/path`;
+      out.push({
+        code: "HM2017",
+        severity: "error",
+        message: `source "${name}" has a column "${column}"; names starting with __hm_ are reserved`,
+        file: config.file,
+        pointer,
+        ...config.document.locationOf(pointer),
+        help: "rename the column in the data file",
+        docs: docsCommand("HM2017"),
+      });
+    }
+  }
+}
+
 export function checkReferences(project: Project): Diagnostic[] {
   const out: Diagnostic[] = [];
+  checkSourcePaths(project, out);
+  checkReservedColumns(project, out);
   checkMetrics(project, out);
   for (const file of project.dashboards.values()) checkDashboard(project, file, out);
   return out;

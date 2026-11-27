@@ -34,6 +34,8 @@ try {
   assert.match(body.schemaTitle, /dashboard/);
   assert.deepEqual(body.params, []);
   assert.deepEqual(body.window, { kind: "bounded", start: "2026-09-01", end: "2026-10-01" });
+  assert.equal(body.kpi.value, 10);
+  assert.deepEqual(body.kpi.current, { start: "2026-10-01", end: "2026-11-01" });
   assert.equal(body.planHash, "b677a470c9588ffe57c77a8397b6c26fe280e46a11c07ef3220140b947f8c3b1");
   console.log("workerd smoke test passed:", body.report.diagnostics[0].message);
 } finally {

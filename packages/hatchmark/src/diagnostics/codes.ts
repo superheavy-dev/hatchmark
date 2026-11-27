@@ -112,12 +112,27 @@ export const CODES = {
   HM2013: {
     title: "filter applies to only some sources of a block",
     explanation:
-      "A dashboard select filter must apply to every source a block reads. If a ratio's numerator comes from a source with the filter column and its denominator from one without, the block would divide filtered rows by unfiltered rows. Hatchmark knows the columns of CSV sources from their header; for other sources it cannot confirm the column yet and reports this too. Keep such metrics in separate blocks, or drop the filter.",
+      "A dashboard select filter must apply to every source a block reads. If a ratio's numerator comes from a source with the filter column and its denominator from one without, the block would divide filtered rows by unfiltered rows. Hatchmark reads column names from CSV headers and, when the host can read the file (the CLI uses DuckDB), from Parquet and JSON files; when it cannot read them it reports this too. Column names match case-insensitively, as DuckDB resolves them. Keep such metrics in separate blocks, or drop the filter.",
   },
   HM2014: {
     title: "CSV header too long",
     explanation:
       'The first record of a CSV source is longer than 16 MiB, so Hatchmark does not read it as column names rather than guess from part of it. This usually means the delimiter or quoting is wrong. Fix the file, set the source\'s delimiter, or set "header": false.',
+  },
+  HM2015: {
+    title: "data cannot be queried",
+    explanation:
+      "Running a dashboard's queries failed: a data file cannot be read, a column a metric names is not in the data, a time column is not a date or timestamp, a filter is bound to a value it cannot take, or latest_data found no dates because the time columns are empty. The message carries the cause. Fix the data or the metric, or set period.asOf to a fixed date.",
+  },
+  HM2016: {
+    title: "glob characters in a source path",
+    explanation:
+      "A source path in hatchmark.json contains *, ? or [. DuckDB reads such a path as a glob pattern, so it could read several files, or other files than the one named, even when a file with exactly that name exists. Hatchmark reads one file per source and does not escape these characters, so rename the file. The fix suggests a name with _ in their place, and it is unsafe because the file itself must be renamed too. Sources that read several files will come later as an explicit field, not as a pattern in path.",
+  },
+  HM2017: {
+    title: "reserved column name",
+    explanation:
+      "A column of a source's data file has a name starting with __hm_ (in any case). Hatchmark adds columns with that prefix when it loads a source, such as the row's place in the file, which keeps sums of floating-point values in a fixed order, so a source column may not use it. Rename the column in the data file.",
   },
   HM3001: {
     title: "missing required property",
@@ -146,12 +161,37 @@ export const CODES = {
   HM3007: {
     title: "conflicting properties",
     explanation:
-      "Two properties that cannot be used together are both set, or a combination of values is not supported.",
+      "Two properties that cannot be used together are both set, or a combination of values is not supported, such as sort or limit on a time bar, or two period filters on one dashboard.",
+  },
+  HM3008: {
+    title: "list default on a single-value select",
+    explanation:
+      'A select filter without "multiple": true picks one value, but its default is a list, so the page would open on a state the filter cannot show. Write the one value without brackets, set "multiple": true to allow several values, or remove the default to show everything. A one-item list has a safe fix that unwraps it.',
+  },
+  HM3009: {
+    title: "invalid date or time in a filter",
+    explanation:
+      'A filter on a metric\'s time column compares with a date or a time, written in strict ISO 8601 so it means the same everywhere. A day is YYYY-MM-DD, zero-padded ("2026-02-01", not "2026-2-1"), and means that whole day in the project time zone. A time is YYYY-MM-DDTHH:MM or YYYY-MM-DDTHH:MM:SS with up to 6 decimals: with Z or an offset such as -05:00 it is that exact moment, without one it is wall-clock time in the project time zone. The fix rewrites a near miss (unpadded parts, a space instead of T) into the strict form; read it before applying.',
   },
   HM4001: {
     title: "percent of total on a non-additive metric",
     explanation:
       "A share of the total only makes sense when the parts add up to the total. Averages, distinct counts, medians, ratios and SQL metrics declared additive: false do not. Remove the metric from percentOfTotal, or show the additive metric it is built from.",
+  },
+  HM4002: {
+    title: "block type not built yet",
+    explanation:
+      "This version of Hatchmark builds kpi, line, area, bar and table blocks. bar_list and text blocks are valid specs but are not built yet, so the dashboard is built without them and they do not appear on the page. Use a bar block with by and a limit instead of bar_list, or keep the block and it will appear once its type is built.",
+  },
+  HM4003: {
+    title: "additive metric does not add up",
+    explanation:
+      'A SQL metric declares "additive": true, but in a table the rows add up to a different number than the total, which Hatchmark recomputes from all rows. The total is still right; a percent of total or an in-browser filter that sums rows would not be. Distinct counts, averages and ratios are not additive: set "additive": false, or rewrite the SQL as a sum or count.',
+  },
+  HM4004: {
+    title: "float values beyond the accuracy limit",
+    explanation:
+      "Floating-point columns (DOUBLE or FLOAT, such as CSV numbers with a decimal point) are added in a fixed order with compensated summation, and every result keeps 15 significant digits. That is accurate within limits, and this warning names where they are crossed; NaN and infinite values are left out of both checks. Input: a metric sums or averages a column that holds a value larger than 1e15 in magnitude, so small values next to very large ones can be lost; the result is still the same on every run. Store the values in a smaller unit, as DECIMAL (Parquet), or keep very large and very small values in separate columns. Result: the value a block shows for a float sum or average (the average itself, not the sum behind it) reaches 1e13 in magnitude in some row, time bucket or total, where 15 significant digits no longer hold cents (10,000,000,000,000.00 needs 16). The warning names the metric and the block. Store the values in a larger unit, such as thousands, or as DECIMAL (Parquet), which stays exact.",
   },
   HM9001: {
     title: "internal error",

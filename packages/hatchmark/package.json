@@ -32,6 +32,7 @@
     "prepack": "node -e \"for (const f of ['LICENSE', 'NOTICE']) require('fs').copyFileSync('../../' + f, f)\""
   },
   "dependencies": {
+    "@duckdb/node-api": "2.0.1-r.1",
     "@vercel/detect-agent": "^1.2.7",
     "zod": "^4.6.7"
   },

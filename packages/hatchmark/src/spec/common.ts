@@ -7,6 +7,28 @@ export const identifier = z
   .string()
   .regex(IDENTIFIER_PATTERN, { error: "must be lowercase snake_case, such as net_revenue" });
 
+/** Folds ASCII letters to lowercase, as DuckDB does when it matches identifiers. */
+function foldColumn(name: string): string {
+  return name.replace(/[A-Z]/g, (ch) => ch.toLowerCase());
+}
+
+/**
+ * Whether two column names refer to the same column. DuckDB resolves identifiers, quoted or not,
+ * case-insensitively for ASCII letters only (Region = region, but É is not é), and so does every
+ * column comparison in Hatchmark.
+ */
+export function sameColumn(a: string, b: string): boolean {
+  return foldColumn(a) === foldColumn(b);
+}
+
+/** Whether known columns include a column (see sameColumn); undefined when they are unknown. */
+export function hasColumn(
+  columns: readonly string[] | undefined,
+  name: string,
+): boolean | undefined {
+  return columns?.some((column) => sameColumn(column, name));
+}
+
 export const columnName = z
   .string()
   .min(1)
@@ -73,3 +95,6 @@ export function customIssue(
 ): { code: "custom"; path: (string | number)[]; message: string; params: { hatchmark: string } } {
   return { code: "custom", path, message, params: { hatchmark: code } };
 }
+
+/** Characters DuckDB expands as a glob in a file path (HM2016). */
+export const GLOB_CHARACTERS = /[*?[]/;

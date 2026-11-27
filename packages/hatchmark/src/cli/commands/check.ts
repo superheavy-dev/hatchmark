@@ -1,6 +1,6 @@
 import path from "node:path";
 import { createReport, type Diagnostic, renderHuman } from "../../diagnostics/index.js";
-import { nodeProjectHost } from "../../node/index.js";
+import { nodeProjectHost } from "../../node/host.js";
 import { CONFIG_FILE, checkReferences, loadProject, parseDiagnostics } from "../../spec/index.js";
 import type { CommandHelp } from "../help.js";
 import { type CommandContext, type CommandResult, EXIT, type ExitCode } from "../io.js";

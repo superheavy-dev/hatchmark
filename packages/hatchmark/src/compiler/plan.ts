@@ -5,6 +5,7 @@ import type {
   Filter,
   PeriodRange,
   Project,
+  Source,
   TimeGrain,
 } from "../spec/index.js";
 
@@ -91,6 +92,11 @@ export interface PlannedQuery {
   /** Content hash of the query shape. Identical queries from different blocks share one id. */
   id: string;
   source: string;
+  /**
+   * The source's file and reader options as hatchmark.json declares them. They decide what rows
+   * the query reads, so they are part of its id and of the plan hash.
+   */
+  input: Source;
   /** Aggregate and SQL metrics on this source; ratios combine measures in BlockPlan.measures. */
   measures: PlannedMeasure[];
   dimensions: PlannedDimension[];
@@ -172,6 +178,10 @@ export interface BlockPlan {
   queryIds: string[];
   /** Every metric the block shows, by name, resolved to query results. */
   measures: Record<string, MeasureExpression>;
+  /** A KPI's metric over the comparison window, when the block compares. */
+  previous?: Record<string, MeasureExpression>;
+  /** A KPI's metric by month over the current window, when the block asks for a sparkline. */
+  sparkline?: Record<string, MeasureExpression>;
 }
 
 export interface QueryPlan {
@@ -226,6 +236,12 @@ export interface ExecutionContext {
  */
 export type ParamBindings = Readonly<Record<string, unknown>>;
 
+/**
+ * One query's rows. Columns are the query's dimensions in order, each named by its column, then
+ * every measure component, named by its id. Time dimensions hold bucket start dates and date
+ * columns hold dates, both as YYYY-MM-DD strings in the plan's time zone; components are numbers
+ * or null. Rows are sorted by grouping set, then by dimension values.
+ */
 export interface QueryResult {
   columns: {
     name: string;
@@ -234,6 +250,18 @@ export interface QueryResult {
   rows: unknown[][];
   /** Index of the grouping set each row belongs to, when the query has more than one. */
   groupingSet?: number[];
+  /**
+   * Floating columns this query sums whose largest finite magnitude is above ±1e15, the range within
+   * which Hatchmark promises accurate float sums; run reports each as an HM4004 warning.
+   */
+  imprecise?: { column: string; maxAbs: number }[];
+  /**
+   * Metrics of this query that sum or average a floating column and whose displayed value reaches
+   * ±1e13 in some row (a group, a time bucket or a total), ignoring NaN and ±Infinity: shown with
+   * 15 significant digits, such values lose their cents. Run reports each metric and block that
+   * shows one as an HM4004 warning.
+   */
+  large?: { metric: string; maxAbs: number }[];
 }
 
 /**

@@ -31,6 +31,7 @@ const PLAN: QueryPlan = {
     {
       id: "q1",
       source: "orders",
+      input: { type: "csv", path: "data/orders.csv" },
       measures: [
         {
           metric: "revenue",
@@ -127,4 +128,4 @@ describe("planHash", () => {
   });
 });
 
-const GOLDEN = "5443a8d569b76830d63beb3595d04877e2408c6c4a8debc90423dc3d76e40121";
+const GOLDEN = "df14afc7737256ad6a5604a923186328d5dfef3bc9d439456cb20a3b5a951ee4";

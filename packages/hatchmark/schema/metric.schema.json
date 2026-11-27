@@ -222,7 +222,7 @@
           "$ref": "#/$defs/__schema25"
         }
       ],
-      "description": "A row filter. between is inclusive at both ends."
+      "description": "A row filter. between is inclusive at both ends. A date (YYYY-MM-DD) compared with a timestamp column compares the row's calendar date in the project time zone, so eq matches the whole day and between includes all of its last day. neq and not_in keep rows whose column is null; the other operators never match null."
     },
     "__schema21": {
       "type": "object",
