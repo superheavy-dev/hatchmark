@@ -1,14 +1,15 @@
 import { createHash } from "node:crypto";
 import {
+  type FileHandle,
   lstat,
   mkdir,
+  open,
   readdir,
   readFile,
   realpath,
   rename,
   rm,
   rmdir,
-  writeFile,
 } from "node:fs/promises";
 import path from "node:path";
 import { type DashboardData, type DashboardExecutor, runDashboard } from "../../compiler/index.js";
@@ -171,6 +172,25 @@ async function unsafeTarget(outDir: string, file: string): Promise<string | unde
   return undefined;
 }
 
+/**
+ * Creates a new, empty file next to target under a random name, exclusively (O_CREAT | O_EXCL), so
+ * it never opens, follows or replaces anything that already exists. Tries a few names; undefined
+ * when every one is taken.
+ */
+async function openFresh(
+  target: string,
+): Promise<{ path: string; handle: FileHandle } | undefined> {
+  for (let attempt = 0; attempt < 5; attempt++) {
+    const fresh = `${target}.${crypto.randomUUID()}.tmp`;
+    try {
+      return { path: fresh, handle: await open(fresh, "wx") };
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== "EEXIST") throw error;
+    }
+  }
+  return undefined;
+}
+
 /** The real path of p, through its deepest existing ancestor when p does not exist yet. */
 async function realLocation(p: string): Promise<string> {
   const missing: string[] = [];
@@ -293,10 +313,21 @@ export async function build(
     await mkdir(path.dirname(target), { recursive: true });
     const unsafe = await unsafeTarget(outDir, file);
     if (unsafe !== undefined) return refuse(unsafe);
-    const fresh = `${target}.${process.pid}.tmp`;
-    await rm(fresh, { force: true });
-    await writeFile(fresh, content, { flag: "wx" });
-    await rename(fresh, target);
+    const fresh = await openFresh(target);
+    if (fresh === undefined) {
+      return refuse(
+        `${file}: every temporary name tried next to it already exists; remove the stray *.tmp files or choose another --out`,
+      );
+    }
+    try {
+      await fresh.handle.writeFile(content);
+      await fresh.handle.close();
+      await rename(fresh.path, target);
+    } catch (error) {
+      await fresh.handle.close().catch(() => {});
+      await rm(fresh.path, { force: true });
+      throw error;
+    }
   }
 
   const report = createReport(diagnostics);

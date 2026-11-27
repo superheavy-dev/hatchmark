@@ -12,7 +12,7 @@ import {
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { SALES } from "../../gallery/fixtures.js";
 import { type BuildDeps, build } from "../../src/cli/commands/build.js";
 import type { CommandContext } from "../../src/cli/io.js";
@@ -251,6 +251,32 @@ describe("hatchmark build", () => {
       expect((await build(ctx(root), { out: "site/out" }, deps)).exitCode).toBe(2);
       expect(await tree(other)).toEqual(before);
     });
+  });
+
+  it("never touches a file at a name it might use for a temporary file", async () => {
+    const root = await project();
+    const dist = path.join(root, "dist");
+    expect((await build(ctx(root), {}, deps)).exitCode).toBe(0);
+    const taken = "00000000-0000-4000-8000-000000000000";
+    const strays = [`index.html.${process.pid}.tmp`, `index.html.${taken}.tmp`];
+    for (const stray of strays) await writeFile(path.join(dist, "sales", stray), "keep\n");
+    const uuid = vi.spyOn(crypto, "randomUUID");
+    try {
+      uuid.mockReturnValueOnce(taken);
+      expect((await build(ctx(root), {}, deps)).exitCode).toBe(0);
+      expect((await readdir(path.join(dist, "sales"))).sort()).toEqual(
+        ["index.html", ...strays].sort(),
+      );
+      uuid.mockReturnValue(taken);
+      const exhausted = await build(ctx(root), {}, deps);
+      expect(exhausted.exitCode).toBe(2);
+      expect(exhausted.json).toMatchObject({ diagnostics: [{ code: "HM0004" }] });
+    } finally {
+      uuid.mockRestore();
+    }
+    for (const stray of strays) {
+      expect(await readFile(path.join(dist, "sales", stray), "utf8")).toBe("keep\n");
+    }
   });
 
   it("reports HM2018 for a chart narrower than 3 columns and still builds it", async () => {
