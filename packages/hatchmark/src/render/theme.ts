@@ -21,8 +21,14 @@ export const CHROME_COLORS = [
 ] as const;
 export type ChromeColor = (typeof CHROME_COLORS)[number];
 
-/** A colour a component may paint with: a chrome role or a categorical series slot c1..c8. */
-export type ColorKey = ChromeColor | `c${1 | 2 | 3 | 4 | 5 | 6 | 7 | 8}`;
+type Slot = 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8;
+
+/**
+ * A colour a component may paint with: a chrome role, a categorical stroke slot c1..c8 (lines,
+ * points, line keys, series-coloured text) or a categorical fill slot f1..f8 (bars, areas, slices,
+ * square keys).
+ */
+export type ColorKey = ChromeColor | `c${Slot}` | `f${Slot}`;
 
 export type Mode = "light" | "dark";
 
@@ -45,6 +51,7 @@ export interface Theme {
   font: { family: string; fallback: string };
   color: Record<Mode, Record<ChromeColor, string>>;
   categorical: Record<Mode, string[]>;
+  categoricalFill?: Record<Mode, string[]>;
   density: Density;
   radius: { card: number; control: number; tooltip: number; bar: number };
   /** The partial-bucket treatment (RFC 0001 section 6.6, option B): hatch, hollow point, partial bars. */
@@ -62,7 +69,7 @@ export interface Theme {
   };
 }
 
-/** The Default theme (tokens v1.0.0 from HAT-8, exported from Paper). */
+/** The Default theme, read from themes/default.json. */
 export const DEFAULT_THEME: Theme = {
   id: defaultTokens.id,
   version: defaultTokens.version,
@@ -71,6 +78,10 @@ export const DEFAULT_THEME: Theme = {
   categorical: {
     light: defaultTokens.data.light.categorical,
     dark: defaultTokens.data.dark.categorical,
+  },
+  categoricalFill: {
+    light: defaultTokens.data.light.categoricalFill,
+    dark: defaultTokens.data.dark.categoricalFill,
   },
   density: defaultTokens.density.compact,
   radius: defaultTokens.radius,
@@ -86,18 +97,25 @@ export const DEFAULT_THEME: Theme = {
   },
 };
 
-/** The colour a key resolves to in one mode. Series slots wrap after c8. */
+/** The colour a key resolves to in one mode. Series slots wrap after slot 8. */
 export function colorValue(theme: Theme, mode: Mode, key: ColorKey): string {
-  if (key.startsWith("c") && /^c\d$/.test(key)) {
-    const palette = theme.categorical[mode];
+  if (/^[cf]\d$/.test(key)) {
+    const palette = (
+      key[0] === "f" ? (theme.categoricalFill ?? theme.categorical) : theme.categorical
+    )[mode];
     return palette[(Number(key.slice(1)) - 1) % palette.length] as string;
   }
   return theme.color[mode][key as ChromeColor];
 }
 
-/** The categorical slot of the series at index i (0-based). */
+/** The categorical stroke slot of the series at index i (0-based): lines, points, line keys. */
 export function seriesColor(i: number): ColorKey {
   return `c${(i % 8) + 1}` as ColorKey;
+}
+
+/** The categorical fill slot of the series at index i (0-based): bars, areas, slices, square keys. */
+export function seriesFill(i: number): ColorKey {
+  return `f${(i % 8) + 1}` as ColorKey;
 }
 
 /** CSS custom property name of a colour key: cardAlt becomes --hm-card-alt. */
@@ -105,10 +123,13 @@ export function cssVar(key: ColorKey): string {
   return `--hm-${key.replace(/[A-Z]/g, (c) => `-${c.toLowerCase()}`)}`;
 }
 
-/** Every colour key a component may use, chrome roles first. */
+const SLOTS = [1, 2, 3, 4, 5, 6, 7, 8] as const;
+
+/** Every colour key a component may use: chrome roles, then stroke slots, then fill slots. */
 export const COLOR_KEYS: ColorKey[] = [
   ...CHROME_COLORS,
-  ...([1, 2, 3, 4, 5, 6, 7, 8] as const).map((i) => `c${i}` as const),
+  ...SLOTS.map((i) => `c${i}` as const),
+  ...SLOTS.map((i) => `f${i}` as const),
 ];
 
 /**

@@ -13,7 +13,7 @@ import {
 import { formatValue } from "./format.js";
 import { textWidth, truncateEnd, wrapLines } from "./measure.js";
 import { r, svgText } from "./svg.js";
-import { type ColorKey, seriesColor } from "./theme.js";
+import { type ColorKey, seriesFill } from "./theme.js";
 
 /** Below this width the key goes under the pie instead of beside it. */
 export const PIE_SIDE_KEY_MIN = 440;
@@ -40,7 +40,7 @@ export function pieItems(block: PieData): PieItem[] {
     label: s.label,
     value: s.value,
     share: s.share,
-    color: seriesColor(k),
+    color: seriesFill(k),
   }));
   if (block.other) {
     items.push({

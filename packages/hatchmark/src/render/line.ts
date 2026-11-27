@@ -30,7 +30,7 @@ import {
   partialRegion,
 } from "./partial.js";
 import { r, svgLine, svgText } from "./svg.js";
-import { seriesColor } from "./theme.js";
+import { seriesColor, seriesFill } from "./theme.js";
 
 /** Direct labels need this much plot width; below it a pinned readout replaces them. */
 export const DIRECT_LABEL_MIN_PLOT = 320;
@@ -210,7 +210,7 @@ export function renderLine(
       parts.push(
         `<circle cx="${r(x + 4)}" cy="${r(cy)}" r="4"${paint.attrs(seriesColor(k), undefined, `hm-rd-${k}`)}${hidden(!hatchedAt(k, last))}/>`,
         flowPartial
-          ? `<g class="hm-rq-${k}"${hidden(hatchedAt(k, last))}>${partialBar(ctx, hatch, seriesColor(k), x, cy - 4, 8, 8, 8)}</g>`
+          ? `<g class="hm-rq-${k}"${hidden(hatchedAt(k, last))}>${partialBar(ctx, hatch, seriesFill(k), x, cy - 4, 8, 8, 8)}</g>`
           : "",
         svgText(paint, x + LEGEND_NAME_X, cy, name, {
           ...style,
@@ -300,7 +300,7 @@ export function renderLine(
       hatchDefs(
         paint,
         hatch,
-        ["textSubtle", ...series.map((_, k) => seriesColor(k))],
+        ["textSubtle", ...series.map((_, k) => seriesFill(k))],
         ctx.theme.partial.spacing,
         plotLeft,
         top,
@@ -327,11 +327,11 @@ export function renderLine(
         .y1((v) => y(v as number))
         .digits(1)(plotted[k] as Value[]);
       if (area && (empty || (bandSlices[k] ?? []).length === 0)) {
-        parts.push(`<path d="${area}"${paint.attrs(seriesColor(k))} fill-opacity="0.14"/>`);
+        parts.push(`<path d="${area}"${paint.attrs(seriesFill(k))} fill-opacity="0.14"/>`);
       } else if (area) {
         parts.push(
-          `<path d="${area}"${paint.attrs(seriesColor(k))} fill-opacity="0.14" clip-path="url(#${hatch}-whole${k})"/>`,
-          `<path d="${area}" fill="url(#${hatch}-${seriesColor(k)})" opacity="${ctx.theme.partial.areaHatchOpacity}" clip-path="url(#${hatch}-part${k})"/>`,
+          `<path d="${area}"${paint.attrs(seriesFill(k))} fill-opacity="0.14" clip-path="url(#${hatch}-whole${k})"/>`,
+          `<path d="${area}" fill="url(#${hatch}-${seriesFill(k)})" opacity="${ctx.theme.partial.areaHatchOpacity}" clip-path="url(#${hatch}-part${k})"/>`,
         );
       }
     }
