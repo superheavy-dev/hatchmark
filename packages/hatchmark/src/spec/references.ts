@@ -926,7 +926,8 @@ function notAdditiveLabel(metric: Metric): string {
 
 /**
  * A stacked bar or area block: a 100% stack of a metric that does not add up is an error (HM4001),
- * and a plain stack of one, or of metrics in different units, draws a meaningless height (HM4060).
+ * a plain stack of one draws a meaningless height (HM4060), and metrics in different units cannot be
+ * stacked at all (HM4062).
  */
 function checkStack(
   r: Reporter,
@@ -979,14 +980,18 @@ function checkStack(
   const distinct = [...new Set(units)];
   if (distinct.length > 1) {
     r.report(
-      "HM4060",
+      "HM4062",
       `${base}/metrics`,
       `stacked metrics are in different units (${distinct.join(", ")})`,
       {
-        severity: "warning",
-        label: "values in different units cannot be added",
-        help: 'stack metrics of one unit, or remove "stack" and show them in separate charts',
-        ...fix,
+        label: percent
+          ? "a share of values in different units means nothing"
+          : "values in different units cannot be added",
+        help: 'stack metrics of one unit, or set "stack": false and show them side by side or in separate charts',
+        ...optional(
+          "fix",
+          replaceValueFix(file.document, `${base}/stack`, false, "unsafe", 'set "stack": false'),
+        ),
       },
     );
   }

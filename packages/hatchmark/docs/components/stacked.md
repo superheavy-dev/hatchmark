@@ -40,8 +40,9 @@ Every other field is the [bar](bar.md) or [area](line.md) block's: `by` or `grai
 - Stacked bars print each position's total at the end of the bar (`$866K`) when the labels fit. A
   100% stack prints the same totals above bars that all reach 100%, so you see the part and the
   size of the whole together.
-- A 100% stack gets a fixed value axis: 0%, 25%, 50%, 75% and 100% (0%, 50% and 100% on short
-  plots), so charts of shares read the same everywhere.
+- A 100% stack gets a fixed value axis: 0%, 25%, 50%, 75% and 100% (0%, 50% and 100% on plots
+  under 160 px tall, or horizontal bars under 240 px wide), so charts of shares read the same
+  everywhere.
 - Positive values stack upward and negative values downward from zero.
 - The key above the plot names the series and wraps instead of shortening names. Stacked areas use
   direct labels at the line ends when they fit (the share in a 100% stack), and otherwise the key
@@ -49,13 +50,18 @@ Every other field is the [bar](bar.md) or [area](line.md) block's: `by` or `grai
 - Hover, tap or the arrow keys show a tooltip with every series' value and share of the total, and
   the total below them. Screen readers get the same numbers in a hidden table with a Total column.
 - The plot keeps its height; a longer key makes the card taller.
+- On narrow cards a stacked area's key shows each value with its share in a 100% stack (`$866K 47%`)
+  and the period with the total (`Oct 2026 · Total $1.84M`).
+- On touch screens a tapped bar or bucket stays selected after the finger lifts; a tap outside
+  the chart clears it.
 
 ## Checks
 
 | Code     | When                                                                                                                                                     | Fix                                                                                     |
 | -------- | -------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------- |
 | `HM4001` | Error. `"stack": "percent"` on a metric whose parts do not add up to its total: an average, a ratio, a distinct count, a median, a min or max over time. | Stack a sum or a count, or use `"stack": true` (the fix, marked unsafe).                |
-| `HM4060` | Warning. `"stack": true` on such a metric with a split or next to other metrics, or stacked metrics in different units or currencies.                    | Remove `stack` to draw the series side by side (the fix), or stack the additive metric. |
+| `HM4060` | Warning. `"stack": true` on such a metric with a split or next to other metrics.                                                                         | Remove `stack` to draw the series side by side (the fix), or stack the additive metric. |
+| `HM4062` | Error. Stacked metrics in different units or currencies (revenue with order counts, USD with EUR), plain or 100%.                                        | Set `"stack": false` (the fix, marked unsafe), or stack metrics of one unit.            |
 | `HM4061` | Build warning. A 100% stack has negative values, so the shares no longer add up to 100%.                                                                 | Use `"stack": true` or grouped bars, or a metric that cannot be negative.               |
 
 Stacking one metric without a split draws one series, so there is nothing to check.

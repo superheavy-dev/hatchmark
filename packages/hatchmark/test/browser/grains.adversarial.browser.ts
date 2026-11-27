@@ -143,6 +143,9 @@ describe("grain switching on the built trends page (HAT-40 browser.mjs)", () => 
       totals: option.totals?.map((v) =>
         formatValue(v ?? null, metric(option.series[0]?.metric ?? ""), data.locale, "full"),
       ),
+      shortTotals: option.totals?.map((v) =>
+        formatValue(v ?? null, metric(option.series[0]?.metric ?? ""), data.locale, "compact"),
+      ),
     };
   };
 
@@ -226,8 +229,10 @@ describe("grain switching on the built trends page (HAT-40 browser.mjs)", () => 
               }),
               want.cells.length,
             );
-            const j = want.headers.indexOf(shown.header);
+            const [period = "", total] = shown.header.split(" · Total ");
+            const j = want.headers.indexOf(period);
             expect(j, `${where}: readout header ${shown.header}`).toBeGreaterThanOrEqual(0);
+            expect(total, `${where}: readout total`).toBe(want.shortTotals?.[j]);
             expect(shown.values, where).toEqual(want.cells.map((c) => c.short[j]));
             headers.add(shown.header);
             continue;

@@ -2,7 +2,7 @@ import type { BarData, LineData, Value } from "../compiler/dashboard-data.js";
 import { barCategories } from "./bar.js";
 import { isNumber, metricOf, type RenderContext, SHARE } from "./chart.js";
 import { formatBucket, formatSpan, formatValue } from "./format.js";
-import { plottedValues } from "./line.js";
+import { plottedValues, readoutHead, readoutValue } from "./line.js";
 import { esc } from "./svg.js";
 
 type ChartBlock = LineData | BarData;
@@ -102,11 +102,15 @@ export interface ChartRuntimeData {
   }[];
   /** Total text per position, for stacked charts. */
   total?: string[];
+  /** The pinned readout's first line per position, when it differs from headers. */
+  heads?: string[];
 }
 
 export function chartRuntimeData(block: ChartBlock, ctx: RenderContext): ChartRuntimeData {
   const locale = ctx.data.locale;
-  const stacked = (block.stack === true && block.series.length > 1) || block.percent === true;
+  const stacked =
+    block.percent === true ||
+    (block.stack === true && (block.series.length > 1 || block.totals !== undefined));
   const plotted = block.type === "bar" ? undefined : plottedValues(block);
   const metric = metricOf(ctx, block.series[0]?.metric ?? "");
   return {
@@ -117,9 +121,10 @@ export function chartRuntimeData(block: ChartBlock, ctx: RenderContext): ChartRu
       color: (k % 8) + 1,
       v: s.values,
       text: s.values.map((v) => full(ctx, s.metric, v)),
-      short: block.percent
-        ? (s.share ?? []).map((v) => formatValue(v, SHARE, locale, "compact"))
-        : s.values.map((v) => formatValue(v, metricOf(ctx, s.metric), locale, "compact")),
+      short:
+        block.type === "bar"
+          ? s.values.map((v) => formatValue(v, metricOf(ctx, s.metric), locale, "compact"))
+          : s.values.map((_, i) => readoutValue(block, k, i, ctx)),
       ...(plotted && stacked ? { y: plotted[k] as Value[] } : {}),
       ...(stacked && s.share ? { pct: s.share.map((v) => share(ctx, v)) } : {}),
     })),
@@ -140,5 +145,8 @@ export function chartRuntimeData(block: ChartBlock, ctx: RenderContext): ChartRu
             }),
           }
         : {}),
+    ...(block.type !== "bar" && block.stack && block.totals
+      ? { heads: block.axis.buckets.map((_, i) => readoutHead(block, i, ctx)) }
+      : {}),
   };
 }

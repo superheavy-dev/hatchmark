@@ -94,19 +94,22 @@ describe("stack checks", () => {
     ).toEqual([["HM4060", "/blocks/0/metrics/1"]]);
   });
 
-  it("warns when stacked metrics have different units (HM4060)", () => {
-    const [d, ...rest] = refs({
-      type: "bar",
-      metrics: ["revenue", "orders"],
-      by: "plan",
-      stack: true,
-    });
-    expect(rest).toEqual([]);
-    expect(d).toMatchObject({
-      code: "HM4060",
-      pointer: "/blocks/0/metrics",
-      message: "stacked metrics are in different units (USD, number)",
-    });
+  it("rejects stacked metrics in different units, plain or 100% (HM4062), with a fix to no stack", () => {
+    for (const stack of [true, "percent"]) {
+      const block = { type: "bar", metrics: ["revenue", "orders"], by: "plan", stack };
+      const [d, ...rest] = refs(block);
+      expect(rest).toEqual([]);
+      expect(d).toMatchObject({
+        code: "HM4062",
+        severity: "error",
+        pointer: "/blocks/0/metrics",
+        message: "stacked metrics are in different units (USD, number)",
+        fix: { text: "false", applicability: "unsafe" },
+      });
+      const fixed = applyFix(text(block), d?.fix);
+      expect(fixed).toContain('"stack": false');
+      expect(refs(JSON.parse(fixed).blocks[0])).toEqual([]);
+    }
   });
 
   it("ignores a stack with nothing to stack and grouped bars of anything", () => {

@@ -109,6 +109,14 @@ function drawKey(
   return { svg: `<g class="hm-key">${parts.join("")}</g>`, height: (row + 1) * LABEL_LINE + 8 };
 }
 
+/** Room under a horizontal 100% stack for its 0–100% tick labels. */
+const SHARE_AXIS_BAND = 20;
+/** A horizontal 100% stack labels quarters from this bar width, halves below it. */
+const SHARE_QUARTERS_WIDTH = 240;
+
+/** A one-row key's height, which a vertical bar chart's height already includes. */
+const KEY_ROW = LABEL_LINE + 8;
+
 const NAME_STYLE = { size: BODY };
 const NAME_LINES = 2;
 const NAME_LINE = 17;
@@ -137,17 +145,19 @@ export function barHeight(
   width: number,
   chartHeight: number,
 ): number {
-  if (block.orientation === "vertical") return chartHeight;
-  const names = barCategories(block, ctx.data.locale);
   const key = drawKey(
     cssLessPaint,
     block.series.map((s) => s.label),
     width,
   ).height;
+  if (block.orientation === "vertical") return chartHeight + Math.max(0, key - KEY_ROW);
+  const names = barCategories(block, ctx.data.locale);
   const wraps = rowNames(names, width).wrapped.some((w) => w.lines.length > 1);
   const row = barRowHeight(block, ctx, chartHeight);
   return (
-    key + Math.max(1, names.length) * (wraps ? Math.max(row, NAME_LINES * NAME_LINE + 6) : row)
+    key +
+    Math.max(1, names.length) * (wraps ? Math.max(row, NAME_LINES * NAME_LINE + 6) : row) +
+    (block.percent ? SHARE_AXIS_BAND : 0)
   );
 }
 
@@ -191,7 +201,8 @@ export function renderBar(
 
   if (block.orientation === "horizontal") {
     const top = key.height;
-    const rowH = (size.height - top) / Math.max(1, n);
+    const band = block.percent ? SHARE_AXIS_BAND : 0;
+    const rowH = (size.height - top - band) / Math.max(1, n);
     const { column: labelWidth, wrapped } = rowNames(names, size.width);
     const grouped = multi && !stacked;
     const valueStyle = { size: grouped ? CAPTION : BODY, weight: 500 } as const;
@@ -204,11 +215,25 @@ export function renderBar(
     const hasNegative = ends.some((v) => v < 0);
     const barLeft = labelWidth + 12 + (hasNegative ? valueWidth + VALUE_GAP : 0);
     const barRight = size.width - valueWidth - VALUE_GAP;
-    const lo = Math.min(0, ...ends);
-    const hi = Math.max(0, ...ends);
+    const shares =
+      block.percent && !empty
+        ? shareAxis(ends, barRight - barLeft, locale, SHARE_QUARTERS_WIDTH)
+        : undefined;
+    const [lo, hi] = shares?.domain ?? [Math.min(0, ...ends), Math.max(0, ...ends)];
     const scale = (v: number) =>
       hi === lo ? barLeft : barLeft + fraction(v, lo, hi) * (barRight - barLeft);
     const zero = scale(0);
+    shares?.ticks.forEach((t, k) => {
+      const x = scale(t);
+      parts.push(
+        svgLine(paint, x, top, x, top + n * rowH, t === 0 ? "baseline" : "grid"),
+        svgText(paint, x, top + n * rowH + band / 2 + 2, shares.labels[k] as string, {
+          size: CAPTION,
+          anchor: k === 0 ? "start" : k === shares.ticks.length - 1 ? "end" : "middle",
+          color: "textSubtle",
+        }),
+      );
+    });
     names.forEach((name, i) => {
       const cy = top + i * rowH + rowH / 2;
       const { lines, cut } = wrapped[i] as { lines: string[]; cut: boolean };

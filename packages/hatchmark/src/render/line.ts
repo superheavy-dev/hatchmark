@@ -62,6 +62,33 @@ export function drawnValues(block: LineData, s: LineData["series"][number]): Val
   return block.percent && s.share ? s.share : s.values;
 }
 
+/**
+ * A series' compact text in the pinned readout: the value, and in a 100% stack its share after it
+ * ("$866K 47%"), so a narrow chart never hides the values the plot is made of.
+ */
+export function readoutValue(block: LineData, k: number, i: number, ctx: RenderContext): string {
+  const s = block.series[k];
+  if (s === undefined) return "";
+  const value = formatValue(
+    s.values[i] ?? null,
+    metricOf(ctx, s.metric),
+    ctx.data.locale,
+    "compact",
+  );
+  if (!block.percent || !s.share) return value;
+  return `${value} ${formatValue(s.share[i] ?? null, SHARE, ctx.data.locale, "compact")}`;
+}
+
+/** The readout's first line: the period, and the engine's total when the block has one. */
+export function readoutHead(block: LineData, i: number, ctx: RenderContext): string {
+  const bucket = block.axis.buckets[i];
+  if (bucket === undefined) return "";
+  const period = formatBucket(bucket, block.axis.grain, ctx.data.locale);
+  if (!block.stack || block.totals === undefined) return period;
+  const metric = metricOf(ctx, block.series[0]?.metric ?? "");
+  return `${period} · Total ${formatValue(block.totals[i] ?? null, metric, ctx.data.locale, "compact")}`;
+}
+
 /** Values as drawn: running totals for stacked areas, with gaps where a value is missing. */
 export function plottedValues(block: LineData): Value[][] {
   return stackBands(block).upper;
@@ -125,25 +152,14 @@ export function renderLine(
     const last = Math.max(...lastIndex);
     const style = { size: CAPTION } as const;
     const valueWidth = series.map((s, k) =>
-      Math.max(
-        0,
-        ...drawnValues(block, s).map((v) =>
-          textWidth(formatValue(v, shown(k), locale, "compact"), style),
-        ),
-      ),
+      Math.max(0, ...s.values.map((_, i) => textWidth(readoutValue(block, k, i, ctx), style))),
     );
     const parts = [
-      svgText(
-        paint,
-        0,
-        LABEL_LINE / 2,
-        last >= 0 ? formatBucket(block.axis.buckets[last] as string, block.axis.grain, locale) : "",
-        {
-          ...style,
-          color: "textSubtle",
-          className: "hm-rh",
-        },
-      ),
+      svgText(paint, 0, LABEL_LINE / 2, last >= 0 ? readoutHead(block, last, ctx) : "", {
+        ...style,
+        color: "textSubtle",
+        className: "hm-rh",
+      }),
     ];
     let x = 0;
     let row = 1;
@@ -167,7 +183,7 @@ export function renderLine(
           paint,
           x + LEGEND_NAME_X + textWidth(name, style) + 6,
           cy,
-          formatValue(drawnValues(block, s)[last] ?? null, shown(k), locale, "compact"),
+          readoutValue(block, k, last, ctx),
           { ...style, color: "text", className: `hm-rv hm-rv-${k}` },
         ),
       );

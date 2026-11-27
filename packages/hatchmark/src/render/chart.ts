@@ -85,15 +85,20 @@ export function yAxis(
 }
 
 /**
- * The value axis of a 100% stack: 0% to 100% in quarters (halves on short plots), so every chart
+ * The value axis of a 100% stack: 0% to 100% in quarters (halves on plots shorter than quartersFrom), so every chart
  * of shares reads the same. Shares outside 0 to 1 (a negative part, HM4061) get a computed axis.
  */
-export function shareAxis(values: readonly number[], plotHeight: number, locale: string): YAxis {
+export function shareAxis(
+  values: readonly number[],
+  length: number,
+  locale: string,
+  quartersFrom = 160,
+): YAxis {
   const eps = 1e-9;
   if (!values.every((v) => v >= -eps && v <= 1 + eps)) {
-    return yAxis(values, plotHeight, SHARE, locale);
+    return yAxis(values, length, SHARE, locale);
   }
-  const ticks = plotHeight >= 160 ? [0, 0.25, 0.5, 0.75, 1] : [0, 0.5, 1];
+  const ticks = length >= quartersFrom ? [0, 0.25, 0.5, 0.75, 1] : [0, 0.5, 1];
   const labels = formatTicks(ticks, SHARE, locale);
   const labelWidth = Math.max(0, ...labels.map((l) => textWidth(l, { size: CAPTION })));
   return { domain: [0, 1], ticks, labels, labelWidth };

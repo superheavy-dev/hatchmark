@@ -175,6 +175,23 @@ describe("browser runtime", () => {
     expect(live).toMatch(/Total \$[\d,]+$/);
   });
 
+  it("keeps a tapped selection after the finger lifts, and clears it on a tap outside", async () => {
+    const page = await browser.newPage({ viewport: { width: 390, height: 800 }, hasTouch: true });
+    await page.goto(allUrl);
+    const figure = page.locator('[data-hm-chart="percent"]');
+    const svg = figure.locator("svg").filter({ visible: true });
+    await svg.scrollIntoViewIfNeeded();
+    const box = await svg.boundingBox();
+    if (!box) throw new Error("chart has no box");
+    await page.touchscreen.tap(box.x + box.width * 0.3, box.y + box.height * 0.6);
+    const tip = figure.locator(".hm-tip");
+    await page.waitForTimeout(100);
+    expect(await tip.isVisible()).toBe(true);
+    expect(await tip.locator(".hm-tip-t").textContent()).toMatch(/^Total\$[\d,]+$/);
+    await page.touchscreen.tap(5, 5);
+    await expect.poll(() => tip.isVisible()).toBe(false);
+  });
+
   it("updates the pinned readout instead of a tooltip on a phone", async () => {
     const page = await browser.newPage({ viewport: { width: 390, height: 800 }, hasTouch: true });
     await page.goto(url);
