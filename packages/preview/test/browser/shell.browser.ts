@@ -131,6 +131,24 @@ describe("preview shell deep links", () => {
     await page.close();
   });
 
+  it("carries the gallery's query string through the redirect into the frame", async () => {
+    const page = await browser.newPage({ viewport: { width: 1280, height: 800 } });
+    await page.goto(`${origin}/components/?scroll=thin#pie`);
+    await page.waitForURL(`${origin}/?scroll=thin#*`);
+    expect(hash(page)).toMatchObject({ section: "pie" });
+    await expect
+      .poll(() => page.locator("#frame").getAttribute("src"))
+      .toBe("components/?scroll=thin#pie");
+    const frame = page.frame({ url: /\/components\// }) as Frame;
+    expect(await frame.evaluate(() => location.search)).toBe("?scroll=thin");
+    await page.getByRole("button", { name: "Dark" }).click();
+    expect(new URL(page.url()).search).toBe("?scroll=thin");
+    expect(await page.locator("#frame").getAttribute("src")).toBe("components/?scroll=thin#pie");
+    await page.getByRole("button", { name: "Example dashboard" }).click();
+    expect(await page.locator("#frame").getAttribute("src")).toBe("dashboard/sales/?scroll=thin");
+    await page.close();
+  });
+
   it("sends the bare gallery to the shell without a section", async () => {
     const page = await browser.newPage();
     const navigations = countNavigations(page);

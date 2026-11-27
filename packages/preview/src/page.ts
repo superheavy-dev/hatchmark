@@ -133,8 +133,8 @@ function read() {
   }
 }
 function frameSrc() {
-  if (state.view === "components" && state.section) return VIEWS.components + "#" + state.section;
-  return VIEWS[state.view] ?? VIEWS.components;
+  const page = (VIEWS[state.view] ?? VIEWS.components) + location.search;
+  return state.view === "components" && state.section ? page + "#" + state.section : page;
 }
 function writeHash() {
   const params = new URLSearchParams(state);
@@ -224,13 +224,13 @@ figcaption { display: flex; gap: 8px; align-items: baseline; margin-bottom: 8px;
 footer { color: var(--muted); border-top: 1px solid var(--line); padding-top: 12px; }`;
 
 /**
- * Sends a gallery opened outside the shell to the shell, carrying its fragment as the section, so
+ * Sends a gallery opened outside the shell to the shell, carrying its query string and its fragment as the section, so
  * every link gets the toolbar. Inside the shell's iframe the page is not the top window and stays.
  */
 const GALLERY_REDIRECT = `<script>
 if (window.top === window.self) {
   const section = location.hash.slice(1);
-  location.replace("../" + (section ? "#" + new URLSearchParams({ section }) : ""));
+  location.replace("../" + location.search + (section ? "#" + new URLSearchParams({ section }) : ""));
 }
 </script>`;
 
