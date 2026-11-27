@@ -104,10 +104,21 @@ export async function runDashboard(
     bindings: {},
   };
   const results = new Map<string, QueryResult>();
+  const imprecise = new Map<string, Diagnostic>();
   for (const query of plan.queries) {
     if (queryBounds(query, context) === undefined) continue;
     try {
-      results.set(query.id, await executor.execute(query, context));
+      const result = await executor.execute(query, context);
+      results.set(query.id, result);
+      for (const { column, maxAbs } of result.imprecise ?? []) {
+        imprecise.set(JSON.stringify([query.source, column]), {
+          code: "HM4004",
+          severity: "warning",
+          message: `column "${column}" of source "${query.source}" holds values up to ${maxAbs.toExponential(2)}; sums of floating-point values are accurate only within ±1e15`,
+          help: "store the values in a smaller unit or as DECIMAL (Parquet), or split very large and very small values into separate columns",
+          docs: docsCommand("HM4004"),
+        });
+      }
     } catch (error) {
       return {
         diagnostics: [
@@ -120,6 +131,6 @@ export async function runDashboard(
   const assembled = assemble(project, plan, results, context);
   return {
     ...(assembled.data ? { data: assembled.data } : {}),
-    diagnostics: [...diagnostics, ...assembled.diagnostics],
+    diagnostics: [...diagnostics, ...imprecise.values(), ...assembled.diagnostics],
   };
 }

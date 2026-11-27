@@ -59,10 +59,15 @@ import {
  *
  * Numbers. Integer and DECIMAL inputs aggregate exactly in DuckDB (HUGEINT, DECIMAL(38)) and are
  * converted to a JavaScript number once. FLOAT and DOUBLE inputs sum with fsum (Kahan-Babuska
- * compensated summation), so avg = fsum / count, and every floating result is rounded to 15
- * significant digits: what parallel threads add in different orders differs below that, so results
- * are byte-identical between runs, and nothing is truncated to a fixed number of decimals. Raw SQL
- * metrics cannot be rewritten, so their queries run on one thread. A sum of no values is 0; a
+ * compensated summation) ordered by a stable source-row ordinal, fsum(x ORDER BY ordinal), so
+ * every run adds the same values in the same order whatever the thread count; avg = that sum /
+ * count. Every floating result is then rounded to 15 significant digits, and nothing is truncated
+ * to a fixed number of decimals. The ordinal is file order: for CSV and JSON the rowid of the
+ * temporary table the file is loaded into (CREATE TABLE AS keeps the reader's row order because
+ * preserve_insertion_order is on, and a fresh table numbers rows in insertion order); for Parquet
+ * the reader's file_row_number. Accuracy is promised for values within ±1e15: a summed float
+ * column whose largest magnitude is above that is reported in QueryResult.imprecise (HM4004).
+ * Raw SQL metrics cannot be rewritten, so their queries run on one thread. A sum of no values is 0; a
  * non-finite result (a SQL metric dividing by zero) is null, an undefined value. Dimension values:
  * DECIMAL as numbers, integers as numbers when they are safe integers and as decimal strings
  * otherwise, dates as YYYY-MM-DD, timestamps as local "YYYY-MM-DD HH:MM:SS" text, other types as
@@ -75,10 +80,16 @@ import {
 export async function createDuckDbExecutor(options: {
   root: string;
   config: ProjectConfig;
+  /** DuckDB worker threads; DuckDB's default (the machine's cores) when absent. */
+  threads?: number;
 }): Promise<DashboardExecutor & { close(): Promise<void> }> {
   const instance = await DuckDBInstance.create(":memory:");
   const connection = await instance.connect();
   await connection.run("SET TimeZone = 'UTC'");
+  await connection.run("SET preserve_insertion_order = true");
+  if (options.threads !== undefined) {
+    await connection.run(`SET threads = ${Math.max(1, Math.floor(options.threads))}`);
+  }
   const sources = new Map<string, Promise<LoadedSource>>();
 
   const load = (name: string): Promise<LoadedSource> => {
@@ -135,7 +146,10 @@ export async function describeColumns(file: string, source: Source): Promise<str
   try {
     const { sql, values } = readerSql(source, file);
     const reader = await connection.runAndReadAll(`DESCRIBE SELECT * FROM ${sql}`, values);
-    return reader.getRows().map((row) => String(row[0]));
+    return reader
+      .getRows()
+      .map((row) => String(row[0]))
+      .filter((name) => !(source.type === "parquet" && name === "file_row_number"));
   } catch {
     return undefined;
   } finally {
@@ -149,7 +163,11 @@ interface LoadedSource {
   /** SQL for the rows: a temporary table, or a reader call with parameters. */
   relation: string;
   relationValues: Record<string, DuckDBValue>;
+  /** A stable source-row ordinal in file order (see createDuckDbExecutor). */
+  ordinal: string;
   columns: { name: string; type: string }[];
+  /** Largest magnitude of each floating column, once per executor. */
+  magnitudes: Map<string, Promise<number | null>>;
 }
 
 function quote(identifier: string): string {
@@ -179,7 +197,7 @@ function readerSql(
         },
       };
     case "parquet":
-      return { sql: "read_parquet($hm_file)", values: { hm_file: file } };
+      return { sql: "read_parquet($hm_file, file_row_number = true)", values: { hm_file: file } };
   }
 }
 
@@ -190,16 +208,21 @@ async function loadSource(
   file: string,
 ): Promise<LoadedSource> {
   const reader = readerSql(source, file);
-  let loaded: Omit<LoadedSource, "columns">;
+  let loaded: Omit<LoadedSource, "columns" | "magnitudes">;
   if (source.type === "parquet") {
-    loaded = { name, relation: reader.sql, relationValues: reader.values };
+    loaded = {
+      name,
+      relation: reader.sql,
+      relationValues: reader.values,
+      ordinal: "file_row_number",
+    };
   } else {
     const table = quote(`hm_source_${name}`);
     await connection.run(
       `CREATE TEMP TABLE ${table} AS SELECT * FROM ${reader.sql}`,
       reader.values,
     );
-    loaded = { name, relation: table, relationValues: {} };
+    loaded = { name, relation: table, relationValues: {}, ordinal: "rowid" };
   }
   const described = await connection.runAndReadAll(
     `DESCRIBE SELECT * FROM ${loaded.relation}`,
@@ -207,8 +230,9 @@ async function loadSource(
   );
   const columns = described
     .getRows()
-    .map((row) => ({ name: String(row[0]), type: String(row[1]) }));
-  return { ...loaded, columns };
+    .map((row) => ({ name: String(row[0]), type: String(row[1]) }))
+    .filter((c) => !(source.type === "parquet" && c.name === "file_row_number"));
+  return { ...loaded, columns, magnitudes: new Map() };
 }
 
 /** Collects bound parameters; each value gets its own $name, so SQL can be assembled in any order. */
@@ -341,7 +365,9 @@ function filterSql(
   }
 }
 
-function aggregateSql(component: MeasureComponent, source: LoadedSource): string {
+const isFloat = (type: string | undefined) => type === "DOUBLE" || type === "FLOAT";
+
+function aggregateSql(component: MeasureComponent, source: LoadedSource, ordinal: string): string {
   const found = component.column === undefined ? undefined : column(source, component.column);
   const target = found && quote(found.name);
   const needs = (): string => {
@@ -356,12 +382,10 @@ function aggregateSql(component: MeasureComponent, source: LoadedSource): string
     case "count_distinct":
       return `count(DISTINCT ${needs()})`;
     case "sum":
-      return found?.type === "DOUBLE" || found?.type === "FLOAT"
-        ? `fsum(${needs()})`
-        : `sum(${needs()})`;
+      return isFloat(found?.type) ? `fsum(${needs()} ORDER BY ${ordinal})` : `sum(${needs()})`;
     case "avg":
-      return found?.type === "DOUBLE" || found?.type === "FLOAT"
-        ? `fsum(${needs()}) / count(${needs()})`
+      return isFloat(found?.type)
+        ? `fsum(${needs()} ORDER BY ${ordinal}) / count(${needs()})`
         : `avg(${needs()})`;
     default:
       return `${component.aggregate}(${needs()})`;
@@ -468,22 +492,24 @@ async function execute(
     }
     for (const filter of shared) where.push(filterSql(source, filter, context, sql));
   }
+  const taken = (alias: string) => source.columns.some((c) => sameColumn(c.name, alias));
+  const free = (base: string) => {
+    let alias = base;
+    for (let n = 1; taken(alias); n++) alias = `${base}_${n}`;
+    return quote(alias);
+  };
+  const ordinal = free("hm_row");
   const measureSql = components.map((c) => {
     const inWhere = shared !== undefined;
     const filters = inWhere ? [] : c.filters.map((f) => filterSql(source, f, context, sql));
     const clause = filters.length > 0 ? ` FILTER (WHERE ${filters.join(" AND ")})` : "";
-    const aggregate = `${aggregateSql(c, source)}${clause}`;
+    const aggregate = `${aggregateSql(c, source, ordinal)}${clause}`;
     return c.aggregate === "sum" ? `coalesce(${aggregate}, 0)` : aggregate;
   });
 
-  const taken = (alias: string) => source.columns.some((c) => sameColumn(c.name, alias));
-  const dimRefs = query.dimensions.map((_, i) => {
-    let alias = `hm_d${i}`;
-    for (let n = 1; taken(alias); n++) alias = `hm_d${i}_${n}`;
-    return quote(alias);
-  });
+  const dimRefs = query.dimensions.map((_, i) => free(`hm_d${i}`));
   const dims = query.dimensions.map(
-    (d, i) => `${dimensionSql(source, d, context, sql)} AS ${dimRefs[i]}`,
+    (d, i) => `, ${dimensionSql(source, d, context, sql)} AS ${dimRefs[i]}`,
   );
   const grouped = dimRefs.length > 0;
   const select = [
@@ -491,9 +517,7 @@ async function execute(
     ...measureSql,
     ...(grouped ? [`GROUPING(${dimRefs.join(", ")})`] : []),
   ];
-  const from = grouped
-    ? `(SELECT *, ${dims.join(", ")} FROM ${source.relation}) AS "hm_rows"`
-    : source.relation;
+  const from = `(SELECT *, ${source.ordinal} AS ${ordinal}${dims.join("")} FROM ${source.relation}) AS "hm_rows"`;
   const text = [
     `SELECT ${select.join(", ")}`,
     `FROM ${from}`,
@@ -509,11 +533,15 @@ async function execute(
   ].join("\n");
 
   const serial = components.some((c) => c.aggregate === "sql");
+  const threads = serial
+    ? (await connection.runAndReadAll("SELECT current_setting('threads')")).getRows()[0]?.[0]
+    : undefined;
   if (serial) await connection.run("SET threads = 1");
   const reader = await connection
     .runAndReadAll(text, sql.values(source))
-    .finally(() => (serial ? connection.run("RESET threads") : undefined));
+    .finally(() => (serial ? connection.run(`SET threads = ${Number(threads ?? 1)}`) : undefined));
   const types = reader.columnTypes().map(String);
+  const imprecise = await impreciseColumns(connection, source, components);
   const dimCount = query.dimensions.length;
   const masks = new Map(
     query.groupingSets.map((set, i) => [
@@ -541,5 +569,42 @@ async function execute(
     ],
     rows,
     ...(query.groupingSets.length > 1 ? { groupingSet } : {}),
+    ...(imprecise.length > 0 ? { imprecise } : {}),
   };
+}
+
+/** The accuracy limit: floating sums are promised only for values within ±1e15. */
+const FLOAT_ACCURACY_LIMIT = 1e15;
+
+/** Summed floating columns of a query whose largest magnitude is above FLOAT_ACCURACY_LIMIT. */
+async function impreciseColumns(
+  connection: DuckDBConnection,
+  source: LoadedSource,
+  components: MeasureComponent[],
+): Promise<{ column: string; maxAbs: number }[]> {
+  const names = new Set<string>();
+  for (const c of components) {
+    if ((c.aggregate !== "sum" && c.aggregate !== "avg") || c.column === undefined) continue;
+    const found = column(source, c.column);
+    if (isFloat(found.type)) names.add(found.name);
+  }
+  const out: { column: string; maxAbs: number }[] = [];
+  for (const name of [...names].sort()) {
+    let magnitude = source.magnitudes.get(name);
+    if (magnitude === undefined) {
+      magnitude = connection
+        .runAndReadAll(
+          `SELECT max(abs(${quote(name)})) FROM ${source.relation}`,
+          source.relationValues,
+        )
+        .then((r) => {
+          const value = r.getRows()[0]?.[0];
+          return typeof value === "number" ? value : null;
+        });
+      source.magnitudes.set(name, magnitude);
+    }
+    const maxAbs = await magnitude;
+    if (maxAbs !== null && maxAbs > FLOAT_ACCURACY_LIMIT) out.push({ column: name, maxAbs });
+  }
+  return out;
 }

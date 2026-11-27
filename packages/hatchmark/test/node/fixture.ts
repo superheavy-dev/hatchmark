@@ -38,10 +38,15 @@ export async function removeProjects(): Promise<void> {
 }
 
 /** Runs a dashboard with a fresh DuckDB executor. */
-export async function run(root: string, project: Project, dashboard: string) {
+export async function run(
+  root: string,
+  project: Project,
+  dashboard: string,
+  options: { threads?: number } = {},
+) {
   const config = project.config.spec;
   if (config === undefined) throw new Error("invalid hatchmark.json");
-  const executor = await createDuckDbExecutor({ root, config });
+  const executor = await createDuckDbExecutor({ root, config, ...options });
   try {
     return await runDashboard(project, dashboard, executor);
   } finally {

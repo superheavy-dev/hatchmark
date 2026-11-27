@@ -250,6 +250,11 @@ export interface QueryResult {
   rows: unknown[][];
   /** Index of the grouping set each row belongs to, when the query has more than one. */
   groupingSet?: number[];
+  /**
+   * Floating columns this query sums whose largest magnitude is above ±1e15, the range within
+   * which Hatchmark promises accurate float sums; run reports each as an HM4004 warning.
+   */
+  imprecise?: { column: string; maxAbs: number }[];
 }
 
 /**

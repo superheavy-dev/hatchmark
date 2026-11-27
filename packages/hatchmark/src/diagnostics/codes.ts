@@ -178,6 +178,11 @@ export const CODES = {
     explanation:
       'A SQL metric declares "additive": true, but in a table the rows add up to a different number than the total, which Hatchmark recomputes from all rows. The total is still right; a percent of total or an in-browser filter that sums rows would not be. Distinct counts, averages and ratios are not additive: set "additive": false, or rewrite the SQL as a sum or count.',
   },
+  HM4004: {
+    title: "float values beyond the accuracy limit",
+    explanation:
+      "A metric sums a floating-point column (DOUBLE or FLOAT, such as CSV numbers with a decimal point) that holds a value larger than 1e15 in magnitude. Hatchmark adds floats in a fixed order with compensated summation and shows 15 significant digits, which is exact for values within ±1e15 but can lose small values next to very large ones, so the result may be inaccurate (though still the same on every run). Store the values in a smaller unit, as DECIMAL (Parquet), or keep very large and very small values in separate columns.",
+  },
   HM9001: {
     title: "internal error",
     explanation:

@@ -58,11 +58,20 @@ Metric filters and dashboard select filters compare a column with a value:
 
 Integer and DECIMAL columns aggregate exactly in DuckDB and are converted to a JavaScript number
 once; integers are exact up to 2^53 (about 9 quadrillion). Floating-point columns (CSV numbers
-with a decimal point) sum with compensated (Kahan-Babuska) summation, and every floating-point
-result is rounded to 15 significant digits, so a total is the same, byte for byte, however many
-threads added it, and tiny values such as 4e-10 are never rounded away. SQL metrics run on one
-thread, since their SQL cannot be rewritten. A SQL result that is not a number (division by zero)
-is empty, never 0.
+with a decimal point) sum with compensated (Kahan-Babuska) summation in file order, and an
+average is that sum divided by the count. Every floating-point result is rounded to 15
+significant digits, and tiny values such as 4e-10 are never rounded away. Because the values are
+added in the same order on every run, a total is the same, byte for byte, however many threads
+DuckDB uses. File order comes from the reader: a CSV or JSON file is loaded once into a table that
+keeps the file's row order, and Parquet rows carry their row number in the file.
+
+Floating-point sums are accurate for values within ±1e15. When a metric sums or averages a
+floating-point column that holds a larger value, run warns with HM4004: the result is still the
+same on every run, but small values next to very large ones may be lost. Store such values in a
+smaller unit, as DECIMAL in Parquet, or in separate columns.
+
+SQL metrics run on one thread, since their SQL cannot be rewritten. A SQL result that is not a
+number (division by zero) is empty, never 0.
 
 ## Plans
 

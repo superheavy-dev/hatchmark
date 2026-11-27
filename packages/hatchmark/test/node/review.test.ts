@@ -10,7 +10,7 @@ import {
 import { createDuckDbExecutor } from "../../src/node/index.js";
 import { checkReferences, PROJECT_DEFAULTS, parseDiagnostics } from "../../src/spec/index.js";
 import { applyFix } from "../spec/helpers.js";
-import { metric, Oracle, removeProjects, run, writeProject } from "./fixture.js";
+import { loadAt, metric, Oracle, removeProjects, run, writeProject } from "./fixture.js";
 
 // Regression tests for the review of hatchmark#8: HAT-22's probes and HAT-23's blockers.
 
@@ -208,36 +208,96 @@ describe("HAT-22 probes", () => {
     }
   });
 
-  it("gives byte-identical floating sums at a size DuckDB adds in parallel, without truncating", async () => {
-    const cycle = [1e16, 1.0, -1e16, 0.1, 0.2, 0.3, 0.4];
-    const text = `amount\n${Array.from({ length: 500_100 }, (_, i) => (cycle[i % 7] ?? 0).toExponential()).join("\n")}\n`;
-    const fixture = await probe(
-      { type: "table", by: ["kind"], metrics: ["revenue", "raw_total"] },
-      {
-        period: ALL,
-        text: text.replace("amount\n", "kind,amount\n").replace(/\n(?=[-\d])/g, "\nall,"),
-        extra: {
-          "metrics/revenue.json": metric({
-            type: "aggregate",
-            table: "orders",
-            aggregate: "sum",
-            column: "amount",
-          }),
-          "metrics/raw_total.json": metric({
-            type: "sql",
-            table: "orders",
-            sql: "sum(amount)",
-            additive: true,
-          }),
-        },
+  async function threadOutputs(blocks: unknown[], csv: string, runs: number) {
+    const fixture = await writeProject({
+      "hatchmark.json": {
+        ...PROJECT_DEFAULTS,
+        name: "Probe",
+        sources: { orders: { type: "csv", path: "orders.csv" } },
       },
+      "metrics/total.json": metric({
+        type: "aggregate",
+        table: "orders",
+        aggregate: "sum",
+        column: "amount",
+      }),
+      "metrics/mean.json": metric({
+        type: "aggregate",
+        table: "orders",
+        aggregate: "avg",
+        column: "amount",
+      }),
+      "dashboards/probe.json": { title: "Probe", period: ALL, blocks },
+    });
+    await oracle.run(`COPY (${csv}) TO '${path.join(fixture.root, "orders.csv")}' (HEADER)`);
+    const loaded = await loadAt(fixture.root);
+    const outputs = new Set<string>();
+    let diagnostics: unknown[] = [];
+    for (const threads of [1, 4, 8]) {
+      for (let i = 0; i < runs; i++) {
+        const result = await run(loaded.root, loaded.project, "probe", { threads });
+        diagnostics = result.diagnostics;
+        outputs.add(JSON.stringify(result.data?.blocks));
+      }
+    }
+    return { outputs: [...outputs], diagnostics };
+  }
+
+  it("sums HAT-22's cancelling floats in file order, the same bytes at 1, 4 and 8 threads", async () => {
+    const { outputs, diagnostics } = await threadOutputs(
+      [
+        { type: "kpi", id: "total", metric: "total" },
+        { type: "kpi", id: "mean", metric: "mean" },
+        { type: "table", by: ["k"], metrics: ["total", "mean"] },
+      ],
+      `SELECT CAST(i % 3 AS VARCHAR) AS k, v AS amount
+       FROM (VALUES (0, 1e100), (1, 1e30), (2, 0.1), (3, -1e30), (4, -1e100), (5, 0.0)) b(block, v),
+            range(122880) r(i)
+       ORDER BY block, i`,
+      4,
     );
-    const seen = new Set<string>();
-    for (let i = 0; i < 4; i++) seen.add(JSON.stringify(await first(fixture)));
-    expect(seen.size).toBe(1);
-    const table = JSON.parse([...seen][0] ?? "{}") as TableData;
-    expect(table.total?.values.revenue).toBe(142885.6);
-  }, 30_000);
+    expect(outputs).toHaveLength(1);
+    expect(diagnostics).toMatchObject([
+      { code: "HM4004", severity: "warning", message: expect.stringContaining('"amount"') },
+    ]);
+  }, 120_000);
+
+  it("sums 2M cents to the exact total, the same bytes at 1, 4 and 8 threads", async () => {
+    const csv = `SELECT CASE i % 4 WHEN 0 THEN 'West' WHEN 1 THEN 'East' WHEN 2 THEN 'North' ELSE 'South' END AS region,
+                        CAST((i * 7919) % 100000 AS DOUBLE) / 100 AS amount
+                 FROM range(2000000) r(i)`;
+    const { outputs, diagnostics } = await threadOutputs(
+      [
+        { type: "kpi", id: "total", metric: "total" },
+        { type: "table", by: ["region"], metrics: ["total", "mean"] },
+      ],
+      csv,
+      1,
+    );
+    expect(outputs).toHaveLength(1);
+    expect(diagnostics).toEqual([]);
+    const [exact] = await oracle.rows(
+      `SELECT CAST(sum((i * 7919) % 100000) AS DOUBLE) / 100 AS total FROM range(2000000) r(i)`,
+    );
+    const blocks = JSON.parse(outputs[0] ?? "[]") as BlockData[];
+    expect((blocks[0] as KpiData).value).toBe(exact?.total);
+    expect((blocks[1] as TableData).total?.values.total).toBe(exact?.total);
+  }, 120_000);
+
+  it("warns with HM4004 only when a summed float column holds a value beyond ±1e15", async () => {
+    const at = async (amount: string) => {
+      const fixture = await probe(
+        { type: "kpi", metric: "revenue" },
+        { period: ALL, text: `day,amount\n2026-01-15,${amount}\n2026-01-16,0.5\n` },
+      );
+      const { diagnostics } = await run(fixture.root, fixture.project, "probe");
+      return diagnostics.map((d) => d.code);
+    };
+    expect(await at("1e15")).toEqual([]);
+    expect(await at("-1e15")).toEqual([]);
+    expect(await at("1.5e15")).toEqual(["HM4004"]);
+    expect(await at("-2e15")).toEqual(["HM4004"]);
+  });
 });
 
 const NY = "America/New_York";
