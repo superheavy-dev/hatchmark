@@ -41,6 +41,7 @@ import {
   queryBounds,
   resolveRange,
   SUPPORTED_DATES,
+  windowAt,
 } from "./windows.js";
 
 /**
@@ -345,7 +346,8 @@ export async function executionContext(
             ids(expression).some((id) => {
               const query = queries.get(id);
               const horizon = query && measureHorizon(query, context);
-              const bounds = query && queryBounds(query, context);
+              const bounds =
+                query && windowAt(query, context, parseInstant(context.asOfInstant ?? ""));
               if (horizon === undefined || bounds === undefined) return false;
               const at = toLocal(horizon, tz);
               const start = bounds.kind === "bounded" ? local(bounds.start) : undefined;
