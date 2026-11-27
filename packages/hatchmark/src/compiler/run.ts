@@ -159,6 +159,7 @@ export async function executionContext(
   }
 
   let instant: bigint;
+  let fixedAsOf: string | undefined;
   const asOfRule = plan.period.asOf;
   if (asOfRule === "latest_data" || asOfRule === "latest_common_data") {
     const voting = plan.horizons
@@ -197,6 +198,7 @@ export async function executionContext(
       };
     }
     instant = startOf(nextDay(asOfRule), tz);
+    fixedAsOf = asOfRule;
   }
   const lastDay = toLocal(instant - 1n, tz);
   if (
@@ -211,7 +213,7 @@ export async function executionContext(
       ],
     };
   }
-  const asOf = formatWall(lastDay).slice(0, 10);
+  const asOf = fixedAsOf ?? formatWall(lastDay).slice(0, 10);
 
   const horizonOf = (h: PlannedHorizon) => measured.get(h) ?? (h.votes ? undefined : instant);
   const horizons = plan.horizons.flatMap((h): SourceHorizon[] => {

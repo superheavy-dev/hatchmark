@@ -306,30 +306,45 @@ export function windowAt(
 ): WindowBounds | undefined {
   const bounds = endedWindow(query, context, horizon);
   const time = query.dimensions.find((d) => d.kind === "time");
-  if (time?.kind !== "time" || query.window.edges === "clip" || bounds?.kind !== "bounded")
-    return laterMidnights(bounds, context.timezone);
-  if (bounds.start === bounds.end || bounds.start.endsWith("Z")) {
-    return laterMidnights(bounds, context.timezone);
-  }
-  return laterMidnights(
-    { ...bounds, start: bucketStart(bounds.start, time.grain) },
-    context.timezone,
-  );
+  const snapped =
+    time?.kind !== "time" ||
+    query.window.edges === "clip" ||
+    bounds?.kind !== "bounded" ||
+    bounds.start === bounds.end ||
+    bounds.start.endsWith("Z")
+      ? bounds
+      : { ...bounds, start: bucketStart(bounds.start, time.grain) };
+  return settled(snapped, context.timezone, horizon);
 }
 
-function laterMidnights(
+/**
+ * A window bound as the instant it stands for: a date at a midnight that a fall-back repeats is
+ * its later occurrence (RFC 0001 section 6.2); any other bound is returned unchanged, so an
+ * instant is never moved.
+ */
+export function exactBound(bound: string, timezone: string): string {
+  if (bound.endsWith("Z") || !isRepeated(parseInstant(bound), timezone)) return bound;
+  return formatInstant(fromLocal(parseInstant(bound), timezone));
+}
+
+function settled(
   bounds: WindowBounds | undefined,
   timezone: string | undefined,
+  horizon: bigint | undefined,
 ): WindowBounds | undefined {
   if (bounds === undefined || timezone === undefined) return bounds;
-  const exact = (bound: string) =>
-    bound.endsWith("Z") || !isRepeated(parseInstant(bound), timezone)
-      ? bound
-      : formatInstant(fromLocal(parseInstant(bound), timezone));
-  if (bounds.kind === "bounded") {
-    return { ...bounds, start: exact(bounds.start), end: exact(bounds.end) };
+  const instant = (bound: string) =>
+    bound.endsWith("Z") ? parseInstant(bound) : fromLocal(parseInstant(bound), timezone);
+  const end = (bound: string) =>
+    horizon !== undefined && instant(bound) > horizon
+      ? formatInstant(horizon)
+      : exactBound(bound, timezone);
+  if (bounds.kind === "unbounded") {
+    return bounds.end === undefined ? bounds : { ...bounds, end: end(bounds.end) };
   }
-  return bounds.end === undefined ? bounds : { ...bounds, end: exact(bounds.end) };
+  const start = exactBound(bounds.start, timezone);
+  const stop = end(bounds.end);
+  return { kind: "bounded", start, end: instant(start) >= instant(stop) ? start : stop };
 }
 
 function endedWindow(
@@ -351,7 +366,10 @@ function endedWindow(
   const hw = toLocal(horizon, tz);
   const day = formatWall(hw).slice(0, 10);
   const timeAxis = query.dimensions.some((d) => d.kind === "time");
-  const exact = formatWall(hw).endsWith("T00:00:00.000000") ? day : formatInstant(horizon);
+  const exact =
+    formatWall(hw).endsWith("T00:00:00.000000") && fromLocal(hw, tz) === horizon
+      ? day
+      : formatInstant(horizon);
   if (range === "all_time") return { kind: "unbounded", end: timeAxis ? exact : day };
   const base = resolveRange(range, "none", context.asOf, anchors);
   if (base?.kind !== "bounded" || target.kind !== "bounded") return target;
