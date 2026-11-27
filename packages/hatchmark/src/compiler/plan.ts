@@ -251,16 +251,17 @@ export interface QueryResult {
   /** Index of the grouping set each row belongs to, when the query has more than one. */
   groupingSet?: number[];
   /**
-   * Floating columns this query sums whose largest magnitude is above ±1e15, the range within
+   * Floating columns this query sums whose largest finite magnitude is above ±1e15, the range within
    * which Hatchmark promises accurate float sums; run reports each as an HM4004 warning.
    */
   imprecise?: { column: string; maxAbs: number }[];
   /**
-   * Floating sum and avg components whose result reaches ±1e13 in some row (a group, a time bucket
-   * or a total): at 15 significant digits, cents are lost there. Run reports each metric and block
-   * that shows one as an HM4004 warning.
+   * Metrics of this query that sum or average a floating column and whose displayed value reaches
+   * ±1e13 in some row (a group, a time bucket or a total), ignoring NaN and ±Infinity: shown with
+   * 15 significant digits, such values lose their cents. Run reports each metric and block that
+   * shows one as an HM4004 warning.
    */
-  large?: { component: string; maxAbs: number }[];
+  large?: { metric: string; maxAbs: number }[];
 }
 
 /**

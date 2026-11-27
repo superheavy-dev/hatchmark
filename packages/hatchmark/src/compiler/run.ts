@@ -154,7 +154,6 @@ function largeResults(
   results: Map<string, QueryResult>,
 ): Diagnostic[] {
   const file = project.dashboards.get(dashboard);
-  const queries = new Map(plan.queries.map((q) => [q.id, q]));
   const out: Diagnostic[] = [];
   for (const block of plan.blocks) {
     const found = new Map<string, number>();
@@ -164,13 +163,9 @@ function largeResults(
         visit(expression.denominator);
         return;
       }
-      const ids = queries
-        .get(expression.queryId)
-        ?.measures.find((m) => m.metric === expression.metric)
-        ?.components.map((c) => c.id);
-      for (const { component, maxAbs } of results.get(expression.queryId)?.large ?? []) {
-        if (!ids?.includes(component)) continue;
-        found.set(expression.metric, Math.max(found.get(expression.metric) ?? 0, maxAbs));
+      for (const { metric, maxAbs } of results.get(expression.queryId)?.large ?? []) {
+        if (metric !== expression.metric) continue;
+        found.set(metric, Math.max(found.get(metric) ?? 0, maxAbs));
       }
     };
     for (const readings of [block.measures, block.previous, block.sparkline]) {

@@ -547,9 +547,30 @@ function checkSourcePaths(project: Project, out: Diagnostic[]): void {
   }
 }
 
+/** HM2017: a source column whose name starts with __hm_, which the engine reserves for its own. */
+function checkReservedColumns(project: Project, out: Diagnostic[]): void {
+  const config = project.config;
+  for (const [name, columns] of project.columns) {
+    for (const column of columns.filter((c) => c.toLowerCase().startsWith("__hm_"))) {
+      const pointer = `/sources/${name}/path`;
+      out.push({
+        code: "HM2017",
+        severity: "error",
+        message: `source "${name}" has a column "${column}"; names starting with __hm_ are reserved`,
+        file: config.file,
+        pointer,
+        ...config.document.locationOf(pointer),
+        help: "rename the column in the data file",
+        docs: docsCommand("HM2017"),
+      });
+    }
+  }
+}
+
 export function checkReferences(project: Project): Diagnostic[] {
   const out: Diagnostic[] = [];
   checkSourcePaths(project, out);
+  checkReservedColumns(project, out);
   checkMetrics(project, out);
   for (const file of project.dashboards.values()) checkDashboard(project, file, out);
   return out;

@@ -62,20 +62,22 @@ with a decimal point) sum with compensated (Kahan-Babuska) summation in file ord
 average is that sum divided by the count. Every floating-point result is rounded to 15
 significant digits, and tiny values such as 4e-10 are never rounded away. Because the values are
 added in the same order on every run, a total is the same, byte for byte, however many threads
-DuckDB uses. File order comes from the reader: a CSV or JSON file is loaded once into a table that
-keeps the file's row order, and Parquet rows carry their row number in the file. A source path
-with glob characters (`*`, `?`, `[`) is a check error (HM2016), since DuckDB would read it as
-several files. Should the executor still be given several files, it takes their rows file by
-file, with the paths sorted in byte order (`B.csv` before `a.csv`).
+DuckDB uses. File order is fixed when the source is loaded: every source, Parquet included, is read
+once into a table that keeps the file's row order, and each row gets its place in that table. It
+never comes from a column in the data, and column names starting with `__hm_` are reserved for
+Hatchmark (HM2017). A source path with glob characters (`*`, `?`, `[`) is a check error
+(HM2016), since DuckDB would read it as several files. Should the executor still be given several
+files, it takes their rows file by file, with the paths sorted by their UTF-8 bytes.
 
 Floating-point sums are accurate for values within ±1e15. When a metric sums or averages a
 floating-point column that holds a larger value, run warns with HM4004: the result is still the
 same on every run, but small values next to very large ones may be lost. Store such values in a
 smaller unit, as DECIMAL in Parquet, or in separate columns.
 
-Fifteen significant digits hold cents only below 1e13 (ten trillion). When a floating-point sum
-or average reaches ±1e13 in any row, time bucket or total, run also warns with HM4004, naming the
-metric and the block. A table whose rows stay below 1e13 still warns when its total reaches it.
+Fifteen significant digits hold cents only below 1e13 (ten trillion). When the value a block
+shows for a floating-point sum or average (the average itself, not the sum behind it) reaches
+±1e13 in any row, time bucket or total, run also warns with HM4004, naming the metric and the
+block. Both checks leave out NaN and infinite values. A table whose rows stay below 1e13 still warns when its total reaches it.
 Store such values in a larger unit, such as thousands, or as DECIMAL in Parquet.
 
 SQL metrics run on one thread, since their SQL cannot be rewritten. A SQL result that is not a

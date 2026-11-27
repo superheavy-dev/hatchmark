@@ -129,6 +129,11 @@ export const CODES = {
     explanation:
       "A source path in hatchmark.json contains *, ? or [. DuckDB reads such a path as a glob pattern, so it could read several files, or other files than the one named, even when a file with exactly that name exists. Hatchmark reads one file per source and does not escape these characters, so rename the file. The fix suggests a name with _ in their place, and it is unsafe because the file itself must be renamed too. Sources that read several files will come later as an explicit field, not as a pattern in path.",
   },
+  HM2017: {
+    title: "reserved column name",
+    explanation:
+      "A column of a source's data file has a name starting with __hm_ (in any case). Hatchmark adds columns with that prefix when it loads a source, such as the row's place in the file, which keeps sums of floating-point values in a fixed order, so a source column may not use it. Rename the column in the data file.",
+  },
   HM3001: {
     title: "missing required property",
     explanation:
@@ -186,7 +191,7 @@ export const CODES = {
   HM4004: {
     title: "float values beyond the accuracy limit",
     explanation:
-      "Floating-point columns (DOUBLE or FLOAT, such as CSV numbers with a decimal point) are added in a fixed order with compensated summation, and every result keeps 15 significant digits. That is accurate within limits, and this warning names where they are crossed. Input: a metric sums or averages a column that holds a value larger than 1e15 in magnitude, so small values next to very large ones can be lost; the result is still the same on every run. Store the values in a smaller unit, as DECIMAL (Parquet), or keep very large and very small values in separate columns. Result: a float sum or average reaches 1e13 in magnitude in some row, time bucket or total of a block, where 15 significant digits no longer hold cents (10,000,000,000,000.00 needs 16). The warning names the metric and the block. Store the values in a larger unit, such as thousands, or as DECIMAL (Parquet), which stays exact.",
+      "Floating-point columns (DOUBLE or FLOAT, such as CSV numbers with a decimal point) are added in a fixed order with compensated summation, and every result keeps 15 significant digits. That is accurate within limits, and this warning names where they are crossed; NaN and infinite values are left out of both checks. Input: a metric sums or averages a column that holds a value larger than 1e15 in magnitude, so small values next to very large ones can be lost; the result is still the same on every run. Store the values in a smaller unit, as DECIMAL (Parquet), or keep very large and very small values in separate columns. Result: the value a block shows for a float sum or average (the average itself, not the sum behind it) reaches 1e13 in magnitude in some row, time bucket or total, where 15 significant digits no longer hold cents (10,000,000,000,000.00 needs 16). The warning names the metric and the block. Store the values in a larger unit, such as thousands, or as DECIMAL (Parquet), which stays exact.",
   },
   HM9001: {
     title: "internal error",

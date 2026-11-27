@@ -338,7 +338,7 @@ describe("HAT-22 probes", () => {
     { type: "csv", copy: "HEADER" },
     { type: "json", copy: "FORMAT json" },
   ] as const)(
-    "sums the floats of several $type files in byte order of their paths, at 1, 4 and 8 threads",
+    "sums the floats of several $type files in UTF-8 byte order of their paths, at 1, 4 and 8 threads",
     async ({ type, copy }) => {
       const fixture = await writeProject({
         "hatchmark.json": {
@@ -367,11 +367,11 @@ describe("HAT-22 probes", () => {
       const dir = path.join(fixture.root, "parts");
       await mkdir(dir);
       const files = {
-        B: [
+        "～": [
           ["1e100", 1],
           ["1e30", 1],
         ],
-        a: [
+        "😀": [
           ["-1e30", 1],
           ["1", 245760],
           ["-1e100", 1],
@@ -416,7 +416,7 @@ describe("HAT-22 probes", () => {
       }
       const reduce = async (direction: string) => {
         const [row] = await oracle.rows(
-          `SELECT fsum(amount ORDER BY CAST(file AS BLOB) ${direction}, k, i) AS v FROM (${generated})`,
+          `SELECT fsum(amount ORDER BY encode(file) ${direction}, k, i) AS v FROM (${generated})`,
         );
         return row?.v;
       };
@@ -426,6 +426,137 @@ describe("HAT-22 probes", () => {
     },
     120_000,
   );
+});
+
+describe("HAT-22 capped round", () => {
+  const read = async (
+    files: Record<string, unknown>,
+    source: unknown,
+    aggregate = "sum",
+    block?: unknown,
+  ) =>
+    writeProject({
+      "hatchmark.json": { ...PROJECT_DEFAULTS, name: "Capped", sources: { orders: source } },
+      "metrics/amount.json": metric({
+        type: "aggregate",
+        table: "orders",
+        aggregate,
+        column: "amount",
+      }),
+      "dashboards/probe.json": {
+        title: "Capped",
+        period: ALL,
+        blocks: [block ?? { type: "kpi", id: "headline", metric: "amount" }],
+      },
+      ...files,
+    });
+  const csv = (text: string, aggregate = "sum", file = "orders.csv") =>
+    read({ [file]: text }, { type: "csv", path: file }, aggregate);
+  const checks = (fixture: Awaited<ReturnType<typeof read>>) => [
+    ...parseDiagnostics(fixture.project),
+    ...checkReferences(fixture.project),
+  ];
+
+  it("orders by file position when a CSV has a rowid column", async () => {
+    const amounts = ["1e100", "1e30", "1e-1", "-1e30", "-1e100"];
+    const ids = [0, 2, 4, 3, 1];
+    const body = amounts.map((v, i) => `${ids[i]},${v}`).join("\n");
+    const results: string[] = [];
+    for (const header of ["external_id", "rowid"]) {
+      const fixture = await csv(`${header},amount\n${body}\n`);
+      expect(checks(fixture)).toEqual([]);
+      for (const threads of [1, 4, 8]) {
+        const result = await run(fixture.root, fixture.project, "probe", { threads });
+        expect(result.diagnostics.map((d) => d.code)).toEqual(["HM4004"]);
+        results.push(JSON.stringify(result.data?.blocks[0]));
+      }
+    }
+    expect(new Set(results).size).toBe(1);
+  });
+
+  it("reads a Parquet file that has its own file_row_number column", async () => {
+    const fixture = await read({}, { type: "parquet", path: "orders.parquet" });
+    await oracle.run(
+      `COPY (SELECT 0 AS file_row_number, 1.25e0 AS amount) TO '${path.join(fixture.root, "orders.parquet")}' (FORMAT parquet)`,
+    );
+    const loaded = await loadAt(fixture.root);
+    expect(loaded.project.columns.get("orders")).toEqual(["file_row_number", "amount"]);
+    expect([...parseDiagnostics(loaded.project), ...checkReferences(loaded.project)]).toEqual([]);
+    const result = await run(loaded.root, loaded.project, "probe", { threads: 4 });
+    expect(result.diagnostics).toEqual([]);
+    expect(result.data?.blocks[0]).toMatchObject({ value: 1.25 });
+  });
+
+  it("rejects a source column starting with __hm_ with HM2017", async () => {
+    const fixture = await csv("__hm_x,amount\n1,1.25\n");
+    expect(checks(fixture)).toMatchObject([
+      {
+        code: "HM2017",
+        severity: "error",
+        file: "hatchmark.json",
+        pointer: "/sources/orders/path",
+        message: expect.stringContaining('"__hm_x"'),
+      },
+    ]);
+    const result = await run(fixture.root, fixture.project, "probe");
+    expect(result.data).toBeUndefined();
+    expect(result.diagnostics.map((d) => d.code)).toEqual(["HM2017"]);
+  });
+
+  it("warns about a large float when the column also holds NaN, and ignores NaN and Infinity", async () => {
+    const large = await csv("amount\n2e15\nNaN\n");
+    const warned = await run(large.root, large.project, "probe", { threads: 4 });
+    expect(warned.diagnostics.map((d) => d.code)).toEqual(["HM4004"]);
+    const special = await csv("amount\n1\nInfinity\n-Infinity\nNaN\n");
+    expect((await run(special.root, special.project, "probe")).diagnostics).toEqual([]);
+  });
+
+  it("sums a CSV with a non-ASCII path", async () => {
+    const fixture = await csv("amount\n1.25\n2.50\n", "sum", "매출.csv");
+    expect(checks(fixture)).toEqual([]);
+    const result = await run(fixture.root, fixture.project, "probe", { threads: 4 });
+    expect(result.diagnostics).toEqual([]);
+    expect(result.data?.blocks[0]).toMatchObject({ value: 3.75 });
+  });
+
+  it("bases the HM4004 result warning on the displayed average, not its sum", async () => {
+    const below = await csv("amount\n6e12\n6e12\n", "avg");
+    const shown = await run(below.root, below.project, "probe", { threads: 4 });
+    expect(shown.data?.blocks[0]).toMatchObject({ value: 6e12 });
+    expect(shown.diagnostics).toEqual([]);
+    const reached = await csv("amount\n1e13\n1e13\n", "avg");
+    expect((await run(reached.root, reached.project, "probe")).diagnostics).toMatchObject([
+      { code: "HM4004", message: expect.stringContaining('metric "amount" in block "headline"') },
+    ]);
+  });
+
+  it("checks a limited float table with 160,000 groups in SQL", async () => {
+    const lines = Array.from({ length: 160_000 }, (_, i) => `id_${i},${i === 7 ? "1e13" : "1.25"}`);
+    const fixture = await read(
+      { "orders.csv": `sku,amount\n${lines.join("\n")}\n` },
+      { type: "csv", path: "orders.csv" },
+      "sum",
+      { type: "table", id: "skus", by: ["sku"], metrics: ["amount"], limit: 15 },
+    );
+    const { plan } = planDashboard(fixture.project, "probe");
+    const config = fixture.project.config.spec;
+    const query = plan?.queries[0];
+    if (config === undefined || query === undefined) throw new Error("no plan");
+    const executor = await createDuckDbExecutor({ root: fixture.root, config, threads: 4 });
+    try {
+      const context = {
+        asOf: "2026-02-28",
+        timezone: "UTC",
+        weekStart: "monday" as const,
+        bindings: {},
+      };
+      const result = await executor.execute(query, context);
+      expect(result.rows).toHaveLength(160_001);
+      expect(result.large).toEqual([{ metric: "amount", maxAbs: 10000000199998.8 }]);
+    } finally {
+      await executor.close();
+    }
+  }, 60_000);
 });
 
 const NY = "America/New_York";
