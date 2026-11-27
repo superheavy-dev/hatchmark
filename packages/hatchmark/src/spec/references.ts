@@ -8,8 +8,9 @@ import {
   type JsonNode,
   type Severity,
 } from "../diagnostics/index.js";
+import { hasColumn } from "./common.js";
 import { type Block, blockId, type Dashboard, DEFAULT_PERIOD } from "./dashboard.js";
-import { removeItemFix, replaceValueFix } from "./fixes.js";
+import { addPropertyFix, removeItemFix, replaceValueFix } from "./fixes.js";
 import { metricSources } from "./graph.js";
 import { isAdditive, type Metric } from "./metric.js";
 import type { Project, SpecFile } from "./project.js";
@@ -378,7 +379,9 @@ function checkDashboard(project: Project, file: SpecFile<"dashboard">, out: Diag
       if (filter.type !== "select") continue;
       const list = [...sources].sort();
       const unknown = list.filter((s) => !project.columns.has(s));
-      const lacking = list.filter((s) => project.columns.get(s)?.includes(filter.column) === false);
+      const lacking = list.filter(
+        (s) => hasColumn(project.columns.get(s), filter.column) === false,
+      );
       if (unknown.length === 0 && (lacking.length === 0 || lacking.length === list.length))
         continue;
       r.report(
@@ -390,7 +393,7 @@ function checkDashboard(project: Project, file: SpecFile<"dashboard">, out: Diag
         {
           help:
             unknown.length > 0
-              ? `column names are known for CSV sources only; until the others can be read, keep metrics from different sources in separate blocks when the dashboard has select filters`
+              ? `Hatchmark could not read the column names of ${unknown.join(", ")}; check that the data files can be read, or keep metrics from different sources in separate blocks when the dashboard has select filters`
               : `a filter must apply to every source a block reads, or its numbers mix filtered and unfiltered rows; split the block or drop the filter`,
         },
       );
@@ -403,6 +406,48 @@ function checkDashboard(project: Project, file: SpecFile<"dashboard">, out: Diag
       r.report("HM2008", `/filters/${i}/id`, `duplicate filter id "${filter.id}"`);
     }
     filterIds.add(filter.id);
+    if (filter.type !== "select" || filter.multiple === true || !Array.isArray(filter.default)) {
+      return;
+    }
+    const values = filter.default;
+    const [only] = values;
+    const fix =
+      values.length === 1 && only !== undefined
+        ? replaceValueFix(
+            file.document,
+            `/filters/${i}/default`,
+            only,
+            "safe",
+            `replace with ${JSON.stringify(only)}`,
+          )
+        : values.length > 1
+          ? addPropertyFix(
+              file.document,
+              `/filters/${i}`,
+              "multiple",
+              true,
+              "unsafe",
+              'add "multiple": true',
+            )
+          : undefined;
+    r.report(
+      "HM3008",
+      `/filters/${i}/default`,
+      `filter "${filter.id}" selects one value, but its default is a list`,
+      {
+        label:
+          values.length === 0
+            ? "an empty list"
+            : `${values.length} value${values.length === 1 ? "" : "s"}`,
+        help:
+          values.length === 1
+            ? "write the one value without brackets"
+            : values.length === 0
+              ? 'remove the default for "all", or set "multiple": true'
+              : 'set "multiple": true to select several values, or keep one value',
+        ...optional("fix", fix),
+      },
+    );
   });
 }
 

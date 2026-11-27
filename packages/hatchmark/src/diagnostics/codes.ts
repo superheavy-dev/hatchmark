@@ -112,12 +112,17 @@ export const CODES = {
   HM2013: {
     title: "filter applies to only some sources of a block",
     explanation:
-      "A dashboard select filter must apply to every source a block reads. If a ratio's numerator comes from a source with the filter column and its denominator from one without, the block would divide filtered rows by unfiltered rows. Hatchmark knows the columns of CSV sources from their header; for other sources it cannot confirm the column yet and reports this too. Keep such metrics in separate blocks, or drop the filter.",
+      "A dashboard select filter must apply to every source a block reads. If a ratio's numerator comes from a source with the filter column and its denominator from one without, the block would divide filtered rows by unfiltered rows. Hatchmark reads column names from CSV headers and, when the host can read the file (the CLI uses DuckDB), from Parquet and JSON files; when it cannot read them it reports this too. Column names match case-insensitively, as DuckDB resolves them. Keep such metrics in separate blocks, or drop the filter.",
   },
   HM2014: {
     title: "CSV header too long",
     explanation:
       'The first record of a CSV source is longer than 16 MiB, so Hatchmark does not read it as column names rather than guess from part of it. This usually means the delimiter or quoting is wrong. Fix the file, set the source\'s delimiter, or set "header": false.',
+  },
+  HM2015: {
+    title: "data cannot be queried",
+    explanation:
+      "Running a dashboard's queries failed: a data file cannot be read, a column a metric names is not in the data, a time column is not a date or timestamp, a filter is bound to a value it cannot take, or latest_data found no dates because the time columns are empty. The message carries the cause. Fix the data or the metric, or set period.asOf to a fixed date.",
   },
   HM3001: {
     title: "missing required property",
@@ -148,10 +153,25 @@ export const CODES = {
     explanation:
       "Two properties that cannot be used together are both set, or a combination of values is not supported.",
   },
+  HM3008: {
+    title: "list default on a single-value select",
+    explanation:
+      'A select filter without "multiple": true picks one value, but its default is a list, so the page would open on a state the filter cannot show. Write the one value without brackets, set "multiple": true to allow several values, or remove the default to show everything. A one-item list has a safe fix that unwraps it.',
+  },
   HM4001: {
     title: "percent of total on a non-additive metric",
     explanation:
       "A share of the total only makes sense when the parts add up to the total. Averages, distinct counts, medians, ratios and SQL metrics declared additive: false do not. Remove the metric from percentOfTotal, or show the additive metric it is built from.",
+  },
+  HM4002: {
+    title: "block type not built yet",
+    explanation:
+      "This version of Hatchmark builds kpi, line, area, bar and table blocks. bar_list and text blocks are valid specs but are not built yet, so the dashboard is built without them and they do not appear on the page. Use a bar block with by and a limit instead of bar_list, or keep the block and it will appear once its type is built.",
+  },
+  HM4003: {
+    title: "additive metric does not add up",
+    explanation:
+      'A SQL metric declares "additive": true, but in a table the rows add up to a different number than the total, which Hatchmark recomputes from all rows. The total is still right; a percent of total or an in-browser filter that sums rows would not be. Distinct counts, averages and ratios are not additive: set "additive": false, or rewrite the SQL as a sum or count.',
   },
   HM9001: {
     title: "internal error",

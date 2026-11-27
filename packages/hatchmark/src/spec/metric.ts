@@ -21,7 +21,10 @@ const betweenFilter = z.strictObject({
 
 export const filterSchema = z
   .discriminatedUnion("op", [comparisonFilter, setFilter, nullFilter, betweenFilter])
-  .meta({ description: "A row filter. between is inclusive at both ends." });
+  .meta({
+    description:
+      "A row filter. between is inclusive at both ends. A date (YYYY-MM-DD) compared with a timestamp column compares the row's calendar date in the project time zone, so eq matches the whole day and between includes all of its last day. neq and not_in keep rows whose column is null; the other operators never match null.",
+  });
 export type Filter = z.infer<typeof filterSchema>;
 
 const decimals = z.number().int().min(0).max(6);

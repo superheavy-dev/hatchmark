@@ -6,6 +6,7 @@ import {
   parseJsonFile,
 } from "../diagnostics/index.js";
 import { IDENTIFIER_PATTERN, normalizePath } from "./common.js";
+import type { Source } from "./config.js";
 import { PROJECT_DEFAULTS, type ProjectConfig, projectConfigSchema } from "./config.js";
 import { type Dashboard, dashboardSchema } from "./dashboard.js";
 import { type Metric, metricSchema } from "./metric.js";
@@ -49,8 +50,8 @@ export interface Project {
   /** Source names whose data file is missing; filled by loadProject. */
   missingData: Set<string>;
   /**
-   * Column names by source, where they are known without a query engine: CSV headers today.
-   * A source missing from the map has unknown columns.
+   * Column names by source: CSV headers, and the columns of other files when the host can read
+   * them (ProjectHost.columns). A source missing from the map has unknown columns.
    */
   columns: Map<string, string[]>;
 }
@@ -119,6 +120,12 @@ export interface ProjectHost {
    * when it cannot be read.
    */
   readHead(file: string, bytes: number): Promise<{ text: string; complete: boolean } | undefined>;
+  /**
+   * Optional: the column names of a Parquet or JSON source, as the host's query engine reads the
+   * file; undefined when it cannot tell. Hosts without a query engine leave it out, and those
+   * sources keep unknown columns.
+   */
+  columns?(file: string, source: Source): Promise<string[] | undefined>;
 }
 
 function dirSetting(config: SpecFile<"project">, key: "metricsDir" | "dashboardsDir"): string {
@@ -193,6 +200,9 @@ export async function loadProject(
         } else if (header !== undefined) {
           project.columns.set(name, header);
         }
+      } else if (source.type !== "csv" && host.columns) {
+        const columns = await host.columns(file, source).catch(() => undefined);
+        if (columns !== undefined) project.columns.set(name, columns);
       }
       continue;
     }
