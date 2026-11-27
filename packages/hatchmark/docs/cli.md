@@ -62,8 +62,9 @@ Colour is on in a terminal unless you pass `--no-color` or set `NO_COLOR`.
 
 `hatchmark init` writes the same bytes every time for the same name and template. It never runs
 git or installs packages. With `--force`, it overwrites only the files it writes and reports them as
-`created`, `updated` or `unchanged`. It never writes through a symlink: it refuses when the target directory, any directory between
-the working directory (or `--cwd`) and the target, or any path it writes is a symlink. It never
+`created`, `updated` or `unchanged`. It resolves the directory it initialises once with realpath, so symlinks above it (such as
+macOS `/tmp` and `/var`) are fine. Inside that directory it never writes through a symlink: a
+symlinked file or subdirectory where it writes gives `HM0004`. It never
 writes to an existing `CLAUDE.md`. When that file does not include `@AGENTS.md`, it adds a note to the result.
 In `AGENTS.md` it replaces the block between exactly one `<!-- hatchmark:start -->` line and one
 later `<!-- hatchmark:end -->` line, each alone on its line (surrounding spaces are fine), or appends a block when there are no marker lines. With any

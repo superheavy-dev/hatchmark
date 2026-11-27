@@ -1,4 +1,4 @@
-import { lstat, mkdir, readFile, writeFile } from "node:fs/promises";
+import { lstat, mkdir, readFile, realpath, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { CONFIG_FILE } from "../../spec/index.js";
 import { VERSION } from "../../version.js";
@@ -48,12 +48,24 @@ async function readOptional(file: string): Promise<string | undefined> {
   return readFile(file, "utf8").catch(() => undefined);
 }
 
-/** The deepest directory that contains both paths (both absolute). */
-function commonAncestor(a: string, b: string): string {
-  let dir = a;
-  while (path.relative(dir, b).startsWith("..") && dir !== path.dirname(dir))
-    dir = path.dirname(dir);
-  return dir;
+/**
+ * The directory init initialises, with symlinks above it resolved: the deepest existing ancestor
+ * goes through realpath, and the components that do not exist yet are appended.
+ */
+async function resolveRoot(dir: string): Promise<string> {
+  const missing: string[] = [];
+  let existing = dir;
+  while (
+    !(await lstat(existing).then(
+      () => true,
+      () => false,
+    )) &&
+    existing !== path.dirname(existing)
+  ) {
+    missing.unshift(path.basename(existing));
+    existing = path.dirname(existing);
+  }
+  return path.join(await realpath(existing), ...missing);
 }
 
 type Entry = "missing" | "file" | "directory" | "other";
@@ -97,8 +109,9 @@ export async function init(
       input: template,
     });
   }
-  const target = path.resolve(ctx.root, dir ?? ".");
-  const name = flags.name ?? path.basename(target);
+  const requested = path.resolve(ctx.root, dir ?? ".");
+  const target = await resolveRoot(requested);
+  const name = flags.name ?? path.basename(requested);
   const withData = template === "sample";
 
   const owned = new Map<string, string>([[CONFIG_FILE, json(sampleConfig(name, withData))]]);
@@ -111,10 +124,6 @@ export async function init(
 
   const blocked: string[] = [];
   const existing: string[] = [];
-  const base = commonAncestor(ctx.root, target);
-  for (let dir = target; dir !== base && dir !== path.dirname(dir); dir = path.dirname(dir)) {
-    if ((await entry(dir)) === "other") blocked.push(dir);
-  }
   const dirs = new Set(["data", "metrics", "dashboards"]);
   for (const file of owned.keys()) if (file.includes("/")) dirs.add(path.posix.dirname(file));
   for (const dir of dirs) {
@@ -132,7 +141,7 @@ export async function init(
       `init cannot write ${blocked.length} path${blocked.length === 1 ? "" : "s"} in ${target}: something other than a regular file or directory, such as a symlink, is there`,
       {
         expected: blocked,
-        help: "init never writes through symlinks; move or remove these paths, pass the real path of the target directory, or choose another directory",
+        help: "init never writes through symlinks inside the project; move or remove these paths, or choose another directory",
       },
     );
   }
@@ -222,7 +231,7 @@ export async function init(
     );
   }
 
-  const relative = path.relative(ctx.io.cwd, target) || ".";
+  const relative = path.relative(ctx.io.cwd, requested) || ".";
   const next = relative === "." ? ["hatchmark check"] : [`hatchmark check --cwd ${relative}`];
   const human = [
     `Created a Hatchmark project in ${relative} (template: ${template}).`,

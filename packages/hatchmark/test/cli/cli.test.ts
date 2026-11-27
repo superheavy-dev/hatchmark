@@ -1,4 +1,4 @@
-import { mkdir, mkdtemp, readFile, rm, symlink, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, realpath, rm, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
@@ -370,26 +370,36 @@ describe("review regressions (HAT-16)", () => {
     expect(merged).not.toContain("old");
   });
 
-  it("refuses a symlinked directory between the project root and the target", async () => {
+  it("resolves symlinks above the project root and refuses them inside it", async () => {
     const cwd = await tempDir();
-    await mkdir(path.join(cwd, "real"));
-    await symlink("real", path.join(cwd, "link"));
-    for (const dir of ["link/new", "link"]) {
-      const out = await cli(["init", dir, "--template", "minimal"], { cwd });
-      expect(out.code, dir).toBe(2);
-      expect(out.json().diagnostics[0], dir).toMatchObject({
-        code: "HM0004",
-        expected: [path.join(cwd, "link")],
-      });
-    }
-    const outside = await tempDir();
-    const fromOutside = await cli(["init", path.join(cwd, "link/new"), "--template", "minimal"], {
-      cwd: outside,
+    await mkdir(path.join(cwd, "private/tmp"), { recursive: true });
+    await symlink("private/tmp", path.join(cwd, "tmp"));
+    const macStyle = await cli(["init", path.join(cwd, "tmp/x"), "--template", "minimal"], {
+      cwd: await tempDir(),
     });
-    expect(fromOutside.code).toBe(2);
-    expect(fromOutside.json().diagnostics[0].expected).toContain(path.join(cwd, "link"));
-    await expect(readFile(path.join(cwd, "real/new/hatchmark.json"))).rejects.toThrow();
-    expect((await cli(["init", "real/new", "--template", "minimal"], { cwd })).code).toBe(0);
+    expect(macStyle.code).toBe(0);
+    expect(macStyle.json().root).toBe(path.join(await realpath(cwd), "private/tmp/x"));
+    expect(await readFile(path.join(cwd, "private/tmp/x/hatchmark.json"), "utf8")).toContain(
+      '"name": "x"',
+    );
+    expect(
+      (await cli(["init", "--template", "minimal", "--force"], { cwd: path.join(cwd, "tmp/x") }))
+        .code,
+    ).toBe(0);
+    await symlink("private/tmp/x", path.join(cwd, "project"));
+    expect((await cli(["init", "project", "--template", "minimal", "--force"], { cwd })).code).toBe(
+      0,
+    );
+
+    const inside = await tempDir();
+    await mkdir(path.join(inside, "elsewhere"));
+    await symlink("elsewhere", path.join(inside, "data"));
+    for (const force of [[], ["--force"]]) {
+      const out = await cli(["init", ...force], { cwd: inside });
+      expect(out.code).toBe(2);
+      expect(out.json().diagnostics[0]).toMatchObject({ code: "HM0004", expected: ["data"] });
+    }
+    await expect(readFile(path.join(inside, "hatchmark.json"))).rejects.toThrow();
   });
 
   it("checks hatchmark.json first, whatever the path scope", async () => {
