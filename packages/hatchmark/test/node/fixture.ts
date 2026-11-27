@@ -1,7 +1,9 @@
-import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
+import { cp, mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
+import { fileURLToPath } from "node:url";
 import { type DuckDBConnection, DuckDBInstance } from "@duckdb/node-api";
+import { run as cli } from "../../src/cli/main.js";
 import { runDashboard } from "../../src/compiler/index.js";
 import { createDuckDbExecutor, nodeProjectHost } from "../../src/node/index.js";
 import { loadProject, type Project } from "../../src/spec/index.js";
@@ -25,6 +27,46 @@ export async function writeProject(files: Record<string, unknown>): Promise<{
     );
   }
   return loadAt(root);
+}
+
+export const EXAMPLE = fileURLToPath(new URL("../../examples/global-sales/", import.meta.url));
+
+/**
+ * Copies examples/global-sales into a fresh temporary directory, with hatchmark.json merged with
+ * config (undefined drops a key) and its dashboards replaced by the given ones.
+ */
+export async function writeExample(
+  config: Record<string, unknown>,
+  dashboards: Record<string, unknown>,
+): Promise<string> {
+  const root = await mkdtemp(path.join(tmpdir(), "hatchmark-example-"));
+  roots.push(root);
+  await cp(EXAMPLE, root, { recursive: true });
+  await rm(path.join(root, "dashboards"), { recursive: true, force: true });
+  await rm(path.join(root, "dist"), { recursive: true, force: true });
+  await mkdir(path.join(root, "dashboards"));
+  const base = JSON.parse(await readFile(path.join(EXAMPLE, "hatchmark.json"), "utf8"));
+  await writeFile(path.join(root, "hatchmark.json"), JSON.stringify({ ...base, ...config }));
+  for (const [name, d] of Object.entries(dashboards)) {
+    await writeFile(path.join(root, "dashboards", `${name}.json`), JSON.stringify(d, null, 2));
+  }
+  return root;
+}
+
+/** Runs hatchmark build --json in process and returns its exit code and report. */
+export async function buildProject(root: string): Promise<{ code: number; report: unknown }> {
+  let stdout = "";
+  const code = await cli(["build", "--json", "--cwd", root], {
+    stdout: (t) => {
+      stdout += t;
+    },
+    stderr: () => {},
+    cwd: root,
+    env: {},
+    stdoutIsTTY: false,
+    isAgent: async () => false,
+  });
+  return { code, report: JSON.parse(stdout.trim().split("\n").pop() ?? "null") };
 }
 
 export async function loadAt(root: string) {
