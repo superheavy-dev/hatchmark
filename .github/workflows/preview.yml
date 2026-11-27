@@ -14,8 +14,8 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  # Builds the gallery with no secrets and hands it to preview-deploy.yml as an artifact: the site,
-  # the placeholder page and preview.json naming the event, pull request and head sha.
+  # Builds the gallery with no secrets and hands it to preview-deploy.yml as an artifact: the site
+  # and preview.json naming the event, pull request and head sha.
   preview-build:
     name: preview-build
     runs-on: ubuntu-latest
@@ -49,7 +49,6 @@ jobs:
           name: preview-site
           path: |
             packages/preview/dist/site
-            packages/preview/dist/placeholder
             packages/preview/dist/preview.json
           if-no-files-found: error
           retention-days: 7

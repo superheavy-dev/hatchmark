@@ -2,7 +2,7 @@ import { mkdirSync, rmSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { entries, head } from "./entries.js";
-import { type BuildInfo, renderPlaceholder, renderSite } from "./page.js";
+import { type BuildInfo, renderSite } from "./page.js";
 
 const DIST = fileURLToPath(new URL("../", import.meta.url));
 
@@ -25,5 +25,4 @@ function write(dir: string, files: Map<string, string>): void {
 
 const site = join(DIST, "site");
 write(site, renderSite({ entries, head, build: buildInfo(process.env) }));
-write(join(DIST, "placeholder"), renderPlaceholder());
 console.log(`Preview site written to ${site}: ${entries.length} gallery entries.`);

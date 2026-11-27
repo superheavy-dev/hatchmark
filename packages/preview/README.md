@@ -4,12 +4,11 @@ Builds the component preview gallery that every pull request deploys. Private wo
 
 ## What it builds
 
-`pnpm --filter @hatchmark/preview run site` (after `pnpm build`) writes static files to `dist/`:
+`pnpm --filter @hatchmark/preview run site` (after `pnpm build`) writes static files to `dist/site/`:
 
 - `dist/site/index.html`: the gallery shell. A toolbar switches between light and dark and between desktop and a 390 px frame. The gallery renders inside an iframe, so at 390 px its own viewport is 390 px wide and mobile media queries really apply. The state lives in the URL hash (`#theme=dark&width=mobile`), so a link reproduces what the reviewer saw.
 - `dist/site/components/index.html`: every registered entry, grouped by component, or "No components yet" with the build info.
 - `dist/site/404.html`.
-- `dist/placeholder/index.html`: the page production shows when a pull request has to create the Worker before main has deployed.
 
 The output is deterministic: the same entries give the same bytes. Only the build info changes, read from `PREVIEW_PR` (pull request number) and `PREVIEW_SHA` (full commit sha).
 
@@ -30,7 +29,7 @@ The example dashboard is not part of the gallery yet. The renderer PR adds it: b
 
 Two workflows with stable job names:
 
-- `.github/workflows/preview.yml`, job `preview-build` (`contents: read`, no secrets). It runs on every pull request, every push to main and in the merge queue, and is the required check. It checks out the code, installs, runs this builder and uploads the `preview-site` artifact: `site/`, `placeholder/` and `preview.json` (`{ event, pr, sha }`).
+- `.github/workflows/preview.yml`, job `preview-build` (`contents: read`, no secrets). It runs on every pull request, every push to main and in the merge queue, and is the required check. It checks out the code, installs, runs this builder and uploads the `preview-site` artifact: `site/` and `preview.json` (`{ event, pr, sha }`).
 - `.github/workflows/preview-deploy.yml`, job `preview-deploy`. It is triggered by `workflow_run` when `preview-build`'s workflow succeeds for a same-repository pull request or a push to main. GitHub runs it from the default branch's copy of the file, so a pull request cannot change it. It runs in the `preview` Environment, which holds the Cloudflare secrets, with `actions: read`, `pull-requests: write` and `statuses: write`.
   1. It downloads the artifact into its own directory and treats it as data. The sha must be 40 hex characters and equal the run's `head_sha`; the event must match the run's; the PR number must be an integer listed in the run's `pull_requests` (when GitHub fills it); and the pull request's current head, read from the API, must be this sha in this repository. A pull request that has moved on is skipped, because its newer run deploys.
   2. It installs `wrangler@<pinned version>` with `--ignore-scripts` into a separate tool directory and writes the Worker config (a static-assets-only Worker named `hatchmark-preview`) in a separate temporary directory, pointing `assets.directory` at the artifact. Nothing from the artifact is executed.
@@ -39,4 +38,4 @@ Two workflows with stable job names:
 
 Missing credentials fail the job and the status, except for Dependabot runs, which get no secrets and skip with a notice. Pull requests from forks never reach the deploy job.
 
-`versions upload` cannot create a Worker and does not turn on preview URLs. When the Worker does not exist yet, wrangler stops with "You cannot upload a new version of a Worker that does not yet exist" (its mapping of Cloudflare errors 10007 and 10090). The job then deploys `placeholder/` with `wrangler deploy`, which creates the Worker with `workers_dev` and `preview_urls` on, and retries the upload. URLs are read from the file wrangler writes to `WRANGLER_OUTPUT_FILE_PATH`, not scraped from its logs.
+Only a push to main runs `wrangler deploy`, and the first one creates the Worker with `workers_dev` and `preview_urls` on. The pull request path never deploys to production: if the Worker does not exist yet, wrangler stops with "You cannot upload a new version of a Worker that does not yet exist" (its mapping of Cloudflare errors 10007 and 10090), and the job fails with "Worker hatchmark-preview does not exist yet; it is created by the first push to main", which also becomes the `preview-deploy` status. URLs are read from the file wrangler writes to `WRANGLER_OUTPUT_FILE_PATH`, not scraped from its logs.

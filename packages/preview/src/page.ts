@@ -234,13 +234,3 @@ export function renderSite(input: SiteInput): Map<string, string> {
     ["404.html", notice("Not found", '<a href="/">Back to the preview</a>')],
   ]);
 }
-
-/** The page production serves until main's first deploy replaces it. */
-export function renderPlaceholder(): Map<string, string> {
-  return new Map([
-    [
-      "index.html",
-      notice("Hatchmark preview", "The gallery of main deploys here on the next push to main."),
-    ],
-  ]);
-}

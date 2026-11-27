@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { entries } from "../src/entries.js";
-import { buildLabel, renderPlaceholder, renderSite, type SiteInput } from "../src/page.js";
+import { buildLabel, renderSite, type SiteInput } from "../src/page.js";
 
 const build = { pr: 12, sha: "1a5224b64c0ffee0000000000000000000000000" };
 const empty: SiteInput = { entries: [], head: "", build };
@@ -77,9 +77,5 @@ describe("preview site", () => {
   it("labels main and local builds", () => {
     expect(buildLabel({ sha: build.sha })).toBe("main · 1a5224b");
     expect(buildLabel({})).toBe("local build");
-  });
-
-  it("has a placeholder for production before main deploys", () => {
-    expect(renderPlaceholder().get("index.html")).toContain("next push to main");
   });
 });

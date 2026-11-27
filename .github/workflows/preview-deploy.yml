@@ -105,7 +105,7 @@ jobs:
           WRANGLER: ${{ runner.temp }}/tools/node_modules/.bin/wrangler
         run: |
           set -euo pipefail
-          fail() { echo "::error::$1"; exit 1; }
+          fail() { echo "::error::$1"; echo "error=$1" >> "$GITHUB_OUTPUT"; exit 1; }
           if [ -z "${CLOUDFLARE_API_TOKEN:-}" ] || [ -z "${CLOUDFLARE_ACCOUNT_ID:-}" ]; then
             if [ "$RUN_EVENT" = pull_request ] && [ "$RUN_ACTOR" = "dependabot[bot]" ]; then
               echo "::notice::Dependabot runs get no secrets: the preview was built but not deployed."
@@ -140,13 +140,9 @@ jobs:
             exit 0
           fi
 
-          upload() { wrangler versions upload --preview-alias "pr-$PREVIEW_PR" --message "PR #$PREVIEW_PR at $PREVIEW_SHA"; }
-          result=$(upload)
+          result=$(wrangler versions upload --preview-alias "pr-$PREVIEW_PR" --message "PR #$PREVIEW_PR at $PREVIEW_SHA")
           if jq -e '.type == "command-failed" and ((.message // "") | contains("Worker that does not yet exist"))' <<<"$result" >/dev/null; then
-            echo "::notice::The preview Worker does not exist yet; deploying a placeholder page to create it."
-            created=$(wrangler deploy --assets "$ARTIFACT/placeholder" --message "Placeholder until main deploys")
-            [ "$(jq -r .type <<<"$created")" = deploy ] || fail "Creating the preview Worker failed: $(message "$created")"
-            result=$(upload)
+            fail "Worker hatchmark-preview does not exist yet; it is created by the first push to main"
           fi
           [ "$(jq -r .type <<<"$result")" = version-upload ] || fail "Uploading the preview failed: $(message "$result")"
           alias_url=$(jq -r '.preview_alias_url // empty' <<<"$result")
@@ -164,16 +160,21 @@ jobs:
           SHA: ${{ steps.meta.outputs.sha }}
           OUTCOME: ${{ steps.deploy.outcome }}
           URL: ${{ steps.deploy.outputs.url }}
+          ERROR: ${{ steps.deploy.outputs.error }}
         with:
           script: |
-            const { SHA, OUTCOME, URL } = process.env;
+            const { SHA, OUTCOME, URL, ERROR } = process.env;
             const ok = OUTCOME === "success";
             await github.rest.repos.createCommitStatus({
               ...context.repo,
               sha: SHA,
               state: ok ? "success" : "failure",
               context: "preview-deploy",
-              description: ok ? (URL ? "Preview deployed" : "Built, not deployed (no credentials)") : "Deploy failed",
+              description: ok
+                ? URL
+                  ? "Preview deployed"
+                  : "Built, not deployed (no credentials)"
+                : (ERROR || "Deploy failed").slice(0, 140),
               target_url: URL || `${context.serverUrl}/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId}`,
             });
 
