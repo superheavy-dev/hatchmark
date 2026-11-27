@@ -92,6 +92,9 @@ Metric filters and dashboard select filters compare a column with a value:
   (HM4001). See [components/pie.md](components/pie.md).
   `"additive": true` on a SQL metric is checked when a table has a total: if the rows do not add up
   to the total, build warns with HM4003.
+- **Scatter points** evaluate x, y and size per category from that category's rows, so a ratio
+  divides the category's sums. A category whose x or y is empty is left out and counted (HM4070),
+  never drawn at 0. See [components/scatter.md](components/scatter.md).
 - **KPI change.** `changePct` is the relative change, `(value - previous) / |previous|`, empty when
   the previous value is 0 or empty. For percent-formatted metrics it is the difference in
   percentage points instead (0.012 = +1.2 pp).

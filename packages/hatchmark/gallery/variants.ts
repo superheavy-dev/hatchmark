@@ -3,7 +3,9 @@ import type {
   DashboardData,
   KpiData,
   LineData,
+  MetricInfo,
   PieData,
+  ScatterData,
   TableData,
   Value,
 } from "../src/compiler/dashboard-data.js";
@@ -15,6 +17,7 @@ import {
   dashboard,
   kpi,
   LAST_12,
+  METRICS,
   MONTHLY_REVENUE,
   MONTHS,
   monthAxis,
@@ -42,7 +45,7 @@ import {
 
 /** One gallery entry: a component variant on sample data, wrapped as a one-block dashboard. */
 export interface GalleryVariant {
-  component: "kpi" | "line" | "bar" | "stacked" | "pie" | "table";
+  component: "kpi" | "line" | "bar" | "stacked" | "pie" | "scatter" | "table";
   variant: string;
   title: string;
   data: DashboardData;
@@ -1049,6 +1052,255 @@ const PIES: GalleryVariant[] = [
   ),
 ];
 
+/** Deterministic noise in [-1, 1] per index and salt, so scatter samples need no shared generator. */
+const wobble = (i: number, salt: number) => Math.sin(i * 12.9898 + salt * 78.233);
+
+const pct = (name: string, label: string, better: MetricInfo["better"] = "up"): MetricInfo => ({
+  name,
+  label,
+  format: { type: "percent", decimals: 1 },
+  better,
+});
+
+const SCATTER_METRICS: Record<string, MetricInfo> = {
+  conversion_rate: pct("conversion_rate", "Conversion rate"),
+  revenue_growth: pct("revenue_growth", "Revenue growth"),
+  contribution_margin: pct("contribution_margin", "Contribution margin"),
+  revenue_per_customer: {
+    name: "revenue_per_customer",
+    label: "Revenue per customer",
+    format: { type: "currency", currency: "USD", decimals: 2 },
+    better: "up",
+  },
+};
+
+const scatter = (variant: string, title: string, block: ScatterData): GalleryVariant => {
+  const data = dashboard(variant, title, [block]);
+  return {
+    component: "scatter",
+    variant,
+    title,
+    data: { ...data, metrics: { ...METRICS, ...SCATTER_METRICS } },
+  };
+};
+
+const octRevenue = MONTHLY_REVENUE[23] as number;
+const countryPoints = COUNTRIES.map((c) => {
+  const revenue = round(octRevenue * c.share);
+  const orders = round(revenue / c.aov);
+  return { key: c.name, label: c.name, x: orders, y: revenue / orders, size: revenue };
+}).sort((a, b) => b.size - a.size);
+
+const countries = (id: string, span: number, title?: string): ScatterData => ({
+  type: "scatter",
+  id,
+  ...(title === undefined ? {} : { title }),
+  span,
+  x: "orders",
+  y: "avg_order_value",
+  size: "revenue",
+  column: "country",
+  points: countryPoints,
+  window: OCT,
+});
+
+const MARKETING = [
+  ["Organic search", 412_300, 0.031],
+  ["Paid search", 268_900, 0.042],
+  ["Direct", 221_400, 0.048],
+  ["Email", 96_800, 0.067],
+  ["Paid social", 188_200, 0.014],
+  ["Organic social", 74_500, 0.011],
+  ["Referral", 41_900, 0.037],
+  ["Affiliates", 52_600, 0.029],
+  ["Display ads", 133_700, 0.006],
+  ["SMS", 18_400, 0.081],
+] as const;
+
+const CATEGORY_GROWTH = [
+  ["Rain jackets", 0.184, 0.214, 412_000],
+  ["Trail running shoes", 0.262, 0.162, 356_000],
+  ["Backpacks", 0.071, 0.238, 298_000],
+  ["Tents", -0.124, 0.087, 241_000],
+  ["Sleeping bags", -0.058, 0.121, 132_000],
+  ["Climbing gear", 0.033, -0.042, 118_000],
+  ["Base layers", 0.142, 0.276, 204_000],
+  ["Cycling", -0.211, -0.087, 96_000],
+  ["Water sports", -0.036, 0.018, 74_000],
+  ["Kids", 0.097, 0.064, 88_000],
+  ["Accessories", 0.012, 0.311, 157_000],
+  ["Ski and snowboard", -0.167, 0.142, 189_000],
+] as const;
+
+/** US states and DC with rounded 2023 populations in millions. */
+const STATES = [
+  ["California", 39.0],
+  ["Texas", 30.5],
+  ["Florida", 22.6],
+  ["New York", 19.6],
+  ["Pennsylvania", 13.0],
+  ["Illinois", 12.5],
+  ["Ohio", 11.8],
+  ["Georgia", 11.0],
+  ["North Carolina", 10.8],
+  ["Michigan", 10.0],
+  ["New Jersey", 9.3],
+  ["Virginia", 8.7],
+  ["Washington", 7.8],
+  ["Arizona", 7.4],
+  ["Tennessee", 7.1],
+  ["Massachusetts", 7.0],
+  ["Indiana", 6.9],
+  ["Missouri", 6.2],
+  ["Maryland", 6.2],
+  ["Wisconsin", 5.9],
+  ["Colorado", 5.9],
+  ["Minnesota", 5.7],
+  ["South Carolina", 5.4],
+  ["Alabama", 5.1],
+  ["Louisiana", 4.6],
+  ["Kentucky", 4.5],
+  ["Oregon", 4.2],
+  ["Oklahoma", 4.1],
+  ["Connecticut", 3.6],
+  ["Utah", 3.4],
+  ["Iowa", 3.2],
+  ["Nevada", 3.2],
+  ["Arkansas", 3.1],
+  ["Mississippi", 2.9],
+  ["Kansas", 2.9],
+  ["New Mexico", 2.1],
+  ["Nebraska", 2.0],
+  ["Idaho", 2.0],
+  ["West Virginia", 1.8],
+  ["Hawaii", 1.4],
+  ["New Hampshire", 1.4],
+  ["Maine", 1.4],
+  ["Montana", 1.1],
+  ["Rhode Island", 1.1],
+  ["Delaware", 1.0],
+  ["South Dakota", 0.9],
+  ["North Dakota", 0.8],
+  ["Alaska", 0.7],
+  ["District of Columbia", 0.7],
+  ["Vermont", 0.6],
+  ["Wyoming", 0.6],
+] as const;
+
+const OUTDOOR_STATES = new Set([
+  "Colorado",
+  "Utah",
+  "Oregon",
+  "Washington",
+  "Montana",
+  "Vermont",
+  "Alaska",
+  "Idaho",
+  "Wyoming",
+]);
+
+const LONG_LINES = [
+  ["Men's waterproof three-layer technical shell jackets", 3_420, 248.5],
+  ["Women's lightweight trail running shoes with rock plates", 5_870, 139.9],
+  ["Ultralight two-person backpacking tents and footprints", 1_240, 389.0],
+  ["Merino wool base layers and midweight thermal tops", 7_310, 84.2],
+  ["Insulated stainless steel bottles and camp kitchen sets", 9_860, 36.7],
+  ["Kids' fleece jackets, rain pants and all-weather boots", 4_150, 72.4],
+] as const;
+
+const SCATTER: GalleryVariant[] = [
+  scatter(
+    "scatter-countries",
+    "Countries: orders against average order value, sized by revenue",
+    countries("scatter_countries", 12, "Bigger markets do not mean bigger baskets"),
+  ),
+  scatter("scatter-channels", "Without size: marketing channels, one without data", {
+    type: "scatter",
+    id: "scatter_channels",
+    title: "Email and SMS convert best on little traffic",
+    span: 6,
+    x: "sessions",
+    y: "conversion_rate",
+    column: "channel",
+    points: MARKETING.map(([name, sessions, rate]) => ({
+      key: name,
+      label: name,
+      x: sessions,
+      y: rate,
+    })).sort((a, b) => b.y - a.y),
+    omittedPoints: 1,
+    window: OCT,
+  }),
+  scatter("scatter-negative", "Negative values on both axes", {
+    type: "scatter",
+    id: "scatter_negative",
+    title: "Shrinking categories also earn the least",
+    span: 6,
+    x: "revenue_growth",
+    y: "contribution_margin",
+    size: "revenue",
+    column: "category",
+    points: CATEGORY_GROWTH.map(([name, growth, margin, revenue]) => ({
+      key: name,
+      label: name,
+      x: growth,
+      y: margin,
+      size: revenue,
+    })).sort((a, b) => b.size - a.size),
+    window: LAST_12,
+  }),
+  scatter("scatter-states", "Many points: 50 states and DC", {
+    type: "scatter",
+    id: "scatter_states",
+    title: "Mountain states spend the most per customer",
+    span: 12,
+    x: "customers",
+    y: "revenue_per_customer",
+    column: "state",
+    points: STATES.map(([name, population], i) => ({
+      key: name,
+      label: name,
+      x: round(population * 1_180 * (1 + 0.18 * wobble(i, 1))),
+      y: round((OUTDOOR_STATES.has(name) ? 214 : 158) * (1 + 0.12 * wobble(i, 2)), 0.01),
+    })).sort((a, b) => b.y - a.y),
+    window: LAST_12,
+  }),
+  scatter("scatter-long-labels", "Long category names", {
+    type: "scatter",
+    id: "scatter_long",
+    title: "Tents sell rarely but carry the largest baskets",
+    span: 6,
+    x: "orders",
+    y: "avg_order_value",
+    size: "revenue",
+    column: "product_line",
+    points: LONG_LINES.map(([name, orders, aov]) => ({
+      key: name,
+      label: name,
+      x: orders,
+      y: aov,
+      size: round(orders * aov),
+    })).sort((a, b) => b.size - a.size),
+    window: OCT,
+  }),
+  scatter("scatter-empty", "No data in the period", {
+    type: "scatter",
+    id: "scatter_empty",
+    span: 6,
+    x: "orders",
+    y: "avg_order_value",
+    size: "revenue",
+    column: "country",
+    points: [],
+    window: OCT,
+  }),
+  scatter(
+    "scatter-narrow",
+    "Narrow card (span 4)",
+    countries("scatter_narrow", 4, "Average order value against orders"),
+  ),
+];
+
 export const GALLERY: GalleryVariant[] = [
   ...KPIS,
   ...LINES,
@@ -1057,6 +1309,7 @@ export const GALLERY: GalleryVariant[] = [
   ...GRAIN_BARS,
   ...STACKED,
   ...PIES,
+  ...SCATTER,
   ...TABLES,
 ];
 

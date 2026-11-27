@@ -7,7 +7,12 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { SALES } from "../../gallery/fixtures.js";
 import { FISCAL_BARS, MONTH, QUARTER_BARS, revenueSwitch } from "../../gallery/grains.js";
 import { GALLERY } from "../../gallery/variants.js";
-import type { DashboardData, GrainSwitch, LineData } from "../../src/compiler/dashboard-data.js";
+import type {
+  DashboardData,
+  GrainSwitch,
+  LineData,
+  ScatterData,
+} from "../../src/compiler/dashboard-data.js";
 import { FONT_FILES, renderDashboardPage } from "../../src/render/index.js";
 
 /** The browser runtime on the sample dashboard: tooltip, crosshair, readout and keyboard. */
@@ -221,6 +226,47 @@ describe("browser runtime", () => {
     expect(await donut.locator(".hm-tip .hm-tip-h").textContent()).toBe("Online store");
     await page.mouse.move(5, 5);
     await expect.poll(() => donut.locator(".hm-tip").isVisible()).toBe(false);
+  });
+
+  it("steps through scatter points left to right, with a tooltip of x, y and size", async () => {
+    const page = await browser.newPage({ viewport: { width: 1440, height: 900 } });
+    await page.goto(allUrl);
+    const figure = page.locator('[data-hm-chart="scatter_countries"]');
+    const svg = figure.locator("svg").filter({ visible: true });
+    await svg.focus();
+    await page.keyboard.press("ArrowRight");
+    const tip = figure.locator(".hm-tip");
+    const block = GALLERY.find((v) => v.variant === "scatter-countries")?.data.blocks[0];
+    const fewest = (block as ScatterData).points.reduce((a, b) =>
+      (b.x as number) < (a.x as number) ? b : a,
+    );
+    expect(await tip.locator(".hm-tip-h").textContent()).toBe(fewest.label);
+    expect(await tip.locator(".hm-tip-r").allTextContents()).toEqual([
+      expect.stringMatching(/^Orders[\d,]+$/),
+      expect.stringMatching(/^Average order value\$[\d,]+\.\d\d$/),
+      expect.stringMatching(/^Revenue\$[\d,]+$/),
+    ]);
+    expect(await figure.locator(".hm-hover .hm-ring").count()).toBe(2);
+    await page.keyboard.press("End");
+    expect(await tip.locator(".hm-tip-h").textContent()).toBe("United States");
+    expect(await figure.locator("[aria-live]").textContent()).toMatch(
+      /^United States, Orders [\d,]+, Average order value \$[\d,]+\.\d\d, Revenue \$[\d,]+$/,
+    );
+    await page.keyboard.press("Escape");
+    await expect.poll(() => tip.isVisible()).toBe(false);
+
+    const [cx = 0, cy = 0] =
+      ((await svg.getAttribute("data-hm-pts")) as string)
+        .split(",")
+        .at(-1)
+        ?.split(" ")
+        .map(Number) ?? [];
+    const box = (await svg.boundingBox()) as Box;
+    await page.mouse.move(box.x + cx + 10, box.y + cy + 6);
+    await expect.poll(() => tip.isVisible()).toBe(true);
+    expect(await tip.locator(".hm-tip-h").textContent()).toBe("United States");
+    await page.mouse.move(box.x + 2, box.y + box.height - 2);
+    await expect.poll(() => tip.isVisible()).toBe(false);
   });
 
   it("updates the pinned readout instead of a tooltip on a phone", async () => {

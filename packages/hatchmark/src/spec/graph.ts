@@ -25,7 +25,9 @@ function metricRefs(project: Project, name: string): string[] {
       block.type === "donut"
     )
       out.push(block.metric);
-    else if (block.type === "text") {
+    else if (block.type === "scatter") {
+      out.push(block.x, block.y, ...(block.size === undefined ? [] : [block.size]));
+    } else if (block.type === "text") {
       for (const m of block.markdown.matchAll(/\{\{\s*([a-z][a-z0-9_]*)/g))
         if (m[1]) out.push(m[1]);
     } else out.push(...block.metrics);

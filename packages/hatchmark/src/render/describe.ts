@@ -1,12 +1,75 @@
-import type { BarData, LineData, PieData, Value } from "../compiler/dashboard-data.js";
+import type { BarData, LineData, PieData, ScatterData, Value } from "../compiler/dashboard-data.js";
 import { barCategories } from "./bar.js";
-import { isNumber, metricOf, type RenderContext, SHARE } from "./chart.js";
+import { isNumber, lowerFirst, metricOf, type RenderContext, SHARE } from "./chart.js";
 import { formatBucket, formatSpan, formatValue } from "./format.js";
 import { plottedValues, readoutHead, readoutValue } from "./line.js";
 import { isPie, pieCuts, pieEmptyText, pieItems, pieNote } from "./pie.js";
+import { scatterOrder, scatterPoints } from "./scatter.js";
 import { esc } from "./svg.js";
 
 type ChartBlock = LineData | BarData;
+
+/** A scatter block's metrics in display order: x, y, then size when set. */
+function scatterMetrics(block: ScatterData): string[] {
+  return [block.x, block.y, ...(block.size === undefined ? [] : [block.size])];
+}
+
+function describeScatter(block: ScatterData, ctx: RenderContext): string {
+  const points = scatterPoints(block);
+  const label = (m: string) => metricOf(ctx, m).label;
+  const column = block.column.replaceAll("_", " ");
+  const count = `${points.length} ${points.length === 1 ? "point" : "points"}`;
+  const sized = block.size === undefined ? "" : `, sized by ${lowerFirst(label(block.size))}`;
+  const parts = [
+    `Scatter plot of ${label(block.y)} against ${label(block.x)} by ${column}${sized}, ${count}.`,
+  ];
+  if (points.length === 0) return `${parts[0]} No data in this period.`;
+  for (const axis of ["y", "x"] as const) {
+    const metric = axis === "y" ? block.y : block.x;
+    const max = points.reduce((a, b) => (b[axis] > a[axis] ? b : a));
+    const min = points.reduce((a, b) => (b[axis] < a[axis] ? b : a));
+    parts.push(
+      `Highest ${lowerFirst(label(metric))} ${max.label} at ${full(ctx, metric, max[axis])}, lowest ${min.label} at ${full(ctx, metric, min[axis])}.`,
+    );
+  }
+  if (block.omittedPoints) {
+    parts.push(`${block.omittedPoints} more without a value are not shown.`);
+  }
+  return parts.join(" ");
+}
+
+function scatterTable(block: ScatterData, ctx: RenderContext, caption: string): string {
+  const metrics = scatterMetrics(block);
+  const head = `<tr><th scope="col">${esc(block.column.replaceAll("_", " "))}</th>${metrics.map((m) => `<th scope="col">${esc(metricOf(ctx, m).label)}</th>`).join("")}</tr>`;
+  const rows = block.points
+    .map((p) => {
+      const values = [p.x, p.y, ...(block.size === undefined ? [] : [p.size ?? null])];
+      return `<tr><th scope="row">${esc(p.label)}</th>${values.map((v, k) => `<td>${esc(full(ctx, metrics[k] as string, v))}</td>`).join("")}</tr>`;
+    })
+    .join("");
+  return `<div class="hm-sr"><table><caption>${esc(caption)}</caption><thead>${head}</thead><tbody>${rows}</tbody></table></div>`;
+}
+
+function scatterRuntimeData(block: ScatterData, ctx: RenderContext): ChartRuntimeData {
+  const points = scatterPoints(block);
+  const ordered = scatterOrder(block).map((i) => points[i] as (typeof points)[number]);
+  const locale = ctx.data.locale;
+  return {
+    kind: "scatter",
+    swatch: "square",
+    headers: ordered.map((p) => p.label),
+    series: scatterMetrics(block).map((m, k) => {
+      const v = ordered.map((p) => (k === 0 ? p.x : k === 1 ? p.y : (p.size ?? null)));
+      return {
+        label: metricOf(ctx, m).label,
+        color: 1,
+        v,
+        text: v.map((value) => full(ctx, m, value)),
+        short: v.map((value) => formatValue(value, metricOf(ctx, m), locale, "compact")),
+      };
+    }),
+  };
+}
 
 function positions(block: ChartBlock, ctx: RenderContext): string[] {
   return block.type === "bar"
@@ -21,8 +84,12 @@ const full = (ctx: RenderContext, metric: string, v: Value | undefined) =>
  * A generated text alternative for a chart (Datawrapper-style): chart type, what it shows, and per
  * series (up to three) the first and last values and the extremes.
  */
-export function describeChart(input: ChartBlock | PieData, ctx: RenderContext): string {
+export function describeChart(
+  input: ChartBlock | PieData | ScatterData,
+  ctx: RenderContext,
+): string {
   if (isPie(input)) return describePie(input, ctx);
+  if (input.type === "scatter") return describeScatter(input, ctx);
   const block = input;
   const names = positions(block, ctx);
   const series = block.series;
@@ -67,11 +134,12 @@ const share = (ctx: RenderContext, v: Value | undefined) =>
  * add each value's share and a Total column.
  */
 export function chartTable(
-  input: ChartBlock | PieData,
+  input: ChartBlock | PieData | ScatterData,
   ctx: RenderContext,
   caption: string,
 ): string {
   if (isPie(input)) return pieTable(input, ctx, caption);
+  if (input.type === "scatter") return scatterTable(input, ctx, caption);
   const block = input;
   const names = positions(block, ctx);
   const totals = block.totals;
@@ -92,13 +160,14 @@ export function chartTable(
 
 /** What the browser runtime needs for tooltips and the readout: labels and formatted values. */
 export interface ChartRuntimeData {
-  kind: "line" | "bar" | "pie";
+  kind: "line" | "bar" | "pie" | "scatter";
   /** The tooltip swatch's shape, matching the mark: a line for lines, a square for filled marks. */
   swatch: "line" | "square";
   /** Pie only: each slice's categorical slot (0 for Other, which is neutral). */
   colors?: number[];
   /** Pie only: each slice's cumulative end as a fraction of a turn from 12 o'clock. */
   cuts?: number[];
+  /** scatter: headers name the points from left to right, and series are its metrics' rows. */
   headers: string[];
   series: {
     label: string;
@@ -122,10 +191,11 @@ export interface ChartRuntimeData {
 }
 
 export function chartRuntimeData(
-  input: ChartBlock | PieData,
+  input: ChartBlock | PieData | ScatterData,
   ctx: RenderContext,
 ): ChartRuntimeData {
   if (isPie(input)) return pieRuntimeData(input, ctx);
+  if (input.type === "scatter") return scatterRuntimeData(input, ctx);
   const block = input;
   const locale = ctx.data.locale;
   const stacked =

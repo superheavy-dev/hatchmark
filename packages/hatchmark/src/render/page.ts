@@ -7,6 +7,7 @@ import type {
   KpiData,
   LineData,
   PieData,
+  ScatterData,
   TableData,
 } from "../compiler/dashboard-data.js";
 import { MIN_CHART_SPAN } from "../spec/layout.js";
@@ -17,6 +18,7 @@ import { formatDate, formatSpan } from "./format.js";
 import { renderKpi } from "./kpi.js";
 import { renderLine } from "./line.js";
 import { isPie, pieHeight, renderPie } from "./pie.js";
+import { renderScatter } from "./scatter.js";
 import { esc, scriptJson } from "./svg.js";
 
 export { scriptJson };
@@ -109,10 +111,11 @@ function metricLabels(ctx: RenderContext, names: string[]): string {
 
 /** The card title (the block's, else what it measures) and a subtitle saying what is measured. */
 export function blockHeading(
-  block: LineData | BarData | PieData | TableData,
+  block: LineData | BarData | PieData | TableData | ScatterData,
   ctx: RenderContext,
 ): { title: string; subtitle: string } {
   const locale = ctx.data.locale;
+  if (block.type === "scatter") return scatterHeading(block, ctx);
   if (isPie(block)) {
     const what = `${metricLabels(ctx, [block.metric])} by ${humanize(block.column)}`;
     const window = block.window ?? ctx.data.period.current;
@@ -155,11 +158,35 @@ export function blockHeading(
 }
 
 /**
+ * A scatter card's heading: "Average order value against Orders by country", the window, how many
+ * points a limit kept, and how many categories have no x or y value to place them at.
+ */
+function scatterHeading(
+  block: ScatterData,
+  ctx: RenderContext,
+): { title: string; subtitle: string } {
+  const label = (m: string) => ctx.data.metrics[m]?.label ?? m;
+  const what = `${label(block.y)} against ${label(block.x)} by ${humanize(block.column)}`;
+  const window = block.window ?? ctx.data.period.current;
+  const span = window ? formatSpan(window, ctx.data.locale) : undefined;
+  const shown = block.points.length;
+  const limited = block.omittedCategories
+    ? `top ${shown} of ${shown + block.omittedCategories}`
+    : undefined;
+  const missing = block.omittedPoints ? `${block.omittedPoints} without data not shown` : undefined;
+  const extra = [span, limited, missing].filter((p) => p !== undefined);
+  return {
+    title: block.title ?? what,
+    subtitle: (block.title ? [what, ...extra] : extra).join(", "),
+  };
+}
+
+/**
  * The columns a chart card takes: its span, but never fewer than MIN_CHART_SPAN (check warns with
  * HM2024). CSS grid auto-placement moves the card to the next row when the widened card no longer
  * fits beside the cards before it, so the layout stays a function of the spec alone.
  */
-function chartSpan(block: LineData | BarData | PieData): number {
+function chartSpan(block: LineData | BarData | PieData | ScatterData): number {
   return Math.max(block.span, MIN_CHART_SPAN);
 }
 
@@ -171,7 +198,11 @@ export function cardWidth(layout: Layout, span: number, theme: Theme = DEFAULT_T
   return Math.floor(span * column + (span - 1) * gap);
 }
 
-function chartBody(block: LineData | BarData | PieData, ctx: RenderContext, label: string): string {
+function chartBody(
+  block: LineData | BarData | PieData | ScatterData,
+  ctx: RenderContext,
+  label: string,
+): string {
   const { theme } = ctx;
   const variants = new Map<string, { svg: string; layouts: number[] }>();
   LAYOUTS.forEach((layout, index) => {
@@ -195,7 +226,9 @@ function chartBody(block: LineData | BarData | PieData, ctx: RenderContext, labe
         ? renderBar(block, ctx, size)
         : isPie(block)
           ? renderPie(block, ctx, size)
-          : renderLine(block, ctx, size);
+          : block.type === "scatter"
+            ? renderScatter(block, ctx, size)
+            : renderLine(block, ctx, size);
     variants.set(key, {
       svg: svg.replace("<svg ", `<svg tabindex="0" aria-describedby="hm-${esc(block.id)}-d" `),
       layouts: [index],
@@ -259,7 +292,10 @@ function grainCard(
   return `<section class="hm-card hm-${block.type}" style="--span:${chartSpan(block)}" aria-labelledby="${esc(id)}" data-hm-grains>${head}${panels.map((p) => p.body).join("")}</section>`;
 }
 
-function card(block: LineData | BarData | PieData | TableData, ctx: RenderContext): string {
+function card(
+  block: LineData | BarData | PieData | TableData | ScatterData,
+  ctx: RenderContext,
+): string {
   if ((block.type === "line" || block.type === "area" || block.type === "bar") && block.grains) {
     return grainCard(block as (LineData | BarData) & { grains: GrainSwitch }, ctx);
   }
@@ -324,7 +360,8 @@ export function gridItems(blocks: readonly BlockData[], ctx: RenderContext): Gri
       block.type === "bar" ||
       block.type === "pie" ||
       block.type === "donut" ||
-      block.type === "table"
+      block.type === "table" ||
+      block.type === "scatter"
     ) {
       out.push({ blocks: [block.id], html: card(block, ctx) });
     }
@@ -502,7 +539,7 @@ export function renderIndexPage(
  * rasterisers (resvg) and for embedding outside a Hatchmark page.
  */
 export function renderChartSvg(
-  block: LineData | BarData | PieData,
+  block: LineData | BarData | PieData | ScatterData,
   data: DashboardData,
   options: { width: number; height?: number; mode?: Mode; theme?: Theme },
 ): string {
@@ -531,5 +568,6 @@ export function renderChartSvg(
       standalone,
     );
   }
+  if (block.type === "scatter") return renderScatter(block, ctx, size, standalone);
   return renderLine(block, ctx, size, standalone);
 }

@@ -34,7 +34,16 @@ import {
 } from "./plan.js";
 
 /** Block types the planner builds in phase 1; the others get an HM4002 warning and no plan. */
-export const PLANNED_BLOCK_TYPES = ["kpi", "line", "area", "bar", "pie", "donut", "table"] as const;
+export const PLANNED_BLOCK_TYPES = [
+  "kpi",
+  "line",
+  "area",
+  "bar",
+  "pie",
+  "donut",
+  "table",
+  "scatter",
+] as const;
 
 type AxisDimension = { kind: "column"; column: string } | { kind: "time"; grain: ResolvedGrain };
 
@@ -313,7 +322,7 @@ function planBlockAt(
     };
   }
 
-  const shown = "metric" in block ? [block.metric] : "metrics" in block ? block.metrics : [];
+  const shown = shownMetrics(block);
   for (const name of shown) {
     const feature = notBuiltYet(name, ctx.metrics, ctx.sources);
     if (feature === undefined) continue;
@@ -399,6 +408,16 @@ function planBlockAt(
           measures: planReading(ctx, block.metrics, axes, tableGroupingSets(block), "none"),
         };
       }
+      case "scatter":
+        return {
+          measures: planReading(
+            ctx,
+            shownMetrics(block),
+            [{ kind: "column", column: block.by }],
+            [[0]],
+            "none",
+          ),
+        };
       default:
         return { measures: { queries: [], measures: {} } };
     }
@@ -446,6 +465,14 @@ export function tableGroupingSets(block: Block & { type: "table" }): number[][] 
     block.subtotals === true ? leaf.slice(1).map((_, i) => leaf.slice(0, leaf.length - 1 - i)) : [];
   const total = block.totals !== false || (block.percentOfTotal ?? []).length > 0;
   return [leaf, ...prefixes, ...(total ? [[]] : [])];
+}
+
+/** The metrics a block shows, each once, in spec order (a scatter's x, y and size). */
+function shownMetrics(block: Block): string[] {
+  if (block.type === "scatter") {
+    return [...new Set([block.x, block.y, ...(block.size === undefined ? [] : [block.size])])];
+  }
+  return "metric" in block ? [block.metric] : "metrics" in block ? block.metrics : [];
 }
 
 function hasTime(ctx: Context, name: string): boolean {
