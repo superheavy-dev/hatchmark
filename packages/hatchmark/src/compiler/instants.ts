@@ -1,3 +1,5 @@
+// Source horizons need microseconds (RFC 0001 section 6.1), which Date and Date.parse drop,
+// so instants are bigint microseconds since 1970-01-01T00:00:00Z.
 export const DAY_US = 86_400_000_000n;
 
 const floorDiv = (a: bigint, b: bigint) => (a >= 0n ? a / b : -((-a + b - 1n) / b));

@@ -6,6 +6,7 @@ import { metric, Oracle, removeProjects, run, writeProject } from "./fixture.js"
 let oracle: Oracle;
 let root = "";
 
+// DuckDB reads an empty CSV field as NULL, which is how these rows get null groups.
 function ordersCsv(): string {
   let state = 48;
   const next = () => {
