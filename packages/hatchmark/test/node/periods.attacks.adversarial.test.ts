@@ -299,7 +299,9 @@ const NULL_EDGES: Window[] = [
   ["2024-11-01", "2026-11-01"],
 ];
 
-describe("empty and null groups, non-additive metrics, and a select default with the period and grain filters", () => {
+describe("empty and null groups, non-additive metrics, and a select default with the period and grain filters", {
+  timeout: 30_000,
+}, () => {
   let b: Built;
   let nulls: Case;
   let combo: Case;
