@@ -20,7 +20,7 @@ export const doctorHelp: CommandHelp = {
 
 /** The package root: dist/cli/commands or src/cli/commands, three levels up. */
 const PACKAGE_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../../..");
-const MIN_NODE = [22, 12] as const;
+const MIN_NODE = [22, 18] as const;
 
 type Status = "ok" | "warn" | "fail";
 interface Check {

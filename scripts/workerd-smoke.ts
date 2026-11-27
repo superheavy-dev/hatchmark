@@ -5,6 +5,20 @@ import assert from "node:assert/strict";
 import { build } from "esbuild";
 import { Miniflare } from "miniflare";
 
+interface SmokeResult {
+  report: {
+    format_version: string;
+    error_count: number;
+    diagnostics: [{ code: string; message: string; range: { start: unknown } }];
+  };
+  human: string;
+  columns: string[];
+  schemaTitle: string;
+  params: unknown[];
+  window: unknown;
+  planHash: string;
+}
+
 const bundle = await build({
   entryPoints: [new URL("../packages/hatchmark/test/workerd/worker.ts", import.meta.url).pathname],
   bundle: true,
@@ -16,14 +30,17 @@ const bundle = await build({
   logLevel: "error",
 });
 
+const script = bundle.outputFiles?.[0]?.text;
+assert.ok(script, "esbuild produced no output");
+
 const mf = new Miniflare({
   modules: true,
-  script: bundle.outputFiles[0].text,
+  script,
   compatibilityDate: "2026-07-01",
 });
 try {
   const response = await mf.dispatchFetch("http://localhost/");
-  const body = await response.json();
+  const body = (await response.json()) as SmokeResult;
   assert.equal(response.status, 200, JSON.stringify(body));
   assert.equal(body.report.format_version, "1");
   assert.equal(body.report.error_count, 1);

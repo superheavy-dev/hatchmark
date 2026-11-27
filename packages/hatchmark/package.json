@@ -10,7 +10,7 @@
     "directory": "packages/hatchmark"
   },
   "engines": {
-    "node": ">=22.12"
+    "node": ">=22.18"
   },
   "exports": {
     ".": {
@@ -28,7 +28,7 @@
   "scripts": {
     "build": "tsc -p tsconfig.build.json",
     "typecheck": "tsc -p tsconfig.json --noEmit",
-    "gen:schema": "pnpm build && node scripts/write-schemas.mjs",
+    "gen:schema": "pnpm build && node scripts/write-schemas.ts",
     "prepack": "node -e \"for (const f of ['LICENSE', 'NOTICE']) require('fs').copyFileSync('../../' + f, f)\""
   },
   "dependencies": {
