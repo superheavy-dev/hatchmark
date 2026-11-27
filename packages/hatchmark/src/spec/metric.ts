@@ -372,10 +372,24 @@ const sqlMetric = z
     ...common,
     type: z.literal("sql"),
     table: identifier,
-    sql: z.string().min(1).meta({
-      description:
-        "Escape hatch: one SQL aggregate expression over the table, such as sum(amount) - sum(refund).",
-    }),
+    sql: z
+      .string()
+      .min(1)
+      .superRefine((text, ctx) => {
+        if (/\$hm_p/i.test(text)) {
+          ctx.addIssue(
+            customIssue(
+              "HM3005",
+              [],
+              'sql must not contain "$hm_p": it is the reserved prefix of the parameters Hatchmark binds',
+            ),
+          );
+        }
+      })
+      .meta({
+        description:
+          'Escape hatch: one SQL aggregate expression over the table, such as sum(amount) - sum(refund). "$hm_p" is reserved and must not appear in it.',
+      }),
     additive: z.boolean().meta({
       description: "True only if summing the metric over groups gives the metric over all rows.",
     }),

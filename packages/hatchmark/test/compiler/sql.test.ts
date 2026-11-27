@@ -17,14 +17,15 @@ describe("printSql", () => {
     );
   });
 
-  it("prints each number as a literal of the type it is bound as", () => {
-    const values = [3, -2, 0.1, 3e10, 1e21, -0.5, Number.NaN, -Infinity];
+  it("binds whole numbers as INTEGER, BIGINT or HUGEINT and prints every digit", () => {
+    const values = [3, -2, 0.1, 3e10, 2 ** 53 + 4, 1e21, -0.5, Number.NaN, -Infinity];
     expect(values.map(sqlType)).toEqual([
       "INTEGER",
       "INTEGER",
       "DOUBLE",
       "BIGINT",
-      "DOUBLE",
+      "BIGINT",
+      "HUGEINT",
       "DOUBLE",
       "DOUBLE",
       "DOUBLE",
@@ -32,8 +33,9 @@ describe("printSql", () => {
     const params = Object.fromEntries(values.map((v, i) => [`hm_p${i + 1}`, v]));
     const text = values.map((_, i) => `$hm_p${i + 1}`).join(", ");
     expect(printSql({ text, params })).toBe(
-      "3, (-2), CAST(0.1 AS DOUBLE), CAST(30000000000 AS BIGINT), CAST(1e+21 AS DOUBLE), CAST(-0.5 AS DOUBLE), CAST(NULL AS DOUBLE), CAST(NULL AS DOUBLE)",
+      "3, (-2), CAST(0.1 AS DOUBLE), CAST(30000000000 AS BIGINT), CAST(9007199254740996 AS BIGINT), CAST(1000000000000000000000 AS HUGEINT), CAST(-0.5 AS DOUBLE), CAST('NaN' AS DOUBLE), CAST('-Infinity' AS DOUBLE)",
     );
+    expect(() => sqlType(1e39)).toThrow(RangeError);
   });
 
   it("prints a NUL in a string with chr(0)", () => {

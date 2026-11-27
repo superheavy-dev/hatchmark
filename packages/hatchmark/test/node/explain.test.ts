@@ -5,6 +5,7 @@ import {
   DOUBLE,
   type DuckDBConnection,
   DuckDBInstance,
+  HUGEINT,
   INTEGER,
   VARCHAR,
 } from "@duckdb/node-api";
@@ -12,6 +13,7 @@ import { afterAll, describe, expect, it } from "vitest";
 import {
   explainDashboard,
   explainMetric,
+  type KpiData,
   planDashboard,
   printSql,
   type SqlValue,
@@ -19,13 +21,13 @@ import {
 } from "../../src/compiler/index.js";
 import { createDuckDbExecutor } from "../../src/node/index.js";
 import { PROJECT_DEFAULTS } from "../../src/spec/index.js";
-import { loadAt, metric, removeProjects, writeProject } from "./fixture.js";
+import { loadAt, metric, removeProjects, run, writeProject } from "./fixture.js";
 
 const ROOT = fileURLToPath(new URL("../../examples/global-sales/", import.meta.url));
 
 afterAll(removeProjects);
 
-const TYPES = { VARCHAR, BOOLEAN, INTEGER, BIGINT, DOUBLE };
+const TYPES = { VARCHAR, BOOLEAN, INTEGER, BIGINT, HUGEINT, DOUBLE };
 
 /** The rows of a query run with typed parameters as the executor binds them, and as printed. */
 async function bothWays(
@@ -136,6 +138,45 @@ describe("explain", () => {
     );
     const [bound, printed] = await bothWays(connection, query);
     expect(printed).toBe(bound);
+    connection.closeSync();
+  });
+
+  it("filters adjacent BIGINT values exactly, and prints what runs (HAT-41)", async () => {
+    const { root, project } = await writeProject({
+      "hatchmark.json": {
+        ...PROJECT_DEFAULTS,
+        name: "t",
+        sources: { t: { type: "csv", path: "data/t.csv" } },
+      },
+      "data/t.csv": "d,x\n2026-01-15,9007199254740996\n2026-01-15,9007199254740997\n",
+      "metrics/exact.json": metric({
+        type: "aggregate",
+        table: "t",
+        aggregate: "count",
+        time: "d",
+        filters: [{ column: "x", op: "eq", value: 9007199254740996 }],
+      }),
+      "dashboards/d.json": {
+        title: "D",
+        period: { asOf: "2026-01-31", range: "all_time", compare: "none" },
+        blocks: [{ type: "kpi", metric: "exact" }],
+      },
+    });
+    const built = await run(root, project, "d");
+    expect((built.data?.blocks[0] as KpiData | undefined)?.value).toBe(1);
+    const result = await withExecutor(root, project, (e) => explainMetric(project, "exact", e));
+    const query = result.queries?.[0];
+    if (query === undefined) throw new Error("no query");
+    expect(printSql({ text: query.sql, params: query.params })).toContain(
+      '"x" = CAST(9007199254740996 AS BIGINT)',
+    );
+    const connection = await (await DuckDBInstance.create(":memory:")).connect();
+    await connection.run(
+      `CREATE TEMP TABLE "__hm_source_t" AS SELECT *, row_number() OVER () AS "__hm_ord" FROM read_csv('${root}/data/t.csv', sample_size = -1)`,
+    );
+    const [bound, printed] = await bothWays(connection, query);
+    expect(printed).toBe(bound);
+    expect(JSON.parse(bound)[0][1]).toBe("1");
     connection.closeSync();
   });
 

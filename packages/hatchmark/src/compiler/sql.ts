@@ -348,14 +348,19 @@ export function latestDateSql(source: SqlSource, name: string, timezone: string)
 }
 
 /** The SQL type a value is bound as; the executor binds each parameter with exactly this type. */
-export function sqlType(value: SqlValue): "VARCHAR" | "BOOLEAN" | "INTEGER" | "BIGINT" | "DOUBLE" {
+export function sqlType(
+  value: SqlValue,
+): "VARCHAR" | "BOOLEAN" | "INTEGER" | "BIGINT" | "HUGEINT" | "DOUBLE" {
   if (typeof value === "string") return "VARCHAR";
   if (typeof value === "boolean") return "BOOLEAN";
-  if (!Number.isSafeInteger(value)) return "DOUBLE";
-  return value >= -(2 ** 31) && value < 2 ** 31 ? "INTEGER" : "BIGINT";
+  if (!Number.isInteger(value)) return "DOUBLE";
+  if (value >= -(2 ** 31) && value < 2 ** 31) return "INTEGER";
+  if (value >= -(2 ** 63) && value < 2 ** 63) return "BIGINT";
+  if (value >= -(2 ** 127) && value < 2 ** 127) return "HUGEINT";
+  throw new RangeError(`the whole number ${value} is outside the HUGEINT range, ±2^127`);
 }
 
-/** The value as a literal of its sqlType. DuckDB binds a non-finite DOUBLE as NULL, so it prints NULL. */
+/** The value as a literal of its sqlType; a BIGINT or HUGEINT is written with every digit. */
 function literal(value: SqlValue): string {
   const type = sqlType(value);
   if (type === "VARCHAR") {
@@ -366,13 +371,15 @@ function literal(value: SqlValue): string {
   }
   if (type === "BOOLEAN") return value ? "TRUE" : "FALSE";
   if (type === "INTEGER") return (value as number) < 0 ? `(${value})` : String(value);
-  return Number.isFinite(value) ? `CAST(${String(value)} AS ${type})` : "CAST(NULL AS DOUBLE)";
+  if (type === "BIGINT" || type === "HUGEINT") return `CAST(${BigInt(value as number)} AS ${type})`;
+  return `CAST(${Number.isFinite(value) ? String(value) : `'${String(value)}'`} AS DOUBLE)`;
 }
 
 /**
  * The SQL with every $name parameter replaced by a literal of its value's sqlType, for reading.
  * Quoted identifiers, string literals and comments are copied as they are, so a column named
- * "$hm_p1" or a raw SQL metric's '$hm_p1' text keeps its meaning.
+ * "$hm_p1" keeps its meaning. check rejects "$hm_p" anywhere in a sql metric (HM3005), so raw SQL
+ * never holds text the printer would replace.
  */
 export function printSql(built: BuiltSql): string {
   const { text, params } = built;

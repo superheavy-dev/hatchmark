@@ -9,6 +9,7 @@ import {
   DuckDBInstance,
   type DuckDBType,
   type DuckDBValue,
+  HUGEINT,
   INTEGER,
   VARCHAR,
 } from "@duckdb/node-api";
@@ -175,7 +176,7 @@ export async function describeColumns(
   }
 }
 
-const TYPES = { VARCHAR, BOOLEAN, INTEGER, BIGINT, DOUBLE };
+const TYPES = { VARCHAR, BOOLEAN, INTEGER, BIGINT, HUGEINT, DOUBLE };
 
 /** Each parameter's DuckDB type, by sqlType, so printSql's literals have the types that run. */
 function typesOf(params: Record<string, SqlValue>): Record<string, DuckDBType> {

@@ -1050,7 +1050,7 @@
         "sql": {
           "type": "string",
           "minLength": 1,
-          "description": "Escape hatch: one SQL aggregate expression over the table, such as sum(amount) - sum(refund)."
+          "description": "Escape hatch: one SQL aggregate expression over the table, such as sum(amount) - sum(refund). \"$hm_p\" is reserved and must not appear in it."
         },
         "additive": {
           "type": "boolean",
