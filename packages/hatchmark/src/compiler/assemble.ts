@@ -34,7 +34,7 @@ import {
   type TimeAxis,
   type Value,
 } from "./dashboard-data.js";
-import { formatWall, fromLocal, parseInstant, toLocal } from "./instants.js";
+import { formatWall, parseInstant, toLocal } from "./instants.js";
 import { rangeKey, rangeName } from "./periods.js";
 import type {
   BlockPlan,
@@ -46,6 +46,7 @@ import type {
 } from "./plan.js";
 import { tableGroupingSets } from "./planner.js";
 import {
+  boundInstant,
   bucketEnd,
   effectiveRange,
   measureHorizon,
@@ -256,7 +257,7 @@ class Assembler {
     const bounds = this.bounds(expression);
     if (bounds?.kind !== "bounded" || bounds.start !== bounds.end) return undefined;
     const horizon = this.horizon(expression);
-    const start = fromLocal(parseInstant(bounds.start), this.context.timezone);
+    const start = boundInstant(bounds.start, this.context.timezone);
     return horizon !== undefined && horizon > start ? "no_complete_day" : "no_data";
   }
 

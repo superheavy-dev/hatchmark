@@ -61,6 +61,7 @@ describe("a window bound resolves once, to the instant UTC SQL gives it", () => 
 const REPEATED: [string, string][] = [
   ["America/Havana", "2024-11-03"],
   ["Atlantic/Azores", "2024-10-27"],
+  ["Asia/Amman", "2021-10-29"],
 ];
 const OFFSETS = FULL
   ? Array.from({ length: 25 }, (_, i) => (i - 6) * 10)
@@ -115,11 +116,45 @@ describe("to-date KPIs at a repeated midnight match UTC SQL, with no value when 
                .join(",")}) r(ts) WHERE ts >= s AND ts < e) END AS v FROM b`,
           );
           const want = sql?.v === null || sql?.v === undefined ? null : Number(sql.v);
-          if ((kpi === undefined ? "missing" : kpi.value) !== want)
-            wrong.push([offset, asOf, range, kpi?.value, want]);
+          const reason = want === null ? "no_data" : undefined;
+          if ((kpi === undefined ? "missing" : kpi.value) !== want || kpi?.empty !== reason)
+            wrong.push([offset, asOf, range, kpi?.value, kpi?.empty, want, reason]);
         }
       }
     }
     expect(wrong).toEqual([]);
   });
+});
+
+it("names a day window that starts after its data ends east of UTC no_data, never no_complete_day", async () => {
+  const fixture = await writeProject({
+    "hatchmark.yaml": {
+      ...PROJECT_DEFAULTS,
+      name: "Midnights",
+      timezone: "Asia/Amman",
+      sources: { orders: { type: "csv", path: "orders.csv" } },
+    },
+    "orders.csv": "at,v\n2021-10-28T12:00:00Z,1\n2021-10-28T21:30:00Z,2\n",
+    "metrics/orders.yaml": metric({
+      type: "aggregate",
+      table: "orders",
+      aggregate: "sum",
+      column: "v",
+      time: "at",
+    }),
+    "dashboards/d.yaml": {
+      title: "D",
+      period: { asOf: "latest_data", range: { to_date: "day" }, compare: "none" },
+      blocks: [{ type: "kpi", id: "orders", metric: "orders" }],
+    },
+  });
+  const [start] = await oracle.rows(
+    "SELECT epoch_us(timezone('Asia/Amman', TIMESTAMP '2021-10-29 00:00:00')) AS us FROM range(1)",
+  );
+  expect(formatInstant(BigInt(start?.us as number))).toBe("2021-10-28T22:00:00.000000Z");
+  const { data, diagnostics } = await run(fixture.root, fixture.project, "d");
+  const kpi = data?.blocks.find((b) => b.id === "orders") as KpiData | undefined;
+  expect(kpi).toMatchObject({ value: null, empty: "no_data" });
+  expect(diagnostics.map((d) => d.code)).toContain("HM4013");
+  expect(diagnostics.map((d) => d.code)).not.toContain("HM4024");
 });

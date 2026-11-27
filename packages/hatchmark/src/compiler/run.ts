@@ -35,6 +35,7 @@ import type {
 } from "./plan.js";
 import { planDashboard } from "./planner.js";
 import {
+  boundInstant,
   bucketEnd,
   bucketStart,
   measureHorizon,
@@ -291,9 +292,10 @@ export async function executionContext(
       current.length > 0 &&
       current.every((query) => {
         const bounds = query && queryBounds(query, context);
-        const at = (bound: string) =>
-          bound.endsWith("Z") ? parseInstant(bound) : fromLocal(parseInstant(bound), tz);
-        return bounds?.kind === "bounded" && at(bounds.start) >= at(bounds.end);
+        return (
+          bounds?.kind === "bounded" &&
+          boundInstant(bounds.start, tz) >= boundInstant(bounds.end, tz)
+        );
       });
     if (!empty) continue;
     const location = file

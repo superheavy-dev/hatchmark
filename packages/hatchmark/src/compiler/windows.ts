@@ -333,8 +333,7 @@ function settled(
   horizon: bigint | undefined,
 ): WindowBounds | undefined {
   if (bounds === undefined || timezone === undefined) return bounds;
-  const instant = (bound: string) =>
-    bound.endsWith("Z") ? parseInstant(bound) : fromLocal(parseInstant(bound), timezone);
+  const instant = (bound: string) => boundInstant(bound, timezone);
   const end = (bound: string) =>
     horizon !== undefined && instant(bound) > horizon
       ? formatInstant(horizon)
