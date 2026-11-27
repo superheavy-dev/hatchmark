@@ -211,6 +211,9 @@ importers:
       d3-shape:
         specifier: ^3.2.1
         version: 3.2.1
+      vite:
+        specifier: ~8.3.8
+        version: 8.3.8(@types/node@22.20.7)(esbuild@0.28.2)
       zod:
         specifier: ^4.6.7
         version: 4.6.7
@@ -236,9 +239,6 @@ importers:
       playwright:
         specifier: ^1.65.1
         version: 1.65.1
-      vite:
-        specifier: ~8.3.8
-        version: 8.3.8(@types/node@22.20.7)(esbuild@0.28.2)
 
   packages/preview:
     dependencies:

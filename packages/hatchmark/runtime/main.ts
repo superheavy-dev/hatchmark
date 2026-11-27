@@ -337,23 +337,31 @@ function segmented(group: HTMLElement, choose: (key: string) => void): void {
   });
 }
 
-function start(): void {
-  const cards = [...document.querySelectorAll<HTMLElement>("[data-hm-grains]")];
-  for (const card of cards) {
+/**
+ * Attaches the runtime to everything in root, root included: the whole document on load, or one
+ * card that hatchmark dev has just swapped in. The grain filter finds the cards when it is used, so
+ * it also switches cards swapped in later.
+ */
+function mount(root: ParentNode): void {
+  const all = (selector: string): HTMLElement[] => [
+    ...(root instanceof HTMLElement && root.matches(selector) ? [root] : []),
+    ...root.querySelectorAll<HTMLElement>(selector),
+  ];
+  for (const card of all("[data-hm-grains]")) {
     const group = card.querySelector<HTMLElement>(".hm-seg");
     if (group) segmented(group, (key) => selectGrain(card, key));
   }
-  for (const group of document.querySelectorAll<HTMLElement>("[data-hm-grain-filter]")) {
+  for (const group of all("[data-hm-grain-filter]")) {
     segmented(group, (key) => {
       checkButton([...group.querySelectorAll<HTMLButtonElement>("button")], key);
-      for (const card of cards) selectGrain(card, key);
+      for (const card of document.querySelectorAll("[data-hm-grains]")) selectGrain(card, key);
     });
   }
-  for (const figure of document.querySelectorAll<HTMLElement>("[data-hm-chart]")) {
+  for (const figure of all("[data-hm-chart]")) {
     const source = figure.querySelector(":scope > script[type='application/json']");
     if (source?.textContent) attach(figure, JSON.parse(source.textContent) as RuntimeChart);
   }
-  for (const wrap of document.querySelectorAll<HTMLElement>(".hm-table-wrap")) {
+  for (const wrap of all(".hm-table-wrap")) {
     wrap.addEventListener("keydown", (event) => {
       const step = event.key === "ArrowRight" ? 40 : event.key === "ArrowLeft" ? -40 : 0;
       if (step === 0) return;
@@ -363,4 +371,12 @@ function start(): void {
   }
 }
 
-start();
+declare global {
+  interface Window {
+    /** The one hook hatchmark dev uses, to attach the runtime to a card it swapped in. */
+    hatchmark?: { mount(root: ParentNode): void };
+  }
+}
+
+window.hatchmark = { mount };
+mount(document);

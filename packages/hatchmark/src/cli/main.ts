@@ -3,6 +3,7 @@ import { type ParseArgsConfig, parseArgs } from "node:util";
 import { VERSION } from "../version.js";
 import { build, buildHelp } from "./commands/build.js";
 import { check, checkHelp } from "./commands/check.js";
+import { dev, devHelp } from "./commands/dev.js";
 import { doctor, doctorHelp } from "./commands/doctor.js";
 import { explain, explainHelp } from "./commands/explain.js";
 import { init, initHelp } from "./commands/init.js";
@@ -71,6 +72,20 @@ const COMMANDS: Record<string, Command> = {
             cache: flags["no-cache"] !== true,
           }),
   },
+  dev: {
+    help: devHelp,
+    options: { port: { type: "string" }, host: { type: "string" }, open: { type: "boolean" } },
+    run: (ctx, positionals, flags) =>
+      positionals.length > 0
+        ? usageError("HM0002", `unexpected argument "${positionals[0]}"`, {
+            help: "run hatchmark dev --help",
+          })
+        : dev(ctx, {
+            ...(typeof flags.port === "string" ? { port: flags.port } : {}),
+            ...(typeof flags.host === "string" ? { host: flags.host } : {}),
+            open: flags.open === true,
+          }),
+  },
   schema: { help: schemaHelp, options: {}, run: (ctx, positionals) => schema(ctx, positionals) },
   explain: {
     help: explainHelp,
@@ -135,6 +150,7 @@ async function outputMode(io: CliIO, flags: Flags): Promise<OutputMode | Command
 }
 
 function print(io: CliIO, mode: OutputMode, result: CommandResult): number {
+  if (result.printed) return result.exitCode;
   if (mode === "json") io.stdout(`${JSON.stringify(result.json)}\n`);
   else if (result.human !== "") io.stdout(`${result.human}\n`);
   return result.exitCode;

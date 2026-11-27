@@ -10,6 +10,9 @@ hatchmark build --json     # one line of JSON on stdout
 hatchmark build --no-cache # run every query instead of reusing .hatchmark/cache/
 ```
 
+While you edit, `hatchmark dev` serves the same pages locally and updates them on every save; see
+[cli.md](cli.md#dev).
+
 ## What it does
 
 1. Loads the project and checks it, like `hatchmark check`. Any error stops the build before a

@@ -242,17 +242,40 @@ function card(block: LineData | BarData | TableData, ctx: RenderContext): string
   return `<section class="hm-card hm-${block.type}" style="--span:${block.type === "table" ? block.span : chartSpan(block)}" aria-labelledby="${esc(id)}"><header class="hm-card-head"><h2 id="${esc(id)}">${esc(title)}</h2>${subtitle ? `<p>${esc(subtitle)}</p>` : ""}</header>${body}</section>`;
 }
 
-function strip(kpis: KpiData[], ctx: RenderContext): string {
+function strip(kpis: KpiData[], ctx: RenderContext): GridItem {
   const span = Math.min(
     12,
     kpis.reduce((sum, k) => sum + k.span, 0),
   );
-  return `<section class="hm-strip" style="--span:${span}" aria-label="Key metrics">${kpis.map((k) => renderKpi(k, ctx)).join("")}</section>`;
+  const parts = kpis.map((k) => renderKpi(k, ctx));
+  return {
+    blocks: kpis.map((k) => k.id),
+    html: `<section class="hm-strip" style="--span:${span}" aria-label="Key metrics">${parts.join("")}</section>`,
+    kpis: parts,
+  };
+}
+
+/** One child of the dashboard grid: a card, or a strip holding consecutive KPIs (kpis, in order). */
+export interface GridItem {
+  /** Ids of the blocks it shows. */
+  blocks: string[];
+  html: string;
+  kpis?: string[];
 }
 
 /** The blocks of a dashboard as grid items: consecutive KPIs share one strip card. */
 export function renderBlocks(blocks: readonly BlockData[], ctx: RenderContext): string {
-  const out: string[] = [];
+  return gridItems(blocks, ctx)
+    .map((item) => item.html)
+    .join("");
+}
+
+/**
+ * The grid items of renderBlocks one by one, so a dev server can compare two renders card by card
+ * and replace only the cards that changed.
+ */
+export function gridItems(blocks: readonly BlockData[], ctx: RenderContext): GridItem[] {
+  const out: GridItem[] = [];
   let kpis: KpiData[] = [];
   const flush = () => {
     if (kpis.length > 0) out.push(strip(kpis, ctx));
@@ -270,11 +293,11 @@ export function renderBlocks(blocks: readonly BlockData[], ctx: RenderContext): 
       block.type === "bar" ||
       block.type === "table"
     ) {
-      out.push(card(block, ctx));
+      out.push({ blocks: [block.id], html: card(block, ctx) });
     }
   }
   flush();
-  return out.join("");
+  return out;
 }
 
 function themeVariables(theme: Theme, mode: Mode): string {
