@@ -93,6 +93,8 @@ export function chartTable(
 /** What the browser runtime needs for tooltips and the readout: labels and formatted values. */
 export interface ChartRuntimeData {
   kind: "line" | "bar" | "pie";
+  /** The tooltip swatch's shape, matching the mark: a line for lines, a square for filled marks. */
+  swatch: "line" | "square";
   /** Pie only: each slice's categorical slot (0 for Other, which is neutral). */
   colors?: number[];
   /** Pie only: each slice's cumulative end as a fraction of a turn from 12 o'clock. */
@@ -133,6 +135,7 @@ export function chartRuntimeData(
   const metric = metricOf(ctx, block.series[0]?.metric ?? "");
   return {
     kind: block.type === "bar" ? "bar" : "line",
+    swatch: block.type === "line" ? "line" : "square",
     headers: positions(block, ctx),
     series: block.series.map((s, k) => ({
       label: s.label,
@@ -210,6 +213,7 @@ function pieRuntimeData(block: PieData, ctx: RenderContext): ChartRuntimeData {
   const items = pieItems(block);
   return {
     kind: "pie",
+    swatch: "square",
     headers: items.map((i) => i.label),
     colors: items.map((i) => (i.color === "context" ? 0 : Number(i.color.slice(1)))),
     cuts: pieCuts(block),

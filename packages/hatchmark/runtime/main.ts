@@ -27,6 +27,7 @@ interface RuntimeSeries {
 
 interface RuntimeChart {
   kind: "line" | "bar" | "pie";
+  swatch: "line" | "square";
   colors?: number[];
   cuts?: number[];
   headers: string[];
@@ -107,7 +108,7 @@ function attach(figure: HTMLElement, chart: RuntimeChart): void {
 
   const tooltip = (index: number): HTMLDivElement => {
     if (!tip) {
-      tip = element("div", "hm-tip");
+      tip = element("div", chart.swatch === "square" ? "hm-tip hm-tip-sq" : "hm-tip");
       tip.setAttribute("aria-hidden", "true");
       figure.append(tip);
     }
@@ -123,7 +124,8 @@ function attach(figure: HTMLElement, chart: RuntimeChart): void {
       const row = element("div", "hm-tip-r");
       const name = element("span", "hm-tip-n");
       const slot = chart.colors ? chart.colors[index] : s.color;
-      name.append(element("i", slot === 0 ? "hm-b-context" : `hm-b-c${slot}`), s.label);
+      if (rows.length > 1) name.append(element("i", slot === 0 ? "hm-b-context" : `hm-b-c${slot}`));
+      name.append(s.label);
       const value = element("span", "hm-tip-v", s.text[index] ?? "");
       if (s.pct) value.append(element("span", "hm-tip-p", s.pct[index] ?? ""));
       row.append(name, value);
