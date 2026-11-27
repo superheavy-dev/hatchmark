@@ -389,7 +389,6 @@ const DASHBOARDS: Record<string, unknown> = {
   checks: { title: "Checks", period: YTD, blocks: CHECKS },
 };
 
-// ---------- oracle ----------
 // Each metric as (table, aggregate over its rows, filter, additive). A ratio divides its operands.
 type Table = "o" | "s" | "st" | "k";
 interface Leaf {
@@ -580,7 +579,6 @@ const ytd = (asOfNext: string): Period => ({
   endFor: (t) => minDate(H[t], asOfNext),
 });
 
-// ---------- compare ----------
 const close = (a: unknown, e: number | null | undefined, tol = 1e-9) =>
   e === null || e === undefined
     ? a === null || a === undefined
@@ -661,7 +659,6 @@ async function checkCase(
   return { res: built, bad };
 }
 
-// ---------- renderer ----------
 function sectionOf(html: string, id: string): string | undefined {
   const at = html.indexOf(`aria-labelledby="hm-${id}-t"`);
   if (at < 0) return undefined;

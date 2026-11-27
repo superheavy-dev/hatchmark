@@ -50,7 +50,6 @@ function rng(seed: number): () => number {
   };
 }
 
-// ---------- local time, written without the core's instants.ts ----------
 const fmt = new Intl.DateTimeFormat("en-US", {
   timeZone: TZ,
   hourCycle: "h23",
@@ -109,7 +108,6 @@ function nextOf(b: string, g: Grain): string {
   return addMonths(b, g.unit === "month" ? 1 : g.unit === "quarter" ? 3 : 12);
 }
 
-// ---------- data ----------
 const REGIONS = ["North America", "Europe", "Asia-Pacific", "Latin America", ""];
 function ordersCsv(end: string): string {
   const rand = rng(67);
@@ -376,7 +374,6 @@ beforeAll(async () => {
 }, 120_000);
 afterAll(removeProjects);
 
-// ---------- oracle ----------
 type Ctx = { T: number; start: string; end: string; src: Record<string, Src> };
 
 function context(world: World, period: Period): Ctx {
