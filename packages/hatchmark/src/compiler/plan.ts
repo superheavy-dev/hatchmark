@@ -255,6 +255,12 @@ export interface QueryResult {
    * which Hatchmark promises accurate float sums; run reports each as an HM4004 warning.
    */
   imprecise?: { column: string; maxAbs: number }[];
+  /**
+   * Floating sum and avg components whose result reaches ±1e13 in some row (a group, a time bucket
+   * or a total): at 15 significant digits, cents are lost there. Run reports each metric and block
+   * that shows one as an HM4004 warning.
+   */
+  large?: { component: string; maxAbs: number }[];
 }
 
 /**

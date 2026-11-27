@@ -2,7 +2,13 @@ import { type Diagnostic, docsCommand } from "../diagnostics/index.js";
 import { checkReferences, type Project, parseDiagnostics } from "../spec/index.js";
 import { assemble } from "./assemble.js";
 import type { DashboardData } from "./dashboard-data.js";
-import type { ExecutionContext, QueryExecutor, QueryPlan, QueryResult } from "./plan.js";
+import type {
+  ExecutionContext,
+  MeasureExpression,
+  QueryExecutor,
+  QueryPlan,
+  QueryResult,
+} from "./plan.js";
 import { planDashboard } from "./planner.js";
 import { queryBounds } from "./windows.js";
 
@@ -131,6 +137,57 @@ export async function runDashboard(
   const assembled = assemble(project, plan, results, context);
   return {
     ...(assembled.data ? { data: assembled.data } : {}),
-    diagnostics: [...diagnostics, ...imprecise.values(), ...assembled.diagnostics],
+    diagnostics: [
+      ...diagnostics,
+      ...imprecise.values(),
+      ...largeResults(project, dashboard, plan, results),
+      ...assembled.diagnostics,
+    ],
   };
+}
+
+/** HM4004 for each metric a block shows whose float sum or avg reaches ±1e13 (QueryResult.large). */
+function largeResults(
+  project: Project,
+  dashboard: string,
+  plan: QueryPlan,
+  results: Map<string, QueryResult>,
+): Diagnostic[] {
+  const file = project.dashboards.get(dashboard);
+  const queries = new Map(plan.queries.map((q) => [q.id, q]));
+  const out: Diagnostic[] = [];
+  for (const block of plan.blocks) {
+    const found = new Map<string, number>();
+    const visit = (expression: MeasureExpression) => {
+      if (expression.op === "divide") {
+        visit(expression.numerator);
+        visit(expression.denominator);
+        return;
+      }
+      const ids = queries
+        .get(expression.queryId)
+        ?.measures.find((m) => m.metric === expression.metric)
+        ?.components.map((c) => c.id);
+      for (const { component, maxAbs } of results.get(expression.queryId)?.large ?? []) {
+        if (!ids?.includes(component)) continue;
+        found.set(expression.metric, Math.max(found.get(expression.metric) ?? 0, maxAbs));
+      }
+    };
+    for (const readings of [block.measures, block.previous, block.sparkline]) {
+      for (const expression of Object.values(readings ?? {})) visit(expression);
+    }
+    for (const [metric, maxAbs] of found) {
+      out.push({
+        code: "HM4004",
+        severity: "warning",
+        message: `metric "${metric}" in block "${block.blockId}" reaches ${maxAbs.toExponential(2)}; floating-point results keep 15 significant digits, so from ±1e13 on the cents are lost`,
+        ...(file
+          ? { file: file.file, pointer: block.pointer, ...file.document.locationOf(block.pointer) }
+          : {}),
+        help: "store the values in a larger unit (thousands), or as DECIMAL (Parquet) to keep them exact",
+        docs: docsCommand("HM4004"),
+      });
+    }
+  }
+  return out;
 }

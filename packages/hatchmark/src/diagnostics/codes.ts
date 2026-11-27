@@ -181,7 +181,7 @@ export const CODES = {
   HM4004: {
     title: "float values beyond the accuracy limit",
     explanation:
-      "A metric sums a floating-point column (DOUBLE or FLOAT, such as CSV numbers with a decimal point) that holds a value larger than 1e15 in magnitude. Hatchmark adds floats in a fixed order with compensated summation and shows 15 significant digits, which is exact for values within ±1e15 but can lose small values next to very large ones, so the result may be inaccurate (though still the same on every run). Store the values in a smaller unit, as DECIMAL (Parquet), or keep very large and very small values in separate columns.",
+      "Floating-point columns (DOUBLE or FLOAT, such as CSV numbers with a decimal point) are added in a fixed order with compensated summation, and every result keeps 15 significant digits. That is accurate within limits, and this warning names where they are crossed. Input: a metric sums or averages a column that holds a value larger than 1e15 in magnitude, so small values next to very large ones can be lost; the result is still the same on every run. Store the values in a smaller unit, as DECIMAL (Parquet), or keep very large and very small values in separate columns. Result: a float sum or average reaches 1e13 in magnitude in some row, time bucket or total of a block, where 15 significant digits no longer hold cents (10,000,000,000,000.00 needs 16). The warning names the metric and the block. Store the values in a larger unit, such as thousands, or as DECIMAL (Parquet), which stays exact.",
   },
   HM9001: {
     title: "internal error",

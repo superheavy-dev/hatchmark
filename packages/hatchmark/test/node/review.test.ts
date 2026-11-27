@@ -1,3 +1,4 @@
+import { mkdir } from "node:fs/promises";
 import path from "node:path";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import {
@@ -285,19 +286,143 @@ describe("HAT-22 probes", () => {
   }, 120_000);
 
   it("warns with HM4004 only when a summed float column holds a value beyond ±1e15", async () => {
-    const at = async (amount: string) => {
+    const at = async (magnitude: string) => {
       const fixture = await probe(
         { type: "kpi", metric: "revenue" },
-        { period: ALL, text: `day,amount\n2026-01-15,${amount}\n2026-01-16,0.5\n` },
+        {
+          period: ALL,
+          text: `day,amount\n2026-01-15,${magnitude}\n2026-01-16,-${magnitude}\n2026-01-17,0.5\n`,
+        },
       );
-      const { diagnostics } = await run(fixture.root, fixture.project, "probe");
-      return diagnostics.map((d) => d.code);
+      const { data, diagnostics } = await run(fixture.root, fixture.project, "probe");
+      expect((data?.blocks[0] as KpiData | undefined)?.value).toBe(0.5);
+      return diagnostics.map((d) => [d.code, d.message.includes("holds values up to")]);
     };
     expect(await at("1e15")).toEqual([]);
-    expect(await at("-1e15")).toEqual([]);
-    expect(await at("1.5e15")).toEqual(["HM4004"]);
-    expect(await at("-2e15")).toEqual(["HM4004"]);
+    expect(await at("1.5e15")).toEqual([["HM4004", true]]);
+    expect(await at("2e15")).toEqual([["HM4004", true]]);
   });
+
+  it("warns with HM4004 when a float sum reaches ±1e13, here only at a table's total", async () => {
+    const at = async (rows: number) => {
+      const lines = Array.from(
+        { length: rows },
+        (_, i) => `2026-01-15,${i % 2 === 0 ? "West" : "East"},1e10`,
+      );
+      const fixture = await probe(
+        { type: "table", id: "by_region", by: ["region"], metrics: ["revenue"] },
+        { period: ALL, text: `day,region,amount\n${lines.join("\n")}\n` },
+      );
+      const { data, diagnostics } = await run(fixture.root, fixture.project, "probe");
+      return { table: data?.blocks[0] as TableData, diagnostics };
+    };
+    const below = await at(999);
+    expect(below.table.total?.values.revenue).toBe(9.99e12);
+    expect(below.diagnostics).toEqual([]);
+    const reached = await at(1000);
+    expect(reached.table.rows.map((row) => row.values.revenue)).toEqual([5e12, 5e12]);
+    expect(reached.table.total?.values.revenue).toBe(1e13);
+    expect(reached.diagnostics).toMatchObject([
+      {
+        code: "HM4004",
+        severity: "warning",
+        message: expect.stringContaining('metric "revenue" in block "by_region" reaches 1.00e+13'),
+        file: "dashboards/probe.json",
+        pointer: "/blocks/0",
+      },
+    ]);
+  });
+
+  it.each([
+    { type: "parquet", copy: "FORMAT parquet" },
+    { type: "csv", copy: "HEADER" },
+    { type: "json", copy: "FORMAT json" },
+  ] as const)(
+    "sums the floats of several $type files in byte order of their paths, at 1, 4 and 8 threads",
+    async ({ type, copy }) => {
+      const fixture = await writeProject({
+        "hatchmark.json": {
+          ...PROJECT_DEFAULTS,
+          name: "Probe",
+          sources: {
+            orders: {
+              type,
+              path: `parts/*.${type}`,
+              ...(type === "json" ? { format: "ndjson" as const } : {}),
+            },
+          },
+        },
+        "metrics/total.json": metric({
+          type: "aggregate",
+          table: "orders",
+          aggregate: "sum",
+          column: "amount",
+        }),
+        "dashboards/probe.json": {
+          title: "Probe",
+          period: ALL,
+          blocks: [{ type: "kpi", metric: "total" }],
+        },
+      });
+      const dir = path.join(fixture.root, "parts");
+      await mkdir(dir);
+      const files = {
+        B: [
+          ["1e100", 1],
+          ["1e30", 1],
+        ],
+        a: [
+          ["-1e30", 1],
+          ["1", 245760],
+          ["-1e100", 1],
+        ],
+      };
+      const rows = Object.entries(files)
+        .flatMap(([file, blocks]) =>
+          blocks.map(([v, n], k) => `('${file}', ${k}, CAST(${v} AS DOUBLE), ${n})`),
+        )
+        .join(", ");
+      const generated = `SELECT file, k, i, v AS amount
+      FROM (VALUES ${rows}) b(file, k, v, n), range(245760) r(i) WHERE i < n`;
+      for (const file of Object.keys(files)) {
+        await oracle.run(
+          `COPY (SELECT amount FROM (${generated}) WHERE file = '${file}' ORDER BY k, i)
+         TO '${path.join(dir, `${file}.${type}`)}' (${copy})`,
+        );
+      }
+      const { plan } = planDashboard(fixture.project, "probe");
+      const config = fixture.project.config.spec;
+      const query = plan?.queries[0];
+      if (config === undefined || query === undefined) throw new Error("no plan");
+      const context = {
+        asOf: "2026-02-28",
+        timezone: "UTC",
+        weekStart: "monday" as const,
+        bindings: {},
+      };
+      const outputs = new Set<string>();
+      for (const threads of [1, 4, 8]) {
+        for (let i = 0; i < 4; i++) {
+          const executor = await createDuckDbExecutor({ root: fixture.root, config, threads });
+          try {
+            outputs.add(JSON.stringify((await executor.execute(query, context)).rows));
+          } finally {
+            await executor.close();
+          }
+        }
+      }
+      const reduce = async (direction: string) => {
+        const [row] = await oracle.rows(
+          `SELECT fsum(amount ORDER BY CAST(file AS BLOB) ${direction}, k, i) AS v FROM (${generated})`,
+        );
+        return row?.v;
+      };
+      const [bytes, flipped] = [await reduce("ASC"), await reduce("DESC")];
+      expect(flipped).not.toBe(bytes);
+      expect([...outputs]).toEqual([JSON.stringify([[bytes]])]);
+    },
+    120_000,
+  );
 });
 
 const NY = "America/New_York";
