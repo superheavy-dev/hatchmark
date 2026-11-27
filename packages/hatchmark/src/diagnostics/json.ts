@@ -114,7 +114,24 @@ class Parser {
     end = Math.min(start + 1, this.text.length),
     repair?: JsonSyntaxError["repair"],
   ): never {
-    this.errors.push({ kind: "syntax", message, start, end, ...(repair ? { repair } : {}) });
+    const length = this.text.length;
+    const clamp = (offset: number): number => Math.min(Math.max(offset, 0), length);
+    const s = clamp(start);
+    this.errors.push({
+      kind: "syntax",
+      message,
+      start: s,
+      end: Math.max(s, clamp(end)),
+      ...(repair
+        ? {
+            repair: {
+              start: clamp(repair.start),
+              end: Math.max(clamp(repair.start), clamp(repair.end)),
+              text: repair.text,
+            },
+          }
+        : {}),
+    });
     throw new StopParsing();
   }
 
@@ -466,12 +483,13 @@ export class JsonDocument {
   }
 
   /**
-   * The range and frame for a diagnostic: clamped to the text and never empty, unless the text is
-   * empty. An empty span widens to the code point it points at, or the last one at end of file.
+   * The range and frame for a diagnostic: clamped to the text and never empty, except in an empty
+   * text, where it is the zero-width span at end of input. An empty span widens to the code point
+   * it points at, or the last one at end of file.
    */
   location(start: number, end: number): { range: Range; frame: Frame } {
-    let [s, e] = this.clamp(start, end);
     const length = this.text.length;
+    let [s, e] = this.clamp(start, end);
     if (e === s && length > 0) {
       if (s < length) e = this.clamp(s, s + 1)[1];
       else s = this.snap(length - 1);

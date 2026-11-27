@@ -198,6 +198,28 @@ describe("parseJsonFile syntax diagnostics", () => {
     });
   });
 
+  it("clamps raw parser error offsets to the text", () => {
+    for (const text of ['"\\', '["\\u12', "", "[", '"a']) {
+      const { document, diagnostics } = parseJsonFile("x.json", text);
+      for (const error of document.errors) {
+        expect(error.start, text).toBeGreaterThanOrEqual(0);
+        expect(error.start, text).toBeLessThanOrEqual(error.end);
+        expect(error.end, text).toBeLessThanOrEqual(text.length);
+        if (error.repair) expect(error.repair.end, text).toBeLessThanOrEqual(text.length);
+      }
+      expect(diagnostics.length, text).toBe(1);
+    }
+  });
+
+  it("puts the empty-file error at the zero-width span at end of input", () => {
+    const [d] = parseJsonFile("x.json", "").diagnostics;
+    expect(d).toMatchObject({
+      message: "expected a JSON value, found end of file",
+      range: { start: { line: 1, column: 1 }, end: { line: 1, column: 1 } },
+    });
+    expect(d?.fix).toBeUndefined();
+  });
+
   it("reports duplicate keys with the first occurrence", () => {
     const { diagnostics, document } = parseJsonFile("x.json", '{\n  "a": 1,\n  "a": 2\n}');
     expect(diagnostics).toHaveLength(1);

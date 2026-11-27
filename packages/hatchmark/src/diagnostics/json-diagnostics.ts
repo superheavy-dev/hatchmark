@@ -14,14 +14,13 @@ export function parseJsonFile(
   const diagnostics = document.errors.map((error): Diagnostic => {
     const code = error.kind === "duplicate-key" ? "HM1003" : "HM1002";
     const repair = error.repair;
-    const { range, frame } = document.location(error.start, error.end);
+    const location = document.location(error.start, error.end);
     return {
       code,
       severity: "error",
       message: error.message,
       file,
-      range,
-      frame,
+      ...location,
       ...(error.related === undefined
         ? {}
         : {

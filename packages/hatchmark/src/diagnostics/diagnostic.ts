@@ -10,7 +10,8 @@ export interface Position {
 
 /**
  * A source range; end is exclusive. Always within the source (start <= end <= end of file). A
- * diagnostic's range is empty only for an empty file; a fix's range is empty when it inserts.
+ * diagnostic's range is empty only at end of input in an empty file, where it renders as a caret;
+ * a fix's range is empty when it inserts.
  */
 export interface Range {
   start: Position;
