@@ -8,7 +8,16 @@ beforeAll(async () => {
 });
 afterAll(() => oracle.close());
 
-const ZONES = ["America/New_York", "Australia/Sydney", "Europe/London", "America/Santiago"];
+const ZONES = [
+  "America/New_York",
+  "Australia/Sydney",
+  "Europe/London",
+  "America/Santiago",
+  "Pacific/Auckland",
+  "Pacific/Chatham",
+  "Antarctica/McMurdo",
+  "Australia/Lord_Howe",
+];
 
 describe("fromLocal reads a local wall time the way DuckDB reads a naive timestamp", () => {
   it.each(ZONES)(
@@ -26,10 +35,13 @@ describe("fromLocal reads a local wall time the way DuckDB reads a naive timesta
           ),
         );
         if (offsets.size === 1) continue;
-        for (let q = 0; q < 96; q++) {
-          const hh = String(Math.floor(q / 4)).padStart(2, "0");
-          const mm = String((q % 4) * 15).padStart(2, "0");
-          walls.push(`${date}T${hh}:${mm}:00`);
+        const next = new Date(day + 86_400_000).toISOString().slice(0, 10);
+        for (const local of [date, next]) {
+          for (let q = 0; q < 96; q++) {
+            const hh = String(Math.floor(q / 4)).padStart(2, "0");
+            const mm = String((q % 4) * 15).padStart(2, "0");
+            walls.push(`${local}T${hh}:${mm}:00`);
+          }
         }
       }
       expect(walls.length).toBeGreaterThan(0);

@@ -358,7 +358,7 @@ async function oracleFor(root: string, c: Case) {
     : main === undefined
       ? "all time"
       : main.start
-        ? words(main.start, main.end)
+        ? `${words(main.start, main.end)}${main.endAt === undefined ? "" : `, through ${clock(main.endAt)}`}`
         : `through ${through(main)}`;
   const behind = (w: Dated) => {
     const days = main ? (Date.parse(main.end) - Date.parse(w.end)) / 86_400_000 : 0;
@@ -475,7 +475,7 @@ it("month to date: untimed first, a source inside its first day, a source whose 
     asOf: "2026-11-05",
   });
   expect([want.subtitle, want.notes]).toEqual([
-    "Nov 1, 2026",
+    "Nov 1, 2026, through 11:30 PM",
     {
       units: "All time",
       revenue: "Data through Nov 4, 2026, 6:03 PM",
@@ -526,7 +526,7 @@ it("latest_data names the stale metric; latest_common_data keeps one window", as
     asOf: "latest_data",
   });
   expect([latest.want.subtitle, latest.want.notes]).toEqual([
-    "Nov 1 – Nov 4, 2026",
+    "Nov 1 – Nov 4, 2026, through 6:03 PM",
     { refunds: "Data through Nov 3, 2026, 12:00 AM · 1 day behind" },
   ]);
   const common = await attack({
@@ -534,7 +534,10 @@ it("latest_data names the stale metric; latest_common_data keeps one window", as
     range: "month_to_date",
     asOf: "latest_common_data",
   });
-  expect([common.want.subtitle, common.want.notes]).toEqual(["Nov 1 – Nov 3, 2026", {}]);
+  expect([common.want.subtitle, common.want.notes]).toEqual([
+    "Nov 1 – Nov 3, 2026, through 12:00 AM",
+    {},
+  ]);
   expect(common.block.window?.endAt).toBe("2026-11-03T00:00:00.000001");
 });
 
@@ -545,7 +548,7 @@ it("ratios across two sources read through the most stale operand, in either pos
     asOf: "2026-11-05",
   });
   expect([want.subtitle, want.notes]).toEqual([
-    "Nov 1 – Nov 3, 2026",
+    "Nov 1 – Nov 3, 2026, through 12:00 AM",
     {
       revenue: "Data through Nov 4, 2026, 6:03 PM",
       per_ticket: "Data through Nov 2, 2026 · 1 day behind",
@@ -572,7 +575,7 @@ it("two time columns of one source, and a ratio between them", async () => {
     asOf: "2026-11-05",
   });
   expect([want.subtitle, want.notes]).toEqual([
-    "Nov 1 – Nov 2, 2026",
+    "Nov 1 – Nov 2, 2026, through 3:00 PM",
     { placed: "Data through Nov 4, 2026, 10:00 AM" },
   ]);
 });
@@ -584,7 +587,7 @@ it("a date column reads whole days next to a timestamp source's partial day, and
     asOf: "2026-11-05",
   });
   expect([want.subtitle, want.notes]).toEqual([
-    "Nov 1 – Nov 4, 2026",
+    "Nov 1 – Nov 4, 2026, through 6:03 PM",
     { daily: "Data through Nov 3, 2026 · 1 day behind" },
   ]);
   const common = await attack({
@@ -603,7 +606,7 @@ it("a metric filter that drops the newest row keeps the source's horizon", async
     asOf: "2026-11-05",
   });
   expect([want.subtitle, want.notes]).toEqual([
-    "Nov 1 – Nov 4, 2026",
+    "Nov 1 – Nov 4, 2026, through 6:03 PM",
     { refunds: "Data through Nov 3, 2026, 12:00 AM · 1 day behind" },
   ]);
 });
@@ -616,7 +619,7 @@ it("a freshness lag moves only that source's window", async () => {
     lagDays: { sales: 2 },
   });
   expect([want.subtitle, want.notes]).toEqual([
-    "Nov 1 – Nov 3, 2026",
+    "Nov 1 – Nov 3, 2026, through 12:00 AM",
     { revenue: "Data through Nov 2, 2026, 6:03 PM · 1 day behind" },
   ]);
 });

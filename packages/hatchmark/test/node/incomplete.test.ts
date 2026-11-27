@@ -437,3 +437,63 @@ describe("whole days in last N KPIs, instants in series and to-date KPIs", () =>
     expect(block<KpiData>("k").value).toBe(2);
   });
 });
+
+describe("to-date cutoffs at zone edges", () => {
+  it("keeps the first of two midnights in a year-to-date window that ends at the repeated one", async () => {
+    const { block } = await dashboard({
+      timezone: "America/Havana",
+      sources: {
+        orders: rows(
+          ["2026-01-01T06:00:00Z", 1],
+          ["2026-11-01T04:30:00Z", 2],
+          ["2026-11-01T06:00:00Z", 4],
+        ),
+      },
+      period: { asOf: "2026-10-31", range: "year_to_date", compare: "none" },
+      blocks: [{ type: "kpi", id: "orders", metric: "orders" }],
+    });
+    const [sql] = await oracle.rows(
+      "SELECT sum(v) AS v FROM (VALUES (TIMESTAMPTZ '2026-01-01T06:00:00Z', 1), (TIMESTAMPTZ '2026-11-01T04:30:00Z', 2), (TIMESTAMPTZ '2026-11-01T06:00:00Z', 4)) t(ts, v) WHERE ts >= TIMESTAMPTZ '2026-01-01T05:00:00Z' AND ts < TIMESTAMPTZ '2026-11-01T05:00:00Z'",
+    );
+    expect(Number(sql?.v)).toBe(3);
+    expect(block<KpiData>("orders").value).toBe(3);
+  });
+
+  it("fills a year-to-date KPI in its first minute east of UTC, with no HM4024", async () => {
+    const { block, diagnostics } = await dashboard({
+      timezone: "Asia/Katmandu",
+      sources: {
+        orders: rows(
+          ["2024-12-31T18:15:00Z", 4],
+          ["2025-12-31T10:00:00Z", 1],
+          ["2025-12-31T18:15:00Z", 2],
+        ),
+      },
+      period: { asOf: "latest_data", range: "year_to_date", compare: "previous_period" },
+      blocks: [{ type: "kpi", id: "orders", metric: "orders" }],
+    });
+    expect(block<KpiData>("orders")).toMatchObject({ value: 2, previousValue: 4 });
+    expect(block<KpiData>("orders").empty).toBeUndefined();
+    expect(diagnostics.map((d) => d.code)).not.toContain("HM4024");
+  });
+
+  it("never compares a to-date window past the window section 6.2 gives its as-of date", async () => {
+    const { block } = await dashboard({
+      sources: {
+        orders: rows(
+          ["2027-03-01T12:00:00Z", 1],
+          ["2027-03-02T10:00:00Z", 2],
+          ["2028-03-01T13:59:00Z", 8],
+        ),
+      },
+      period: { asOf: "latest_data", range: "year_to_date", compare: "previous_period" },
+      blocks: [{ type: "kpi", id: "orders", metric: "orders" }],
+    });
+    expect(block<KpiData>("orders")).toMatchObject({
+      value: 8,
+      previousValue: 1,
+      previous: { start: "2027-01-01", end: "2027-03-02" },
+    });
+    expect(block<KpiData>("orders").previous?.endAt).toBeUndefined();
+  });
+});

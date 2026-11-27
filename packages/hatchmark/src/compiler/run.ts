@@ -289,7 +289,9 @@ export async function executionContext(
       current.length > 0 &&
       current.every((query) => {
         const bounds = query && queryBounds(query, context);
-        return bounds?.kind === "bounded" && parseInstant(bounds.start) >= parseInstant(bounds.end);
+        const at = (bound: string) =>
+          bound.endsWith("Z") ? parseInstant(bound) : fromLocal(parseInstant(bound), tz);
+        return bounds?.kind === "bounded" && at(bounds.start) >= at(bounds.end);
       });
     if (!empty) continue;
     const location = file

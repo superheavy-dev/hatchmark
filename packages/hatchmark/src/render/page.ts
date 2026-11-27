@@ -18,6 +18,7 @@ import { chartRuntimeData, chartTable, describeChart } from "./describe.js";
 import { formatDate, formatSpan } from "./format.js";
 import { renderKpi } from "./kpi.js";
 import { renderLine } from "./line.js";
+import { timeOf } from "./partial.js";
 import { PERIOD_MOBILE, periodCaption, periodControl, periodStyles } from "./period.js";
 import { isPie, pieHeight, renderPie } from "./pie.js";
 import { renderScatter } from "./scatter.js";
@@ -172,6 +173,9 @@ export function blockHeading(
 function tableSpan(block: TableData, ctx: RenderContext): string | undefined {
   if (block.empty) return undefined;
   const locale = ctx.data.locale;
+  if (block.window?.endAt !== undefined) {
+    return `${formatSpan(block.window, locale)}, through ${timeOf(block.window.endAt, locale)}`;
+  }
   return block.window
     ? formatSpan(block.window, locale)
     : block.through

@@ -84,15 +84,21 @@ export function toLocal(us: bigint, timezone: string): bigint {
   return us + offsetSeconds(us, timezone) * 1_000_000n;
 }
 
+function readings(wall: bigint, timezone: string): { before: bigint; shown: bigint[] } {
+  const before = wall - offsetSeconds(wall - DAY_US, timezone) * 1_000_000n;
+  const after = wall - offsetSeconds(wall + DAY_US, timezone) * 1_000_000n;
+  const shown = [...new Set([before, after])].filter((us) => toLocal(us, timezone) === wall);
+  return { before, shown };
+}
+
 export function fromLocal(wall: bigint, timezone: string): bigint {
-  const before = offsetSeconds(wall - DAY_US / 2n, timezone);
-  const after = offsetSeconds(wall + DAY_US / 2n, timezone);
-  const first = wall - before * 1_000_000n;
-  if (before === after) return first;
-  const second = wall - after * 1_000_000n;
-  const shown = [first, second].filter((us) => toLocal(us, timezone) === wall);
-  if (shown.length === 0) return first;
+  const { before, shown } = readings(wall, timezone);
+  if (shown.length === 0) return before;
   return shown.reduce((a, b) => (a > b ? a : b));
+}
+
+export function isRepeated(wall: bigint, timezone: string): boolean {
+  return readings(wall, timezone).shown.length > 1;
 }
 
 export const describeInstant = (us: bigint, timezone: string) =>

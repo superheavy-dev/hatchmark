@@ -7,7 +7,15 @@ import type {
   TimeGrain,
 } from "../spec/index.js";
 import { PERIOD_RANGES, TIME_GRAINS, WEEKDAYS } from "../spec/units.js";
-import { DAY_US, formatInstant, formatWall, fromLocal, parseInstant, toLocal } from "./instants.js";
+import {
+  DAY_US,
+  formatInstant,
+  formatWall,
+  fromLocal,
+  isRepeated,
+  parseInstant,
+  toLocal,
+} from "./instants.js";
 import type { ExecutionContext, PlannedParam, PlannedQuery } from "./plan.js";
 
 /**
@@ -323,7 +331,10 @@ function endedWindow(
   const hw = toLocal(horizon, tz);
   const day = formatWall(hw).slice(0, 10);
   const timeAxis = query.dimensions.some((d) => d.kind === "time");
-  const exact = formatWall(hw).endsWith("T00:00:00.000000") ? day : formatInstant(horizon);
+  const exact =
+    formatWall(hw).endsWith("T00:00:00.000000") && !isRepeated(hw, tz)
+      ? day
+      : formatInstant(horizon);
   if (range === "all_time") return { kind: "unbounded", end: timeAxis ? exact : day };
   const base = resolveRange(range, "none", context.asOf, anchors);
   if (base?.kind !== "bounded" || target.kind !== "bounded") return target;
@@ -352,9 +363,10 @@ function endedWindow(
     const cut = from + (hw - start);
     if (cut >= parseInstant(target.end)) return target;
     const text = formatWall(cut);
-    const end = text.endsWith("T00:00:00.000000")
-      ? text.slice(0, 10)
-      : formatInstant(fromLocal(cut, tz));
+    const end =
+      text.endsWith("T00:00:00.000000") && !isRepeated(cut, tz)
+        ? text.slice(0, 10)
+        : formatInstant(fromLocal(cut, tz));
     return { kind: "bounded", start: target.start, end };
   }
 
