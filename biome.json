@@ -9,6 +9,7 @@
     "ignoreUnknown": false,
     "includes": [
       "**",
+      "!assets/brand",
       "!packages/hatchmark/schema",
       "!packages/hatchmark/test/fixtures/global-sales",
       "!packages/hatchmark/src/render/text-metrics.ts",

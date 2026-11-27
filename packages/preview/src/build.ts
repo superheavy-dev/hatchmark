@@ -9,6 +9,7 @@ import { type BuildInfo, renderSite } from "./page.js";
 const PACKAGES = fileURLToPath(new URL("../../../../../", import.meta.url));
 const DIST = join(PACKAGES, "preview", "dist");
 const HATCHMARK = join(PACKAGES, "hatchmark");
+const BRAND = join(PACKAGES, "..", "assets", "brand");
 
 /** Reads the build info the workflow passes in PREVIEW_PR and PREVIEW_SHA. */
 export function buildInfo(env: Readonly<Record<string, string | undefined>>): BuildInfo {
@@ -30,6 +31,20 @@ function write(dir: string, files: Map<string, string>): void {
 const site = join(DIST, "site");
 write(site, renderSite({ entries, head, build: buildInfo(process.env) }));
 cpSync(join(HATCHMARK, "assets", "fonts"), join(site, "_hatchmark"), { recursive: true });
+for (const icon of [
+  "favicon.svg",
+  "favicon.ico",
+  "favicon-16.png",
+  "favicon-32.png",
+  "apple-touch-icon-180.png",
+]) {
+  copyFileSync(join(BRAND, icon), join(site, icon));
+}
+mkdirSync(join(site, "_brand"));
+for (const scheme of ["light", "dark"]) {
+  const lockup = `hatchmark-lockup-horizontal-${scheme}.svg`;
+  copyFileSync(join(BRAND, lockup), join(site, "_brand", lockup));
+}
 copyFileSync(
   join(HATCHMARK, "assets", "runtime", "hatchmark.js"),
   join(site, "_hatchmark", "hatchmark.js"),

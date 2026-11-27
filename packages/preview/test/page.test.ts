@@ -80,6 +80,19 @@ describe("preview site", () => {
     expect(gallery).toContain('<link rel="stylesheet" href="theme.css">');
   });
 
+  it("links the favicons on every page and shows the lockup in the shell header", () => {
+    for (const [path, html] of renderSite(empty)) {
+      expect(html, path).toContain('<link rel="icon" href="/favicon.svg" type="image/svg+xml"');
+      expect(html, path).toContain('<link rel="icon" href="/favicon.ico" sizes="32x32">');
+      expect(html, path).toContain(
+        '<link rel="apple-touch-icon" href="/apple-touch-icon-180.png">',
+      );
+    }
+    const shell = renderSite(empty).get("index.html") ?? "";
+    expect(shell).toContain('src="/_brand/hatchmark-lockup-horizontal-light.svg" alt="Hatchmark"');
+    expect(shell).toContain('src="/_brand/hatchmark-lockup-horizontal-dark.svg" alt="Hatchmark"');
+  });
+
   it("labels main and local builds", () => {
     expect(buildLabel({ sha: build.sha })).toBe("main · 1a5224b");
     expect(buildLabel({})).toBe("local build");

@@ -75,6 +75,13 @@ function groupByComponent(entries: readonly GalleryEntry[]): Map<string, Gallery
   return groups;
 }
 
+/** Favicons from assets/brand/, copied to the site root by build.ts. */
+const ICONS = `<link rel="icon" href="/favicon.ico" sizes="32x32">
+<link rel="icon" href="/favicon-16.png" type="image/png" sizes="16x16">
+<link rel="icon" href="/favicon-32.png" type="image/png" sizes="32x32">
+<link rel="icon" href="/favicon.svg" type="image/svg+xml" sizes="any">
+<link rel="apple-touch-icon" href="/apple-touch-icon-180.png">`;
+
 function htmlDocument(title: string, style: string, body: string, head = ""): string {
   return `<!doctype html>
 <html lang="en" data-theme="light">
@@ -83,6 +90,7 @@ function htmlDocument(title: string, style: string, body: string, head = ""): st
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="robots" content="noindex">
 <title>${escapeHtml(title)}</title>
+${ICONS}
 <style>
 ${STYLE}
 ${style}
@@ -98,7 +106,9 @@ ${body}
 const SHELL_STYLE = `html, body { height: 100%; }
 body { display: flex; flex-direction: column; }
 header { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 16px; padding: 8px 16px; border-bottom: 1px solid var(--line); }
-header strong { font-weight: 600; }
+header .brand { display: flex; align-items: center; gap: 12px; padding-block: 6px; font-weight: 600; }
+header .brand img { display: block; height: 16px; width: auto; }
+[data-theme="dark"] .brand .light, :root:not([data-theme="dark"]) .brand .dark { display: none; }
 header .info { color: var(--muted); margin-right: auto; }
 [role="group"] { display: inline-flex; border: 1px solid var(--line); border-radius: 6px; overflow: hidden; }
 button { font: inherit; color: var(--muted); background: none; border: 0; padding: 3px 10px; cursor: pointer; }
@@ -153,7 +163,7 @@ function toggle(key: string, label: string, options: [string, string][]): string
 function shell(input: SiteInput): string {
   const label = buildLabel(input.build);
   const body = `<header>
-<strong>Hatchmark preview</strong>
+<strong class="brand"><img class="light" src="/_brand/hatchmark-lockup-horizontal-light.svg" alt="Hatchmark" width="112" height="16"><img class="dark" src="/_brand/hatchmark-lockup-horizontal-dark.svg" alt="Hatchmark" width="112" height="16"><span>preview</span></strong>
 <span class="info" title="${escapeHtml(input.build.sha ?? "")}">${escapeHtml(label)}</span>
 ${toggle("view", "View", [
   ["components", "Components"],
