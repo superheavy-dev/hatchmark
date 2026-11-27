@@ -185,7 +185,16 @@ const barBlock = z
     oneMetricWhenSplit(b, ctx);
     grainInGrains(b, ctx);
   })
-  .meta({ id: "BarBlock" });
+  .meta({
+    id: "BarBlock",
+    allOf: [
+      {
+        if: { not: { required: ["grain"] } },
+        // biome-ignore lint/suspicious/noThenProperty: a JSON Schema keyword, not a thenable
+        then: { not: { anyOf: [{ required: ["edges"] }, { required: ["incomplete"] }] } },
+      },
+    ],
+  });
 
 /** Slices a pie or donut shows before grouping the rest into "Other". */
 export const PIE_DEFAULT_LIMIT = 5;

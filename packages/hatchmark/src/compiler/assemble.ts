@@ -10,7 +10,6 @@ import {
   type RangeSpec,
   type ResolvedGrain,
   resolveGrain,
-  timeNature,
 } from "../spec/index.js";
 import {
   type BarData,
@@ -289,8 +288,8 @@ class Assembler {
     const values = series.values.map((value, index) => {
       const start = parseInstant(buckets[index] ?? "");
       const end = parseInstant(bucketEnd(buckets[index] ?? "", grain));
-      if (horizon !== undefined && start >= horizon) return null;
       const from = index === 0 && clip !== undefined && clip > start ? clip : start;
+      if (horizon !== undefined && from >= horizon) return null;
       const to = horizon !== undefined && horizon < end ? horizon : end;
       if (from > start || to < end) {
         partial.push({
@@ -306,9 +305,10 @@ class Assembler {
 
   /**
    * A time-series block's incomplete option (RFC 0001 section 6.5): "mark" keeps each series'
-   * partial buckets; "show" drops the markers, warning with HM4014 when a flow metric's last bucket
-   * is partial; "hide" gives partial buckets no value and drops the leading and trailing buckets
-   * that are then empty in every series, ending the axis window where the kept buckets do. hidden
+   * partial buckets; "show" drops the markers (executionContext warns with HM4014 when a flow
+   * metric's last bucket is partial); "hide" gives partial buckets no value and drops the leading
+   * buckets that are then empty in every series and the trailing ones that are also partial or past
+   * every series' horizon, ending the axis window where the kept buckets do. hidden
    * lists the kept positions where a value was hidden, so a stack has no total there.
    */
   incomplete<S extends Series>(
@@ -320,42 +320,32 @@ class Assembler {
     const mode = block.incomplete ?? "mark";
     if (mode === "mark") return { axis, series, hidden: [] };
     const plain = series.map(({ partial: _, ...rest }) => rest as S);
-    if (mode === "show") {
-      const flows = series.filter((s) => {
-        const last = s.values.findLastIndex((v) => v !== null);
-        const nature = timeNature(s.metric, this.metricSpecs());
-        return nature === "flow" && (s.partial ?? []).some((p) => p.index === last);
-      });
-      const at = `${plan.pointer}/incomplete`;
-      if (
-        flows.length > 0 &&
-        !this.diagnostics.some((d) => d.code === "HM4014" && d.pointer === at)
-      ) {
-        const file = this.project.dashboards.get(this.plan.dashboard);
-        this.diagnostics.push({
-          code: "HM4014",
-          severity: "warning",
-          message: `block "${plan.blockId}" shows its last ${axis.grain} as complete, but the data for "${flows[0]?.metric}" covers only part of it, so it reads low`,
-          ...(file ? { file: file.file, pointer: at, ...file.document.locationOf(at) } : {}),
-          help: 'use "mark" (the default) to show it as in progress, or "hide" to leave it out',
-          docs: docsCommand("HM4014"),
-        });
-      }
-      return { axis, series: plain, hidden: [] };
-    }
+    if (mode === "show") return { axis, series: plain, hidden: [] };
     const hidden = series.map((s, k) => {
       const cut = new Set((s.partial ?? []).map((p) => p.index));
       return { ...plain[k], values: s.values.map((v, i) => (cut.has(i) ? null : v)) } as S;
     });
     const partialAt = new Set(series.flatMap((s) => (s.partial ?? []).map((p) => p.index)));
-    const dropped = (i: number) => partialAt.has(i) && hidden.every((s) => s.values[i] === null);
+    const horizons = series.map((s) => this.horizon(plan.measures[s.metric]));
+    const past = (i: number) =>
+      horizons.every(
+        (h) =>
+          h !== undefined &&
+          parseInstant(axis.buckets[i] ?? "") >= toLocal(h, this.context.timezone),
+      );
+    const empty = (i: number) => hidden.every((s) => s.values[i] === null);
     let first = 0;
-    while (first < axis.buckets.length && dropped(first)) first++;
+    while (first < axis.buckets.length && partialAt.has(first) && empty(first)) first++;
     let last = axis.buckets.length;
-    while (last > first && dropped(last - 1)) last--;
+    while (last > first && (partialAt.has(last - 1) || past(last - 1)) && empty(last - 1)) last--;
     const { startAt, endAt, ...window } = axis.window;
-    const start = first > 0 ? axis.buckets[first] : undefined;
-    const end = last < axis.buckets.length ? axis.buckets[last] : undefined;
+    const start = first > 0 && first < last ? axis.buckets[first] : undefined;
+    const end =
+      first === last
+        ? (start ?? window.start)
+        : last < axis.buckets.length
+          ? axis.buckets[last]
+          : undefined;
     return {
       axis: {
         ...axis,
@@ -369,12 +359,6 @@ class Assembler {
       series: hidden.map((s) => ({ ...s, values: s.values.slice(first, last) })),
       hidden: [...partialAt].filter((i) => i >= first && i < last).map((i) => i - first),
     };
-  }
-
-  private metricSpecs(): Map<string, Metric> {
-    const specs = new Map<string, Metric>();
-    for (const [name, file] of this.project.metrics) if (file.spec) specs.set(name, file.spec);
-    return specs;
   }
 
   /** Distinct dimension values of a grouping set across queries, sorted by key. */

@@ -723,7 +723,34 @@
         "type",
         "metrics"
       ],
-      "additionalProperties": false
+      "additionalProperties": false,
+      "allOf": [
+        {
+          "if": {
+            "not": {
+              "required": [
+                "grain"
+              ]
+            }
+          },
+          "then": {
+            "not": {
+              "anyOf": [
+                {
+                  "required": [
+                    "edges"
+                  ]
+                },
+                {
+                  "required": [
+                    "incomplete"
+                  ]
+                }
+              ]
+            }
+          }
+        }
+      ]
     },
     "Sort": {
       "type": "object",
