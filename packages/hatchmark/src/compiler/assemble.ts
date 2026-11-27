@@ -24,6 +24,7 @@ import {
   type MetricInfo,
   type PartialBucket,
   type Series,
+  type StackTotals,
   type TableData,
   type TableRow,
   type TimeAxis,
@@ -356,6 +357,76 @@ class Assembler {
     }));
   }
 
+  /**
+   * A stacked block's totals and shares (StackTotals). total(i) reads a split's per-position total
+   * from rows; without it, the total is the sum of the series (several metrics). A 100% stack with a
+   * negative value gets HM4061, since its shares no longer add up to 100%.
+   */
+  stacked(
+    stack: boolean | "percent" | undefined,
+    series: Series[],
+    total: ((i: number) => Value) | undefined,
+    plan: BlockPlan,
+  ): { series: Series[]; extra: StackTotals } {
+    if (!stack) return { series, extra: {} };
+    const n = series[0]?.values.length ?? 0;
+    const totals = Array.from({ length: n }, (_, i): Value => {
+      if (total) return total(i);
+      const values = series.map((s) => s.values[i] ?? null).filter((v) => v !== null);
+      return values.length === 0 ? null : values.reduce((a, b) => a + b, 0);
+    });
+    if (stack === "percent") {
+      const negative = series.find((s) => s.values.some((v) => v !== null && v < 0));
+      if (negative) this.negativeShare(plan, `${plan.pointer}/stack`, negative.label);
+    }
+    return {
+      series: series.map((s) => ({
+        ...s,
+        share: s.values.map((v, i) => divide(v, totals[i] ?? null)),
+      })),
+      extra: { totals, ...(stack === "percent" ? { percent: true as const } : {}) },
+    };
+  }
+
+  /**
+   * A stack's totals cut at the horizon of every stacked metric, like its series: a bucket past any
+   * of them has no total and no shares, since a part of the whole is missing there.
+   */
+  cutTotals(
+    stacked: { series: Series[]; extra: StackTotals },
+    expressions: (MeasureExpression | undefined)[],
+    buckets: string[],
+    grain: ResolvedGrain,
+  ): { series: Series[]; extra: StackTotals } {
+    const { totals } = stacked.extra;
+    if (totals === undefined) return stacked;
+    const cut = expressions.reduce(
+      (values, expression) => this.cut({ values }, expression, buckets, grain).values,
+      totals,
+    );
+    return {
+      series: stacked.series.map((s) =>
+        s.share ? { ...s, share: s.share.map((v, i) => (cut[i] === null ? null : v)) } : s,
+      ),
+      extra: { ...stacked.extra, totals: cut },
+    };
+  }
+
+  /** HM4061: a part-of-whole chart (100% stack) with a negative value. */
+  negativeShare(plan: BlockPlan, pointer: string, label: string): void {
+    const message = `block "${plan.blockId}" shows shares of a total, but "${label}" has negative values, so the shares do not add up to 100%`;
+    if (this.diagnostics.some((d) => d.code === "HM4061" && d.message === message)) return;
+    const file = this.project.dashboards.get(this.plan.dashboard);
+    this.diagnostics.push({
+      code: "HM4061",
+      severity: "warning",
+      message,
+      ...(file ? { file: file.file, pointer, ...file.document.locationOf(pointer) } : {}),
+      help: 'show the parts as "stack": true or grouped bars, or filter the metric to values that cannot be negative',
+      docs: docsCommand("HM4061"),
+    });
+  }
+
   kpi(block: Block & { type: "kpi" }, plan: BlockPlan, common: Common): KpiData {
     const name = block.metric;
     const compare = block.compare ?? this.plan.period.compare;
@@ -413,18 +484,33 @@ class Assembler {
       plan.grain ?? resolveGrain(block.grain, this.plan.anchors),
     );
     const [first = ""] = block.metrics;
+    const stack = block.type === "area" ? block.stack : undefined;
     const grain = plan.grain ?? resolveGrain(block.grain, this.plan.anchors);
     const series = (
       block.split === undefined
         ? this.metricSeries(block.metrics, plan.measures, axis.buckets)
-        : this.splitSeries(first, plan.measures[first], axis.buckets, 1, 2)
+        : this.splitSeries(first, plan.measures[first], axis.buckets, stack ? 2 : 1, 2)
     ).map((one) => this.cut(one, plan.measures[one.metric], axis.buckets, grain));
+    const stacked = this.cutTotals(
+      this.stacked(
+        stack,
+        series,
+        block.split === undefined
+          ? undefined
+          : (i) => this.evaluate(plan.measures[first], 1, [axis.buckets[i] ?? null, null]),
+        plan,
+      ),
+      block.metrics.map((m) => plan.measures[m]),
+      axis.buckets,
+      grain,
+    );
     return {
       ...common,
       type: block.type,
-      ...(block.type === "area" ? { stack: block.stack ?? false } : {}),
+      ...(block.type === "area" ? { stack: Boolean(stack) } : {}),
       axis,
-      series,
+      series: stacked.series,
+      ...stacked.extra,
     };
   }
 
@@ -436,20 +522,36 @@ class Assembler {
       ...common,
       type: "bar" as const,
       orientation: block.orientation ?? "vertical",
-      stack: block.stack ?? false,
+      stack: Boolean(block.stack),
     };
+    const stacked = (series: Series[], positions: Key[]) =>
+      this.stacked(
+        block.stack,
+        series,
+        split
+          ? (i) => this.evaluate(plan.measures[first], 1, [positions[i] ?? null, null])
+          : undefined,
+        plan,
+      );
     if (block.grain !== undefined) {
       const axis = this.timeAxis(
         expressions,
         plan.grain ?? resolveGrain(block.grain, this.plan.anchors),
       );
       const grain = plan.grain ?? resolveGrain(block.grain, this.plan.anchors);
-      const series = (
-        split
-          ? this.splitSeries(first, plan.measures[first], axis.buckets, 2, 2)
-          : this.metricSeries(block.metrics, plan.measures, axis.buckets)
-      ).map((one) => this.cut(one, plan.measures[one.metric], axis.buckets, grain));
-      return { ...base, axis, series };
+      const { series, extra } = this.cutTotals(
+        stacked(
+          (split
+            ? this.splitSeries(first, plan.measures[first], axis.buckets, 2, 2)
+            : this.metricSeries(block.metrics, plan.measures, axis.buckets)
+          ).map((one) => this.cut(one, plan.measures[one.metric], axis.buckets, grain)),
+          axis.buckets,
+        ),
+        expressions,
+        axis.buckets,
+        grain,
+      );
+      return { ...base, axis, series, ...extra };
     }
     const column = block.by ?? "";
     const all = this.keys(expressions, 0).map((keys) => keys[0] ?? null);
@@ -468,11 +570,20 @@ class Assembler {
             .map(({ c }) => c);
     const shown = block.limit === undefined ? sorted : sorted.slice(0, block.limit);
     const axis: CategoryAxis = { kind: "category", column, categories: shown };
-    const series = split
-      ? this.splitSeries(first, plan.measures[first], shown, 2, 2)
-      : this.metricSeries(block.metrics, plan.measures, shown);
+    const { series, extra } = stacked(
+      split
+        ? this.splitSeries(first, plan.measures[first], shown, 2, 2)
+        : this.metricSeries(block.metrics, plan.measures, shown),
+      shown,
+    );
     const omitted = sorted.length - shown.length;
-    return { ...base, axis, series, ...(omitted > 0 ? { omittedCategories: omitted } : {}) };
+    return {
+      ...base,
+      axis,
+      series,
+      ...extra,
+      ...(omitted > 0 ? { omittedCategories: omitted } : {}),
+    };
   }
 
   /**
@@ -486,11 +597,11 @@ class Assembler {
   ): T {
     const data = build(block, plan);
     const variants = (plan.grains ?? []).map((g) => {
-      const { axis, series } = build(
+      const { axis, series, totals } = build(
         { ...block, grain: g.grain },
         { ...plan, grain: g.grain, measures: g.measures },
       );
-      return { grain: g.grain, axis: axis as TimeAxis, series };
+      return { grain: g.grain, axis: axis as TimeAxis, series, totals };
     });
     const axes =
       variants.length > 0
@@ -523,6 +634,7 @@ class Assembler {
           label: labels[i] ?? v.grain.unit,
           axis: v.axis,
           series: v.series,
+          ...(v.totals === undefined ? {} : { totals: v.totals }),
         })),
       },
     };

@@ -20,6 +20,7 @@ interface RuntimeSeries {
   text: string[];
   short: string[];
   y?: (number | null)[];
+  pct?: string[];
 }
 
 interface RuntimeChart {
@@ -27,6 +28,7 @@ interface RuntimeChart {
   headers: string[];
   series: RuntimeSeries[];
   total?: string[];
+  heads?: string[];
 }
 
 const SVG_NS = "http://www.w3.org/2000/svg";
@@ -91,7 +93,7 @@ function attach(figure: HTMLElement, chart: RuntimeChart): void {
 
   const fillReadout = (svg: SVGSVGElement, index: number) => {
     const head = svg.querySelector(".hm-rh");
-    if (head) head.textContent = chart.headers[index] ?? "";
+    if (head) head.textContent = (chart.heads ?? chart.headers)[index] ?? "";
     chart.series.forEach((s, k) => {
       const value = svg.querySelector(`.hm-rv-${k}`);
       if (value) value.textContent = s.short[index] ?? "";
@@ -116,15 +118,16 @@ function attach(figure: HTMLElement, chart: RuntimeChart): void {
       const row = element("div", "hm-tip-r");
       const name = element("span", "hm-tip-n");
       name.append(element("i", `hm-b-c${s.color}`), s.label);
-      row.append(name, element("span", "hm-tip-v", s.text[index] ?? ""));
+      const value = element("span", "hm-tip-v", s.text[index] ?? "");
+      if (s.pct) value.append(element("span", "hm-tip-p", s.pct[index] ?? ""));
+      row.append(name, value);
       tip.append(row);
     }
     if (chart.total) {
       const row = element("div", "hm-tip-r hm-tip-t");
-      row.append(
-        element("span", "", "Total"),
-        element("span", "hm-tip-v", chart.total[index] ?? ""),
-      );
+      const value = element("span", "hm-tip-v", chart.total[index] ?? "");
+      if (chart.series.some((s) => s.pct)) value.append(element("span", "hm-tip-p"));
+      row.append(element("span", "", "Total"), value);
       tip.append(row);
     }
     tip.style.display = "flex";
@@ -256,7 +259,10 @@ function attach(figure: HTMLElement, chart: RuntimeChart): void {
   };
 
   const onPointer = (event: PointerEvent) => {
-    if (event.type === "pointerleave" || event.type === "pointercancel") return hide();
+    if (event.type === "pointerleave" || event.type === "pointercancel") {
+      if (event.pointerType !== "touch") hide();
+      return;
+    }
     const svg = (event.target as Element).closest?.("svg[data-hm-kind]") as SVGSVGElement | null;
     if (!svg) return hide();
     const index = pick(svg, event);
@@ -287,11 +293,14 @@ function attach(figure: HTMLElement, chart: RuntimeChart): void {
     show(svg, index);
     live.textContent = [
       chart.headers[index],
-      ...chart.series.map((s) => `${s.label} ${s.text[index]}`),
+      ...chart.series.map((s) => `${s.label} ${s.text[index]}${s.pct ? `, ${s.pct[index]}` : ""}`),
       ...(chart.total ? [`Total ${chart.total[index]}`] : []),
     ].join(", ");
   });
   figure.addEventListener("focusout", hide);
+  document.addEventListener("pointerdown", (event) => {
+    if (current && !figure.contains(event.target as Node)) hide();
+  });
 }
 
 /** Shows one grain in a card that switches grains; false when the card does not list it. */

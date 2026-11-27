@@ -79,6 +79,9 @@ Metric filters and dashboard select filters compare a column with a value:
 - **Empty groups and buckets.** Sums and counts of no rows are 0; other aggregates (distinct counts,
   averages, ratios, medians, min, max) of no rows are empty.
 - **percentOfTotal** is a row's share of the grand total, for additive metrics only (HM4001).
+- **Stacked bars and areas** carry each position's total, recomputed from rows like a table's, and
+  each segment's share of it; a 100% stack (`"stack": "percent"`) needs additive metrics too
+  (HM4001). See [components/stacked.md](components/stacked.md).
   `"additive": true` on a SQL metric is checked when a table has a total: if the rows do not add up
   to the total, build warns with HM4003.
 - **KPI change.** `changePct` is the relative change, `(value - previous) / |previous|`, empty when

@@ -95,6 +95,14 @@ function oneMetricWhenSplit(
   }
 }
 
+const stackField = z
+  .union([z.boolean(), z.literal("percent")])
+  .optional()
+  .meta({
+    description:
+      'true stacks the series on each other; "percent" stacks them to 100%, so each shows its share of the total. Stacking needs metrics that add up (sums and counts) in the same unit.',
+  });
+
 const lineBlock = z
   .strictObject({ ...timeSeriesFields, type: z.literal("line") })
   .superRefine(oneMetricWhenSplit)
@@ -102,7 +110,7 @@ const lineBlock = z
   .meta({ id: "LineBlock" });
 
 const areaBlock = z
-  .strictObject({ ...timeSeriesFields, type: z.literal("area"), stack: z.boolean().optional() })
+  .strictObject({ ...timeSeriesFields, type: z.literal("area"), stack: stackField })
   .superRefine(oneMetricWhenSplit)
   .superRefine(grainInGrains)
   .meta({ id: "AreaBlock" });
@@ -120,7 +128,7 @@ const barBlock = z
       .meta({ description: "Time buckets on the axis. Use either by or grain." }),
     grains: grainsField(),
     split: columnName.optional(),
-    stack: z.boolean().optional(),
+    stack: stackField,
     orientation: z.enum(["vertical", "horizontal"]).optional(),
     sort: sort.optional(),
     limit: z.number().int().min(1).max(100).optional(),

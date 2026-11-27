@@ -125,10 +125,27 @@ describe("grain switching on the built trends page (HAT-40 browser.mjs)", () => 
       cells: option.series.map((s: Series) => ({
         label: s.label,
         text: s.values.map((v) => formatValue(v ?? null, metric(s.metric), data.locale, "full")),
+        cell: s.values.map((v, j) => {
+          const text = formatValue(v ?? null, metric(s.metric), data.locale, "full");
+          if (s.share === undefined) return text;
+          const share = formatValue(
+            s.share[j] ?? null,
+            { format: { type: "percent" } },
+            data.locale,
+            "full",
+          );
+          return `${text} (${share})`;
+        }),
         short: s.values.map((v) =>
           formatValue(v ?? null, metric(s.metric), data.locale, "compact"),
         ),
       })),
+      totals: option.totals?.map((v) =>
+        formatValue(v ?? null, metric(option.series[0]?.metric ?? ""), data.locale, "full"),
+      ),
+      shortTotals: option.totals?.map((v) =>
+        formatValue(v ?? null, metric(option.series[0]?.metric ?? ""), data.locale, "compact"),
+      ),
     };
   };
 
@@ -164,8 +181,12 @@ describe("grain switching on the built trends page (HAT-40 browser.mjs)", () => 
         expect({ id, key, ...table }).toEqual({
           id,
           key,
-          head: ["Period", ...want.cells.map((c) => c.label)],
-          rows: want.headers.map((h, j) => [h, ...want.cells.map((c) => c.text[j])]),
+          head: ["Period", ...want.cells.map((c) => c.label), ...(want.totals ? ["Total"] : [])],
+          rows: want.headers.map((h, j) => [
+            h,
+            ...want.cells.map((c) => c.cell[j]),
+            ...(want.totals ? [want.totals[j]] : []),
+          ]),
         });
       }
     }
@@ -208,8 +229,10 @@ describe("grain switching on the built trends page (HAT-40 browser.mjs)", () => 
               }),
               want.cells.length,
             );
-            const j = want.headers.indexOf(shown.header);
+            const [period = "", total] = shown.header.split(" · Total ");
+            const j = want.headers.indexOf(period);
             expect(j, `${where}: readout header ${shown.header}`).toBeGreaterThanOrEqual(0);
+            expect(total, `${where}: readout total`).toBe(want.shortTotals?.[j]);
             expect(shown.values, where).toEqual(want.cells.map((c) => c.short[j]));
             headers.add(shown.header);
             continue;

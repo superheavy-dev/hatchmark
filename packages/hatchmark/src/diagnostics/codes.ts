@@ -216,7 +216,7 @@ export const CODES = {
   HM4001: {
     title: "percent of total on a non-additive metric",
     explanation:
-      "A share of the total only makes sense when the parts add up to the total. Averages, distinct counts, medians, ratios, non-linear formulas and SQL metrics declared additive: false do not; neither does a formula with a constant term (a + 1000 adds 1,000 to every group but once to the total), nor a sum read with over_time min or max (each group can peak on a different date). Point-in-time sums such as balances do, at one instant. Remove the metric from percentOfTotal, or show the additive metric it is built from.",
+      'A share of the total only makes sense when the parts add up to the total. This covers percentOfTotal in a table and bar or area charts stacked to 100% ("stack": "percent"). Averages, distinct counts, medians, ratios, non-linear formulas and SQL metrics declared additive: false do not; neither does a formula with a constant term (a + 1000 adds 1,000 to every group but once to the total), nor a sum read with over_time min or max (each group can peak on a different date). Point-in-time sums such as balances do, at one instant. Remove the metric from percentOfTotal, stack it with "stack": true or not at all, or show the additive metric it is built from.',
   },
   HM4002: {
     title: "block type not built yet",
@@ -297,6 +297,21 @@ export const CODES = {
     title: "default business definition",
     explanation:
       "Informational. The file relies on a default for a choice that differs between companies, such as whether an interval ending exactly at a bucket end still counts in that bucket. The note names the default and the option that changes it. Setting the option explicitly, even to its default value, silences the note.",
+  },
+  HM4060: {
+    title: "stacked metrics do not add up",
+    explanation:
+      'A stacked bar or area chart draws each series on top of the previous one, so the height of the stack reads as a total. That holds only when the series add up: sums and counts of one unit. A split metric that is an average, a distinct count, a ratio or a min or max over time has segments that do not add up to its total (two regions\' average order values summed are not an average order value). Hatchmark still shows the real total in the tooltip, but the stack height is meaningless. Remove "stack" to draw grouped bars or separate lines, or stack the additive metric the value is built from.',
+  },
+  HM4062: {
+    title: "stacked metrics in different units",
+    explanation:
+      'A stacked or 100% stacked chart adds its series into one total, so every series must be in the same unit: revenue in dollars and order counts, or revenue in USD and in EUR, cannot be added, and a share of such a total means nothing. Set "stack": false to draw the metrics side by side, show them in separate charts, or stack metrics of one unit (convert currencies in the metric first).',
+  },
+  HM4061: {
+    title: "negative values in a part-of-whole chart",
+    explanation:
+      'A chart stacked to 100% shows each value as a share of its total, which only works when every part is zero or more: a negative part makes the others add up to more than 100%. The chart is still drawn, with negative shares below zero, and this warning names the series. Use "stack": true or grouped bars, which show negative values honestly, or filter the metric to values that cannot be negative (such as gross revenue instead of net).',
   },
   HM5001: {
     title: "too many points per series",

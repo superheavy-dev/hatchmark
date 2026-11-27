@@ -31,7 +31,7 @@ import { FISCAL_BARS, MONTH, QUARTER_BARS, REGION_SWITCH, revenueSwitch, WEEK } 
 
 /** One gallery entry: a component variant on sample data, wrapped as a one-block dashboard. */
 export interface GalleryVariant {
-  component: "kpi" | "line" | "bar" | "table";
+  component: "kpi" | "line" | "bar" | "stacked" | "table";
   variant: string;
   title: string;
   data: DashboardData;
@@ -289,13 +289,6 @@ const LINES: GalleryVariant[] = [
     }),
   ),
   one("line", "area", "Area", { ...REVENUE_LINE, id: "area", type: "area", span: 12 }),
-  one("line", "area-stacked", "Stacked area by region", {
-    ...REGION_LINE,
-    id: "area_stacked",
-    type: "area",
-    stack: true,
-    span: 12,
-  }),
 ];
 
 function season(date: string): number {
@@ -392,34 +385,6 @@ const BARS: GalleryVariant[] = [
           region.name,
         ),
       ),
-    }),
-  ),
-  one(
-    "bar",
-    "bar-stacked",
-    "Stacked by channel, by month",
-    bar("stacked", "Marketplace grew its share through the holidays", {
-      axis: monthAxis(12),
-      stack: true,
-      series: CHANNELS.map((c, k) =>
-        series(
-          "revenue",
-          c.name,
-          last12.map((v, i) => round(v * c.share * (1 + (k === 1 ? 0.012 : -0.006) * i))),
-          c.name,
-        ),
-      ),
-    }),
-  ),
-  one(
-    "bar",
-    "bar-horizontal-stacked",
-    "Horizontal, stacked",
-    bar("h_stacked", "Revenue by region and channel", {
-      orientation: "horizontal",
-      stack: true,
-      axis: regionAxis,
-      series: channelSplit((s) => round(1_843_210 * s)),
     }),
   ),
   one(
@@ -644,12 +609,240 @@ const GRAIN_BARS: GalleryVariant[] = [
   ),
 ];
 
+/**
+ * A stacked block's engine output for sample data: totals per position and each value's share.
+ * totals overrides the sum, as the engine does for a split metric that is recomputed from rows.
+ */
+function stacked<T extends BarData | LineData>(block: T, percent = false, totals?: Value[]): T {
+  const n = block.series[0]?.values.length ?? 0;
+  const sums =
+    totals ??
+    Array.from({ length: n }, (_, i) => {
+      const values = block.series.map((s) => s.values[i] ?? null).filter((v) => v !== null);
+      return values.length === 0 ? null : values.reduce((a, b) => a + b, 0);
+    });
+  return {
+    ...block,
+    stack: true,
+    series: block.series.map((s) => ({
+      ...s,
+      share: s.values.map((v, i) => {
+        const t = sums[i] ?? null;
+        return v === null || t === null || t === 0 ? null : v / t;
+      }),
+    })),
+    totals: sums,
+    ...(percent ? { percent: true as const } : {}),
+  };
+}
+
+/** How each region's revenue splits across channels: marketplaces matter more outside the US. */
+const CHANNEL_MIX: Record<string, number[]> = {
+  "North America": [0.64, 0.22, 0.14],
+  Europe: [0.52, 0.31, 0.17],
+  "Asia-Pacific": [0.41, 0.44, 0.15],
+  "Latin America": [0.33, 0.55, 0.12],
+};
+const channelMix = (total: number) =>
+  CHANNELS.map((c, k) =>
+    series(
+      "revenue",
+      c.name,
+      REGIONS.map((r) => round(total * r.share * (CHANNEL_MIX[r.name]?.[k] ?? 0))),
+      c.name,
+    ),
+  );
+
+const DEVICES = [
+  { name: "Mobile", start: 0.48, end: 0.61 },
+  { name: "Desktop", start: 0.44, end: 0.33 },
+  { name: "Tablet", start: 0.08, end: 0.06 },
+];
+const deviceOrders = DEVICES.map((d) =>
+  series(
+    "orders",
+    d.name,
+    last12.map((v, i) => round((v / 84) * (d.start + ((d.end - d.start) * i) / 11))),
+    d.name,
+  ),
+);
+
+/** Payment methods by country: cards everywhere, wallets and local methods vary by market. */
+const PAYMENTS: [string, number[]][] = [
+  ["United States", [0.62, 0.18, 0.14, 0.06]],
+  ["United Kingdom", [0.55, 0.19, 0.16, 0.1]],
+  ["Canada", [0.68, 0.15, 0.12, 0.05]],
+  ["Germany", [0.29, 0.38, 0.06, 0.27]],
+  ["Australia", [0.51, 0.14, 0.21, 0.14]],
+  ["France", [0.66, 0.17, 0.09, 0.08]],
+  ["Japan", [0.71, 0.04, 0.12, 0.13]],
+  ["Netherlands", [0.18, 0.21, 0.05, 0.56]],
+];
+const paymentAxis = {
+  kind: "category" as const,
+  column: "country",
+  categories: PAYMENTS.map(([c]) => c),
+};
+const paymentSeries = ["Card", "PayPal", "Apple Pay", "Local methods"].map((name, k) =>
+  series(
+    "orders",
+    name,
+    PAYMENTS.map(([country, mix]) => {
+      const share = COUNTRIES.find((c) => c.name === country)?.share ?? 0;
+      return round(21_874 * share * (mix[k] ?? 0));
+    }),
+    name,
+  ),
+);
+
+const STACKED: GalleryVariant[] = [
+  one(
+    "stacked",
+    "bar-stacked",
+    "Stacked bars by month",
+    stacked(
+      bar("stacked", "Marketplace grew its share through the holidays", {
+        axis: monthAxis(12),
+        series: CHANNELS.map((c, k) =>
+          series(
+            "revenue",
+            c.name,
+            last12.map((v, i) => round(v * c.share * (1 + (k === 1 ? 0.012 : -0.006) * i))),
+            c.name,
+          ),
+        ),
+      }),
+    ),
+  ),
+  one(
+    "stacked",
+    "bar-horizontal-stacked",
+    "Horizontal stacked bars",
+    stacked(
+      bar("h_stacked", "Marketplaces bring in more than half of Latin American revenue", {
+        orientation: "horizontal",
+        axis: regionAxis,
+        series: channelMix(1_843_210),
+      }),
+    ),
+  ),
+  one(
+    "stacked",
+    "bar-percent",
+    "100% stacked bars by region",
+    stacked(
+      bar("percent", "Marketplaces matter more outside North America", {
+        axis: regionAxis,
+        series: channelMix(1_843_210),
+      }),
+      true,
+    ),
+  ),
+  one(
+    "stacked",
+    "bar-percent-time",
+    "100% stacked bars by month",
+    stacked(
+      bar("device_mix", "Mobile passed 60% of orders in October", {
+        axis: monthAxis(12),
+        series: deviceOrders,
+      }),
+      true,
+    ),
+  ),
+  one(
+    "stacked",
+    "bar-horizontal-percent",
+    "Horizontal 100% stacked bars",
+    stacked(
+      bar("payments", "Local methods lead in the Netherlands and Germany", {
+        orientation: "horizontal",
+        axis: paymentAxis,
+        span: 8,
+        series: paymentSeries,
+      }),
+      true,
+    ),
+  ),
+  one(
+    "stacked",
+    "bar-stacked-negative",
+    "Stacked with negative values: parts diverge from zero",
+    stacked(
+      bar("cash_by_region", "Europe's refunds outweighed its sales in two categories", {
+        axis: {
+          kind: "category",
+          column: "category",
+          categories: ["Outerwear", "Footwear", "Accessories", "Bags", "Kids", "Home"],
+        },
+        series: [
+          series(
+            "net_cash_flow",
+            "North America",
+            [98_200, 61_400, 24_100, 8_300, 15_900, 4_200],
+            "North America",
+          ),
+          series(
+            "net_cash_flow",
+            "Europe",
+            [52_600, 21_900, 11_300, -14_800, 4_100, -22_500],
+            "Europe",
+          ),
+          series(
+            "net_cash_flow",
+            "Asia-Pacific",
+            [31_600, 12_800, 6_400, -5_800, 2_900, -13_400],
+            "Asia-Pacific",
+          ),
+        ],
+      }),
+    ),
+  ),
+  one(
+    "stacked",
+    "area-stacked",
+    "Stacked area by region",
+    stacked({ ...REGION_LINE, id: "area_stacked", type: "area", span: 12 }),
+  ),
+  one(
+    "stacked",
+    "area-percent",
+    "100% stacked area by region",
+    stacked(
+      {
+        ...REGION_LINE,
+        id: "area_percent",
+        type: "area",
+        title: "Asia-Pacific's share of revenue grew to 18%",
+        span: 12,
+      },
+      true,
+    ),
+  ),
+  one(
+    "stacked",
+    "area-percent-narrow",
+    "100% stacked area, narrow card: the key replaces direct labels",
+    stacked(
+      {
+        ...REGION_LINE,
+        id: "area_percent_narrow",
+        type: "area",
+        title: "Revenue share by region",
+        span: 4,
+      },
+      true,
+    ),
+  ),
+];
+
 export const GALLERY: GalleryVariant[] = [
   ...KPIS,
   ...LINES,
   ...GRAIN_LINES,
   ...BARS,
   ...GRAIN_BARS,
+  ...STACKED,
   ...TABLES,
 ];
 

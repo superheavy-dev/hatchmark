@@ -18,7 +18,7 @@ A metric over time.
 | `grain`        | `day`, `week`, `month`, `quarter` or `year`, or `{ "unit": "year", "anchor": "07-01" }` to start buckets elsewhere than the project `anchors`.                  |
 | `grains`       | Optional. Two to six grains the card switches between, such as `["week", "month", "quarter"]`. `grain` is the one shown first and must be in the list (HM3007). |
 | `split`        | A column that splits one metric into a line per value, such as `region`. Needs exactly one metric.                                                              |
-| `type: "area"` | Fills under each line. Add `"stack": true` to stack the areas.                                                                                                  |
+| `type: "area"` | Fills under each line. Add `"stack": true` to stack the areas, or `"stack": "percent"` to stack them to 100% ([stacked](stacked.md)).                           |
 | `title`        | State the finding ("Asia-Pacific is the fastest-growing region"). The subtitle says what is measured.                                                           |
 | `span`         | Width in the 12-column grid. Default 12. At least 3: a smaller span is drawn 3 wide, with HM2024.                                                               |
 
