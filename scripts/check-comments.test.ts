@@ -122,4 +122,21 @@ describe("checkComments", () => {
     ].join("\n");
     expect(rules(source)).toEqual([]);
   });
+
+  it("handles the second review's edge cases", () => {
+    expect(rules("const t = `${/[//]TODO/.test('x')}`;")).toEqual([]);
+    expect(rules("#!/usr/bin/env -S node --title=review//TODO\nexport {};")).toEqual([]);
+    expect(rules("const r = a.b / 2; // real")).toEqual([]);
+    expect(rules("// function names are short")).toEqual([]);
+    expect(
+      rules(
+        [
+          "const z = [10].with(0, 5) / 2; // TODO",
+          "// type Old = string;",
+          "//////",
+          "// Don't remove this (TODO: wait until it's deployed).",
+        ].join("\n"),
+      ),
+    ).toEqual(["1:todo", "2:commented-out-code", "3:divider", "4:todo"]);
+  });
 });

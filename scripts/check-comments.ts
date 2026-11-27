@@ -43,7 +43,8 @@ export function scanComments(source: string): Comment[] {
   let braceDepth = 0;
   let line = 1;
   let previous = "";
-  let i = 0;
+  let i = source.startsWith("#!") ? source.indexOf("\n") : 0;
+  if (i === -1) return comments;
 
   const advance = (to: number) => {
     for (let k = i; k < to; k++) if (source[k] === "\n") line++;
@@ -65,17 +66,20 @@ export function scanComments(source: string): Comment[] {
         k += 2;
       } else if (source[k] === "`") {
         advance(k + 1);
+        previous = "string";
         return;
       } else if (source[k] === "$" && source[k + 1] === "{") {
         advance(k + 2);
         templateDepths.push(braceDepth);
         braceDepth++;
+        previous = "";
         return;
       } else {
         k++;
       }
     }
     advance(k);
+    previous = "string";
   };
 
   const skipRegex = () => {
@@ -99,7 +103,7 @@ export function scanComments(source: string): Comment[] {
 
   const regexAllowed = () => {
     if (previous === "") return true;
-    if (/^[\w$]+$/.test(previous)) return REGEX_AFTER_KEYWORDS.has(previous);
+    if (/^\.?[\w$]+$/.test(previous)) return REGEX_AFTER_KEYWORDS.has(previous);
     return previous !== ")" && previous !== "]";
   };
 
@@ -125,21 +129,19 @@ export function scanComments(source: string): Comment[] {
     } else if (c === "`") {
       advance(i + 1);
       skipTemplateChunk();
-      previous = "string";
     } else if (c === "/" && regexAllowed()) {
       skipRegex();
       previous = "string";
     } else if (/[\w$]/.test(c)) {
       let k = i;
       while (k < source.length && /[\w$]/.test(source[k] ?? "")) k++;
-      previous = source.slice(i, k);
+      previous = (previous === "." ? "." : "") + source.slice(i, k);
       advance(k);
     } else if (c === "}" && templateDepths.at(-1) === braceDepth - 1) {
       braceDepth--;
       templateDepths.pop();
       advance(i + 1);
       skipTemplateChunk();
-      previous = "string";
     } else {
       if (c === "{") braceDepth++;
       if (c === "}") braceDepth--;
@@ -159,6 +161,7 @@ const CODE = [
   /^(?:const|let|var)\s+[\w${[{]/,
   /^(?:import|export)\s.*(?:\bfrom\s+["']|[{;]$)/,
   /^export\s+default\b/,
+  /^(?:export\s+)?(?:declare\s+)?(?:type\s+[\w$]+(?:<.*>)?\s*=|(?:interface|enum|class|namespace)\s+[\w$]+.*\{$|(?:async\s+)?function\*?\s+[\w$]+\s*[(<])/,
   /^(?:if|for|while|switch)\s*\(.*\)\s*\{?$/,
   /^(?:return|await|throw|yield)(?:\s+[\w$.[\]()!]+)?;?$/,
   /^(?:return|await|throw)\b.*;$/,
@@ -177,14 +180,14 @@ function suppressionReason(directive: string, rest: string): string {
 }
 
 const withoutQuoted = (body: string) =>
-  body.replace(/"(?:[^"\\]|\\.)*"|'(?:[^'\\]|\\.)*'|`[^`]*`/g, "");
+  body.replace(/"(?:[^"\\]|\\.)*"|(?<![A-Za-z])'(?:[^'\\]|\\.)*'(?![A-Za-z])|`[^`]*`/g, "");
 
 export function checkComments(source: string): Violation[] {
   const violations: Violation[] = [];
   for (const comment of scanComments(source)) {
     const lines = comment.block
       ? comment.text.split("\n").map((text) => text.replace(/^\s*\*(?!\*)/, "").trim())
-      : [comment.text.replace(/^\/\s*/, "").trim()];
+      : [comment.text.replace(/^\/(?=\s|@|<)/, "").trim()];
     lines.forEach((body, offset) => {
       const report = (rule: Rule) =>
         violations.push({ line: comment.line + offset, rule, text: body });
@@ -227,9 +230,16 @@ if (import.meta.url === pathToFileURL(process.argv[1] ?? "").href) {
     },
   )
     .split("\0")
-    .filter((file) => /\.[cm]?ts$/.test(file) && !GENERATED.has(file) && existsSync(file));
+    .filter((file) => /\.[cm]?tsx?$/.test(file) && !GENERATED.has(file) && existsSync(file));
   let failures = 0;
   for (const file of new Set(files)) {
+    if (file.endsWith("x")) {
+      failures++;
+      console.error(
+        `${file}: check-comments cannot lex JSX yet; teach it JSX before adding .tsx files`,
+      );
+      continue;
+    }
     for (const violation of checkComments(readFileSync(file, "utf8"))) {
       failures++;
       console.error(
