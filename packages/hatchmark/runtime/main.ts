@@ -311,9 +311,13 @@ function attach(figure: HTMLElement, chart: RuntimeChart): void {
       const points = scatterPoints(svg);
       let best = -1;
       let smallest = Number.POSITIVE_INFINITY;
-      points.forEach(([cx = 0, cy = 0, radius = 0], i) => {
-        if (Math.hypot(x - cx, y - cy) <= radius && radius < smallest) {
+      let top = Number.NEGATIVE_INFINITY;
+      points.forEach(([cx = 0, cy = 0, radius = 0, z], i) => {
+        if (Math.hypot(x - cx, y - cy) > radius) return;
+        const drawn = z ?? i;
+        if (radius < smallest || (radius === smallest && drawn > top)) {
           smallest = radius;
+          top = drawn;
           best = i;
         }
       });

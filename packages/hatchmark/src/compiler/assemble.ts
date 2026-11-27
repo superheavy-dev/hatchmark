@@ -943,7 +943,11 @@ class Assembler {
         'set "limit" to keep fewer, or plot a coarser column',
       );
     }
-    const window = span(this.bounds(expressions[0]), this.context.timezone);
+    const spans = [block.x, block.y, block.size].flatMap((m) =>
+      m === undefined ? [] : [[m, span(this.bounds(plan.measures[m]), this.context.timezone)] as const],
+    );
+    const window = spans.find(([, s]) => s !== undefined)?.[1];
+    const allTime = window ? spans.filter(([, s]) => s === undefined).map(([m]) => m) : [];
     return {
       ...common,
       type: "scatter",
@@ -955,6 +959,7 @@ class Assembler {
       ...(omittedPoints > 0 ? { omittedPoints } : {}),
       ...(omittedCategories > 0 ? { omittedCategories } : {}),
       ...(window && !empty ? { window } : {}),
+      ...(allTime.length > 0 && !empty ? { allTime } : {}),
       ...(empty ? { empty } : {}),
     };
   }

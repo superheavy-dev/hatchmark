@@ -27,7 +27,8 @@ Every metric is computed per category from that category's rows, as in a table: 
 average order value divides the category's revenue by its orders, never averages the orders'
 values. The dashboard period and select filters apply to all three metrics, over one window: x, y
 and size all end at the earliest horizon among their sources, so a point never pairs days one
-metric has with days another lacks. The subtitle states that window. A scatter needs no time
+metric has with days another lacks. The subtitle states that window, and names a metric without a
+time column as read "over all time" (just "All time" when none has one). A scatter needs no time
 column.
 
 What it draws:
@@ -44,7 +45,8 @@ What it draws:
 - The names of up to five points (three on narrow cards) next to them: the largest by size, or the
   highest and lowest on each axis without size. A name is drawn only where it overlaps no other
   point or name, and is never shortened; every point's name is in its tooltip.
-- Hover or tap picks the nearest point within 24 px and rings it; the tooltip names the category
+- Hover or tap picks the bubble under the pointer (the one drawn on top where bubbles overlap),
+  else the nearest point within 24 px, and rings it; the tooltip names the category
   and lists x, y and size in full. The arrow keys step through the points from left to right, and a
   screen reader hears each one ("Germany, Orders 1,482, Average order value $88.90, Revenue
   $131,800"). Screen readers also get a summary and every point in a hidden table.

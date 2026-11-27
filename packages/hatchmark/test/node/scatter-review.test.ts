@@ -190,6 +190,53 @@ it("does not advertise the x reading's date range as if it also applied to y", a
   expect(subtitle).not.toMatch(/^Lagged sales against Current sales by market, Nov 1.*3, 2026$/i);
 });
 
+it("does not advertise one shared date range for a dated metric and an all-time metric", async () => {
+  const { b, data, query, raw } = await check(
+    {
+      sales:
+        "2026-10-29T15:00:00Z,A,300,2,1,paid,Web,US\n" +
+        "2026-11-01T15:00:00Z,A,70,1,1,paid,Web,US\n" +
+        "2026-11-02T18:00:00Z,A,99,3,1,paid,Web,US\n",
+    },
+    {
+      units: agg("sales", "units", { time: undefined, label: "Units" }),
+      sales: agg("sales", "amount", { label: "Revenue" }),
+    },
+    [scatter("units", "sales", { title: "Comparing sales" })],
+  );
+  const rows = await query(`
+    SELECT sum(units) AS x_all_time,
+      sum(units) FILTER (WHERE "at" >= TIMESTAMPTZ '2026-11-01 04:00:00+00' AND "at" < TIMESTAMPTZ '2026-11-02 05:00:00+00') AS x_one_day,
+      sum(amount) FILTER (WHERE "at" >= TIMESTAMPTZ '2026-11-01 04:00:00+00' AND "at" < TIMESTAMPTZ '2026-11-02 05:00:00+00') AS y_one_day,
+      sum(amount) FILTER (WHERE "at" >= TIMESTAMPTZ '2026-11-01 04:00:00+00' AND "at" < TIMESTAMPTZ '2026-11-06 05:00:00+00') AS y_dashboard_range
+    FROM ${raw("sales")}`);
+  expect(rows).toEqual([{ x_all_time: 6, x_one_day: 1, y_one_day: 70, y_dashboard_range: 169 }]);
+  expect(b.points).toEqual([{ key: "A", label: "A", x: 6, y: 70 }]);
+  if (data === undefined) throw new Error("no dashboard data");
+  const subtitle = renderFragment(data).match(/<\/h2><p>([^<]+)/)?.[1];
+  expect(subtitle).not.toMatch(/^Revenue against Units by market, Nov 1.*5, 2026$/i);
+  expect(subtitle).toBe("Revenue against Units by market, Nov 1, 2026, Units over all time");
+});
+
+it("says all time, not the dashboard period, when no scatter metric has a time column", async () => {
+  const { b, data } = await check(
+    {
+      sales:
+        "2026-10-29T15:00:00Z,A,300,2,1,paid,Web,US\n2026-11-02T18:00:00Z,A,99,3,1,paid,Web,US\n",
+    },
+    {
+      units: agg("sales", "units", { time: undefined, label: "Units" }),
+      sales: agg("sales", "amount", { time: undefined, label: "Revenue" }),
+    },
+    [scatter("units", "sales", { title: "Comparing sales" })],
+  );
+  expect(b.points).toEqual([{ key: "A", label: "A", x: 5, y: 399 }]);
+  expect(b.window).toBeUndefined();
+  if (data === undefined) throw new Error("no dashboard data");
+  const subtitle = renderFragment(data).match(/<\/h2><p>([^<]+)/)?.[1];
+  expect(subtitle).toBe("Revenue against Units by market, All time");
+});
+
 it("the HM2024 safe edit and the documented HM5020/HM5021 manual edits clear the warnings", () => {
   const make = (b: unknown) =>
     projectFrom({ dashboards: { sales: { ...DASHBOARD, filters: [], blocks: [b] } } });

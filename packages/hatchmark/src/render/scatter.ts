@@ -238,7 +238,7 @@ export function renderScatter(
   const pts = scatterOrder(block)
     .map((i) => {
       const c = placed[i] as Placed;
-      return `${r(c.cx)} ${r(c.cy)} ${r(c.r)}`;
+      return `${r(c.cx)} ${r(c.cy)} ${r(c.r)} ${i}`;
     })
     .join(",");
   return svgRoot(
