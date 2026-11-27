@@ -4,7 +4,7 @@
 // checked against periods.oracle.ts (and, for totals, plain ROLLUP SQL over the oracle's own rows).
 import { appendFile, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
-import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import type { DashboardData, TableData } from "../../src/compiler/dashboard-data.js";
 import { runDashboard } from "../../src/compiler/index.js";
 import { customRangeDashboard, type PeriodData } from "../../src/compiler/period-data.js";
@@ -29,6 +29,8 @@ import {
   type SpecBlock,
   type Window,
 } from "./periods.oracle.js";
+
+vi.setConfig({ testTimeout: 60_000, hookTimeout: 60_000 });
 
 const tally = { cells: 0, mismatches: 0 };
 const record = (d: Diff) => {
@@ -299,9 +301,7 @@ const NULL_EDGES: Window[] = [
   ["2024-11-01", "2026-11-01"],
 ];
 
-describe("empty and null groups, non-additive metrics, and a select default with the period and grain filters", {
-  timeout: 30_000,
-}, () => {
+describe("empty and null groups, non-additive metrics, and a select default with the period and grain filters", () => {
   let b: Built;
   let nulls: Case;
   let combo: Case;

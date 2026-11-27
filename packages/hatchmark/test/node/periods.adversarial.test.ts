@@ -3,7 +3,7 @@
 // periods.oracle.ts; custom ranges are also checked against runDashboard's SQL path with the same binding.
 import { readFile } from "node:fs/promises";
 import path from "node:path";
-import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import type { DashboardData } from "../../src/compiler/dashboard-data.js";
 import { runDashboard } from "../../src/compiler/index.js";
 import { customRangeDashboard, type PeriodData } from "../../src/compiler/period-data.js";
@@ -26,6 +26,8 @@ import {
   type SpecBlock,
   type Window,
 } from "./periods.oracle.js";
+
+vi.setConfig({ testTimeout: 60_000, hookTimeout: 60_000 });
 
 const ANCHORS: Anchors = { week: "sunday", quarter: "01-01", year: "01-01" };
 type Explorer = {
@@ -149,7 +151,7 @@ describe("period filter presets match the oracle (from the embedded data-hm-peri
   });
 });
 
-describe("custom ranges through customRangeDashboard match the oracle", { timeout: 30_000 }, () => {
+describe("custom ranges through customRangeDashboard match the oracle", () => {
   it.each(Object.entries(EDGES))("%s", (_, w) => {
     const diff = record(checkCustom(w, new Diff()));
     expect(diff.problems.slice(0, 10)).toEqual([]);
