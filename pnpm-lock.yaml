@@ -190,6 +190,9 @@ importers:
 
   packages/hatchmark:
     dependencies:
+      '@vercel/detect-agent':
+        specifier: ^1.2.7
+        version: 1.2.7
       zod:
         specifier: ^4.6.7
         version: 4.6.7
@@ -532,6 +535,10 @@ packages:
     engines: {node: '>=16.20.0'}
     cpu: [x64]
     os: [win32]
+
+  '@vercel/detect-agent@1.2.7':
+    resolution: {integrity: sha512-5tWaC9V+u4SHcSMKBz9FQb3Dhl/1A2lQ6QqHovu8uQeb8dTyjEevpJMANm/uQEn/usYB63fpdjWYjkJ8/bGtjA==}
+    engines: {node: '>=14'}
 
   '@vitest/mocker@5.1.2':
     resolution: {integrity: sha512-UGc97wUIy0Ji2+9GxzHEJiOhiwkaukgE7VYcUNnjpX3sWnwQ8XogmNXX4WyOukxYgKb8Nh2XFa7KId0ZjpmVhQ==}
@@ -1017,6 +1024,8 @@ snapshots:
 
   '@typescript/typescript-win32-x64@7.0.2':
     optional: true
+
+  '@vercel/detect-agent@1.2.7': {}
 
   '@vitest/mocker@5.1.2(vite@8.3.8(@types/node@22.20.7))':
     dependencies:
