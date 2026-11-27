@@ -703,7 +703,7 @@ Sliding a rolling window is the default. `period.rollingLag: "trim"` keeps the w
 
 ### 6.6 How each component shows it
 
-The look comes from the Default theme in Paper first (new tokens for the partial treatment); this RFC fixes the behaviour, not the pixels. **Gunwoo, 2026-11-27 (option B):** a partial flow bucket gets a hairline hatch across its slot; the line stays solid into a hollow end point; the area slice and partial bars are hatched in the series colour. This replaces the dashed last segment. The previous-period comparison line keeps its dash.
+The look comes from the default theme's partial tokens; this RFC fixes the behaviour, not the pixels. **Option B, hatched period (2026-11-27):** a partial flow bucket gets a hairline hatch across its slot; the line stays solid into a hollow end point; the area slice and partial bars are hatched in the series colour. This replaces the dashed last segment. The previous-period comparison line keeps its dash.
 
 | Component            | Flow metric, partial bucket                                                                                              | Point-in-time metric, partial bucket                                      |
 | -------------------- | ------------------------------------------------------------------------------------------------------------------------ | ------------------------------------------------------------------------- |
@@ -711,7 +711,7 @@ The look comes from the Default theme in Paper first (new tokens for the partial
 | Bar (incl. stacked)  | every part (all stack parts): series tint, series hatch (dropped under 6 px), 1 px series outline                        | normal bar, hollow outline marker                                         |
 | Tooltip (all charts) | two lines: "Nov 1–26", then "In progress · 26 of 30 days" (a clipped first bucket: "Partial month · …")                  | two lines: "Nov 2026", then "As of Nov 26, 2:03 PM"                       |
 | KPI                  | value labelled "Nov 1–26" or "through Oct 28" when trimmed; delta vs the same elapsed span, with the span in its tooltip | "as of Nov 26"; delta vs the same point last period                       |
-| KPI sparkline        | last point hollow, no hatch (too small for one; Captain, 2026-11-27)                                                     | same                                                                      |
+| KPI sparkline        | last point hollow, no hatch (too small for one)                                                                          | same                                                                      |
 | Table with time rows | partial row muted with "(in progress)"; total row labelled "through Nov 26"                                              | partial row labelled "as of"; total = last row's value, labelled "Ending" |
 | Text block           | `{{metric.through}}` inserts the horizon date                                                                            | same                                                                      |
 | Dashboard header     | "Data through Nov 26, 2026, 2:03 PM ET"; when sources differ by a day or more, "Usage through Nov 25" beneath            |                                                                           |
@@ -1064,7 +1064,7 @@ The script is scratch, not committed; the implementation PRs turn it into tests.
 ## 14. Decisions (2026-11-27)
 
 1. `latest_data` uses the newest source and marks lagging ones: approved. `latest_common_data` is the option.
-2. A partial point-in-time value is a solid line with an "as of" label; partial flows are dashed: approved. Gunwoo changed the look to a hatch on 2026-11-27 (option B, section 6.6).
+2. A partial point-in-time value is a solid line with an "as of" label; partial flows are dashed: approved. The look changed to a hatch on 2026-11-27 (option B, section 6.6).
 3. Partial buckets are marked by default: approved.
 4. Time series snap to whole buckets by default: approved. `edges: "clip"` is the option.
 5. Grammar, not business metrics: the RFC adds generic primitives only; ARR and friends are the expressiveness test (section 4). Any business definition is an option with a default that check explains (section 3.11).

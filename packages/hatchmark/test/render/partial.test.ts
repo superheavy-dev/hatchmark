@@ -144,7 +144,7 @@ describe("partial buckets drawn (option B)", () => {
   });
 });
 
-describe("partial buckets: review cases (HAT-80)", () => {
+describe("partial buckets: regressions", () => {
   const find = (name: string) => {
     const v = GALLERY.find((g) => g.variant === name);
     if (!v) throw new Error(`no gallery variant ${name}`);

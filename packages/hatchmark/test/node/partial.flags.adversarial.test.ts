@@ -85,7 +85,7 @@ async function project(sources: Source[], dashboards: Record<string, unknown>) {
   const files: Record<string, unknown> = {
     "hatchmark.json": {
       ...PROJECT_DEFAULTS,
-      name: "HAT-81",
+      name: "Partial flags",
       timezone: TZ,
       weekStart: "sunday",
       locale: "en-US",
@@ -527,7 +527,7 @@ function ok(bad: string[]): void {
 const blocked = (s: Awaited<ReturnType<typeof scenario>>, ids: string[]) =>
   ids.filter((id) => !s.d.blocks.some((b) => b.id === id));
 
-describe("partial flags, counts and the partial stacked Total against SQL horizons (HAT-81; day grain in latest_data only, HM_SWEEP=full for all)", () => {
+describe("partial flags, counts and the partial stacked Total against SQL horizons (day grain in latest_data only, HM_SWEEP=full for all)", () => {
   it("latest_data: Revenue through Jun 28 1:12 PM, Returns Apr 15 4:00 PM, Refunds Apr 22 9:30 AM", async () => {
     const s = await scenario(
       "latest",
