@@ -734,6 +734,65 @@ describe("metric layer invariants", () => {
     expect(checkReferences(larkspur({ metrics: { ...metrics, eur, f: labelled } }))).toEqual([]);
   });
 
+  it("derives currency through per_entity, ratios and division, so a format can't relabel it (HM4005)", () => {
+    const eurFormat = { type: "currency", currency: "EUR" };
+    const arrEur = { ...(metrics.arr as object), format: eurFormat };
+    const probes: [string, Record<string, unknown>][] = [
+      ["per_entity of EUR", { ...(metrics.cohort_arr_now as object), of: "arr_eur" }],
+      [
+        "ratio EUR / count",
+        {
+          ...money,
+          label: "R",
+          type: "ratio",
+          numerator: "arr_eur",
+          denominator: "paying_customers",
+        },
+      ],
+      [
+        "formula EUR / count",
+        { ...money, label: "F", type: "formula", expr: "arr_eur / paying_customers" },
+      ],
+    ];
+    for (const [label, probe] of probes) {
+      const project = larkspur({ metrics: { ...metrics, arr_eur: arrEur, probe } });
+      const own = checkReferences(project).filter(
+        (d) => d.file === "metrics/probe.json" && d.severity !== "note",
+      );
+      expect(codes(own), label).toEqual([["metrics/probe.json", "HM4005", "/format"]]);
+      const sum = { ...money, label: "S", type: "formula", expr: "arr + probe" };
+      const relabelled = { ...probe, format: eurFormat };
+      const mixed = checkReferences(
+        larkspur({ metrics: { ...metrics, arr_eur: arrEur, probe: relabelled, sum } }),
+      );
+      expect(codes(mixed.filter((d) => d.file === "metrics/sum.json")), label).toEqual([
+        ["metrics/sum.json", "HM4005", "/expr"],
+      ]);
+      expect(
+        codes(mixed.filter((d) => d.file === "metrics/probe.json" && d.severity !== "note")),
+        label,
+      ).toEqual([]);
+    }
+    const perAccount = {
+      ...money,
+      label: "A",
+      type: "ratio",
+      numerator: "arr",
+      denominator: "paying_customers",
+    };
+    expect(only("probe", perAccount)).toEqual([]);
+    const share = {
+      label: "S",
+      format: { type: "percent" },
+      better: "up",
+      type: "formula",
+      expr: "arr_eur / arr_eur",
+    };
+    expect(checkReferences(larkspur({ metrics: { ...metrics, arr_eur: arrEur, share } }))).toEqual(
+      [],
+    );
+  });
+
   it("treats constant terms and min or max over time as non-additive (HM4001)", () => {
     const map = (extra: Record<string, unknown>) => {
       const project = larkspur({ metrics: { ...metrics, ...extra } });
@@ -778,6 +837,41 @@ describe("metric layer invariants", () => {
       ["metrics/probe.json", "HM3007", "/targets/0/prorate"],
     ]);
     expect(only("probe", { ...(metrics.revenue as object), targets: [target] })).toEqual([]);
+  });
+
+  it("refuses entity on a full snapshot table, which would carry absent keys forward (HM4007)", () => {
+    expect(codes(only("probe", { ...snapshot, entity: "subscription" }))).toEqual([
+      ["metrics/probe.json", "HM4007", "/entity"],
+    ]);
+  });
+
+  it("counts the parts of a lookup used by an in_table filter as read (HM2023)", () => {
+    const config = structuredClone(larkspurConfig) as typeof larkspurConfig;
+    Object.assign(config.sources, {
+      staff: {
+        type: "lookup",
+        from: "internal_accounts",
+        lookups: [{ table: "contracts", key: { customer: "customer" } }],
+      },
+    });
+    const inTable = { column: "customer", op: "in_table", table: "staff", key: "customer" };
+    const data = {
+      contracts: "fixtures/contracts.csv",
+      internal_accounts: "fixtures/internal.csv",
+    };
+    const viaMetric = {
+      ...(metrics.revenue as object),
+      filters: [inTable],
+      tests: [{ window: ["2026-10-01", "2026-10-31"], expect: 1, data }],
+    };
+    const viaTest = {
+      ...(metrics.revenue as object),
+      tests: [{ window: ["2026-10-01", "2026-10-31"], expect: 1, where: [inTable], data }],
+    };
+    for (const probe of [viaMetric, viaTest]) {
+      const ds = checkReferences(larkspur({ config, metrics: { ...metrics, probe } }));
+      expect(ds.filter((d) => d.code === "HM2023")).toEqual([]);
+    }
   });
 
   it("swaps test data only for sources the metric reads (HM2023)", () => {

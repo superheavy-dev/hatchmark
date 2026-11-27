@@ -13,10 +13,17 @@ import type { Source } from "./config.js";
 import { type Block, blockId, type Dashboard, DEFAULT_PERIOD } from "./dashboard.js";
 import { ENTITY_NAMES, type Expr, exprRefs, parseExpr, shapeError } from "./expr.js";
 import { addPropertyFix, removeItemFix, replaceValueFix } from "./fixes.js";
-import { filterTables, metricSources, readSources } from "./graph.js";
+import { filterTables, metricSources, readSources, sourceTables } from "./graph.js";
 import type { Filter, Metric, TableMetric } from "./metric.js";
 import type { Project, SpecFile } from "./project.js";
-import { currencyUnit, groupAdditive, metricDeps, timeNature } from "./semantics.js";
+import {
+  currencyUnit,
+  exprCurrency,
+  groupAdditive,
+  metricCurrency,
+  metricDeps,
+  timeNature,
+} from "./semantics.js";
 import { parseTemporal, temporalRepair } from "./temporal.js";
 
 export const TEXT_REFERENCE_FIELDS = ["value", "previous", "change", "change_pct"] as const;
@@ -406,6 +413,7 @@ function checkMetrics(project: Project, out: Diagnostic[]): void {
         }
       }
       if (cyclic) continue;
+      checkFormatCurrency(r, name, metric, metrics, projectCurrency);
       const { numerator, denominator } = metric;
       if (!metrics.has(numerator) || !metrics.has(denominator)) continue;
       const timed = {
@@ -498,11 +506,13 @@ function checkMetrics(project: Project, out: Diagnostic[]): void {
       } else {
         checkNatureMix(r, "/expr", operands, metrics);
       }
-      checkUnits(r, file, metric, expr, metrics, projectCurrency);
+      checkUnits(r, file, expr, metrics, projectCurrency);
+      checkFormatCurrency(r, name, metric, metrics, projectCurrency);
       continue;
     }
 
     // per_entity
+    checkFormatCurrency(r, name, metric, metrics, projectCurrency);
     if (!project.metrics.has(metric.of)) {
       r.report("HM2003", "/of", `unknown metric "${metric.of}"`, {
         label: `no file metrics/${metric.of}.json`,
@@ -664,7 +674,12 @@ function checkSnapshot(r: Reporter, metric: TableMetric, configured: Record<stri
     report("/sql", "and a SQL metric cannot read one snapshot date at a time", "warning");
     return;
   }
-  if (metric.active !== undefined) {
+  if (metric.entity !== undefined) {
+    report(
+      "/entity",
+      "so each date already holds every entity; entity would carry a key missing from a snapshot forward",
+    );
+  } else if (metric.active !== undefined) {
     report(
       "/active",
       "so an interval on each snapshot row counts the same state once per snapshot",
@@ -708,72 +723,49 @@ function checkEvaluationLookups(
 }
 
 /**
- * HM4005: adding, subtracting or choosing between values in different currencies. Scalar factors
- * (any sub-expression without a metric), unary minus, abs, and the choosing functions keep their
- * operand's currency; the formula's own currency format must be that currency too.
+ * HM4005: adding, subtracting or choosing between values in different currencies (see
+ * exprCurrency), with each operand's currency derived rather than read from its format.
  */
 function checkUnits(
   r: Reporter,
   file: SpecFile,
-  metric: Metric,
   expr: Expr,
   metrics: ReadonlyMap<string, Metric>,
   projectCurrency: string,
 ): void {
-  const scalar = (e: Expr) => exprRefs(e).length === 0;
-  const mismatch = (e: Expr, a: string, b: string) => {
-    const message = e.kind === "call" ? `${e.fn} mixes ${a} and ${b}` : `adds ${a} to ${b}`;
-    r.report("HM4005", "/expr", message, {
-      ...expressionRange(file, "/expr", e.start, e.end),
-      label: "different currencies",
-      help: "convert one side with an as-of lookup on a rates table, so both metrics are in one currency",
-    });
-  };
-  const common = (e: Expr, units: (string | null | undefined)[]): string | null | undefined => {
-    const currencies = [...new Set(units.filter((u): u is string => typeof u === "string"))];
-    const [first, second] = currencies;
-    if (first !== undefined && second !== undefined) {
-      mismatch(e, first, second);
-      return undefined;
-    }
-    if (first !== undefined) return first;
-    return units.includes(undefined) ? undefined : null;
-  };
-  const unit = (e: Expr): string | null | undefined => {
-    switch (e.kind) {
-      case "number":
-        return null;
-      case "ref": {
-        const m = metrics.get(e.name);
-        return m ? (currencyUnit(m, projectCurrency) ?? null) : undefined;
-      }
-      case "unary":
-        return unit(e.arg);
-      case "call": {
-        const units = e.args.map(unit);
-        if (e.fn === "abs") return units[0];
-        return common(e, e.fn === "if" ? units.slice(1) : units);
-      }
-      case "binary": {
-        const a = unit(e.left);
-        const b = unit(e.right);
-        if (e.op === "+" || e.op === "-") return common(e, [a, b]);
-        if (e.op === "*" && scalar(e.left)) return b;
-        if ((e.op === "*" || e.op === "/") && scalar(e.right)) return a;
-        return undefined;
-      }
-      default:
-        return undefined;
-    }
-  };
-  const result = unit(expr);
+  exprCurrency(
+    expr,
+    (name) => metricCurrency(name, metrics, projectCurrency),
+    (e, a, b) => {
+      r.report(
+        "HM4005",
+        "/expr",
+        e.kind === "call" ? `${e.fn} mixes ${a} and ${b}` : `adds ${a} to ${b}`,
+        {
+          ...expressionRange(file, "/expr", e.start, e.end),
+          label: "different currencies",
+          help: "convert one side with an as-of lookup on a rates table, so both metrics are in one currency",
+        },
+      );
+    },
+  );
+}
+
+/** HM4005: a derived metric whose format names another currency than the one its values are in. */
+function checkFormatCurrency(
+  r: Reporter,
+  name: string,
+  metric: Metric,
+  metrics: ReadonlyMap<string, Metric>,
+  projectCurrency: string,
+): void {
+  const derived = metricCurrency(name, metrics, projectCurrency);
   const shown = currencyUnit(metric, projectCurrency);
-  if (typeof result === "string" && shown !== undefined && shown !== result) {
-    r.report("HM4005", "/format", `the formula is in ${result}, but its format shows ${shown}`, {
-      label: "a format changes the label, not the currency",
-      help: `set "currency": "${result}" in format, or convert the operands to ${shown}`,
-    });
-  }
+  if (typeof derived !== "string" || shown === undefined || shown === derived) return;
+  r.report("HM4005", "/format", `the values are in ${derived}, but the format shows ${shown}`, {
+    label: "a format changes the label, not the currency",
+    help: `set "currency": "${derived}" in format, or convert the operands to ${shown}`,
+  });
 }
 
 function checkTargetsAndTests(
@@ -850,7 +842,9 @@ function checkTargetsAndTests(
       ...(test.where ?? []),
       ...(test.segments ?? []).flatMap((s) => project.segments.get(s)?.spec?.filters ?? []),
     ];
-    for (const s of filterTables(testFilters)) read.add(s);
+    for (const table of filterTables(testFilters)) {
+      for (const s of sourceTables(project.config.spec?.sources ?? {}, table)) read.add(s);
+    }
     for (const key of Object.keys(test.data ?? {})) {
       const pointer = `${base}/data/${key}`;
       if (!sourceSuggestion(r, file, pointer, key, sources) || read.has(key)) continue;

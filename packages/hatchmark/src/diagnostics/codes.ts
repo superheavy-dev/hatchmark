@@ -231,7 +231,7 @@ export const CODES = {
   HM4007: {
     title: "snapshot summed over time",
     explanation:
-      'The source is declared a snapshot table ("snapshot" in hatchmark.json): each date holds the full state, so adding rows over a period counts every snapshot again (thirty daily snapshots make a month thirty times too large). Every aggregate on it, or on a lookup source whose base it is, must read one snapshot date at a time: "time" is the snapshot column and "over_time" is "last" (the value at the end of each period), "first", "avg", "min" or "max". No time, another time column, trailing or active would add snapshots too. A SQL metric gets a warning, since it cannot set over_time yet.',
+      'The source is declared a snapshot table ("snapshot" in hatchmark.json): each date holds the full state, so adding rows over a period counts every snapshot again (thirty daily snapshots make a month thirty times too large). Every aggregate on it, or on a lookup source whose base it is, must read one snapshot date at a time: "time" is the snapshot column and "over_time" is "last" (the value at the end of each period), "first", "avg", "min" or "max". No time, another time column, trailing or active would add snapshots too, and entity would carry a key missing from a snapshot forward. A SQL metric gets a warning, since it cannot set over_time yet.',
   },
   HM4008: {
     title: "per_entity needs a point-in-time sum or count",

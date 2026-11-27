@@ -120,6 +120,98 @@ function linear(expr: Expr, additive: (name: string) => boolean): Linearity {
   }
 }
 
+/** A value's currency: a code, null for a known non-currency value, undefined when unknown. */
+export type CurrencyUnit = string | null | undefined;
+
+function divideUnits(a: CurrencyUnit, b: CurrencyUnit): CurrencyUnit {
+  if (a === undefined || b === undefined) return undefined;
+  if (typeof b === "string") return typeof a === "string" ? null : undefined;
+  return a;
+}
+
+function multiplyUnits(a: CurrencyUnit, b: CurrencyUnit): CurrencyUnit {
+  if (a === null) return b;
+  if (b === null) return a;
+  return undefined;
+}
+
+/**
+ * The currency of a formula expression. A number has none; +, - and the choosing functions
+ * (coalesce, min, max, if) need one currency and report two with mismatch; a non-currency factor or
+ * divisor keeps its operand's currency, and a currency divided by a currency has none.
+ */
+export function exprCurrency(
+  expr: Expr,
+  unitOf: (name: string) => CurrencyUnit,
+  mismatch: (at: Expr, a: string, b: string) => void = () => {},
+): CurrencyUnit {
+  const same = (at: Expr, units: CurrencyUnit[]): CurrencyUnit => {
+    const codes = [...new Set(units.filter((u): u is string => typeof u === "string"))];
+    const [first, second] = codes;
+    if (first !== undefined && second !== undefined) {
+      mismatch(at, first, second);
+      return undefined;
+    }
+    if (first !== undefined) return first;
+    return units.includes(undefined) ? undefined : null;
+  };
+  const unit = (e: Expr): CurrencyUnit => {
+    switch (e.kind) {
+      case "number":
+        return null;
+      case "ref":
+        return unitOf(e.name);
+      case "unary":
+        return unit(e.arg);
+      case "call": {
+        const units = e.args.map(unit);
+        if (e.fn === "abs") return units[0];
+        return same(e, e.fn === "if" ? units.slice(1) : units);
+      }
+      case "binary": {
+        const a = unit(e.left);
+        const b = unit(e.right);
+        if (e.op === "+" || e.op === "-") return same(e, [a, b]);
+        if (e.op === "*") return multiplyUnits(a, b);
+        if (e.op === "/") return divideUnits(a, b);
+        return undefined;
+      }
+      default:
+        return undefined;
+    }
+  };
+  return unit(expr);
+}
+
+/**
+ * The currency a metric's values are in, derived through ratios, formulas and per_entity rather
+ * than read from its format, so a format cannot relabel one currency as another.
+ */
+export function metricCurrency(
+  name: string,
+  metrics: ReadonlyMap<string, Metric>,
+  projectCurrency: string,
+  seen: ReadonlySet<string> = new Set(),
+): CurrencyUnit {
+  const metric = metrics.get(name);
+  if (metric === undefined || seen.has(name)) return undefined;
+  const next = new Set(seen).add(name);
+  const of = (dep: string) => metricCurrency(dep, metrics, projectCurrency, next);
+  switch (metric.type) {
+    case "aggregate":
+    case "sql":
+      return currencyUnit(metric, projectCurrency) ?? null;
+    case "per_entity":
+      return metric.aggregate === "count" ? null : of(metric.of);
+    case "ratio":
+      return divideUnits(of(metric.numerator), of(metric.denominator));
+    case "formula": {
+      const parsed = parseExpr(metric.expr, "formula");
+      return parsed.ok ? exprCurrency(parsed.expr, of) : undefined;
+    }
+  }
+}
+
 /** The currency a metric is shown in, or undefined when it is not a currency. */
 export function currencyUnit(metric: Metric, projectCurrency: string): string | undefined {
   return metric.format.type === "currency"

@@ -63,7 +63,9 @@ export function readSources(project: Project, name: string): Set<string> {
       const segmentFilters = (metric.segments ?? []).flatMap(
         (s) => project.segments.get(s)?.spec?.filters ?? [],
       );
-      for (const s of filterTables([...(metric.filters ?? []), ...segmentFilters])) out.add(s);
+      for (const table of filterTables([...(metric.filters ?? []), ...segmentFilters])) {
+        for (const s of sourceTables(configured, table)) out.add(s);
+      }
     }
     for (const dep of metricDeps(metric)) visit(dep);
   };
