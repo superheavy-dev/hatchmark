@@ -14,7 +14,7 @@ import {
 import { rangeKey } from "./periods.js";
 import type { MeasureComponent, PlannedQuery, QueryPlan, QueryResult } from "./plan.js";
 import { planDashboard, queryId } from "./planner.js";
-import { type DashboardExecutor, executionContext, runDashboard } from "./run.js";
+import { type DashboardExecutor, executionContext, pointMetrics, runDashboard } from "./run.js";
 import { nextDay, queryBounds } from "./windows.js";
 
 /**
@@ -187,6 +187,7 @@ export async function runPeriodData(
   }
   if (first > last) return { data, diagnostics };
   const metrics: Record<string, PortableMetric> = {};
+  const points = pointMetrics(project);
   for (const [name, file] of [...project.metrics].sort(([a], [b]) => (a < b ? -1 : 1))) {
     const m = file.spec;
     if (m === undefined || !(name in base.metrics || referenced(plan, name))) continue;
@@ -198,6 +199,7 @@ export async function runPeriodData(
       better: m.better,
       ...(m.type === "sql" ? { additive: m.additive === true } : {}),
       ...(m.type === "ratio" ? { numerator: m.numerator, denominator: m.denominator } : {}),
+      ...(points.has(name) ? { nature: "point" as const } : {}),
     };
   }
   data.custom = {

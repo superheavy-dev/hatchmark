@@ -463,4 +463,14 @@ export const metricSchema = z
 export type Metric = z.infer<typeof metricSchema>;
 export type TableMetric = Extract<Metric, { table: string }>;
 
-export { ownTimeNature, type TimeNature } from "./units.js";
+/** How a metric relates to time: summed over a bucket, read at an instant, or not placed in time. */
+export type TimeNature = "flow" | "point" | "static";
+
+/** The time nature of an aggregate or sql metric; formulas, ratios and per_entity derive theirs. */
+export function ownTimeNature(metric: TableMetric): TimeNature {
+  if (metric.type === "aggregate") {
+    if (metric.active !== undefined || metric.trailing !== undefined) return "point";
+    if (metric.over_time !== undefined && metric.over_time !== "sum") return "point";
+  }
+  return metric.time === undefined ? "static" : "flow";
+}

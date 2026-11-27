@@ -7,7 +7,6 @@ import type {
   RangeSpec,
   ResolvedGrain,
 } from "../spec/index.js";
-import { timeNature } from "../spec/semantics.js";
 import { blockId, grainKey, PIE_DEFAULT_LIMIT, resolveGrain } from "../spec/units.js";
 import {
   type BarData,
@@ -1250,6 +1249,7 @@ export function assemble(
   plan: QueryPlan,
   results: ReadonlyMap<string, QueryResult>,
   context: ExecutionContext,
+  pointMetrics: ReadonlySet<string>,
 ): { data?: DashboardData; diagnostics: Diagnostic[] } {
   const spec = project.dashboards.get(plan.dashboard)?.spec;
   const config = project.config.spec;
@@ -1294,8 +1294,6 @@ export function assemble(
   }
 
   const metrics: Record<string, MetricInfo> = {};
-  const specs = new Map<string, Metric>();
-  for (const [name, file] of project.metrics) if (file.spec) specs.set(name, file.spec);
   for (const name of [...shown].sort()) {
     const metric = assembler.metric(name);
     if (metric === undefined) continue;
@@ -1308,7 +1306,7 @@ export function assemble(
           ? { ...metric.format, currency: metric.format.currency ?? config.currency }
           : metric.format,
       better: metric.better,
-      ...(timeNature(name, specs) === "point" ? { nature: "point" as const } : {}),
+      ...(pointMetrics.has(name) ? { nature: "point" as const } : {}),
     };
   }
 

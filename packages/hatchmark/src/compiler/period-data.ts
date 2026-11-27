@@ -53,6 +53,7 @@ export interface PortableMetric {
   /** A ratio's operands. */
   numerator?: string;
   denominator?: string;
+  nature?: "point";
 }
 
 export interface CustomRangeData {
@@ -247,7 +248,12 @@ export function customRangeDashboard(
       ]),
     ),
   } as unknown as Project;
-  const { data } = assemble(project, custom.plan, results, context);
+  const points = new Set(
+    Object.entries(custom.metrics)
+      .filter(([, m]) => m.nature === "point")
+      .map(([name]) => name),
+  );
+  const { data } = assemble(project, custom.plan, results, context, points);
   if (data === undefined) throw new Error("custom range assembly produced no data");
   const presetOnly = new Set(custom.presetOnly);
   const blocks = data.blocks.map((b) =>

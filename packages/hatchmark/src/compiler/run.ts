@@ -445,7 +445,7 @@ export async function runDashboard(
       };
     }
   }
-  const assembled = assemble(project, plan, results, context);
+  const assembled = assemble(project, plan, results, context, pointMetrics(project));
   return {
     ...(assembled.data ? { data: assembled.data } : {}),
     diagnostics: [
@@ -496,4 +496,11 @@ function largeResults(
     }
   }
   return out;
+}
+
+/** The metrics whose time nature is point-in-time, which assembly labels "as of". */
+export function pointMetrics(project: Project): Set<string> {
+  const specs = new Map<string, Metric>();
+  for (const [name, file] of project.metrics) if (file.spec) specs.set(name, file.spec);
+  return new Set([...specs.keys()].filter((name) => timeNature(name, specs) === "point"));
 }
