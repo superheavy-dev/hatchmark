@@ -37,7 +37,7 @@ sources:
 | `locale`        | BCP 47 tag for numbers and dates, such as `en-US` or `de-DE`. See [Locale](#locale). |
 | `currency`      | ISO 4217 code used by currency metrics that do not set their own, such as `USD`.     |
 | `timezone`      | IANA time zone that dates are bucketed in, such as `UTC` or `America/New_York`.      |
-| `anchors`       | Optional. `week`: `monday` (default) or `sunday`; `quarter`, `year`: `MM-DD` starts. |
+| `anchors`       | Optional. `week`: any weekday (default `monday`); `quarter`, `year`: `MM-DD` starts. |
 | `theme`         | `default`.                                                                           |
 | `telemetry`     | `false`. Hatchmark sends nothing unless this is `true`.                              |
 | `sources`       | Tables by name. Metrics refer to these names in their `table` field.                 |
@@ -71,11 +71,11 @@ What it doesn't change:
   the one that fits the locale it writes (`sunday` for en-US); change it to suit your team.
   `weekStart` is the older spelling of `anchors.week`.
 - Dates are bucketed in `timezone`, and amounts are in `currency` or the metric's own currency.
-- A table's CSV download is the same in every locale: comma-separated, with `.` as the decimal point
-  and full-precision values, so other tools read it as numbers. A spreadsheet app set to a locale
-  that uses `;` as its list separator, such as German Excel, may put each row in one column when
-  you double-click the file; open it through the app's text or CSV import and choose comma as the
-  delimiter.
+- A table's CSV download uses the same syntax in every locale: comma-separated, with `.` as the
+  decimal point and full-precision values, so other tools read it as numbers. Its rows follow the
+  order the table shows. A spreadsheet app set to a locale that uses `;` as its list separator, such
+  as German Excel, may put each row in one column when you double-click the file; open it through
+  the app's text or CSV import and choose comma as the delimiter.
 
 ## Sources
 
