@@ -89,21 +89,19 @@
       "span": 3,
       "type": "kpi",
       "metric": "revenue",
-      "value": 257492.57,
+      "value": 257458.67,
       "compare": "previous_period",
       "current": {
-        "start": "2025-11-01",
-        "end": "2026-11-01",
-        "endAt": "2026-10-31T18:54:53.000001"
+        "start": "2025-10-31",
+        "end": "2026-10-31"
       },
       "previous": {
-        "start": "2024-11-01",
-        "end": "2025-11-01",
-        "endAt": "2025-10-31T18:54:53.000001"
+        "start": "2024-10-31",
+        "end": "2025-10-31"
       },
-      "previousValue": 201063.36,
-      "change": 56429.21000000002,
-      "changePct": 0.28065386950660737,
+      "previousValue": 200281.91,
+      "change": 57176.76000000001,
+      "changePct": 0.2854813996930627,
       "changeKind": "relative",
       "sparkline": {
         "grain": "month",
@@ -148,21 +146,19 @@
       "span": 3,
       "type": "kpi",
       "metric": "orders",
-      "value": 2784,
+      "value": 2783,
       "compare": "previous_period",
       "current": {
-        "start": "2025-11-01",
-        "end": "2026-11-01",
-        "endAt": "2026-10-31T18:54:53.000001"
+        "start": "2025-10-31",
+        "end": "2026-10-31"
       },
       "previous": {
-        "start": "2024-11-01",
-        "end": "2025-11-01",
-        "endAt": "2025-10-31T18:54:53.000001"
+        "start": "2024-10-31",
+        "end": "2025-10-31"
       },
-      "previousValue": 2080,
-      "change": 704,
-      "changePct": 0.3384615384615385,
+      "previousValue": 2072,
+      "change": 711,
+      "changePct": 0.34314671814671815,
       "changeKind": "relative"
     },
     {
@@ -170,21 +166,19 @@
       "span": 3,
       "type": "kpi",
       "metric": "avg_order_value",
-      "value": 92.49014727011495,
+      "value": 92.5112001437298,
       "compare": "previous_period",
       "current": {
-        "start": "2025-11-01",
-        "end": "2026-11-01",
-        "endAt": "2026-10-31T18:54:53.000001"
+        "start": "2025-10-31",
+        "end": "2026-10-31"
       },
       "previous": {
-        "start": "2024-11-01",
-        "end": "2025-11-01",
-        "endAt": "2025-10-31T18:54:53.000001"
+        "start": "2024-10-31",
+        "end": "2025-10-31"
       },
-      "previousValue": 96.66507692307691,
-      "change": -4.174929652961964,
-      "changePct": -0.04318963772494843,
+      "previousValue": 96.66115347490347,
+      "change": -4.149953331173677,
+      "changePct": -0.04293300030038589,
       "changeKind": "relative"
     },
     {
@@ -192,21 +186,19 @@
       "span": 3,
       "type": "kpi",
       "metric": "refund_rate",
-      "value": 0.05945945945945946,
+      "value": 0.0597972972972973,
       "compare": "previous_period",
       "current": {
-        "start": "2025-11-01",
-        "end": "2026-11-01",
-        "endAt": "2026-10-31T18:54:53.000001"
+        "start": "2025-10-31",
+        "end": "2026-10-31"
       },
       "previous": {
-        "start": "2024-11-01",
-        "end": "2025-11-01",
-        "endAt": "2025-10-31T18:54:53.000001"
+        "start": "2024-10-31",
+        "end": "2025-10-31"
       },
-      "previousValue": 0.06935123042505593,
-      "change": -0.009891770965596472,
-      "changePct": -0.009891770965596472,
+      "previousValue": 0.06918238993710692,
+      "change": -0.00938509263980962,
+      "changePct": -0.00938509263980962,
       "changeKind": "points"
     },
     {
@@ -344,12 +336,12 @@
           "metric": "revenue",
           "label": "Revenue",
           "values": [
-            77695.13,
-            58539.29,
-            35171.02,
-            34537.6,
-            33386.87,
-            12511.69,
+            77596.4,
+            58730.95,
+            35302.41,
+            34543.86,
+            33066.21,
+            12567.87,
             5650.97
           ]
         }
@@ -381,13 +373,13 @@
             "United States"
           ],
           "values": {
-            "revenue": 104370.18,
-            "orders": 1165,
-            "avg_order_value": 89.58813733905579,
-            "customers": 926
+            "revenue": 104257.74,
+            "orders": 1164,
+            "avg_order_value": 89.56850515463918,
+            "customers": 925
           },
           "share": {
-            "revenue": 0.4053327830003017
+            "revenue": 0.4049494235327169
           }
         },
         {
@@ -401,7 +393,7 @@
             "customers": 241
           },
           "share": {
-            "revenue": 0.09131218815362323
+            "revenue": 0.09132421137730572
           }
         },
         {
@@ -409,13 +401,13 @@
             "Canada"
           ],
           "values": {
-            "revenue": 18645.95,
-            "orders": 204,
-            "avg_order_value": 91.40171568627451,
-            "customers": 197
+            "revenue": 18704.19,
+            "orders": 205,
+            "avg_order_value": 91.23995121951219,
+            "customers": 198
           },
           "share": {
-            "revenue": 0.07241354575784459
+            "revenue": 0.07264929163193455
           }
         },
         {
@@ -423,13 +415,13 @@
             "Germany"
           ],
           "values": {
-            "revenue": 16925.32,
-            "orders": 172,
-            "avg_order_value": 98.40302325581395,
-            "customers": 164
+            "revenue": 16971.85,
+            "orders": 173,
+            "avg_order_value": 98.10317919075143,
+            "customers": 165
           },
           "share": {
-            "revenue": 0.06573129469327989
+            "revenue": 0.06592067767614894
           }
         },
         {
@@ -443,7 +435,7 @@
             "customers": 146
           },
           "share": {
-            "revenue": 0.05610029835035628
+            "revenue": 0.056107685167487265
           }
         },
         {
@@ -457,7 +449,7 @@
             "customers": 110
           },
           "share": {
-            "revenue": 0.04582124447319004
+            "revenue": 0.045827277830651415
           }
         },
         {
@@ -465,13 +457,13 @@
             "Japan"
           ],
           "values": {
-            "revenue": 8696.02,
-            "orders": 89,
-            "avg_order_value": 97.70808988764045,
-            "customers": 87
+            "revenue": 8668.23,
+            "orders": 88,
+            "avg_order_value": 98.50261363636363,
+            "customers": 86
           },
           "share": {
-            "revenue": 0.03377192592392084
+            "revenue": 0.03366843307316083
           }
         },
         {
@@ -479,13 +471,13 @@
             "Spain"
           ],
           "values": {
-            "revenue": 8197.21,
+            "revenue": 8226.74,
             "orders": 70,
-            "avg_order_value": 117.103,
+            "avg_order_value": 117.52485714285714,
             "customers": 69
           },
           "share": {
-            "revenue": 0.03183474381416131
+            "revenue": 0.031953633567671266
           }
         },
         {
@@ -499,7 +491,7 @@
             "customers": 90
           },
           "share": {
-            "revenue": 0.03062061169376654
+            "revenue": 0.03062464355929439
           }
         },
         {
@@ -513,7 +505,7 @@
             "customers": 57
           },
           "share": {
-            "revenue": 0.021646760525944497
+            "revenue": 0.021649610789957082
           }
         },
         {
@@ -527,7 +519,7 @@
             "customers": 65
           },
           "share": {
-            "revenue": 0.021031092275788775
+            "revenue": 0.021033861473765868
           }
         },
         {
@@ -535,13 +527,13 @@
             "Netherlands"
           ],
           "values": {
-            "revenue": 4495.17,
-            "orders": 47,
-            "avg_order_value": 95.64191489361703,
-            "customers": 46
+            "revenue": 4428.76,
+            "orders": 46,
+            "avg_order_value": 96.27739130434783,
+            "customers": 45
           },
           "share": {
-            "revenue": 0.017457474598199085
+            "revenue": 0.017201828938213655
           }
         },
         {
@@ -555,7 +547,7 @@
             "customers": 54
           },
           "share": {
-            "revenue": 0.01703738480687035
+            "revenue": 0.017039628146917715
           }
         },
         {
@@ -569,7 +561,7 @@
             "customers": 41
           },
           "share": {
-            "revenue": 0.016552011578431176
+            "revenue": 0.016554191008599554
           }
         },
         {
@@ -583,26 +575,25 @@
             "customers": 43
           },
           "share": {
-            "revenue": 0.014917595486347432
+            "revenue": 0.01491955971030224
           }
         }
       ],
       "rowCount": 21,
       "total": {
         "values": {
-          "revenue": 257492.57,
-          "orders": 2784,
-          "avg_order_value": 92.49014727011495,
-          "customers": 1699
+          "revenue": 257458.67,
+          "orders": 2783,
+          "avg_order_value": 92.5112001437298,
+          "customers": 1696
         },
         "share": {
           "revenue": 1
         }
       },
       "window": {
-        "start": "2025-11-01",
-        "end": "2026-11-01",
-        "endAt": "2026-10-31T18:54:53.000001"
+        "start": "2025-10-31",
+        "end": "2026-10-31"
       }
     }
   ]

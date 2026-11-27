@@ -438,7 +438,10 @@ describe("a select, a period and a grain filter combined (HAT-40 data.mjs)", () 
     expect(problems.slice(0, 5)).toEqual([]);
     expect(cells).toBeGreaterThan(1000);
     const k = data.blocks.find((b) => b.id === "k_rev") as KpiData;
-    expect(num(k.value)).toBeCloseTo(num(oracleTotal("revenue", window, where)), 6);
+    // The KPI reads whole days through the last complete day: the newest order is on Oct 31.
+    const days: [string, string] = ["2025-10-31", "2026-10-31"];
+    expect(k.current).toEqual({ start: days[0], end: days[1] });
+    expect(num(k.value)).toBeCloseTo(num(oracleTotal("revenue", days, where)), 6);
   });
 });
 

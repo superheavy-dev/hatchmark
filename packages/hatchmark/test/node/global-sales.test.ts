@@ -18,6 +18,11 @@ const CSV = `${ROOT}data/orders.csv`;
 const LOCAL = "(ordered_at AT TIME ZONE 'America/New_York')";
 const CURRENT = `${LOCAL} >= TIMESTAMP '2025-11-01' AND ${LOCAL} < TIMESTAMP '2026-11-01'`;
 const PREVIOUS = `${LOCAL} >= TIMESTAMP '2024-11-01' AND ${LOCAL} < TIMESTAMP '2025-11-01'`;
+// KPIs, the table and the bar read whole local days through Oct 30, the last complete day (the
+// newest order is on Oct 31): last 12 months slides back to Oct 31, 2025, and previous_period is
+// the same 365 days before it. Time series keep the dashboard's months.
+const WHOLE = `${LOCAL} >= TIMESTAMP '2025-10-31' AND ${LOCAL} < TIMESTAMP '2026-10-31'`;
+const WHOLE_PREVIOUS = `${LOCAL} >= TIMESTAMP '2024-10-31' AND ${LOCAL} < TIMESTAMP '2025-10-31'`;
 const PAID = "status = 'paid'";
 
 let oracle: Oracle;
@@ -66,7 +71,7 @@ describe("global-sales example", () => {
             CAST(count(*) AS DOUBLE) AS placed
           FROM read_csv('${CSV}') WHERE ${where}`)
       )[0] ?? {};
-    const [now, before] = [await window(CURRENT), await window(PREVIOUS)];
+    const [now, before] = [await window(WHOLE), await window(WHOLE_PREVIOUS)];
     const n = (row: Record<string, unknown>, key: string) => row[key] as number;
     const expected = {
       revenue: [n(now, "revenue"), n(before, "revenue")],
@@ -104,7 +109,7 @@ describe("global-sales example", () => {
         CAST(count(*) FILTER (WHERE ${PAID}) AS DOUBLE) AS orders,
         CAST(count(DISTINCT customer_id) FILTER (WHERE ${PAID}) AS DOUBLE) AS customers,
         CAST(GROUPING(country) AS INTEGER) AS g
-      FROM read_csv('${CSV}') WHERE ${CURRENT}
+      FROM read_csv('${CSV}') WHERE ${WHOLE}
       GROUP BY ROLLUP (country)
       ORDER BY g, revenue DESC, country`);
     const leaves = rows.filter((r) => r.g === 0);
@@ -137,7 +142,7 @@ describe("global-sales example", () => {
   it("matches the channel bar, null channel included, and the monthly region series", async () => {
     const channels = await oracle.rows(`
       SELECT channel, CAST(sum(amount) AS DOUBLE) AS revenue FROM read_csv('${CSV}')
-      WHERE ${PAID} AND ${CURRENT} GROUP BY channel ORDER BY revenue DESC`);
+      WHERE ${PAID} AND ${WHOLE} GROUP BY channel ORDER BY revenue DESC`);
     const bar = block<BarData>("revenue_by_channel");
     expect(bar.axis.kind === "category" && bar.axis.categories).toEqual(
       channels.map((r) => r.channel),

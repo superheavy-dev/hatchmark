@@ -82,7 +82,8 @@ describe("source horizons", () => {
     expect(data?.asOf).toBe("2026-04-29");
     expect(codes).toEqual([]);
     expect(value("sessions")).toBe(0);
-    expect(value("revenue")).toBe(30);
+    // Orders end at 3:30 p.m. Apr 29, so the KPI reads whole days through Apr 28.
+    expect(value("revenue")).toBe(10);
   });
 
   it("measures a date column as complete through the end of its latest date", async () => {
@@ -320,7 +321,8 @@ describe("horizon edges (HAT-44 and HAT-45 on #19)", () => {
       ),
     );
     expect(one.data?.asOf).toBe("2026-06-02");
-    expect(one.value("orders")).toBe(22);
+    // Jun 2 has begun but isn't complete, so last 1 day is Jun 1, the last complete day.
+    expect(one.value("orders")).toBe(5);
     const week = await build(
       await sources(
         {
@@ -332,7 +334,7 @@ describe("horizon edges (HAT-44 and HAT-45 on #19)", () => {
       ),
     );
     expect(week.data?.asOf).toBe("2026-04-30");
-    expect(week.value("orders")).toBe(7);
+    expect(week.value("orders")).toBe(3);
   });
 
   it("orders horizons by instant across a fall-back hour, not by wall-clock time", async () => {
@@ -507,7 +509,8 @@ describe("horizon edges (HAT-44 and HAT-45 on #19)", () => {
       [],
       [],
     ]);
-    expect(runs[0]?.value("orders")).toBe(10);
+    // all_time reads whole days through May 31, 2099, the last complete day before 6 p.m. Jun 1.
+    expect(runs[0]?.value("orders")).toBe(3);
     const bytes = runs.map((r) => JSON.stringify(r.data));
     expect(new Set([...bytes, JSON.stringify((await build(fixture)).data)]).size).toBe(1);
   });

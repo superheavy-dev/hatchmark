@@ -28,7 +28,7 @@ import {
   type TimeAxis,
   type Value,
 } from "./dashboard-data.js";
-import { parseInstant, toLocal } from "./instants.js";
+import { formatWall, parseInstant, toLocal } from "./instants.js";
 import type {
   BlockPlan,
   ExecutionContext,
@@ -124,14 +124,20 @@ function compareValues(a: Value, b: Value, order: "asc" | "desc"): number {
   return order === "asc" ? a - b : b - a;
 }
 
-function span(bounds: WindowBounds | undefined): DateSpan | undefined {
+/** A bound's local wall-clock time, for a UTC instant bound (windows.ts). */
+const wallAt = (bound: string, timezone: string) =>
+  formatWall(toLocal(parseInstant(bound), timezone));
+
+function span(bounds: WindowBounds | undefined, timezone: string): DateSpan | undefined {
   if (bounds?.kind !== "bounded") return undefined;
   const { start, end } = bounds;
+  const startAt = start.endsWith("Z") ? wallAt(start, timezone) : undefined;
+  const endAt = end.endsWith("Z") ? wallAt(end, timezone) : undefined;
   return {
-    start: start.slice(0, 10),
-    end: end.includes("T") ? nextDay(end.slice(0, 10)) : end,
-    ...(start.includes("T") ? { startAt: start } : {}),
-    ...(end.includes("T") ? { endAt: end } : {}),
+    start: startAt === undefined ? start : startAt.slice(0, 10),
+    end: endAt === undefined ? end : nextDay(endAt.slice(0, 10)),
+    ...(startAt !== undefined ? { startAt } : {}),
+    ...(endAt !== undefined ? { endAt } : {}),
   };
 }
 
@@ -202,7 +208,7 @@ class Assembler {
     return query && queryBounds(query, this.context);
   }
 
-  /** A measure's horizon (local wall-clock microseconds): the earliest of its queries'. */
+  /** A measure's horizon (UTC microseconds): the earliest of its queries'. */
   horizon(expression: MeasureExpression | undefined): bigint | undefined {
     let earliest: bigint | undefined;
     for (const id of expression ? refs(expression) : []) {
@@ -223,8 +229,9 @@ class Assembler {
     buckets: string[],
     grain: ResolvedGrain,
   ): T & { partial?: PartialBucket[] } {
-    const horizon = this.horizon(expression);
-    if (horizon === undefined) return series;
+    const at = this.horizon(expression);
+    if (at === undefined) return series;
+    const horizon = toLocal(at, this.context.timezone);
     const partial: PartialBucket[] = [];
     const values = series.values.map((value, index) => {
       const start = parseInstant(buckets[index] ?? "");
@@ -255,8 +262,14 @@ class Assembler {
   timeAxis(expressions: (MeasureExpression | undefined)[], grain: ResolvedGrain): TimeAxis {
     const query = expressions[0] && this.queries.get(refs(expressions[0])[0] ?? "")?.query;
     const { asOfInstant, timezone } = this.context;
-    const at = asOfInstant === undefined ? undefined : toLocal(parseInstant(asOfInstant), timezone);
-    const window = span(query && windowAt(query, this.context, at));
+    const bounds =
+      query &&
+      windowAt(
+        query,
+        this.context,
+        asOfInstant === undefined ? undefined : parseInstant(asOfInstant),
+      );
+    const window = span(bounds, timezone);
     if (window !== undefined) {
       return {
         kind: "time",
@@ -269,14 +282,15 @@ class Assembler {
       .map((keys) => keys[0])
       .filter((k): k is string => typeof k === "string");
     const last = [this.context.asOf, ...observed].sort().at(-1) ?? this.context.asOf;
-    const end = nextDay(last);
+    const endAt = bounds?.end?.endsWith("Z") ? wallAt(bounds.end, timezone) : undefined;
+    const end = nextDay(endAt?.slice(0, 10) ?? last);
     const start = observed[0] ?? end;
     const buckets = timeBuckets(start, end, grain);
     return {
       kind: "time",
       grain: grain.unit,
       buckets,
-      window: { start: buckets[0] ?? start, end },
+      window: { start: buckets[0] ?? start, end, ...(endAt !== undefined ? { endAt } : {}) },
     };
   }
 
@@ -334,11 +348,11 @@ class Assembler {
     const compare = block.compare ?? this.plan.period.compare;
     const current = this.evaluate(plan.measures[name], 0, []);
     const data: KpiData = { ...common, type: "kpi", metric: name, value: current, compare };
-    const currentSpan = span(this.bounds(plan.measures[name]));
+    const currentSpan = span(this.bounds(plan.measures[name]), this.context.timezone);
     if (currentSpan) data.current = currentSpan;
     const previousExpression = plan.previous?.[name];
     if (previousExpression && this.bounds(previousExpression) !== undefined) {
-      const previousSpan = span(this.bounds(previousExpression));
+      const previousSpan = span(this.bounds(previousExpression), this.context.timezone);
       if (previousSpan) data.previous = previousSpan;
       const previous = this.evaluate(previousExpression, 0, []);
       const change = current === null || previous === null ? null : current - previous;
@@ -520,7 +534,7 @@ class Assembler {
         compareKeys(a.keys, b.keys)
       );
     });
-    const window = span(this.bounds(expressions[0]));
+    const window = span(this.bounds(expressions[0]), this.context.timezone);
     return {
       ...common,
       type: "table",
@@ -684,11 +698,17 @@ export function assemble(
     };
   }
 
-  const current = span(resolveRange(period.range, "none", context.asOf, plan.anchors));
+  const current = span(
+    resolveRange(period.range, "none", context.asOf, plan.anchors),
+    context.timezone,
+  );
   const previous =
     period.compare === "none"
       ? undefined
-      : span(resolveRange(period.range, period.compare, context.asOf, plan.anchors));
+      : span(
+          resolveRange(period.range, period.compare, context.asOf, plan.anchors),
+          context.timezone,
+        );
   const data: DashboardData = {
     version: DASHBOARD_DATA_VERSION,
     name: plan.dashboard,

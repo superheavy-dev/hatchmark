@@ -673,21 +673,22 @@ Settled edge cases:
 
 `resolveRange()` stays the definition of each range in whole local dates. The horizon trims it:
 
-| Range kind         | When the measure horizon is before the window end                                               | Comparison                                                                                                                         |
-| ------------------ | ----------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------- |
-| to-date            | value through the horizon                                                                       | the previous unit through the same elapsed local time (Oct 1 to Oct 26 2:03 p.m. vs Nov 1 to Nov 26 2:03 p.m.); day clamp as today |
-| last N units       | the window **slides back** to end at the horizon, keeping its length ("30 days through Nov 25") | the same length before it, from the slid window                                                                                    |
-| last complete unit | value marked partial, "through Oct 28"                                                          | the comparison unit trimmed to the same elapsed span                                                                               |
-| all_time           | through the horizon                                                                             | none                                                                                                                               |
+| Range kind         | When the measure horizon is before the window end                                                         | Comparison                                                                   |
+| ------------------ | --------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------- |
+| to-date            | value through the last complete day (Nov 1 to Nov 25 when the horizon is Nov 26, 2:03 p.m.)               | the previous unit through the same day (Oct 1 to Oct 25); day clamp as today |
+| last N units       | the window **slides back** to end at the last complete day, keeping its length ("30 days through Nov 25") | the same length before it, from the slid window                              |
+| last complete unit | value marked partial, "through Oct 28"                                                                    | the comparison unit trimmed to the same number of days                       |
+| all_time           | through the last complete day                                                                             | none                                                                         |
 
 For point-in-time metrics "through the horizon" means "at the horizon": ARR now vs ARR at the same elapsed point of the previous unit.
 
 Settled readings of the table:
 
-- Only `{ "last": N, "unit": "day" }` (and its aliases `last_7_days`, `last_30_days`, `last_90_days`) slides. Last N weeks, months, quarters and years start on an anchored bucket, so they end at the horizon like a to-date range and compare the same elapsed span. An explicit `{ start, end }` range does the same.
+- KPI, table and category windows are whole local days ending at the last complete day: the local midnight at or before the horizon (Gunwoo, 2026-11-27). A horizon at 2:03 p.m. Nov 26 ends them at the end of Nov 25, so the number doesn't drift as rows arrive during the day and no bound falls inside a day. A timestamp source's newest day is therefore left out until a row after it arrives or the as-of is set past it.
+- Every `{ "last": N, "unit": … }` range slides, in days, weeks, months, quarters and years alike: `last_12_months` with orders through 6:54 p.m. Oct 31 is Oct 31 a year earlier through Oct 30. It then compares like an explicit range of those dates: previous_period is the same number of days just before it, and a shift moves its first and last day (section 6.2).
+- A to-date range is the range as of the last complete day, with that day's comparison. A last complete unit or explicit `{ start, end }` range ends at the last complete day, and its comparison covers the same number of days from its own start.
 - A measure's horizon is the earliest of T and the horizons of every time column it reads, so a ratio ends at its laggiest operand.
-- Time-series blocks never slide: the axis is the dashboard's window, ending at T, and each series ends at its own measure horizon (no value at or after it, its cut bucket partial). KPIs and tables slide.
-- Windows keep the precision of the horizon: a horizon at 2:03 p.m. ends the window at 2:03 p.m. local time, and a slid window starts at 2:03 p.m. N days earlier.
+- Time-series blocks never slide: the axis is the dashboard's window, ending at T, and each series ends at its own measure horizon instant (no value at or after it, its cut bucket partial, with the share elapsed in local wall-clock time). A sparkline is a time series, so its sum can differ from its KPI. That horizon is compared as a UTC instant, so a cutoff inside a repeated fall-back hour stays exact.
 
 Sliding a rolling window is the default. `period.rollingLag: "trim"` keeps the window's dates and trims both it and its comparison to the same elapsed span instead, marking the value partial.
 

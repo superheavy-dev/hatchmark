@@ -8,14 +8,14 @@ import {
   type TimeGrain,
   WEEKDAYS,
 } from "../spec/index.js";
-import { DAY_US, formatWall, parseInstant, toLocal } from "./instants.js";
+import { DAY_US, formatInstant, formatWall, fromLocal, parseInstant, toLocal } from "./instants.js";
 import type { ExecutionContext, PlannedParam, PlannedQuery } from "./plan.js";
 
 /**
  * A window in the project time zone: start inclusive, end exclusive. Each bound is a local date
- * (YYYY-MM-DD, its midnight), or a local date-time YYYY-MM-DDTHH:MM:SS.ffffff where a measure's
+ * (YYYY-MM-DD, its midnight), or a UTC instant YYYY-MM-DDTHH:MM:SS.ffffffZ where a measure's
  * horizon cuts a day (RFC 0001 section 6.4). An unbounded window (all_time) may still end at the
- * horizon. The executor compares each row's local time with them.
+ * horizon. The executor compares a row's local date with a date and its instant with an instant.
  */
 export type WindowBounds =
   | { kind: "bounded"; start: string; end: string }
@@ -239,9 +239,9 @@ export function queryBounds(query: PlannedQuery, context: BoundsContext): Window
 }
 
 /**
- * A measure's horizon as local wall-clock microseconds (instants.ts): the earliest of the as-of
- * instant T and the horizons of the time columns its window lists. Undefined when the context
- * carries no horizons (a context built without measuring them).
+ * A measure's horizon as UTC microseconds (instants.ts): the earliest of the as-of instant T and
+ * the horizons of the time columns its window lists. Undefined when the context carries no
+ * horizons (a context built without measuring them).
  */
 export function measureHorizon(query: PlannedQuery, context: BoundsContext): bigint | undefined {
   const { asOfInstant, horizons, timezone } = context;
@@ -255,31 +255,32 @@ export function measureHorizon(query: PlannedQuery, context: BoundsContext): big
     const through = h === undefined ? undefined : parseInstant(h.through);
     if (through !== undefined && through < horizon) horizon = through;
   }
-  return toLocal(horizon, timezone);
+  return horizon;
 }
 
-/** A bound as a local date when it is midnight, else as a local date-time. */
-function bound(wall: bigint): string {
-  const text = formatWall(wall);
-  return text.endsWith("T00:00:00.000000") ? text.slice(0, 10) : text;
-}
-
-/** Moves a local wall-clock time by whole grain units, keeping its time of day. */
-function shiftWall(wall: bigint, unit: TimeGrain, n: number): bigint {
-  const text = formatWall(wall);
-  const date = text.slice(0, 10);
-  return parseInstant(format(addUnits(parse(date), unit, n))) + (wall - parseInstant(date));
+/** A bound as UTC microseconds: a local date is its local midnight, a "...Z" bound its instant. */
+export function boundInstant(value: string, timezone: string): bigint {
+  return value.endsWith("Z") ? parseInstant(value) : fromLocal(parseInstant(value), timezone);
 }
 
 /**
- * A query's window ended at a horizon (local wall-clock microseconds; none keeps the window as
- * written). When the horizon is before the end of the range as written (RFC 0001 section 6.4):
- * - {last: N, unit: "day"} without a time axis slides back to end at the horizon, keeping its
- *   length, and its comparison is the same shift of the slid window;
- * - every other range ends at the horizon (a to-date, complete, explicit or anchored rolling
- *   range, and any time series, whose axis stays the dashboard's), and its comparison window is
- *   cut to the same elapsed span, never past its own end;
- * - all_time ends at the horizon.
+ * A query's window ended at a horizon (UTC microseconds; none keeps the window as written), when
+ * the horizon is before the end of the range as written (RFC 0001 section 6.4).
+ *
+ * KPIs and tables read whole local days ending at the last complete day: the window ends at the
+ * local midnight at or before the horizon (day D).
+ * - {last: N, unit} slides back to the N units ending at D, and compares like an explicit
+ *   {start, end} range of those dates: previous_period is the same number of days just before,
+ *   a shift moves its first and last day (resolveRange);
+ * - a to-date range is the range as of the day before D, with its comparison;
+ * - a complete unit or explicit range ends at D, and its comparison covers the same number of
+ *   days from its own start, never past its own end;
+ * - all_time ends at D.
+ *
+ * A time series keeps the dashboard's axis and reads through the horizon itself, so its partial
+ * bucket is marked (section 6.5): its window ends at the horizon instant, and its comparison is
+ * cut to the same elapsed local time. Such a bound is a UTC instant "YYYY-MM-DDTHH:MM:SS.ffffffZ",
+ * so a cutoff inside a repeated hour stays exact; every other bound is a local date.
  */
 export function windowAt(
   query: PlannedQuery,
@@ -293,42 +294,46 @@ export function windowAt(
       p.kind === "period" && p.column === window.column,
   );
   const range = effectiveRange(window.range, param, context.bindings);
-  const target = resolveRange(range, window.shift, context.asOf, context.anchors);
-  if (horizon === undefined || target === undefined) return target;
-  if (range === "all_time") return { kind: "unbounded", end: bound(horizon) };
-  const base = resolveRange(range, "none", context.asOf, context.anchors);
-  if (base?.kind !== "bounded") return target;
-  const start = parseInstant(base.start);
-  if (horizon >= parseInstant(base.end)) return target;
-  const checked = (from: bigint, to: bigint): WindowBounds => {
-    if (from < parseInstant(SUPPORTED_DATES.first) || to > parseInstant(format(PAST_LAST_DAY))) {
-      throw new RangeError(
-        `the window ${bound(from)} to ${bound(to)} (exclusive) reaches outside the supported dates ${SUPPORTED_DATES.first} to ${SUPPORTED_DATES.last}`,
-      );
-    }
-    return { kind: "bounded", start: bound(from), end: bound(to) };
-  };
-  const spec = typeof range === "string" ? NAMED[range] : range;
+  const { anchors } = context;
+  const target = resolveRange(range, window.shift, context.asOf, anchors);
+  const tz = context.timezone;
+  if (horizon === undefined || tz === undefined || target === undefined) return target;
+  const hw = toLocal(horizon, tz);
+  const day = formatWall(hw).slice(0, 10);
   const timeAxis = query.dimensions.some((d) => d.kind === "time");
-  if ("last" in spec && spec.unit === "day" && !timeAxis) {
-    const from = horizon - BigInt(spec.last) * DAY_US;
-    if (window.shift === "none") return checked(from, horizon);
-    const by =
-      window.shift === "previous_period"
-        ? { unit: "day" as const, by: -spec.last }
-        : window.shift === "previous_year"
-          ? { unit: "year" as const, by: -1 }
-          : window.shift.shift;
-    return checked(shiftWall(from, by.unit, by.by), shiftWall(horizon, by.unit, by.by));
+  const exact = formatWall(hw).endsWith("T00:00:00.000000") ? day : formatInstant(horizon);
+  if (range === "all_time") return { kind: "unbounded", end: timeAxis ? exact : day };
+  const base = resolveRange(range, "none", context.asOf, anchors);
+  if (base?.kind !== "bounded" || target.kind !== "bounded") return target;
+  if (hw >= parseInstant(base.end)) return target;
+  const empty: WindowBounds = { kind: "bounded", start: base.start, end: base.start };
+  const spec = typeof range === "string" ? NAMED[range] : range;
+
+  if (timeAxis) {
+    const start = parseInstant(base.start);
+    if (hw <= start) return window.shift === "none" ? empty : { ...target, end: target.start };
+    if (window.shift === "none")
+      return { kind: "bounded", start: base.start, end: formatInstant(horizon) };
+    const from = parseInstant(target.start);
+    const cut = from + (hw - start);
+    if (cut >= parseInstant(target.end)) return target;
+    const text = formatWall(cut);
+    const end = text.endsWith("T00:00:00.000000")
+      ? text.slice(0, 10)
+      : formatInstant(fromLocal(cut, tz));
+    return { kind: "bounded", start: target.start, end };
   }
-  const end = horizon > start ? horizon : start;
-  if (window.shift === "none") return checked(start, end);
-  if (target.kind !== "bounded") return target;
-  const from = parseInstant(target.start);
-  const to = parseInstant(target.end);
-  const cut = from + (end - start);
-  if (cut < to) return checked(from, cut);
-  return checked(from, to);
+
+  if ("last" in spec) {
+    const slid = { start: format(addUnits(parse(day), spec.unit, -spec.last)), end: day };
+    return resolveRange(slid, window.shift, context.asOf, anchors);
+  }
+  if (day <= base.start) return window.shift === "none" ? empty : { ...target, end: target.start };
+  if ("to_date" in spec) return resolveRange(range, window.shift, previousDay(day), anchors);
+  if (window.shift === "none") return { kind: "bounded", start: base.start, end: day };
+  const days = Math.round(Number(parseInstant(day) - parseInstant(base.start)) / Number(DAY_US));
+  const end = format(addDays(parse(target.start), days));
+  return end < target.end ? { kind: "bounded", start: target.start, end } : target;
 }
 
 /**

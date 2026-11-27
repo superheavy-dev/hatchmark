@@ -22,6 +22,7 @@ async function dashboard(options: {
   blocks: unknown[];
   metrics?: Record<string, unknown>;
   timezone?: string;
+  freshness?: Record<string, unknown>;
 }) {
   const fixture = await writeProject({
     "hatchmark.json": {
@@ -29,7 +30,14 @@ async function dashboard(options: {
       name: "Incomplete",
       timezone: options.timezone ?? "UTC",
       sources: Object.fromEntries(
-        Object.keys(options.sources).map((n) => [n, { type: "csv", path: `${n}.csv` }]),
+        Object.keys(options.sources).map((n) => [
+          n,
+          {
+            type: "csv",
+            path: `${n}.csv`,
+            ...(options.freshness && { freshness: options.freshness }),
+          },
+        ]),
       ),
     },
     ...Object.fromEntries(Object.entries(options.sources).map(([n, text]) => [`${n}.csv`, text])),
@@ -53,7 +61,7 @@ const rows = (...pairs: [string, number][]) =>
   `at,v\n${pairs.map(([at, v]) => `${at},${v}`).join("\n")}\n`;
 
 describe("windows end at the measure's horizon", () => {
-  it("reads a to-date range through the horizon and compares the same elapsed time", async () => {
+  it("reads a to-date range through the last complete day and compares the same days", async () => {
     const { block } = await dashboard({
       sources: {
         orders: rows(
@@ -67,12 +75,14 @@ describe("windows end at the measure's horizon", () => {
       period: { asOf: "latest_data", range: "month_to_date", compare: "previous_period" },
       blocks: [{ type: "kpi", id: "orders", metric: "orders" }],
     });
-    expect(block<KpiData>("orders")).toMatchObject({
-      value: 24,
-      previousValue: 3,
-      current: { start: "2026-11-01", end: "2026-11-27", endAt: "2026-11-26T14:03:00.000001" },
-      previous: { start: "2026-10-01", end: "2026-10-27", endAt: "2026-10-26T14:03:00.000001" },
+    const kpi = block<KpiData>("orders");
+    expect(kpi).toMatchObject({
+      value: 8,
+      previousValue: 1,
+      current: { start: "2026-11-01", end: "2026-11-26" },
+      previous: { start: "2026-10-01", end: "2026-10-26" },
     });
+    expect(kpi.current).not.toHaveProperty("endAt");
   });
 
   it("slides last N days back to end at a lagging source's horizon, keeping its length", async () => {
@@ -193,28 +203,16 @@ describe("partial buckets", () => {
 });
 
 describe("windows at the horizon against SQL written here", () => {
-  // Hourly rows from Oct 1, 12:30 a.m. to Nov 29, 2:30 p.m. New York time. Each KPI is checked against a query with its bounds spelled out.
+  // Hourly rows from Oct 1, 12:30 a.m. to Nov 29, 2:30 p.m. New York time, so Nov 28 is the last
+  // complete day. Each KPI is checked against a query with its whole-day bounds spelled out.
   const at = (hours: number) =>
     new Date(Date.UTC(2026, 9, 1, 4, 30) + hours * 3_600_000).toISOString();
   const hourly = (count: number) =>
     rows(...Array.from({ length: count }, (_, h): [string, number] => [at(h), (h % 7) + 1]));
   const ranges: [string, unknown, string, string, string, string][] = [
-    [
-      "mtd",
-      "month_to_date",
-      "2026-11-01",
-      "2026-11-29 14:30:00.000001",
-      "2026-10-01",
-      "2026-10-29 14:30:00.000001",
-    ],
-    [
-      "l7",
-      { last: 7, unit: "day" },
-      "2026-11-22 14:30:00.000001",
-      "2026-11-29 14:30:00.000001",
-      "2026-11-15 14:30:00.000001",
-      "2026-11-22 14:30:00.000001",
-    ],
+    ["mtd", "month_to_date", "2026-11-01", "2026-11-29", "2026-10-01", "2026-10-29"],
+    ["l7", { last: 7, unit: "day" }, "2026-11-22", "2026-11-29", "2026-11-15", "2026-11-22"],
+    ["l2m", { last: 2, unit: "month" }, "2026-09-29", "2026-11-29", "2026-07-30", "2026-09-29"],
   ];
   for (const [id, range, s, e, ps, pe] of ranges) {
     it(`${id}: value and comparison match SQL with explicit local bounds`, async () => {
@@ -239,4 +237,110 @@ describe("windows at the horizon against SQL written here", () => {
       expect(kpi.previousValue).toBe(await sum(ps, pe));
     });
   }
+});
+
+describe("whole days in KPIs, instants in series", () => {
+  // Rows as [UTC instant, value]; each expectation is summed here from the instants.
+  const between = (pairs: [string, number][], from: string, to: string) =>
+    pairs
+      .filter(([at]) => Date.parse(at) >= Date.parse(from) && Date.parse(at) < Date.parse(to))
+      .reduce((n, [, v]) => n + v, 0);
+
+  it("cuts a series inside the repeated hour of a fall-back day by instant", async () => {
+    const pairs: [string, number][] = [
+      ["2026-11-01T05:40:00Z", 1],
+      ["2026-11-01T05:50:00Z", 2],
+      ["2026-11-01T06:40:00Z", 8],
+      ["2026-11-01T06:50:00Z", 16],
+      ["2026-11-01T08:45:00Z", 32],
+    ];
+    const { block } = await dashboard({
+      timezone: "America/New_York",
+      freshness: { lag: { hours: 2 } },
+      sources: { orders: rows(...pairs) },
+      period: { asOf: "2026-11-01", range: "month_to_date", compare: "none" },
+      blocks: [
+        { type: "kpi", id: "k", metric: "orders" },
+        { type: "line", id: "l", metrics: ["orders"], grain: "day" },
+      ],
+    });
+    // Complete through 1:45 a.m. EST (06:45Z): the series includes the EDT 1:50 row and leaves out
+    // the EST 1:50 row; no day of November is complete, so the KPI reads none.
+    const expected = between(pairs, "2026-11-01T04:00:00Z", "2026-11-01T06:45:00.001Z");
+    expect(expected).toBe(11);
+    expect(block<LineData>("l").series[0]?.values[0]).toBe(expected);
+    expect(block<KpiData>("k")).toMatchObject({
+      value: 0,
+      current: { start: "2026-11-01", end: "2026-11-01" },
+    });
+  });
+
+  it("shifts a slid window a month back from March 31 by its first and last day", async () => {
+    const pairs: [string, number][] = [
+      ["2026-02-27T11:00:00Z", 1],
+      ["2026-02-28T12:00:00Z", 4],
+      ["2026-03-30T09:00:00Z", 2],
+      ["2026-03-31T12:00:00Z", 8],
+    ];
+    const { block } = await dashboard({
+      sources: { orders: rows(...pairs) },
+      period: {
+        asOf: "latest_data",
+        range: { last: 1, unit: "day" },
+        compare: { shift: { unit: "month", by: -1 } },
+      },
+      blocks: [{ type: "kpi", id: "k", metric: "orders" }],
+    });
+    expect(block<KpiData>("k")).toMatchObject({
+      value: between(pairs, "2026-03-30T00:00:00Z", "2026-03-31T00:00:00Z"),
+      previousValue: between(pairs, "2026-02-28T00:00:00Z", "2026-03-01T00:00:00Z"),
+      current: { start: "2026-03-30", end: "2026-03-31" },
+      previous: { start: "2026-02-28", end: "2026-03-01" },
+    });
+  });
+
+  it("slides last N months back to end at the last complete day, keeping its length", async () => {
+    const pairs: [string, number][] = [
+      ["2026-04-08T12:00:00Z", 32],
+      ["2026-05-10T12:00:00Z", 1],
+      ["2026-07-10T11:00:00Z", 2],
+      ["2026-07-10T13:00:00Z", 4],
+      ["2026-09-01T00:00:00Z", 8],
+      ["2026-10-10T12:00:00Z", 16],
+    ];
+    const { block } = await dashboard({
+      sources: { orders: rows(...pairs) },
+      period: {
+        asOf: "latest_data",
+        range: { last: 3, unit: "month" },
+        compare: "previous_period",
+      },
+      blocks: [{ type: "kpi", id: "k", metric: "orders" }],
+    });
+    // Jul 10 to Oct 10 is 92 days; previous_period is the 92 days before it.
+    expect(block<KpiData>("k")).toMatchObject({
+      value: between(pairs, "2026-07-10T00:00:00Z", "2026-10-10T00:00:00Z"),
+      previousValue: between(pairs, "2026-04-09T00:00:00Z", "2026-07-10T00:00:00Z"),
+      current: { start: "2026-07-10", end: "2026-10-10" },
+      previous: { start: "2026-04-09", end: "2026-07-10" },
+    });
+  });
+
+  it("keeps the exact as-of in the axis of an all_time chart", async () => {
+    const { block } = await dashboard({
+      sources: { orders: rows(["2026-10-01T12:00:00Z", 2], ["2026-11-03T12:00:00Z", 4]) },
+      period: { asOf: "latest_data", range: "all_time", compare: "none" },
+      blocks: [
+        { type: "line", id: "l", metrics: ["orders"], grain: "month" },
+        { type: "kpi", id: "k", metric: "orders" },
+      ],
+    });
+    expect(block<LineData>("l").axis.window).toEqual({
+      start: "2026-10-01",
+      end: "2026-11-04",
+      endAt: "2026-11-03T12:00:00.000001",
+    });
+    expect(block<LineData>("l").series[0]?.values).toEqual([2, 4]);
+    expect(block<KpiData>("k").value).toBe(2);
+  });
 });
