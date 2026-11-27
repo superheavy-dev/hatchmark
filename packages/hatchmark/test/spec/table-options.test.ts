@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { checkReferences, parseSpecFile } from "../../src/spec/index.js";
+import { fromYaml } from "../yaml.js";
 import { applyFix, DASHBOARD, METRICS, projectFrom } from "./helpers.js";
 
 const columns = {
@@ -9,7 +10,7 @@ const columns = {
 
 function schema(block: Record<string, unknown>) {
   const text = JSON.stringify({ ...DASHBOARD, blocks: [{ type: "table", ...block }] }, null, 2);
-  return parseSpecFile("dashboard", "dashboards/x.json", text).diagnostics;
+  return parseSpecFile("dashboard", "dashboards/x.yaml", text).diagnostics;
 }
 
 function refs(block: Record<string, unknown>) {
@@ -70,7 +71,7 @@ describe("table options", () => {
       ["HM4063", "warning", "/blocks/0/other"],
     ]);
     expect(diagnostics[0]?.message).toBe('the Other row cannot be computed for "merchants"');
-    const fixed = JSON.parse(applyFix(text, diagnostics[0]?.fix));
+    const fixed = fromYaml(applyFix(text, diagnostics[0]?.fix));
     expect(fixed.blocks[0].other).toBe(false);
     expect(refs({ ...block, other: false }).diagnostics).toEqual([]);
     expect(refs({ ...block, limit: undefined, other: undefined }).diagnostics).toEqual([]);
@@ -131,7 +132,7 @@ describe("table options", () => {
       ...DASHBOARD,
       blocks: [{ type: "kpi", metric: "revenue", page: 2 }],
     });
-    const [d] = parseSpecFile("dashboard", "dashboards/x.json", text).diagnostics;
+    const [d] = parseSpecFile("dashboard", "dashboards/x.yaml", text).diagnostics;
     expect(d?.code).toBe("HM3002");
     expect(d?.help ?? "").not.toContain("paginate");
   });

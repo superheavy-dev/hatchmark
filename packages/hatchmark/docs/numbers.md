@@ -6,15 +6,15 @@ Every number on a page comes from one query plan, compiled from the specs and ru
 
 ## Time
 
-- **Time zone.** Rows are placed in time in hatchmark.json's `timezone`. A `TIMESTAMP WITH TIME
+- **Time zone.** Rows are placed in time in hatchmark.yaml's `timezone`. A `TIMESTAMP WITH TIME
 ZONE` value is converted to it. A timestamp without an offset (`2026-01-31 18:30:00`) is read in
   the source's `timezone`, or as UTC when the source sets none, and converted; a non-UTC project
   gets note HM4016 for such a source. A `DATE` is a calendar date and is used as it is.
 - **Windows.** A range is a span of calendar dates in that time zone, start inclusive and
-  end exclusive: `{"start", "end"}` dates, a shorthand (`{"last": 30, "unit": "day"}`,
-  `{"to_date": "quarter"}`, `{"last_complete": "month"}`) or a named alias of one
+  end exclusive: `{"start", "end"}` dates, a shorthand (`{ last: 30, unit: day }`,
+  `{ to_date: quarter }`, `{ last_complete: month }`) or a named alias of one
   (`last_30_days`). A comparison is the range shifted by whole units (`previous_period`,
-  `previous_year` or `{"shift": {"unit": "week", "by": -1}}`), with days clamped to the target
+  `previous_year` or `{ shift: { unit: week, by: -1 } }`), with days clamped to the target
   month. `resolveRange()` in `src/compiler/windows.ts` is the definition of every range and
   comparison. A row is in the window when its local time is.
 - **Horizons.** A source is complete through its horizon: by default the latest value of the time
@@ -24,7 +24,7 @@ ZONE` value is converted to it. A timestamp without an offset (`2026-01-31 18:30
 - **latest_data** resolves once per dashboard, before any query runs, to the newest horizon the
   dashboard reads; the as-of date is its last local date, and every block's window ends on that
   day. `latest_common_data` takes the oldest horizon instead, so no source ends before the others.
-  A source with `{"through": "as_of"}` doesn't vote; with no source left to vote, the build fails
+  A source with `{ through: as_of }` doesn't vote; with no source left to vote, the build fails
   with HM4011. Data checks warn when a source is more than a day behind the as-of (HM4010), when a
   column's newest value is more than a day after the build machine's clock (HM4012; the clock never
   changes the output), and when a block's window starts after the data it reads ends (HM4013). These data
@@ -42,7 +42,7 @@ ZONE` value is converted to it. A timestamp without an offset (`2026-01-31 18:30
   complete. A window with no complete day yet, such as month-to-date on the 1st, shows no value
   rather than 0 (`empty: "no_complete_day"`, note HM4024).
 - **Buckets.** Time series bucket by local date; weeks start on the week anchor, and quarters and
-  years on their `MM-DD` anchors (hatchmark.json `anchors`, or a block's `{"unit", "anchor"}`
+  years on their `MM-DD` anchors (hatchmark.yaml `anchors`, or a block's `{"unit", "anchor"}`
   grain). The axis lists every
   bucket of the window, empty ones included. Each series ends at its own horizon instant: buckets
   after it have no value, and the bucket it cuts is listed in `partial` with the share elapsed in
@@ -79,7 +79,7 @@ Metric filters and dashboard select filters compare a column with a value:
 - **avg** is sum over count of non-null values, so it stays right when groups are combined.
 - **limit** keeps the first rows after sorting, ties broken by the group values. It never counts
   the total row, and the total still covers every row.
-- **Other** (a table's `"other": true`) is recomputed from the parts of the rows past the limit:
+- **Other** (a table's `other: true`) is recomputed from the parts of the rows past the limit:
   sums and counts add, min and max take the extreme, averages and ratios divide folded sums.
   Distinct counts, medians and non-additive SQL cannot be folded and show "—" (HM4063).
 - **Subtotals** come from the query's grouping sets (SQL ROLLUP), like the total, never from adding
@@ -88,12 +88,12 @@ Metric filters and dashboard select filters compare a column with a value:
   averages, ratios, medians, min, max) of no rows are empty.
 - **percentOfTotal** is a row's share of the grand total, for additive metrics only (HM4001).
 - **Stacked bars and areas** carry each position's total, recomputed from rows like a table's, and
-  each segment's share of it; a 100% stack (`"stack": "percent"`) needs additive metrics too
+  each segment's share of it; a 100% stack (`stack: percent`) needs additive metrics too
   (HM4001). See [components/stacked.md](components/stacked.md).
 - **Pies and donuts** divide each positive category by the sum of the positive ones; Other sums the
   categories past `limit`, and the total is recomputed from rows. Their metric must be additive
   (HM4001). See [components/pie.md](components/pie.md).
-  `"additive": true` on a SQL metric is checked when a table has a total: if the rows do not add up
+  `additive: true` on a SQL metric is checked when a table has a total: if the rows do not add up
   to the total, build warns with HM4003.
 - **Scatter points** evaluate x, y and size per category from that category's rows, so a ratio
   divides the category's sums. A category whose x or y is empty is left out and counted (HM4070),

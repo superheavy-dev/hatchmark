@@ -17,7 +17,7 @@
       "$ref": "#/$defs/PerEntityMetric"
     }
   ],
-  "title": "Hatchmark metric (metrics/<name>.json)",
+  "title": "Hatchmark metric (metrics/<name>.yaml)",
   "$defs": {
     "AggregateMetric": {
       "type": "object",
@@ -104,7 +104,7 @@
         "table": {
           "type": "string",
           "pattern": "^[a-z][a-z0-9_]*$",
-          "description": "A source name from hatchmark.json."
+          "description": "A source name from hatchmark.yaml."
         },
         "aggregate": {
           "type": "string",
@@ -679,7 +679,7 @@
             "table": {
               "type": "string",
               "pattern": "^[a-z][a-z0-9_]*$",
-              "description": "A source name from hatchmark.json."
+              "description": "A source name from hatchmark.yaml."
             },
             "key": {
               "type": "string",

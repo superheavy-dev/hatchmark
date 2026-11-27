@@ -35,7 +35,7 @@
     "blocks"
   ],
   "additionalProperties": false,
-  "title": "Hatchmark dashboard (dashboards/<name>.json)",
+  "title": "Hatchmark dashboard (dashboards/<name>.yaml)",
   "$defs": {
     "Period": {
       "type": "object",

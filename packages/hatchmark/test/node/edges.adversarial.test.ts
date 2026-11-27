@@ -50,13 +50,13 @@ const dashboard = (blocks: unknown[], end = "2026-11-05") => ({
 async function build(blocks: unknown[], end?: string) {
   const keys = ["fast", "slow", "stale"] as const;
   const fixture = await writeProject({
-    "hatchmark.json": {
+    "hatchmark.yaml": {
       ...PROJECT_DEFAULTS,
       name: "Review",
       timezone: "UTC",
       sources: Object.fromEntries(keys.map((k) => [k, { type: "csv", path: k + ".csv" }])),
     },
-    "dashboards/d.json": dashboard(blocks, end),
+    "dashboards/d.yaml": dashboard(blocks, end),
     ...Object.fromEntries(
       keys.flatMap((k) => [
         [
@@ -68,7 +68,7 @@ async function build(blocks: unknown[], end?: string) {
               .join(""),
         ],
         [
-          "metrics/" + k + ".json",
+          "metrics/" + k + ".yaml",
           metric({ type: "aggregate", table: k, aggregate: "sum", column: "v", time: "at" }),
         ],
       ]),

@@ -7,6 +7,7 @@ import { run as cli } from "../../src/cli/main.js";
 import { runDashboard } from "../../src/compiler/index.js";
 import { createDuckDbExecutor, nodeProjectHost } from "../../src/node/index.js";
 import { loadProject, type Project } from "../../src/spec/index.js";
+import { fromYaml, toYaml } from "../yaml.js";
 
 const roots: string[] = [];
 
@@ -23,7 +24,11 @@ export async function writeProject(files: Record<string, unknown>): Promise<{
     await mkdir(path.dirname(target), { recursive: true });
     await writeFile(
       target,
-      typeof content === "string" ? content : JSON.stringify(content, null, 2),
+      typeof content === "string"
+        ? content
+        : file.endsWith(".yaml")
+          ? toYaml(content)
+          : JSON.stringify(content, null, 2),
     );
   }
   return loadAt(root);
@@ -48,7 +53,7 @@ export async function copyProject(from: string, prefix: string): Promise<string>
 }
 
 /**
- * Copies examples/global-sales into a fresh temporary directory, with hatchmark.json merged with
+ * Copies examples/global-sales into a fresh temporary directory, with hatchmark.yaml merged with
  * config (undefined drops a key) and its dashboards replaced by the given ones.
  */
 export async function writeExample(
@@ -59,10 +64,10 @@ export async function writeExample(
   roots.push(root);
   await rm(path.join(root, "dashboards"), { recursive: true, force: true });
   await mkdir(path.join(root, "dashboards"));
-  const base = JSON.parse(await readFile(path.join(EXAMPLE, "hatchmark.json"), "utf8"));
-  await writeFile(path.join(root, "hatchmark.json"), JSON.stringify({ ...base, ...config }));
+  const base = fromYaml(await readFile(path.join(EXAMPLE, "hatchmark.yaml"), "utf8"));
+  await writeFile(path.join(root, "hatchmark.yaml"), toYaml({ ...base, ...config }));
   for (const [name, d] of Object.entries(dashboards)) {
-    await writeFile(path.join(root, "dashboards", `${name}.json`), JSON.stringify(d, null, 2));
+    await writeFile(path.join(root, "dashboards", `${name}.yaml`), toYaml(d));
   }
   return root;
 }
@@ -101,7 +106,7 @@ export async function run(
   options: { threads?: number; now?: Date } = {},
 ) {
   const config = project.config.spec;
-  if (config === undefined) throw new Error("invalid hatchmark.json");
+  if (config === undefined) throw new Error("invalid hatchmark.yaml");
   const { now, ...rest } = options;
   const executor = await createDuckDbExecutor({ root, config, ...rest });
   try {

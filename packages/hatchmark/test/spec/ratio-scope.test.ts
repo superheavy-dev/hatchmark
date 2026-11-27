@@ -6,6 +6,7 @@ import {
   parseCsvRecord,
   parseDiagnostics,
 } from "../../src/spec/index.js";
+import { toYaml } from "../yaml.js";
 import { CONFIG, METRICS, projectFrom } from "./helpers.js";
 
 const config = {
@@ -59,7 +60,7 @@ function diagnostics(dashboard: unknown, columns?: Record<string, string[]>) {
     ...(columns ? { columns } : {}),
   });
   return [...parseDiagnostics(project), ...checkReferences(project)].filter(
-    (d) => d.file === "dashboards/sales.json",
+    (d) => d.file === "dashboards/sales.yaml",
   );
 }
 
@@ -121,7 +122,7 @@ describe("ratio scope", () => {
   it("B2: rejects a ratio whose sides disagree on time, wherever it is used", () => {
     const ds = metricDiagnostics();
     expect(ds.map((d) => [d.file, d.code, d.pointer])).toEqual([
-      ["metrics/revenue_per_order.json", "HM2012", "/denominator"],
+      ["metrics/revenue_per_order.yaml", "HM2012", "/denominator"],
     ]);
   });
 });
@@ -190,19 +191,19 @@ describe("parseCsvRecord", () => {
   it("reads a CSV header longer than one read, so HM2013 sees every column", async () => {
     const head = `${"x".repeat(65535)},region\n1,West\n`;
     const files: Record<string, string> = {
-      "hatchmark.json": JSON.stringify({
+      "hatchmark.yaml": toYaml({
         ...CONFIG,
         sources: {
           orders: { type: "csv", path: "orders.csv" },
           sessions: { type: "csv", path: "sessions.csv" },
         },
       }),
-      "metrics/orders.json": JSON.stringify({
+      "metrics/orders.yaml": toYaml({
         ...(metrics.order_count as object),
         table: "orders",
       }),
-      "metrics/sessions.json": JSON.stringify({ ...(metrics.sessions as object), time: undefined }),
-      "dashboards/sales.json": JSON.stringify({
+      "metrics/sessions.yaml": toYaml({ ...(metrics.sessions as object), time: undefined }),
+      "dashboards/sales.yaml": toYaml({
         title: "Sales",
         filters,
         blocks: [{ type: "table", by: ["x"], metrics: ["orders", "sessions"] }],

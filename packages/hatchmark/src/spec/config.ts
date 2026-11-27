@@ -17,7 +17,7 @@ const relativePath = z
   .refine(
     (p) => !p.startsWith("/") && !/^[A-Za-z]:[\\/]/.test(p) && !p.split(/[\\/]/).includes(".."),
     {
-      error: "must be a path inside the project, relative to hatchmark.json",
+      error: "must be a path inside the project, relative to hatchmark.yaml",
     },
   );
 
@@ -151,7 +151,7 @@ function isLocale(tag: string): boolean {
 }
 
 /**
- * The defaults `hatchmark init` writes. Every field is required in hatchmark.json so a reader
+ * The defaults `hatchmark init` writes. Every field is required in hatchmark.yaml so a reader
  * sees what will happen without knowing the defaults; a missing field gets a safe fix that adds
  * the value below.
  */
@@ -175,13 +175,13 @@ export const projectConfigSchema = z
     version: z.literal(1).meta({ description: "Spec format version." }),
     name: z.string().min(1).meta({ description: "Project name, shown in page titles." }),
     dataDir: relativePath.meta({ description: "Directory holding data files." }),
-    metricsDir: relativePath.meta({ description: "Directory holding metrics/<name>.json files." }),
+    metricsDir: relativePath.meta({ description: "Directory holding metrics/<name>.yaml files." }),
     dashboardsDir: relativePath.meta({
-      description: "Directory holding dashboards/<name>.json files.",
+      description: "Directory holding dashboards/<name>.yaml files.",
     }),
     segmentsDir: relativePath.optional().meta({
       description:
-        'Directory holding segments/<name>.json files. Optional until a project has segments; default "segments".',
+        'Directory holding segments/<name>.yaml files. Optional until a project has segments; default "segments".',
     }),
     outDir: relativePath.meta({ description: "Build output directory." }),
     locale: z
@@ -243,7 +243,7 @@ export const projectConfigSchema = z
       }
     }
   })
-  .meta({ title: "Hatchmark project config (hatchmark.json)" });
+  .meta({ title: "Hatchmark project config (hatchmark.yaml)" });
 
 export type ProjectConfig = z.infer<typeof projectConfigSchema>;
 

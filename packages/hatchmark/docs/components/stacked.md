@@ -1,18 +1,16 @@
 # Stacked and 100% stacked
 
 Bar and area charts that stack their series, so the stack shows a total and each segment its part
-of it. `"stack": true` stacks the values; `"stack": "percent"` stacks them to 100%, so every bar or
+of it. `stack: true` stacks the values; `stack: percent` stacks them to 100%, so every bar or
 bucket shows each part's share of its total.
 
-```json
-{
-  "type": "bar",
-  "title": "Marketplaces matter more outside North America",
-  "metrics": ["revenue"],
-  "by": "region",
-  "split": "channel",
-  "stack": "percent"
-}
+```yaml
+type: bar
+title: Marketplaces matter more outside North America
+metrics: [revenue]
+by: region
+split: channel
+stack: percent
 ```
 
 | Field     | Meaning                                                                                                                      |
@@ -59,11 +57,11 @@ Every other field is the [bar](bar.md) or [area](line.md) block's: `by` or `grai
 
 ## Checks
 
-| Code     | When                                                                                                                                                     | Fix                                                                                     |
-| -------- | -------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------- |
-| `HM4001` | Error. `"stack": "percent"` on a metric whose parts do not add up to its total: an average, a ratio, a distinct count, a median, a min or max over time. | Stack a sum or a count, or use `"stack": true` (the fix, marked unsafe).                |
-| `HM4060` | Warning. `"stack": true` on such a metric with a split or next to other metrics.                                                                         | Remove `stack` to draw the series side by side (the fix), or stack the additive metric. |
-| `HM4062` | Error. Stacked metrics in different units or currencies (revenue with order counts, USD with EUR), plain or 100%.                                        | Set `"stack": false` (the fix, marked unsafe), or stack metrics of one unit.            |
-| `HM4061` | Build warning. A 100% stack has negative values, so the shares no longer add up to 100%.                                                                 | Use `"stack": true` or grouped bars, or a metric that cannot be negative.               |
+| Code     | When                                                                                                                                                 | Fix                                                                                     |
+| -------- | ---------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------- |
+| `HM4001` | Error. `stack: percent` on a metric whose parts do not add up to its total: an average, a ratio, a distinct count, a median, a min or max over time. | Stack a sum or a count, or use `stack: true` (the fix, marked unsafe).                  |
+| `HM4060` | Warning. `stack: true` on such a metric with a split or next to other metrics.                                                                       | Remove `stack` to draw the series side by side (the fix), or stack the additive metric. |
+| `HM4062` | Error. Stacked metrics in different units or currencies (revenue with order counts, USD with EUR), plain or 100%.                                    | Set `stack: false` (the fix, marked unsafe), or stack metrics of one unit.              |
+| `HM4061` | Build warning. A 100% stack has negative values, so the shares no longer add up to 100%.                                                             | Use `stack: true` or grouped bars, or a metric that cannot be negative.                 |
 
 Stacking one metric without a split draws one series, so there is nothing to check.

@@ -114,7 +114,7 @@ export function dashboardDependencies(project: Project, dashboard: string): Dash
 }
 
 /**
- * Dashboards to recompile after a project-relative file changes: everything for hatchmark.json,
+ * Dashboards to recompile after a project-relative file changes: everything for hatchmark.yaml,
  * the dashboards that use a metric, a segment or a data file, or the dashboard itself.
  */
 export function dashboardsAffectedBy(project: Project, changed: string): string[] {

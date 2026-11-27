@@ -19,28 +19,28 @@ const count = (from: string, to: string) => DAYS.filter((d) => d >= from && d < 
 
 async function build(blocks: unknown[]) {
   const fixture = await writeProject({
-    "hatchmark.json": {
+    "hatchmark.yaml": {
       ...PROJECT_DEFAULTS,
       name: "Edges",
       timezone: "UTC",
       sources: { orders: { type: "csv", path: "orders.csv" } },
     },
     "orders.csv": `at,v\n${DAYS.map((d) => `${d},1`).join("\n")}\n`,
-    "metrics/orders.json": metric({
+    "metrics/orders.yaml": metric({
       type: "aggregate",
       table: "orders",
       aggregate: "sum",
       column: "v",
       time: "at",
     }),
-    "metrics/units.json": metric({
+    "metrics/units.yaml": metric({
       type: "aggregate",
       table: "orders",
       aggregate: "sum",
       column: "v",
       time: "at",
     }),
-    "dashboards/d.json": {
+    "dashboards/d.yaml": {
       title: "D",
       period: { asOf: "latest_data", range: "last_30_days", compare: "none" },
       blocks,

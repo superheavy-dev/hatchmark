@@ -54,7 +54,7 @@ export const buildHelp: CommandHelp = {
     {
       flag: "--out <dir>",
       description:
-        "Write here instead of outDir from hatchmark.json, relative to --cwd. Only files an earlier build wrote are replaced.",
+        "Write here instead of outDir from hatchmark.yaml, relative to --cwd. Only files an earlier build wrote are replaced.",
     },
     {
       flag: "--no-cache",
@@ -266,6 +266,7 @@ export async function build(
     config,
     deps,
     flags.cache !== false,
+    loadDiagnostics,
   );
   if (diagnostics.some((d) => d.severity === "error")) {
     const report = createReport(diagnostics);
@@ -462,9 +463,11 @@ async function runAll(
   config: ProjectConfig,
   deps: BuildDeps,
   useCache: boolean,
+  loaded: readonly Diagnostic[],
 ): Promise<{ pages: Page[]; diagnostics: Diagnostic[]; cache?: CacheStats }> {
   const pages: Page[] = [];
   const diagnostics = new Map<string, Diagnostic>();
+  for (const d of loaded) diagnostics.set(JSON.stringify(d), d);
   for (const d of [...parseDiagnostics(project), ...checkReferences(project)]) {
     if (d.severity === "warning") diagnostics.set(JSON.stringify(d), d);
   }

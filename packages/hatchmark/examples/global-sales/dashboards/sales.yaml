@@ -1,0 +1,48 @@
+# yaml-language-server: $schema=../../../schema/dashboard.schema.json
+title: Global sales
+description: Orders from every market, last 12 months against the 12 before.
+period:
+  asOf: latest_data
+  range: last_12_months
+  compare: previous_period
+blocks:
+  - type: kpi
+    id: revenue
+    metric: revenue
+    sparkline: true
+  - type: kpi
+    id: orders
+    metric: orders
+  - type: kpi
+    id: aov
+    metric: avg_order_value
+  - type: kpi
+    id: refund_rate
+    metric: refund_rate
+  - type: line
+    id: revenue_by_region
+    title: Revenue by month, by region
+    metrics: [revenue]
+    grain: month
+    split: region
+    span: 8
+  - type: bar
+    id: revenue_by_channel
+    title: Revenue by channel
+    metrics: [revenue]
+    by: channel
+    orientation: horizontal
+    sort:
+      by: revenue
+      order: desc
+    span: 4
+  - type: table
+    id: by_country
+    title: Top countries by revenue
+    by: [country]
+    metrics: [revenue, orders, avg_order_value, customers]
+    percentOfTotal: [revenue]
+    sort:
+      by: revenue
+      order: desc
+    limit: 15

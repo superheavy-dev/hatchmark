@@ -3,16 +3,14 @@
 Two metrics per category as points: one on the horizontal axis, one on the vertical, and
 optionally a third as the point's area (a bubble chart).
 
-```json
-{
-  "type": "scatter",
-  "title": "Bigger markets do not mean bigger baskets",
-  "x": "orders",
-  "y": "avg_order_value",
-  "by": "country",
-  "size": "revenue",
-  "limit": 50
-}
+```yaml
+type: scatter
+title: Bigger markets do not mean bigger baskets
+x: orders
+y: avg_order_value
+by: country
+size: revenue
+limit: 50
 ```
 
 | Field   | Meaning                                                                                                                              |

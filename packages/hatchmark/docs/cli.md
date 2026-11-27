@@ -7,8 +7,8 @@ example. [README.md](README.md) lists every docs page; the files a project holds
 
 | Command                                   | What it does                                                                                                                                                                                                          |
 | ----------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `init [dir]`                              | Creates a project: `hatchmark.json` with every setting written out, sample US orders data, four metrics, a dashboard, and a Hatchmark block in `AGENTS.md`.                                                           |
-| `check [paths...]`                        | Checks JSON syntax, spec shape, and references between files and to data columns. Paths are relative to `--cwd`. `hatchmark.json` is always checked first, whatever the paths. `--sql` also prints every block's SQL. |
+| `init [dir]`                              | Creates a project: `hatchmark.yaml` with every setting written out, sample US orders data, four metrics, a dashboard, and a Hatchmark block in `AGENTS.md`.                                                           |
+| `check [paths...]`                        | Checks YAML syntax, spec shape, and references between files and to data columns. Paths are relative to `--cwd`. `hatchmark.yaml` is always checked first, whatever the paths. `--sql` also prints every block's SQL. |
 | `build [--out <dir>] [--no-cache]`        | Checks the project, runs every dashboard's queries (reusing unchanged results from `.hatchmark/cache/`) and writes static HTML pages to `outDir`. See [build.md](build.md).                                           |
 | `dev [--port <n>] [--host <h>] [--open]`  | Serves every dashboard locally at the URLs `build` writes and updates the page on every save: changed cards swap in place, structural changes reload, errors show over the page. See [dev](#dev).                     |
 | `schema [project\|metric\|dashboard]`     | Prints the JSON Schema for a file kind, or all three keyed by kind.                                                                                                                                                   |
@@ -97,7 +97,7 @@ HM2015 error on that dashboard. A block the planner leaves out, such as a metric
 | ---- | ----------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | 0    | Success. Warnings are allowed unless you pass `check --strict`.                                                                                             |
 | 1    | Errors in your files (`check` or `build` found at least one error).                                                                                         |
-| 2    | Usage or configuration error: unknown command or option, missing argument, no `hatchmark.json` or errors in it, or `init` or `build` would overwrite files. |
+| 2    | Usage or configuration error: unknown command or option, missing argument, no `hatchmark.yaml` or errors in it, or `init` or `build` would overwrite files. |
 | 3    | Environment problem, such as a data file that does not exist or a failed `doctor` check.                                                                    |
 | 4    | Internal bug in Hatchmark. Please report it.                                                                                                                |
 
@@ -131,11 +131,11 @@ renderer, runtime and fonts as `hatchmark build`, at the same URLs: `/<dashboard
 dashboard, and `/` as the index when there is more than one (with one dashboard, `/` redirects to
 it). It writes nothing into the project.
 
-It watches `hatchmark.json`, the metrics, segments and dashboards directories and every data file
+It watches `hatchmark.yaml`, the metrics, segments and dashboards directories and every data file
 a source names. On a save it reloads the project and re-runs only the dashboards the change can
 affect: the edited dashboard, the dashboards that show an edited metric or whose queries change,
 and the dashboards whose queries read an edited data file. Everything re-runs when
-`hatchmark.json` or a segment changes. It then compares each card with the page in the browser:
+`hatchmark.yaml` or a segment changes. It then compares each card with the page in the browser:
 
 - Changed cards, or single KPIs in the KPI strip, are pushed over Vite's HMR connection and swapped
   in place, and the browser runtime is attached to them again, so tooltips and grain switches work.
@@ -173,5 +173,5 @@ In JSON mode it prints one line on stdout once the server is ready and nothing m
 ```
 
 Diagnostics go to stderr in both modes. Dev runs until it is stopped with Ctrl-C (SIGINT) or SIGTERM,
-then exits 0. Without a `hatchmark.json` it exits 2 before starting. Dev never changes what
+then exits 0. Without a `hatchmark.yaml` it exits 2 before starting. Dev never changes what
 `build` writes: the build output holds no Vite or HMR code.

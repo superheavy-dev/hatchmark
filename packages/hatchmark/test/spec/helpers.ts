@@ -1,5 +1,6 @@
 import type { Fix, Position } from "../../src/diagnostics/index.js";
 import { type Project, parseSpecFile } from "../../src/spec/index.js";
+import { toYaml } from "../yaml.js";
 
 function offsetOf(text: string, position: Position): number {
   let offset = 0;
@@ -126,10 +127,9 @@ export function projectFrom(files: {
   segments?: Record<string, unknown>;
   columns?: Record<string, string[]>;
 }): Project {
-  const text = (v: unknown): string =>
-    typeof v === "string" ? v : `${JSON.stringify(v, null, 2)}\n`;
+  const text = (v: unknown): string => (typeof v === "string" ? v : toYaml(v));
   const project: Project = {
-    config: parseSpecFile("project", "hatchmark.json", text(files.config ?? CONFIG)),
+    config: parseSpecFile("project", "hatchmark.yaml", text(files.config ?? CONFIG)),
     metrics: new Map(),
     dashboards: new Map(),
     segments: new Map(),
@@ -137,15 +137,15 @@ export function projectFrom(files: {
     columns: new Map(Object.entries(files.columns ?? {})),
   };
   for (const [name, value] of Object.entries(files.metrics ?? METRICS)) {
-    project.metrics.set(name, parseSpecFile("metric", `metrics/${name}.json`, text(value)));
+    project.metrics.set(name, parseSpecFile("metric", `metrics/${name}.yaml`, text(value)));
   }
   for (const [name, value] of Object.entries(files.segments ?? {})) {
-    project.segments.set(name, parseSpecFile("segment", `segments/${name}.json`, text(value)));
+    project.segments.set(name, parseSpecFile("segment", `segments/${name}.yaml`, text(value)));
   }
   for (const [name, value] of Object.entries(files.dashboards ?? { sales: DASHBOARD })) {
     project.dashboards.set(
       name,
-      parseSpecFile("dashboard", `dashboards/${name}.json`, text(value)),
+      parseSpecFile("dashboard", `dashboards/${name}.yaml`, text(value)),
     );
   }
   return project;

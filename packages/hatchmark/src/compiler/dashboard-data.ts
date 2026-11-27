@@ -389,7 +389,7 @@ export interface DashboardData {
   name: string;
   title: string;
   description?: string;
-  /** Project name from hatchmark.json. */
+  /** Project name from hatchmark.yaml. */
   project: string;
   /** The resolved end date of every window (latest_data resolved once per plan). */
   asOf: string;
@@ -399,7 +399,7 @@ export interface DashboardData {
   locale: string;
   currency: string;
   timezone: string;
-  /** Where week, quarter and year buckets begin (hatchmark.json anchors). */
+  /** Where week, quarter and year buckets begin (hatchmark.yaml anchors). */
   anchors: Anchors;
   /** The dashboard's grain filter: one control that switches every block whose grains list the choice. */
   grainFilter?: { id: string; label: string; options: GrainOption[]; selected: string };

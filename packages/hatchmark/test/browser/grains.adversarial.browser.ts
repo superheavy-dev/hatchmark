@@ -16,6 +16,7 @@ import {
   run,
   writeExample,
 } from "../node/fixture.js";
+import { fromYaml } from "../yaml.js";
 
 const SIX = [
   "quarter",
@@ -31,7 +32,7 @@ let root: string;
 let data: DashboardData;
 
 beforeAll(async () => {
-  const trends = JSON.parse(await readFile(path.join(EXAMPLE, "dashboards/trends.json"), "utf8"));
+  const trends = fromYaml(await readFile(path.join(EXAMPLE, "dashboards/trends.yaml"), "utf8"));
   root = await writeExample(
     {},
     {

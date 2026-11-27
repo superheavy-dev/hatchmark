@@ -2,17 +2,17 @@
 
 A metric by category or by time bucket, as vertical or horizontal bars.
 
-```json
-{
-  "type": "bar",
-  "title": "Organic search brings in the most revenue",
-  "metrics": ["revenue"],
-  "by": "channel",
-  "orientation": "horizontal",
-  "sort": { "by": "revenue", "order": "desc" },
-  "limit": 10,
-  "span": 4
-}
+```yaml
+type: bar
+title: Organic search brings in the most revenue
+metrics: [revenue]
+by: channel
+orientation: horizontal
+sort:
+  by: revenue
+  order: desc
+limit: 10
+span: 4
 ```
 
 | Field                 | Meaning                                                                                                                        |

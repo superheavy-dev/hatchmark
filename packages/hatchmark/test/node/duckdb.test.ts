@@ -222,11 +222,11 @@ const CONFIG = {
 
 function files(config: unknown = CONFIG): Record<string, unknown> {
   return {
-    "hatchmark.json": config,
+    "hatchmark.yaml": config,
     "data/orders.csv": ORDERS,
     "data/sessions.csv": SESSIONS,
-    ...Object.fromEntries(Object.entries(METRICS).map(([n, m]) => [`metrics/${n}.json`, m])),
-    ...Object.fromEntries(Object.entries(DASHBOARDS).map(([n, d]) => [`dashboards/${n}.json`, d])),
+    ...Object.fromEntries(Object.entries(METRICS).map(([n, m]) => [`metrics/${n}.yaml`, m])),
+    ...Object.fromEntries(Object.entries(DASHBOARDS).map(([n, d]) => [`dashboards/${n}.yaml`, d])),
   };
 }
 
@@ -305,7 +305,7 @@ describe("DuckDB executor against a SQL ROLLUP oracle", () => {
     expect(sum("users_lie")).toBe(6);
     expect(table.total?.values.users_lie).toBe(4);
     const warning = ytd.diagnostics.find((d) => d.code === "HM4003");
-    expect(warning?.file).toBe("metrics/users_lie.json");
+    expect(warning?.file).toBe("metrics/users_lie.yaml");
     expect(warning?.message).toContain("add up to 6, not the total 4");
   });
 
@@ -495,7 +495,7 @@ describe("DuckDB executor queries", () => {
 
   it("buckets weeks in the project time zone with its week start", async () => {
     const { root, project } = await writeProject({
-      "hatchmark.json": { ...CONFIG, sources: { events: { type: "csv", path: "events.csv" } } },
+      "hatchmark.yaml": { ...CONFIG, sources: { events: { type: "csv", path: "events.csv" } } },
       "events.csv": "at,naive\n2026-11-29T02:00:00Z,2026-11-29 02:00:00\n",
     });
     const config = project.config.spec;
@@ -526,7 +526,7 @@ describe("DuckDB executor queries", () => {
       days.push(new Date(t).toISOString().slice(0, 10));
     }
     const { root, project } = await writeProject({
-      "hatchmark.json": { ...CONFIG, sources: { events: { type: "csv", path: "events.csv" } } },
+      "hatchmark.yaml": { ...CONFIG, sources: { events: { type: "csv", path: "events.csv" } } },
       "events.csv": `at,label\n${days.map((d) => `${d} 12:00:00,d${d}`).join("\n")}\n`,
     });
     const config = project.config.spec;
@@ -630,7 +630,7 @@ describe("DuckDB executor queries", () => {
     const ancient = await writeProject({
       ...files(),
       "data/orders.csv": `${ORDERS.trimEnd()}\n99,0000-01-01T12:00:00Z,West,web,paid,10,0,c99\n`,
-      "dashboards/ancient.json": {
+      "dashboards/ancient.yaml": {
         title: "Ancient",
         period: {
           asOf: "2026-04-30",
@@ -639,7 +639,7 @@ describe("DuckDB executor queries", () => {
         },
         blocks: [{ type: "kpi", id: "orders", metric: "orders" }],
       },
-      "dashboards/spine.json": {
+      "dashboards/spine.yaml": {
         title: "Spine",
         period: { asOf: "2026-04-30", range: "all_time", compare: "none" },
         blocks: [{ type: "line", id: "weekly", metrics: ["orders"], grain: "week" }],
@@ -664,7 +664,7 @@ describe("DuckDB executor queries", () => {
       const late = await writeProject({
         ...files(),
         "data/orders.csv": `${ORDERS.trimEnd()}\n98,9999-12-30T12:00:00Z,West,web,paid,10,0,c98\n99,9999-12-31T12:00:00Z,West,web,paid,10,0,c99\n`,
-        "dashboards/late.json": {
+        "dashboards/late.yaml": {
           title: "Late",
           period: { asOf, range: "all_time", compare: "none" },
           blocks: [{ type: "line", id: "daily", metrics: ["orders"], grain: "day" }],
@@ -687,7 +687,7 @@ describe("DuckDB executor queries", () => {
     const late = await writeProject({
       ...files(),
       "data/orders.csv": `${ORDERS.trimEnd()}\n98,9998-12-31T12:00:00Z,West,web,paid,8,0,c98\n`,
-      "dashboards/late.json": {
+      "dashboards/late.yaml": {
         title: "Late",
         period: { asOf: "9999-12-31", range: "all_time", compare: "none" },
         blocks: [
@@ -709,7 +709,7 @@ describe("DuckDB executor queries", () => {
   it("warns with HM5001 when a grain draws more than 1,000 points per series", async () => {
     const dense = await writeProject({
       ...files(),
-      "dashboards/dense.json": {
+      "dashboards/dense.yaml": {
         title: "Dense",
         period: {
           asOf: "2026-04-30",
@@ -742,7 +742,7 @@ describe("DuckDB executor queries", () => {
   it("reports a missing column as HM2015 with the cause", async () => {
     const broken = await writeProject({
       ...files(),
-      "metrics/revenue.json": orders({ aggregate: "sum", column: "price", filters: paid }),
+      "metrics/revenue.yaml": orders({ aggregate: "sum", column: "price", filters: paid }),
     });
     broken.project.columns.delete("orders");
     const { data, diagnostics } = await run(broken.root, broken.project, "weeks");
@@ -763,7 +763,7 @@ describe("Parquet sources", () => {
           sessions: { type: "csv", path: "data/sessions.csv" },
         },
       }),
-      "dashboards/conversion.json": {
+      "dashboards/conversion.yaml": {
         title: "Conversion",
         period: YTD,
         filters: [{ type: "select", id: "region", column: "region" }],

@@ -255,7 +255,7 @@ export function agentsBlock(version: string): string {
     `This project builds dashboards with Hatchmark ${version}. Your training data likely predates this version, so trust the bundled docs over memory.`,
     "",
     "- Read `node_modules/hatchmark/docs/` before writing or editing specs. `hatchmark schema <project|metric|dashboard>` prints the JSON Schema.",
-    "- One file per thing: `metrics/<name>.json` and `dashboards/<name>.json`; the file name is the name. Settings live in `hatchmark.json`.",
+    "- One file per thing: `metrics/<name>.yaml` and `dashboards/<name>.yaml`; the file name is the name. Settings live in `hatchmark.yaml`.",
     "- Run `hatchmark check --json` after every edit and fix every error before you finish. `hatchmark explain <code>` explains a code.",
     "- Commands never prompt. Exit codes: 0 ok, 1 errors in files, 2 usage or config, 3 environment, 4 internal bug.",
     "",

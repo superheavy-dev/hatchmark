@@ -1,7 +1,7 @@
-import type { Applicability, Fix, JsonDocument } from "../diagnostics/index.js";
+import type { Applicability, Fix, SpecDocument } from "../diagnostics/index.js";
 
 export function replaceValueFix(
-  document: JsonDocument,
+  document: SpecDocument,
   pointer: string,
   value: unknown,
   applicability: Applicability,
@@ -18,7 +18,7 @@ export function replaceValueFix(
 }
 
 export function addPropertyFix(
-  document: JsonDocument,
+  document: SpecDocument,
   objectPointer: string,
   key: string,
   value: unknown,
@@ -30,31 +30,36 @@ export function addPropertyFix(
   const object = found.node;
   const property = `${JSON.stringify(key)}: ${JSON.stringify(value)}`;
   const last = object.members.at(-1);
-  if (last === undefined) {
+  if (object.flow) {
+    if (last === undefined) {
+      return {
+        range: document.rangeAt(object.start + 1, object.start + 1),
+        text: ` ${property} `,
+        applicability,
+        description,
+      };
+    }
     return {
-      range: document.rangeAt(object.start + 1, object.start + 1),
-      text: ` ${property} `,
+      range: document.rangeAt(last.value.end, last.value.end),
+      text: `, ${property}`,
       applicability,
       description,
     };
   }
+  if (last === undefined) return undefined;
   const first = object.members[0] ?? last;
-  const firstLine = document.positionAt(first.keyStart).line;
-  const objectLine = document.positionAt(object.start).line;
-  const separator =
-    firstLine === objectLine
-      ? ", "
-      : `,\n${document.lineText(firstLine).slice(0, document.lineText(firstLine).search(/\S|$/))}`;
+  const indent = document.positionAt(first.keyStart).column - 1;
+  const end = last.value.end;
   return {
-    range: document.rangeAt(last.value.end, last.value.end),
-    text: `${separator}${property}`,
+    range: document.rangeAt(end, end),
+    text: `\n${" ".repeat(indent)}${property}`,
     applicability,
     description,
   };
 }
 
 export function removeItemFix(
-  document: JsonDocument,
+  document: SpecDocument,
   arrayPointer: string,
   index: number,
   applicability: Applicability,
@@ -67,10 +72,32 @@ export function removeItemFix(
   if (item === undefined) return undefined;
   const next = items[index + 1];
   const previous = items[index - 1];
-  const [start, end] = next
-    ? [item.start, next.start]
-    : previous
-      ? [previous.end, item.end]
-      : [item.start, item.end];
-  return { range: document.rangeAt(start, end), text: "", applicability, description };
+  if (found.node.flow) {
+    const [start, end] = next
+      ? [item.start, next.start]
+      : previous
+        ? [previous.end, item.end]
+        : [item.start, item.end];
+    return { range: document.rangeAt(start, end), text: "", applicability, description };
+  }
+  const dash = document.text.lastIndexOf("-", item.start - 1);
+  if (items.length === 1) {
+    return {
+      range: document.rangeAt(dash, item.end),
+      text: "[]",
+      applicability,
+      description,
+    };
+  }
+  if (next) {
+    const nextDash = document.text.lastIndexOf("-", next.start - 1);
+    return { range: document.rangeAt(dash, nextDash), text: "", applicability, description };
+  }
+  const previousEnd = (previous ?? item).end;
+  return {
+    range: document.rangeAt(previousEnd, item.end),
+    text: "",
+    applicability,
+    description,
+  };
 }

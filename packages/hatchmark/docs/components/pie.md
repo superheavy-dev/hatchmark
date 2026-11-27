@@ -3,13 +3,11 @@
 A pie or donut shows how one total splits into a few parts: revenue by channel, orders by device.
 Each slice is a category's share of the whole. A donut is a pie with a hole that states the total.
 
-```json
-{
-  "type": "donut",
-  "title": "The online store takes 58% of revenue",
-  "metric": "revenue",
-  "by": "channel"
-}
+```yaml
+type: donut
+title: The online store takes 58% of revenue
+metric: revenue
+by: channel
 ```
 
 | Field    | Meaning                                                                                                    |
@@ -56,6 +54,6 @@ categories are many, similar in size, or not parts of one whole.
 | Code     | When                                                                                                  | Fix                                                                                           |
 | -------- | ----------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------- |
 | `HM4001` | Error. The metric does not add up across categories: an average, a ratio, a distinct count, a median. | Show it in a bar chart, or use the sum or count it is built from.                             |
-| `HM5010` | Warning. `limit` is above 6.                                                                          | Set `"limit": 6` (the fix, marked unsafe), or use a horizontal bar chart with `limit`.        |
+| `HM5010` | Warning. `limit` is above 6.                                                                          | Set `limit: 6` (the fix, marked unsafe), or use a horizontal bar chart with `limit`.          |
 | `HM5011` | Build warning. Other is larger than every slice shown.                                                | Use a horizontal bar chart with `limit`, group categories in the data, or raise `limit` to 6. |
 | `HM4061` | Build warning. Some categories are negative, so they are left out of the circle.                      | Use a bar chart, which shows negative values, or a metric that cannot be negative.            |

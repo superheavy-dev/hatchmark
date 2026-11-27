@@ -16,6 +16,7 @@ import {
   parseDiagnostics,
 } from "../../src/spec/index.js";
 import { applyFix } from "../spec/helpers.js";
+import { fromYaml } from "../yaml.js";
 import { loadAt, metric, Oracle, removeProjects, run, writeProject } from "./fixture.js";
 
 let oracle: Oracle;
@@ -49,14 +50,14 @@ async function probe(
   } = {},
 ) {
   const fixture = await writeProject({
-    "hatchmark.json": {
+    "hatchmark.yaml": {
       ...PROJECT_DEFAULTS,
       name: "Probe",
       sources: { orders: { type: "csv", path: "orders.csv", freshness: { through: "as_of" } } },
     },
     "orders.csv": options.text ?? CSV,
-    "metrics/revenue.json": REVENUE,
-    "dashboards/probe.json": {
+    "metrics/revenue.yaml": REVENUE,
+    "dashboards/probe.yaml": {
       title: "Probe",
       period: options.period ?? MONTH,
       filters: options.filters ?? [],
@@ -155,7 +156,7 @@ describe("queries against hostile source columns", () => {
         { type: "kpi", metric: "unbounded" },
         {
           extra: {
-            "metrics/unbounded.json": metric({
+            "metrics/unbounded.yaml": metric({
               type: "sql",
               table: "orders",
               time: "day",
@@ -175,7 +176,7 @@ describe("queries against hostile source columns", () => {
       { type: "kpi", metric: "revenue" },
       {
         extra: {
-          "hatchmark.json": {
+          "hatchmark.yaml": {
             ...PROJECT_DEFAULTS,
             name: "Probe",
             sources: {
@@ -218,7 +219,7 @@ describe("queries against hostile source columns", () => {
         anchors: { ...DEFAULT_ANCHORS, week: "monday" } as const,
         bindings: {},
       };
-      await expect(executor.execute(query, context)).rejects.toThrow("differs from hatchmark.json");
+      await expect(executor.execute(query, context)).rejects.toThrow("differs from hatchmark.yaml");
     } finally {
       await executor.close();
     }
@@ -226,24 +227,24 @@ describe("queries against hostile source columns", () => {
 
   async function threadOutputs(blocks: unknown[], csv: string, runs: number) {
     const fixture = await writeProject({
-      "hatchmark.json": {
+      "hatchmark.yaml": {
         ...PROJECT_DEFAULTS,
         name: "Probe",
         sources: { orders: { type: "csv", path: "orders.csv", freshness: { through: "as_of" } } },
       },
-      "metrics/total.json": metric({
+      "metrics/total.yaml": metric({
         type: "aggregate",
         table: "orders",
         aggregate: "sum",
         column: "amount",
       }),
-      "metrics/mean.json": metric({
+      "metrics/mean.yaml": metric({
         type: "aggregate",
         table: "orders",
         aggregate: "avg",
         column: "amount",
       }),
-      "dashboards/probe.json": { title: "Probe", period: ALL, blocks },
+      "dashboards/probe.yaml": { title: "Probe", period: ALL, blocks },
     });
     await oracle.run(`COPY (${csv}) TO '${path.join(fixture.root, "orders.csv")}' (HEADER)`);
     const loaded = await loadAt(fixture.root);
@@ -342,7 +343,7 @@ describe("queries against hostile source columns", () => {
         code: "HM4004",
         severity: "warning",
         message: expect.stringContaining('metric "revenue" in block "by_region" reaches 1.00e+13'),
-        file: "dashboards/probe.json",
+        file: "dashboards/probe.yaml",
         pointer: "/blocks/0",
       },
     ]);
@@ -356,7 +357,7 @@ describe("queries against hostile source columns", () => {
     "sums the floats of several $type files in UTF-8 byte order of their paths, at 1, 4 and 8 threads",
     async ({ type, copy }) => {
       const fixture = await writeProject({
-        "hatchmark.json": {
+        "hatchmark.yaml": {
           ...PROJECT_DEFAULTS,
           name: "Probe",
           sources: {
@@ -367,13 +368,13 @@ describe("queries against hostile source columns", () => {
             },
           },
         },
-        "metrics/total.json": metric({
+        "metrics/total.yaml": metric({
           type: "aggregate",
           table: "orders",
           aggregate: "sum",
           column: "amount",
         }),
-        "dashboards/probe.json": {
+        "dashboards/probe.yaml": {
           title: "Probe",
           period: ALL,
           blocks: [{ type: "kpi", metric: "total" }],
@@ -451,14 +452,14 @@ describe("capped aggregates", () => {
     block?: unknown,
   ) =>
     writeProject({
-      "hatchmark.json": { ...PROJECT_DEFAULTS, name: "Capped", sources: { orders: source } },
-      "metrics/amount.json": metric({
+      "hatchmark.yaml": { ...PROJECT_DEFAULTS, name: "Capped", sources: { orders: source } },
+      "metrics/amount.yaml": metric({
         type: "aggregate",
         table: "orders",
         aggregate,
         column: "amount",
       }),
-      "dashboards/probe.json": {
+      "dashboards/probe.yaml": {
         title: "Capped",
         period: ALL,
         blocks: [block ?? { type: "kpi", id: "headline", metric: "amount" }],
@@ -508,7 +509,7 @@ describe("capped aggregates", () => {
       {
         code: "HM2017",
         severity: "error",
-        file: "hatchmark.json",
+        file: "hatchmark.yaml",
         pointer: "/sources/orders/path",
         message: expect.stringContaining('"__hm_x"'),
       },
@@ -593,15 +594,15 @@ describe("count filters and thresholds", () => {
       filters: [{ column: "ordered_at", op, value }],
     });
   const files = (metrics: Record<string, unknown>) => ({
-    "hatchmark.json": {
+    "hatchmark.yaml": {
       ...PROJECT_DEFAULTS,
       name: "Adv",
       timezone: NY,
       sources: { orders: { type: "csv", path: "orders.csv", freshness: { through: "as_of" } } },
     },
     "orders.csv": ORDERS,
-    ...Object.fromEntries(Object.entries(metrics).map(([n, m]) => [`metrics/${n}.json`, m])),
-    "dashboards/probe.json": {
+    ...Object.fromEntries(Object.entries(metrics).map(([n, m]) => [`metrics/${n}.yaml`, m])),
+    "dashboards/probe.yaml": {
       title: "P",
       period: { asOf: "2026-12-31", range: "all_time", compare: "none" },
       blocks: Object.keys(metrics).map((m) => ({ type: "kpi", id: m, metric: m })),
@@ -655,17 +656,17 @@ describe("count filters and thresholds", () => {
     );
     const found = checkReferences(fixture.project).filter((d) => d.code === "HM3009");
     expect(found.map((d) => [d.file, d.pointer, d.fix?.text, d.fix?.applicability])).toEqual([
-      ["metrics/number.json", "/filters/0/value", undefined, undefined],
-      ["metrics/spaced.json", "/filters/0/value", '"2026-02-01T10:00"', "unsafe"],
-      ["metrics/unpadded.json", "/filters/0/value", '"2026-02-01"', "unsafe"],
-      ["metrics/word.json", "/filters/0/value", undefined, undefined],
+      ["metrics/number.yaml", "/filters/0/value", undefined, undefined],
+      ["metrics/spaced.yaml", "/filters/0/value", '"2026-02-01T10:00"', "unsafe"],
+      ["metrics/unpadded.yaml", "/filters/0/value", '"2026-02-01"', "unsafe"],
+      ["metrics/word.yaml", "/filters/0/value", undefined, undefined],
     ]);
-    const unpadded = found.find((d) => d.file === "metrics/unpadded.json");
+    const unpadded = found.find((d) => d.file === "metrics/unpadded.yaml");
     const fixed = applyFix(
       fixture.project.metrics.get("unpadded")?.document.text ?? "",
       unpadded?.fix,
     );
-    expect(JSON.parse(fixed).filters[0].value).toBe("2026-02-01");
+    expect(fromYaml(fixed).filters[0].value).toBe("2026-02-01");
     const { data, diagnostics } = await run(fixture.root, fixture.project, "probe");
     expect(data).toBeUndefined();
     expect(diagnostics.every((d) => d.code === "HM3009")).toBe(true);

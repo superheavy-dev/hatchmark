@@ -10,6 +10,7 @@ import { customRangeDashboard, type PeriodData } from "../../src/compiler/period
 import { parseDaysKey } from "../../src/compiler/periods.js";
 import { createDuckDbExecutor } from "../../src/node/index.js";
 import type { RangeSpec } from "../../src/spec/index.js";
+import { fromYaml } from "../yaml.js";
 import { buildProject, EXAMPLE, loadAt, removeProjects, writeExample } from "./fixture.js";
 import {
   type Anchors,
@@ -43,7 +44,7 @@ let horizon: Horizon;
 const tally = { cells: 0, mismatches: 0 };
 
 beforeAll(async () => {
-  explorer = JSON.parse(await readFile(path.join(EXAMPLE, "dashboards/explorer.json"), "utf8"));
+  explorer = fromYaml(await readFile(path.join(EXAMPLE, "dashboards/explorer.yaml"), "utf8"));
   root = await writeExample({}, { explorer });
   expect((await buildProject(root)).code).toBe(0);
   payload = periodsOf(
@@ -221,7 +222,7 @@ describe("custom ranges: the browser path equals runDashboard's SQL path with th
   it("edges and 25 random ranges: every block but count_distinct is equal, and SQL's count_distinct matches the oracle", async () => {
     const { project } = await loadAt(root);
     const config = project.config.spec;
-    if (config === undefined) throw new Error("invalid hatchmark.json");
+    if (config === undefined) throw new Error("invalid hatchmark.yaml");
     const executor = await createDuckDbExecutor({ root, config });
     const diff = new Diff();
     try {

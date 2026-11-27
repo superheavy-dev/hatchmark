@@ -28,7 +28,7 @@
     "filters"
   ],
   "additionalProperties": false,
-  "title": "Hatchmark segment (segments/<name>.json)",
+  "title": "Hatchmark segment (segments/<name>.yaml)",
   "$defs": {
     "Filter": {
       "oneOf": [
@@ -175,7 +175,7 @@
             "table": {
               "type": "string",
               "pattern": "^[a-z][a-z0-9_]*$",
-              "description": "A source name from hatchmark.json."
+              "description": "A source name from hatchmark.yaml."
             },
             "key": {
               "type": "string",

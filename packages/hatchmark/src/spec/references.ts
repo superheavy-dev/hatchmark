@@ -4,9 +4,8 @@ import {
   type DiagnosticCode,
   docsCommand,
   type Fix,
-  type JsonDocument,
-  type JsonNode,
   type Severity,
+  type SpecDocument,
 } from "../diagnostics/index.js";
 import {
   foldColumn,
@@ -78,7 +77,7 @@ function reporter(spec: SpecFile, out: Diagnostic[]): Reporter {
 }
 
 function suggestion(
-  document: JsonDocument,
+  document: SpecDocument,
   input: string,
   options: string[],
   pointer: string,
@@ -105,19 +104,6 @@ function metricMap(project: Project): Map<string, Metric> {
 export function metricHasTime(name: string, metrics: ReadonlyMap<string, Metric>): boolean {
   const nature = timeNature(name, metrics);
   return nature === "flow" || nature === "point";
-}
-
-/** Maps an index in a decoded JSON string to its offset in the source text. */
-function stringSourceOffset(document: JsonDocument, node: JsonNode, index: number): number {
-  const text = document.text;
-  let decoded = 0;
-  let pos = node.start + 1;
-  while (decoded < index && pos < node.end - 1) {
-    if (text[pos] === "\\") pos += text[pos + 1] === "u" ? 6 : 2;
-    else pos += 1;
-    decoded += 1;
-  }
-  return pos;
 }
 
 /** Column names of a source, lowercased (DuckDB matches case-insensitively); undefined when unknown. */
@@ -151,8 +137,8 @@ function expressionRange(
   if (node?.kind !== "string") return {};
   return {
     range: file.document.rangeAt(
-      stringSourceOffset(file.document, node, start),
-      stringSourceOffset(file.document, node, Math.max(end, start + 1)),
+      file.document.stringOffset(node, start),
+      file.document.stringOffset(node, Math.max(end, start + 1), "end"),
     ),
   };
 }
@@ -193,7 +179,7 @@ function sourceSuggestion(
 ): boolean {
   if (sources.includes(name)) return true;
   r.report("HM2001", pointer, `unknown source "${name}"`, {
-    label: "not a key of sources in hatchmark.json",
+    label: "not a key of sources in hatchmark.yaml",
     expected: sources,
     ...suggestion(file.document, name, sources, pointer),
   });
@@ -264,7 +250,7 @@ function checkSegmentRefs(
     if (project.segments.has(name)) return;
     const pointer = `${base}/${i}`;
     r.report("HM2021", pointer, `unknown segment "${name}"`, {
-      label: `no file segments/${name}.json`,
+      label: `no file segments/${name}.yaml`,
       expected: names,
       ...suggestion(file.document, name, names, pointer),
     });
@@ -419,7 +405,7 @@ function checkMetrics(project: Project, out: Diagnostic[]): void {
         const ref = metric[side];
         if (!project.metrics.has(ref)) {
           r.report("HM2003", `/${side}`, `unknown metric "${ref}"`, {
-            label: `no file metrics/${ref}.json`,
+            label: `no file metrics/${ref}.yaml`,
             expected: names,
             ...suggestion(file.document, ref, names, `/${side}`),
           });
@@ -444,7 +430,7 @@ function checkMetrics(project: Project, out: Diagnostic[]): void {
           `"${metric[side]}" has no time column, but the other side of the ratio does`,
           {
             label: "a dashboard period would window only one side",
-            help: `add "time" to metrics/${metric[side]}.json, or remove it from the other side`,
+            help: `add "time" to metrics/${metric[side]}.yaml, or remove it from the other side`,
           },
         );
       } else {
@@ -483,7 +469,7 @@ function checkMetrics(project: Project, out: Diagnostic[]): void {
               : {};
           r.report("HM2020", "/expr", `unknown metric "${ref.name}" in formula`, {
             ...at,
-            label: `no file metrics/${ref.name}.json`,
+            label: `no file metrics/${ref.name}.yaml`,
             expected: names,
             ...(close ? { help: `did you mean "${close}"?` } : {}),
             ...fix,
@@ -515,7 +501,7 @@ function checkMetrics(project: Project, out: Diagnostic[]): void {
             {
               ...untimed.at,
               label: "a dashboard period would window only some operands",
-              help: `add "time" to metrics/${untimed.name}.json, or keep timed and untimed metrics apart`,
+              help: `add "time" to metrics/${untimed.name}.yaml, or keep timed and untimed metrics apart`,
             },
           );
         }
@@ -531,7 +517,7 @@ function checkMetrics(project: Project, out: Diagnostic[]): void {
     checkFormatCurrency(r, name, metric, metrics, projectCurrency);
     if (!project.metrics.has(metric.of)) {
       r.report("HM2003", "/of", `unknown metric "${metric.of}"`, {
-        label: `no file metrics/${metric.of}.json`,
+        label: `no file metrics/${metric.of}.yaml`,
         expected: names,
         ...suggestion(file.document, metric.of, names, "/of"),
       });
@@ -1100,7 +1086,7 @@ function checkDashboard(project: Project, file: SpecFile<"dashboard">, out: Diag
   const checkRef = (pointer: string, name: string): boolean => {
     if (project.metrics.has(name)) return true;
     r.report("HM2003", pointer, `unknown metric "${name}"`, {
-      label: `no file metrics/${name}.json`,
+      label: `no file metrics/${name}.yaml`,
       expected: names,
       ...suggestion(file.document, name, names, pointer),
     });
@@ -1195,8 +1181,8 @@ function checkDashboard(project: Project, file: SpecFile<"dashboard">, out: Diag
           {
             help:
               block.type === "kpi"
-                ? `add "time" to metrics/${ref.name}.json, or set "compare": "none" on this block`
-                : `add "time": "<date column>" to metrics/${ref.name}.json`,
+                ? `add "time" to metrics/${ref.name}.yaml, or set "compare": "none" on this block`
+                : `add "time": "<date column>" to metrics/${ref.name}.yaml`,
           },
         );
       }
@@ -1290,8 +1276,8 @@ function checkDashboard(project: Project, file: SpecFile<"dashboard">, out: Diag
         const range =
           node && node.kind === "string"
             ? file.document.rangeAt(
-                stringSourceOffset(file.document, node, index),
-                stringSourceOffset(file.document, node, index + match[0].length),
+                file.document.stringOffset(node, index),
+                file.document.stringOffset(node, index + match[0].length, "end"),
               )
             : undefined;
         const at = range ? { range } : {};
@@ -1316,7 +1302,7 @@ function checkDashboard(project: Project, file: SpecFile<"dashboard">, out: Diag
           const close = closestMatch(name, names);
           r.report("HM2003", pointer, `unknown metric "${name}" in "${match[0]}"`, {
             ...at,
-            label: `no file metrics/${name}.json`,
+            label: `no file metrics/${name}.yaml`,
             expected: names,
             ...(close ? { help: `did you mean "${close}"?` } : {}),
           });

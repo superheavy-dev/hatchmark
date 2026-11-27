@@ -2,7 +2,7 @@
  * Every diagnostic code Hatchmark can emit. Codes are stable across releases: a code is never
  * reused for a different problem, and a retired code stays listed with its last meaning.
  *
- * Ranges: HM0xxx command line usage, HM1xxx files and JSON syntax, HM2xxx references between files and to data,
+ * Ranges: HM0xxx command line usage, HM1xxx files and YAML syntax, HM2xxx references between files and to data,
  * HM3xxx spec shape (schema), HM4xxx data rules, HM5xxx design rules, HM9xxx internal errors.
  */
 export const CODES = {
@@ -42,34 +42,49 @@ export const CODES = {
       "Hatchmark could not read a file it expected. Check that the path exists inside the project and that the process can read it.",
   },
   HM1002: {
-    title: "invalid JSON syntax",
+    title: "invalid YAML syntax",
     explanation:
-      "Spec files are strict JSON (RFC 8259): double-quoted keys and strings, no comments, no trailing commas. The diagnostic points at the first character that cannot be parsed and, when the repair is unambiguous, carries a safe text fix.",
+      'Spec files are YAML 1.2, one document per file, read with the core schema. Indent with spaces, never tabs; items of one mapping or list start at the same column; a value that contains ": " or starts with a character such as {, [, *, & or ! needs quotes. The diagnostic points at the first place that cannot be parsed.',
   },
   HM1003: {
     title: "duplicate key",
     explanation:
-      "An object has the same key twice. JSON parsers disagree on which one wins, so Hatchmark rejects the file. Keep one of the two and delete the other.",
+      "A mapping has the same key twice. YAML forbids it and parsers disagree on which one wins, so Hatchmark rejects the file. Keep one of the two and delete the other.",
   },
   HM1004: {
     title: "invalid file name",
     explanation:
-      "Metric and dashboard names come from their file names, so a file name must be lowercase snake_case (metrics/net_revenue.json), and a metric may not be named and, or, not or null, which are operators in formulas. Dashboard names may also contain hyphens, since they become URL paths. Rename the file.",
+      "Metric and dashboard names come from their file names, so a file name must be lowercase snake_case (metrics/net_revenue.yaml), and a metric may not be named and, or, not or null, which are operators in formulas. Dashboard names may also contain hyphens, since they become URL paths. Rename the file.",
   },
   HM1005: {
     title: "project config not found",
     explanation:
-      "No hatchmark.json was found in the working directory. Run the command from the project root, pass --cwd, or create a project with hatchmark init.",
+      "No hatchmark.yaml was found in the working directory. Run the command from the project root, pass --cwd, or create a project with hatchmark init.",
+  },
+  HM1006: {
+    title: "YAML feature not allowed in spec files",
+    explanation:
+      "Spec files use plain YAML so every value reads the same in every tool: anchors (&name), aliases (*name), merge keys (<<), tags other than the core ones (!!str, !!int, !!float, !!bool, !!null, !!map, !!seq), a core tag that does not fit its value, keys that are not strings, a %YAML directive other than 1.2 and a second document after --- are errors. So is a number not written as JSON writes it (0123, +1, 0x10, .5, .inf): quote it to keep it a string, as the safe fix does. SQL must be a literal block scalar (sql: |), because a folded or multi-line plain value joins lines with spaces and a -- comment would hide the lines after it. Write the value out in full where it is used, and quote a key that YAML would read as a number, boolean or null.",
+  },
+  HM1007: {
+    title: "spec file is not YAML",
+    explanation:
+      "Spec files are YAML with the .yaml extension: hatchmark.yaml, metrics/<name>.yaml, dashboards/<name>.yaml and segments/<name>.yaml. A .json or .yml file in their place is not read, so the diagnostic names the .yaml file Hatchmark expects. Write the spec as YAML in that file and delete the old one.",
+  },
+  HM1008: {
+    title: "comment after an unquoted filter value",
+    explanation:
+      'In YAML, a # after a space starts a comment, so value: Store #12 is read as Store. A filter value or a select default followed by a comment on the same line gets this warning, because a value such as a store or order number often contains #. Quote the value to keep the #, such as value: "Store #12", or move the comment to its own line.',
   },
   HM2001: {
     title: "unknown source",
     explanation:
-      "A metric names a table that is not a key of sources in hatchmark.json. Add the source, or use one of the listed names.",
+      "A metric names a table that is not a key of sources in hatchmark.yaml. Add the source, or use one of the listed names.",
   },
   HM2003: {
     title: "unknown metric",
     explanation:
-      "A dashboard, ratio metric or text reference names a metric with no file under metrics/. The name is the file name without .json. Create the metric file or use one of the listed names.",
+      "A dashboard, ratio metric or text reference names a metric with no file under metrics/. The name is the file name without .yaml. Create the metric file or use one of the listed names.",
   },
   HM2004: {
     title: "circular metric reference",
@@ -103,7 +118,7 @@ export const CODES = {
   HM2010: {
     title: "data file not found",
     explanation:
-      "A source in hatchmark.json points at a file that does not exist. Paths are relative to hatchmark.json.",
+      "A source in hatchmark.yaml points at a file that does not exist. Paths are relative to hatchmark.yaml.",
   },
   HM2011: {
     title: "comparison is turned off",
@@ -133,7 +148,7 @@ export const CODES = {
   HM2016: {
     title: "glob characters in a source path",
     explanation:
-      "A source path in hatchmark.json contains *, ? or [. DuckDB reads such a path as a glob pattern, so it could read several files, or other files than the one named, even when a file with exactly that name exists. Hatchmark reads one file per source and does not escape these characters, so rename the file. The fix suggests a name with _ in their place, and it is unsafe because the file itself must be renamed too. Sources that read several files will come later as an explicit field, not as a pattern in path.",
+      "A source path in hatchmark.yaml contains *, ? or [. DuckDB reads such a path as a glob pattern, so it could read several files, or other files than the one named, even when a file with exactly that name exists. Hatchmark reads one file per source and does not escape these characters, so rename the file. The fix suggests a name with _ in their place, and it is unsafe because the file itself must be renamed too. Sources that read several files will come later as an explicit field, not as a pattern in path.",
   },
   HM2017: {
     title: "reserved column name",
@@ -158,7 +173,7 @@ export const CODES = {
   HM2021: {
     title: "unknown segment",
     explanation:
-      "A metric, target or test names a segment with no file under segments/. The name is the file name without .json.",
+      "A metric, target or test names a segment with no file under segments/. The name is the file name without .yaml.",
   },
   HM2023: {
     title: "test data for a source the metric does not read",
@@ -183,7 +198,7 @@ export const CODES = {
   HM3001: {
     title: "missing required property",
     explanation:
-      "A required property is missing. In hatchmark.json every setting is required so the file states what will happen; the fix adds the default value and is safe to apply.",
+      "A required property is missing. In hatchmark.yaml every setting is required so the file states what will happen; the fix adds the default value and is safe to apply.",
   },
   HM3002: {
     title: "unknown property",
@@ -192,7 +207,8 @@ export const CODES = {
   },
   HM3003: {
     title: "wrong type",
-    explanation: "The value has the wrong JSON type, such as a number where a string is expected.",
+    explanation:
+      "The value has the wrong type, such as a number where a string is expected. YAML reads an unquoted 2026, 1.5 or true as a number or boolean; where the spec expects a string, the fix quotes the value as written.",
   },
   HM3004: {
     title: "invalid value",
@@ -252,7 +268,7 @@ export const CODES = {
   HM4007: {
     title: "snapshot summed over time",
     explanation:
-      'The source is declared a snapshot table ("snapshot" in hatchmark.json): each date holds the full state, so adding rows over a period counts every snapshot again (thirty daily snapshots make a month thirty times too large). Every aggregate on it, or on a lookup source whose base it is, must read one snapshot date at a time: "time" is the snapshot column and "over_time" is "last" (the value at the end of each period), "first", "avg", "min" or "max". No time, another time column, trailing or active would add snapshots too, and entity would carry a key missing from a snapshot forward. A SQL metric gets a warning, since it cannot set over_time yet.',
+      'The source is declared a snapshot table ("snapshot" in hatchmark.yaml): each date holds the full state, so adding rows over a period counts every snapshot again (thirty daily snapshots make a month thirty times too large). Every aggregate on it, or on a lookup source whose base it is, must read one snapshot date at a time: "time" is the snapshot column and "over_time" is "last" (the value at the end of each period), "first", "avg", "min" or "max". No time, another time column, trailing or active would add snapshots too, and entity would carry a key missing from a snapshot forward. A SQL metric gets a warning, since it cannot set over_time yet.',
   },
   HM4008: {
     title: "per_entity needs a point-in-time sum or count",

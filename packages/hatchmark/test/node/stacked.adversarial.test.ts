@@ -570,12 +570,12 @@ function table(html: string, id: string, series: StackSeries[], totals: Value[])
 beforeAll(async () => {
   oracle = await Oracle.open();
   project = await writeProject({
-    "hatchmark.json": CONFIG,
+    "hatchmark.yaml": CONFIG,
     "data/orders.csv": ordersCsv(),
     "data/balances.csv": balancesCsv(),
     "data/returns.csv": returnsCsv(),
-    ...Object.fromEntries(Object.entries(METRICS).map(([n, m]) => [`metrics/${n}.json`, m])),
-    ...Object.fromEntries(Object.entries(DASHBOARDS).map(([n, d]) => [`dashboards/${n}.json`, d])),
+    ...Object.fromEntries(Object.entries(METRICS).map(([n, m]) => [`metrics/${n}.yaml`, m])),
+    ...Object.fromEntries(Object.entries(DASHBOARDS).map(([n, d]) => [`dashboards/${n}.yaml`, d])),
   });
   const orders = path.join(project.root, "data/orders.csv");
   await oracle.rows(
@@ -598,7 +598,7 @@ const at = (blocks: { id: string }[], id: string) =>
 describe("stacked charts against a SQL oracle", () => {
   it("check: non-additive metrics, mixed units and a linear formula", () => {
     expect(project.diagnostics).toEqual([]);
-    const diags = checkReferences(project.project).filter((d) => d.file?.endsWith("checks.json"));
+    const diags = checkReferences(project.project).filter((d) => d.file?.endsWith("checks.yaml"));
     const codes = (id: string) =>
       diags.filter((d) => d.pointer?.startsWith(`${at(CHECKS, id)}/`)).map((d) => d.code);
     for (const m of NONADD) {

@@ -312,11 +312,11 @@ function attack(name: string, o: Attack, expected: string[], groupAdditiveX?: bo
 }
 
 const x =
-  (file = "metrics/x.json") =>
+  (file = "metrics/x.yaml") =>
   (code: string, severity = "error") =>
     `${file} ${severity} ${code}`;
 const err = x();
-const errY = x("metrics/y.json");
+const errY = x("metrics/y.yaml");
 const table = (m: string) => ({
   d: {
     title: "T",
@@ -325,7 +325,7 @@ const table = (m: string) => ({
     ],
   },
 });
-const percentOfTotal = "dashboards/d.json error HM4001";
+const percentOfTotal = "dashboards/d.yaml error HM4001";
 const snap = {
   ...money,
   type: "aggregate",
@@ -626,7 +626,7 @@ describe("currencies never mix and a format never relabels one (HM4005)", () => 
         x: { ...money, label: "x", type: "formula", expr: "eur_as_usd + arr" },
       },
     },
-    [x("metrics/eur_as_usd.json")("HM4005"), err("HM4005")],
+    [x("metrics/eur_as_usd.yaml")("HM4005"), err("HM4005")],
   );
   attack(
     "USD formula over arr_eur / paying_customers relabels EUR",
@@ -1119,7 +1119,7 @@ describe("column references resolve against the source (HM2018)", () => {
         },
       },
     },
-    ["hatchmark.json error HM2018"],
+    ["hatchmark.yaml error HM2018"],
   );
   attack(
     "SQL comment in a value expression is accepted today (not covered)",

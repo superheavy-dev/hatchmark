@@ -5,7 +5,7 @@ import {
   type DiagnosticCode,
   docsCommand,
   type Fix,
-  type JsonDocument,
+  type SpecDocument,
   toPointer,
 } from "../diagnostics/index.js";
 import { addPropertyFix, replaceValueFix } from "./fixes.js";
@@ -128,7 +128,7 @@ function describeType(value: unknown): string {
 }
 
 function closestFix(
-  document: JsonDocument,
+  document: SpecDocument,
   input: unknown,
   options: string[],
   pointer: string,
@@ -146,9 +146,29 @@ function closestFix(
   return { help: `did you mean "${match}"?`, ...(fix ? { fix } : {}) };
 }
 
+/**
+ * For a YAML plain scalar that YAML 1.2 reads as a number or boolean where a string is expected:
+ * help to quote it, and a safe fix that quotes the text exactly as written.
+ */
+function quoteFix(document: SpecDocument, pointer: string): { help?: string; fix?: Fix } {
+  const node = document.locate(pointer);
+  if (!node?.exact || (node.node.kind !== "number" && node.node.kind !== "boolean")) return {};
+  const source = document.text.slice(node.node.start, node.node.end);
+  const quoted = JSON.stringify(source);
+  return {
+    help: `YAML reads ${source} as a ${node.node.kind}; quote it to keep it a string: ${quoted}`,
+    fix: {
+      range: document.rangeAt(node.node.start, node.node.end),
+      text: quoted,
+      applicability: "safe",
+      description: `quote ${source}`,
+    },
+  };
+}
+
 export interface IssueContext {
   root: z.ZodType;
-  document: JsonDocument;
+  document: SpecDocument;
   defaults?: Readonly<Record<string, unknown>>;
 }
 
@@ -271,7 +291,9 @@ export function issuesToDiagnostics(
         break;
       }
       case "invalid_type":
-        push("HM3003", path, `expected ${issue.expected}, found ${describeType(at.value)}`);
+        push("HM3003", path, `expected ${issue.expected}, found ${describeType(at.value)}`, {
+          ...(issue.expected === "string" ? quoteFix(document, toPointer(path)) : {}),
+        });
         break;
       case "invalid_value": {
         const expected = issue.values.map((v) => (typeof v === "string" ? v : JSON.stringify(v)));
@@ -313,6 +335,7 @@ export function issuesToDiagnostics(
           types.length === branches.length
             ? `expected ${[...new Set(types)].join(" or ")}, found ${describeType(at.value)}`
             : "value does not match any allowed form",
+          types.includes("string") ? quoteFix(document, toPointer(path)) : {},
         );
         break;
       }

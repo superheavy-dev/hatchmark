@@ -5,32 +5,32 @@ import { run } from "../../src/cli/main.js";
 import { startDevServer } from "../../src/dev/server.js";
 import { copyProject, EXAMPLE } from "../node/fixture.js";
 
-const GOOD = await readFile(path.join(EXAMPLE, "hatchmark.json"), "utf8");
+const GOOD = await readFile(path.join(EXAMPLE, "hatchmark.yaml"), "utf8");
 
 const CASES = [
   {
-    name: "malformed JSON",
-    text: GOOD.replace('"theme": "default",', '"theme": "default",,'),
+    name: "malformed YAML",
+    text: GOOD.replace("theme: default\n", "theme: [default\n"),
     code: "HM1002",
-    at: { line: 13, column: 22 },
+    at: { line: 13, column: 1 },
   },
   {
     name: "a wrong type on a known field",
-    text: GOOD.replace('"telemetry": false', '"telemetry": "no"'),
+    text: GOOD.replace("telemetry: false", 'telemetry: "no"'),
     code: "HM3003",
-    at: { line: 14, column: 16 },
+    at: { line: 13, column: 12 },
   },
   {
     name: "an unknown field",
-    text: GOOD.replace('"theme": "default",', '"theme": "default",\n  "colour": "blue",'),
+    text: GOOD.replace("theme: default\n", "theme: default\ncolour: blue\n"),
     code: "HM3002",
-    at: { line: 14, column: 3 },
+    at: { line: 13, column: 1 },
   },
   {
     name: "a missing required field",
-    text: GOOD.replace('  "name": "Global Sales",\n', ""),
+    text: GOOD.replace("name: Global Sales\n", ""),
     code: "HM3001",
-    at: { line: 1, column: 1 },
+    at: { line: 2, column: 1 },
   },
   { name: "an empty file", text: "", code: "HM1002", at: { line: 1, column: 1 } },
 ] as const;
@@ -43,7 +43,7 @@ afterAll(async () => {
 async function project(config: string): Promise<string> {
   const dir = await copyProject(EXAMPLE, "hatchmark-config-");
   dirs.push(dir);
-  await writeFile(path.join(dir, "hatchmark.json"), config);
+  await writeFile(path.join(dir, "hatchmark.yaml"), config);
   return dir;
 }
 
@@ -62,7 +62,7 @@ async function cli(argv: string[], tty = false) {
   return { code, stdout };
 }
 
-describe("an invalid hatchmark.json", { timeout: 30_000 }, () => {
+describe("an invalid hatchmark.yaml", { timeout: 30_000 }, () => {
   for (const c of CASES) {
     it(`reports ${c.name} as ${c.code} from check and build`, async () => {
       const dir = await project(c.text);
@@ -76,7 +76,7 @@ describe("an invalid hatchmark.json", { timeout: 30_000 }, () => {
           expect.objectContaining({
             code: c.code,
             severity: "error",
-            file: "hatchmark.json",
+            file: "hatchmark.yaml",
             docs: `hatchmark explain ${c.code}`,
           }),
         ]);
@@ -88,7 +88,7 @@ describe("an invalid hatchmark.json", { timeout: 30_000 }, () => {
         expect(human.stdout, command).toContain(
           `error[${c.code}]: ${report.diagnostics[0].message}`,
         );
-        expect(human.stdout, command).toContain(` --> hatchmark.json:${c.at.line}:${c.at.column}`);
+        expect(human.stdout, command).toContain(` --> hatchmark.yaml:${c.at.line}:${c.at.column}`);
         expect(human.stdout, command).toContain(`hatchmark explain ${c.code}`);
       }
       expect(reports[1]).toEqual(reports[0]);
@@ -117,7 +117,7 @@ describe("an invalid hatchmark.json", { timeout: 30_000 }, () => {
       expect(page).toContain(`error[${first.code}]</span>`);
       for (const c of rest) {
         errors.length = 0;
-        await writeFile(path.join(dir, "hatchmark.json"), c.text);
+        await writeFile(path.join(dir, "hatchmark.yaml"), c.text);
         await expect.poll(() => errors, { timeout: 15_000 }).toContain(c.code);
         const html = await (await fetch(new URL("/", server.url))).text();
         expect(html, c.name).toContain(`error[${c.code}]</span>`);

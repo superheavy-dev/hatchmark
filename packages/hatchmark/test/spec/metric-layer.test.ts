@@ -9,6 +9,7 @@ import {
   timeNature,
 } from "../../src/spec/index.js";
 import { jsonSchema } from "../../src/spec/json-schema.js";
+import { fromYaml } from "../yaml.js";
 import { applyFix, CONFIG, projectFrom } from "./helpers.js";
 
 const larkspurConfig = {
@@ -356,10 +357,10 @@ describe("metric layer checks", () => {
       code: "HM2020",
       pointer: "/expr",
       help: 'did you mean "credit_run_rate"?',
-      range: { start: { line: 9, column: 18 }, end: { line: 9, column: 32 } },
+      range: { start: { line: 7, column: 13 }, end: { line: 7, column: 27 } },
     });
     const text = project.metrics.get("total_arr")?.document.text ?? "";
-    expect(JSON.parse(applyFix(text, d?.fix)).expr).toBe("arr + credit_run_rate * 0.6");
+    expect(fromYaml(applyFix(text, d?.fix)).expr).toBe("arr + credit_run_rate * 0.6");
   });
 
   it("reports formula syntax errors at the token, even after escapes", () => {
@@ -385,8 +386,8 @@ describe("metric layer checks", () => {
       }),
     );
     expect(ds.filter((d) => d.code === "HM2004").map((d) => d.file)).toEqual([
-      "metrics/a.json",
-      "metrics/b.json",
+      "metrics/a.yaml",
+      "metrics/b.yaml",
     ]);
   });
 
@@ -417,9 +418,9 @@ describe("metric layer checks", () => {
       }),
     );
     expect(ds.map((d) => [d.file, d.code])).toEqual([
-      ["metrics/bad.json", "HM4009"],
-      ["metrics/mixed.json", "HM2012"],
-      ["metrics/ratio.json", "HM4009"],
+      ["metrics/bad.yaml", "HM4009"],
+      ["metrics/mixed.yaml", "HM2012"],
+      ["metrics/ratio.yaml", "HM4009"],
     ]);
     expect(ds[0]?.help).toContain('"trailing"');
   });
@@ -431,7 +432,7 @@ describe("metric layer checks", () => {
     };
     const ds = checkReferences(larkspur({ metrics: { ...metrics, credit_run_rate: eur } }));
     expect(ds.map((d) => [d.file, d.code, d.message])).toEqual([
-      ["metrics/total_arr.json", "HM4005", "adds USD to EUR"],
+      ["metrics/total_arr.yaml", "HM4005", "adds USD to EUR"],
     ]);
   });
 
@@ -439,7 +440,7 @@ describe("metric layer checks", () => {
     const { over_time: _, ...summed } = metrics.arr_snapshot as Record<string, unknown>;
     const ds = checkReferences(larkspur(withMetric("arr_snapshot", summed)));
     expect(ds).toMatchObject([
-      { code: "HM4007", pointer: "/time", file: "metrics/arr_snapshot.json" },
+      { code: "HM4007", pointer: "/time", file: "metrics/arr_snapshot.yaml" },
     ]);
   });
 
@@ -456,9 +457,9 @@ describe("metric layer checks", () => {
       }),
     );
     expect(ds.map((d) => [d.file, d.code, d.pointer])).toEqual([
-      ["metrics/e1.json", "HM4008", "/of"],
-      ["metrics/e2.json", "HM3010", "/where"],
-      ["metrics/e3.json", "HM2020", "/expr"],
+      ["metrics/e1.yaml", "HM4008", "/of"],
+      ["metrics/e2.yaml", "HM3010", "/where"],
+      ["metrics/e3.yaml", "HM2020", "/expr"],
     ]);
     expect(ds[2]?.help).toBe('did you mean "prior"?');
   });
@@ -471,8 +472,8 @@ describe("metric layer checks", () => {
       larkspur({ metrics: { ...metrics, cohort_arr_now: cohort, arr: { ...arr, active } } }),
     );
     expect(ds.map((d) => [d.file, d.code, d.severity])).toEqual([
-      ["metrics/arr.json", "HM4040", "note"],
-      ["metrics/cohort_arr_now.json", "HM4040", "note"],
+      ["metrics/arr.yaml", "HM4040", "note"],
+      ["metrics/cohort_arr_now.yaml", "HM4040", "note"],
     ]);
   });
 
@@ -524,9 +525,9 @@ describe("metric layer checks", () => {
       }),
     );
     expect(ds.map((d) => [d.file, d.code, d.help])).toEqual([
-      ["segments/external.json", "HM2001", undefined],
-      ["metrics/arr.json", "HM2021", 'did you mean "external"?'],
-      ["metrics/paying_customers.json", "HM2018", undefined],
+      ["segments/external.yaml", "HM2001", undefined],
+      ["metrics/arr.yaml", "HM2021", 'did you mean "external"?'],
+      ["metrics/paying_customers.yaml", "HM2018", undefined],
     ]);
   });
 
@@ -550,10 +551,10 @@ describe("metric layer checks", () => {
       }),
     );
     expect(ds.map((d) => [d.file, d.code, d.pointer])).toEqual([
-      ["metrics/arr.json", "HM3007", "/targets/0/prorate"],
-      ["metrics/arr.json", "HM2008", "/targets/1/id"],
-      ["metrics/arr.json", "HM3007", "/tests/0/window"],
-      ["metrics/revenue.json", "HM3007", "/tests/0/at"],
+      ["metrics/arr.yaml", "HM3007", "/targets/0/prorate"],
+      ["metrics/arr.yaml", "HM2008", "/targets/1/id"],
+      ["metrics/arr.yaml", "HM3007", "/tests/0/window"],
+      ["metrics/revenue.yaml", "HM3007", "/tests/0/at"],
     ]);
   });
 
@@ -568,7 +569,7 @@ describe("metric layer checks", () => {
     ];
     for (const [value, pointer] of cases) {
       const ds = diagnose(withMetric("arr_snapshot", value)).filter(
-        (d) => d.file === "metrics/arr_snapshot.json",
+        (d) => d.file === "metrics/arr_snapshot.yaml",
       );
       expect(ds.map((d) => [d.code, d.pointer])).toContainEqual(["HM3007", pointer]);
     }
@@ -609,7 +610,7 @@ describe("metric layer checks", () => {
     });
     expect(dashboardsAffectedBy(project, "data/subscriptions.csv")).toEqual(["arr"]);
     expect(dashboardsAffectedBy(project, "data/internal_accounts.csv")).toEqual(["arr"]);
-    expect(dashboardsAffectedBy(project, "segments/external.json")).toEqual(["arr"]);
+    expect(dashboardsAffectedBy(project, "segments/external.yaml")).toEqual(["arr"]);
     expect(dashboardsAffectedBy(project, "data/fx_rates.csv")).toEqual(["arr", "cash"]);
   });
 });
@@ -618,7 +619,7 @@ const codes = (ds: { file?: string; code: string; pointer?: string }[]) =>
   ds.map((d) => [d.file, d.code, d.pointer]);
 const only = (name: string, value: unknown) =>
   checkReferences(larkspur(withMetric(name, value))).filter(
-    (d) => d.file === `metrics/${name}.json` && d.severity !== "note",
+    (d) => d.file === `metrics/${name}.yaml` && d.severity !== "note",
   );
 
 describe("metric layer invariants", () => {
@@ -651,7 +652,7 @@ describe("metric layer invariants", () => {
     ];
     for (const [label, value, pointer] of cases) {
       expect(codes(only("probe", value)), label).toEqual([
-        ["metrics/probe.json", "HM4007", pointer],
+        ["metrics/probe.yaml", "HM4007", pointer],
       ]);
     }
     expect(only("probe", { ...snapshot, over_time: "avg" })).toEqual([]);
@@ -671,7 +672,7 @@ describe("metric layer invariants", () => {
     const joined = { ...flowSnapshot, table: "snapshots_joined" };
     const ds = checkReferences(larkspur({ config, metrics: { ...metrics, joined } }));
     expect(codes(ds.filter((d) => d.severity !== "note"))).toEqual([
-      ["metrics/joined.json", "HM4007", "/time"],
+      ["metrics/joined.yaml", "HM4007", "/time"],
     ]);
   });
 
@@ -685,9 +686,9 @@ describe("metric layer invariants", () => {
       value: "unit_amount * fx_rates.rate",
       time: "valid_from",
     };
-    expect(codes(only("probe", flow))).toEqual([["metrics/probe.json", "HM4019", "/table"]]);
+    expect(codes(only("probe", flow))).toEqual([["metrics/probe.yaml", "HM4019", "/table"]]);
     expect(codes(only("probe", { ...flow, time: undefined }))).toEqual([
-      ["metrics/probe.json", "HM4019", "/table"],
+      ["metrics/probe.yaml", "HM4019", "/table"],
     ]);
     expect(only("probe", { ...flow, over_time: "last", entity: "id" })).toEqual([]);
   });
@@ -714,7 +715,7 @@ describe("metric layer invariants", () => {
     ];
     for (const expr of mixed) {
       const ds = checkReferences(larkspur({ metrics: { ...metrics, eur, f: formula(expr) } }));
-      expect(codes(ds), expr).toEqual([["metrics/f.json", "HM4005", "/expr"]]);
+      expect(codes(ds), expr).toEqual([["metrics/f.yaml", "HM4005", "/expr"]]);
     }
     const fine = ["arr + coalesce(arr, 0) * 2", "arr / eur", "arr + 1000"];
     for (const expr of fine) {
@@ -724,7 +725,7 @@ describe("metric layer invariants", () => {
     const relabelled = checkReferences(
       larkspur({ metrics: { ...metrics, eur, f: formula("eur * 2") } }),
     );
-    expect(codes(relabelled)).toEqual([["metrics/f.json", "HM4005", "/format"]]);
+    expect(codes(relabelled)).toEqual([["metrics/f.yaml", "HM4005", "/format"]]);
     const labelled = formula("eur * 2", { type: "currency", currency: "EUR" });
     expect(checkReferences(larkspur({ metrics: { ...metrics, eur, f: labelled } }))).toEqual([]);
   });
@@ -752,19 +753,19 @@ describe("metric layer invariants", () => {
     for (const [label, probe] of probes) {
       const project = larkspur({ metrics: { ...metrics, arr_eur: arrEur, probe } });
       const own = checkReferences(project).filter(
-        (d) => d.file === "metrics/probe.json" && d.severity !== "note",
+        (d) => d.file === "metrics/probe.yaml" && d.severity !== "note",
       );
-      expect(codes(own), label).toEqual([["metrics/probe.json", "HM4005", "/format"]]);
+      expect(codes(own), label).toEqual([["metrics/probe.yaml", "HM4005", "/format"]]);
       const sum = { ...money, label: "S", type: "formula", expr: "arr + probe" };
       const relabelled = { ...probe, format: eurFormat };
       const mixed = checkReferences(
         larkspur({ metrics: { ...metrics, arr_eur: arrEur, probe: relabelled, sum } }),
       );
-      expect(codes(mixed.filter((d) => d.file === "metrics/sum.json")), label).toEqual([
-        ["metrics/sum.json", "HM4005", "/expr"],
+      expect(codes(mixed.filter((d) => d.file === "metrics/sum.yaml")), label).toEqual([
+        ["metrics/sum.yaml", "HM4005", "/expr"],
       ]);
       expect(
-        codes(mixed.filter((d) => d.file === "metrics/probe.json" && d.severity !== "note")),
+        codes(mixed.filter((d) => d.file === "metrics/probe.yaml" && d.severity !== "note")),
         label,
       ).toEqual([]);
     }
@@ -820,7 +821,7 @@ describe("metric layer invariants", () => {
         },
       });
       expect(codes(checkReferences(project).filter((d) => d.severity !== "note")), over).toEqual([
-        ["metrics/per.json", "HM4008", "/of"],
+        ["metrics/per.yaml", "HM4008", "/of"],
       ]);
     }
   });
@@ -829,14 +830,14 @@ describe("metric layer invariants", () => {
     const target = { id: "t", grain: "month", values: { "2026-11-01": 10 }, prorate: "days" };
     const avg = { ...(metrics.revenue as object), aggregate: "avg", targets: [target] };
     expect(codes(only("probe", avg))).toEqual([
-      ["metrics/probe.json", "HM3007", "/targets/0/prorate"],
+      ["metrics/probe.yaml", "HM3007", "/targets/0/prorate"],
     ]);
     expect(only("probe", { ...(metrics.revenue as object), targets: [target] })).toEqual([]);
   });
 
   it("refuses entity on a full snapshot table, which would carry absent keys forward (HM4007)", () => {
     expect(codes(only("probe", { ...snapshot, entity: "subscription" }))).toEqual([
-      ["metrics/probe.json", "HM4007", "/entity"],
+      ["metrics/probe.yaml", "HM4007", "/entity"],
     ]);
   });
 
@@ -875,7 +876,7 @@ describe("metric layer invariants", () => {
       tests: [{ window: ["2026-10-01", "2026-10-31"], expect: 1, data }],
     });
     expect(codes(only("probe", test({ usage: "fixtures/usage.csv" })))).toEqual([
-      ["metrics/probe.json", "HM2023", "/tests/0/data/usage"],
+      ["metrics/probe.yaml", "HM2023", "/tests/0/data/usage"],
     ]);
     expect(
       only("probe", test({ fx_rates: "fixtures/fx.csv", invoice_lines_raw: "f.csv" })),
@@ -889,7 +890,7 @@ describe("metric layer invariants", () => {
 
   it("reserves expression keywords as metric names (HM1004)", () => {
     const ds = diagnose(withMetric("and", metrics.revenue));
-    expect(codes(ds)).toEqual([["metrics/and.json", "HM1004", undefined]]);
+    expect(codes(ds)).toEqual([["metrics/and.yaml", "HM1004", undefined]]);
   });
 
   it("puts a fix on the name inside parentheses, not on the parentheses", () => {
@@ -903,7 +904,7 @@ describe("metric layer invariants", () => {
       larkspur(
         withMetric("probe", { ...money, label: "P", type: "formula", expr: "((revenu)) * 2" }),
       ).metrics.get("probe")?.document.text ?? "";
-    expect(applyFix(text, fix)).toContain('"((revenue)) * 2"');
+    expect(applyFix(text, fix)).toContain("expr: ((revenue)) * 2\n");
   });
 
   it("keeps the ARPA operands on one population and one interval", () => {
@@ -971,9 +972,9 @@ describe("metric layer invariants", () => {
     ];
     for (const [label, value] of invalid) {
       const text = JSON.stringify(value);
-      expect(validate(JSON.parse(text)), `JSON Schema accepts ${label}`).toBe(false);
-      const errors = diagnose(withMetric("probe", JSON.parse(text))).filter(
-        (d) => d.file === "metrics/probe.json" && d.severity === "error",
+      expect(validate(fromYaml(text)), `JSON Schema accepts ${label}`).toBe(false);
+      const errors = diagnose(withMetric("probe", fromYaml(text))).filter(
+        (d) => d.file === "metrics/probe.yaml" && d.severity === "error",
       );
       expect(errors.length, `check accepts ${label}`).toBeGreaterThan(0);
     }

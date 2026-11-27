@@ -18,6 +18,7 @@ import type { CommandContext } from "../../src/cli/io.js";
 import { run } from "../../src/cli/main.js";
 import { runDashboard } from "../../src/compiler/index.js";
 import { copyProject, EXAMPLE } from "../node/fixture.js";
+import { fromYaml, toYaml } from "../yaml.js";
 
 const dirs: string[] = [];
 afterEach(async () => {
@@ -109,8 +110,8 @@ describe("hatchmark build", () => {
 
   it("writes an index page when there is more than one dashboard", async () => {
     const root = await project();
-    const spec = await readFile(path.join(root, "dashboards/sales.json"), "utf8");
-    await writeFile(path.join(root, "dashboards/marketing.json"), spec);
+    const spec = await readFile(path.join(root, "dashboards/sales.yaml"), "utf8");
+    await writeFile(path.join(root, "dashboards/marketing.yaml"), spec);
     const result = await build(ctx(root), { out: "public/site" }, deps);
     expect(result.exitCode).toBe(0);
     expect(result.json).toMatchObject({ out_dir: "public/site", index: "public/site/index.html" });
@@ -206,8 +207,8 @@ describe("hatchmark build", () => {
       await rename(path.join(dist, "sales"), path.join(root, "previous"));
       await symlink(other, path.join(dist, "sales"));
       await rename(
-        path.join(root, "dashboards/sales.json"),
-        path.join(root, "dashboards/renamed.json"),
+        path.join(root, "dashboards/sales.yaml"),
+        path.join(root, "dashboards/renamed.yaml"),
       );
       await expectRefused(root, other);
     });
@@ -226,8 +227,8 @@ describe("hatchmark build", () => {
       await symlink(path.join(other, "index.html"), page);
       await expectRefused(root, other);
       await rename(
-        path.join(root, "dashboards/sales.json"),
-        path.join(root, "dashboards/renamed.json"),
+        path.join(root, "dashboards/sales.yaml"),
+        path.join(root, "dashboards/renamed.yaml"),
       );
       await expectRefused(root, other);
     });
@@ -239,8 +240,8 @@ describe("hatchmark build", () => {
       expect((await build(ctx(root), { out: other }, deps)).exitCode).toBe(0);
       const before = await tree(other);
       await rename(
-        path.join(root, "dashboards/sales.json"),
-        path.join(root, "dashboards/renamed.json"),
+        path.join(root, "dashboards/sales.yaml"),
+        path.join(root, "dashboards/renamed.yaml"),
       );
       await symlink(other, path.join(root, "dist"));
       const direct = await build(ctx(root), {}, deps);
@@ -281,13 +282,13 @@ describe("hatchmark build", () => {
 
   it("reports HM2024 for a chart narrower than 3 columns and still builds it", async () => {
     const root = await project();
-    const file = path.join(root, "dashboards/sales.json");
-    const spec = JSON.parse(await readFile(file, "utf8"));
+    const file = path.join(root, "dashboards/sales.yaml");
+    const spec = fromYaml(await readFile(file, "utf8"));
     const chart = spec.blocks.findIndex(
       (b: { type: string }) => b.type === "line" || b.type === "bar",
     );
     spec.blocks[chart].span = 1;
-    await writeFile(file, JSON.stringify(spec, null, 2));
+    await writeFile(file, toYaml(spec));
     const result = await build(ctx(root), {}, { ...deps, runDashboard });
     expect(result.exitCode).toBe(0);
     expect(result.json).toMatchObject({ ok: true });
@@ -306,12 +307,26 @@ describe("hatchmark build", () => {
   it("refuses to build a project with check errors", async () => {
     const root = await project();
     await writeFile(
-      path.join(root, "dashboards/sales.json"),
+      path.join(root, "dashboards/sales.yaml"),
       '{"title": "Sales", "blocks": [{"type": "kpi", "metric": "revenu"}]}',
     );
     const result = await build(ctx(root), {}, { ...deps, runDashboard });
     expect(result.exitCode).toBe(1);
     expect(result.json).toMatchObject({ ok: false, diagnostics: [{ code: "HM2003" }] });
+  });
+
+  it("refuses to build a project with a leftover JSON spec file", async () => {
+    const root = await project();
+    await rename(
+      path.join(root, "dashboards/sales.yaml"),
+      path.join(root, "dashboards/sales.json"),
+    );
+    const result = await build(ctx(root), {}, { ...deps, runDashboard });
+    expect(result.exitCode).toBe(1);
+    expect(result.json).toMatchObject({
+      ok: false,
+      diagnostics: [{ code: "HM1007", file: "dashboards/sales.json" }],
+    });
   });
 
   it("reports engine errors without writing anything", async () => {

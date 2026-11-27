@@ -1,0 +1,47 @@
+# yaml-language-server: $schema=../../../schema/dashboard.schema.json
+title: Sales trends
+description: Four complete quarters, Oct 2025 to Sep 2026, against the year before, at the grain you pick.
+period:
+  asOf: latest_data
+  range:
+    start: 2025-10-01
+    end: 2026-10-01
+  compare: previous_year
+filters:
+  - type: grain
+    id: grain
+    label: Grain
+    options: [week, month, quarter]
+    default: month
+blocks:
+  - type: kpi
+    id: revenue
+    metric: revenue
+    sparkline: true
+  - type: kpi
+    id: orders
+    metric: orders
+  - type: line
+    id: revenue_by_region
+    title: Revenue by region
+    metrics: [revenue]
+    grain: month
+    grains: [week, month, quarter]
+    split: region
+    span: 8
+  - type: bar
+    id: orders_over_time
+    title: Orders
+    metrics: [orders]
+    grain: month
+    grains: [month, quarter]
+    span: 4
+  - type: area
+    id: revenue_by_channel
+    title: Revenue by channel
+    metrics: [revenue]
+    grain: week
+    grains: [week, month]
+    split: channel
+    stack: true
+    span: 12

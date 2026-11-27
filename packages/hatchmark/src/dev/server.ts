@@ -37,11 +37,13 @@ import {
 } from "../render/index.js";
 import { esc } from "../render/svg.js";
 import {
+  CONFIG_FILE,
   checkReferences,
   loadProject,
   type Project,
   type ProjectConfig,
   parseDiagnostics,
+  UNREAD_CONFIG_FILES,
 } from "../spec/index.js";
 import { overlayHtml } from "./overlay.js";
 
@@ -161,11 +163,11 @@ export function diffPages(before: Rendered, after: Rendered): CardUpdate[] | und
 /**
  * Starts the dev server: Vite with the Hatchmark plugin, serving every dashboard at the URLs build
  * writes (/<dashboard>/, and / as the index when there is more than one) with the same renderer,
- * runtime and fonts. It watches hatchmark.json, metrics, segments, dashboards and every data file.
+ * runtime and fonts. It watches hatchmark.yaml, metrics, segments, dashboards and every data file.
  * On a change it reloads the project, re-runs only the dashboards the change can affect, renders
  * them and compares each card with the page the browser has: changed cards are pushed over HMR,
  * structural changes reload the page. Errors from check or run go to the terminal and over the
- * page, and clear on the next good build. Without a hatchmark.json it returns the report instead
+ * page, and clear on the next good build. Without a hatchmark.yaml it returns the report instead
  * and starts nothing.
  */
 export async function startDevServer(
@@ -407,7 +409,7 @@ export async function startDevServer(
   };
   const relevant = (file: string): boolean => {
     const rel = path.relative(root, file);
-    if (rel === "hatchmark.json") return true;
+    if (rel === CONFIG_FILE || UNREAD_CONFIG_FILES.includes(rel)) return true;
     if (sourcePaths(config).has(file)) return true;
     if (rel.startsWith("..") || path.isAbsolute(rel)) return false;
     const dirs = [
@@ -454,7 +456,7 @@ export async function startDevServer(
         name === undefined ? assets.assetsFrom("") : assets.assetsFrom("../"),
         removed ? "Dashboard removed" : "Waiting for a good build",
         removed
-          ? `${config?.dashboardsDir ?? "dashboards"}/${name}.json does not exist. This page reloads when it comes back.`
+          ? `${config?.dashboardsDir ?? "dashboards"}/${name}.yaml does not exist. This page reloads when it comes back.`
           : "This page reloads when the dashboard builds.",
       );
     }

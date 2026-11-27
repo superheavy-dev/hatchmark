@@ -8,10 +8,10 @@ contract described here.
 
 ```
 error[HM2003]: unknown metric "net_revenu"
- --> dashboards/sales.json:14:17
+ --> dashboards/sales.yaml:14:13
    |
-14 |       "metric": "net_revenu",
-   |                 ^^^^^^^^^^^^ no file metrics/net_revenu.json
+14 |     metric: net_revenu
+   |             ^^^^^^^^^^ no file metrics/net_revenu.yaml
    = help: did you mean "net_revenue"?
    = valid: gross_revenue, net_revenue, orders, refunds
    = fix (unsafe): replace with "net_revenue"   ·   hatchmark explain HM2003
@@ -53,7 +53,7 @@ Each diagnostic:
 | `fix`      | no       | A proposed repair, below.                                                                                                                                                                                                                                                                                                                                |
 | `docs`     | yes      | The command that explains the code, such as `hatchmark explain HM2003`.                                                                                                                                                                                                                                                                                  |
 
-Code ranges: HM1xxx files and JSON syntax, HM2xxx references between files and to data, HM3xxx
+Code ranges: HM1xxx files and YAML syntax, HM2xxx references between files and to data, HM3xxx
 spec shape, HM4xxx data rules, HM5xxx design rules, HM9xxx internal errors.
 
 ## Fixes
@@ -63,7 +63,7 @@ A fix is `{"range", "text", "applicability", "description"}`: replace the source
 a diagnostic's range, except that it may be empty.
 
 `applicability` is `"safe"` when applying the fix cannot change what the file means beyond the
-repair itself (deleting a comment or trailing comma, fixing letter case, adding a documented
+repair itself (fixing letter case, quoting a value YAML reads as a number, adding a documented
 default). `"unsafe"` fixes are likely but must be read first; for example, replacing a misspelled
 metric name with the closest existing one could pick the wrong metric. `hatchmark check --fix`
 applies only safe fixes.
@@ -79,15 +79,30 @@ each edit.
 
 Line, area and bar charts need at least 3 of the 12 grid columns for their axis labels, readout
 and plot. A smaller `span` is a warning, HM2024: the chart is drawn 3 columns wide anyway, and
-the grid row reflows around it. The safe fix sets `"span": 3`. `check` and `build` both report it.
+the grid row reflows around it. The safe fix sets `span: 3`. `check` and `build` both report it.
 
-A table with `"overflow": "page"` grows with its rows. In a grid row shared with other blocks,
+A table with `overflow: page` grows with its rows. In a grid row shared with other blocks,
 that stretches the other cards to the table's height, so it is a warning, HM2026. Remove `overflow`
-(a table in a shared row scrolls inside its card by default), or give the table `"span": 12`.
+(a table in a shared row scrolls inside its card by default), or give the table `span: 12`.
 
-## JSON syntax
+## YAML syntax
 
-Spec files are strict JSON (RFC 8259): exactly what `JSON.parse` accepts, with the same value. Two
-things that `JSON.parse` handles are also reported: a leading byte order mark (rejected by
-`JSON.parse` too; Hatchmark offers a safe fix to delete it), and duplicate keys (HM1003), which
-`JSON.parse` accepts by keeping the last one. Only the first syntax error in a file is reported.
+Spec files are YAML 1.2, read with the core schema, one document per file, with the `.yaml`
+extension. Only the first syntax error in a file is reported (HM1002), at the line and column
+where the parser stopped. The core schema has no implicit surprises: `yes`, `no`, `on` and `off`
+are strings, and so are dates such as `2026-01-01`. Unquoted `2026`, `1.5`, `true` and `null` are
+a number, a boolean and null; where the spec expects a string, HM3003 says so and its safe fix
+quotes the value as written (`"0012"`, not `"12"`).
+
+A few YAML features are errors so that every tool reads a file the same way: duplicate keys
+(HM1003), and anchors, aliases, merge keys (`<<`), tags other than the core ones, a core tag that
+does not fit its value, keys that are not strings, a `%YAML` directive other than 1.2 and a second
+document after `---` (HM1006). A number must be written as JSON writes it: `0123`, `+1`, `0x10`,
+`.5` and `.inf` are HM1006, and the safe fix quotes them as written. SQL must be a literal block
+(`sql: |`): a folded or multi-line plain value joins its lines with spaces, so a `--` comment
+would hide the lines after it. A `.json` or `.yml` file where a spec file belongs is not read;
+HM1007 names the `.yaml` file Hatchmark expects.
+
+A `#` after a space starts a comment, so `value: Store #12` reads as `Store`. A filter value or
+a select default followed by a comment on the same line is a warning (HM1008); quote the value to
+keep the `#`.

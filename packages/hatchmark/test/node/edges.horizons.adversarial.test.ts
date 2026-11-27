@@ -278,7 +278,7 @@ beforeAll(async () => {
   try {
     for (const p of PROJECTS) {
       const fixture = await writeProject({
-        "hatchmark.json": {
+        "hatchmark.yaml": {
           ...PROJECT_DEFAULTS,
           name: `horizons ${p.name}`,
           timezone: TZ,
@@ -289,7 +289,7 @@ beforeAll(async () => {
         },
         "orders.csv": ordersCsv(p.ordersEnd),
         "refunds.csv": refundsCsv(p.refundsEnd),
-        "metrics/revenue.json": {
+        "metrics/revenue.yaml": {
           label: "Revenue",
           format: { type: "number" },
           better: "up",
@@ -299,7 +299,7 @@ beforeAll(async () => {
           column: "amount",
           time: "at",
         },
-        "metrics/refunds.json": {
+        "metrics/refunds.yaml": {
           label: "Refunds",
           format: { type: "number" },
           better: "down",
@@ -311,7 +311,7 @@ beforeAll(async () => {
         },
         ...Object.fromEntries(
           PERIODS.map((period, pi) => [
-            `dashboards/p${pi}.json`,
+            `dashboards/p${pi}.yaml`,
             {
               title: `P${pi}`,
               period: { ...period, compare: "none" },
@@ -734,7 +734,7 @@ describe("a source whose horizon is before the window start", () => {
     period: Record<string, unknown> = { asOf: "latest_data", range: "month_to_date" },
   ) {
     const f = await writeProject({
-      "hatchmark.json": {
+      "hatchmark.yaml": {
         ...PROJECT_DEFAULTS,
         name: "Lagging",
         timezone: "UTC",
@@ -755,7 +755,7 @@ describe("a source whose horizon is before the window start", () => {
           .map((d) => `${d},1`)
           .join("\n") +
         "\n",
-      "metrics/orders.json": {
+      "metrics/orders.yaml": {
         label: "Orders",
         format: { type: "number" },
         better: "up",
@@ -765,7 +765,7 @@ describe("a source whose horizon is before the window start", () => {
         column: "v",
         time: "day",
       },
-      "metrics/refunds.json": {
+      "metrics/refunds.yaml": {
         label: "Refunds",
         format: { type: "number" },
         better: "down",
@@ -775,7 +775,7 @@ describe("a source whose horizon is before the window start", () => {
         column: "v",
         time: "day",
       },
-      "dashboards/d.json": {
+      "dashboards/d.yaml": {
         title: "D",
         period: { ...period, compare: "none" },
         blocks: [

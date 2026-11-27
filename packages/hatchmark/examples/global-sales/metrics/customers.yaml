@@ -1,0 +1,15 @@
+# yaml-language-server: $schema=../../../schema/metric.schema.json
+label: Customers
+description: Distinct customers with a paid order.
+type: aggregate
+table: orders
+aggregate: count_distinct
+column: customer_id
+filters:
+  - column: status
+    op: eq
+    value: paid
+time: ordered_at
+format:
+  type: number
+better: up

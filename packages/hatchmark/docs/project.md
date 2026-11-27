@@ -1,29 +1,28 @@
-# Project file (hatchmark.json)
+# Project file (hatchmark.yaml)
 
-`hatchmark.json` sits at the project root and holds the settings and the data sources. Every field
+`hatchmark.yaml` sits at the project root and holds the settings and the data sources. Every field
 except `$schema` is required, so a reader sees what will happen without knowing defaults;
 `hatchmark check` reports a missing field with a fix that adds the default. Print the full JSON
 Schema with `hatchmark schema project`.
 
-```json
-{
-  "$schema": "./node_modules/hatchmark/schema/project.schema.json",
-  "version": 1,
-  "name": "Global Sales",
-  "dataDir": "data",
-  "metricsDir": "metrics",
-  "dashboardsDir": "dashboards",
-  "outDir": "dist",
-  "locale": "en-US",
-  "currency": "USD",
-  "timezone": "America/New_York",
-  "weekStart": "sunday",
-  "theme": "default",
-  "telemetry": false,
-  "sources": {
-    "orders": { "type": "csv", "path": "data/orders.csv" }
-  }
-}
+```yaml
+# yaml-language-server: $schema=./node_modules/hatchmark/schema/project.schema.json
+version: 1
+name: Global Sales
+dataDir: data
+metricsDir: metrics
+dashboardsDir: dashboards
+outDir: dist
+locale: en-US
+currency: USD
+timezone: America/New_York
+weekStart: sunday
+theme: default
+telemetry: false
+sources:
+  orders:
+    type: csv
+    path: data/orders.csv
 ```
 
 | Field           | Meaning                                                                              |
@@ -31,8 +30,8 @@ Schema with `hatchmark schema project`.
 | `version`       | Spec format version. Always `1`.                                                     |
 | `name`          | Project name, shown at the top of every page.                                        |
 | `dataDir`       | Where data files live by convention (`data`). Source paths still name the full path. |
-| `metricsDir`    | Directory of `<name>.json` metric files. See [metrics.md](metrics.md).               |
-| `dashboardsDir` | Directory of `<name>.json` dashboard files. See [dashboards.md](dashboards.md).      |
+| `metricsDir`    | Directory of `<name>.yaml` metric files. See [metrics.md](metrics.md).               |
+| `dashboardsDir` | Directory of `<name>.yaml` dashboard files. See [dashboards.md](dashboards.md).      |
 | `outDir`        | Where `hatchmark build` writes the site. See [build.md](build.md).                   |
 | `locale`        | BCP 47 tag for number and date formatting, such as `en-US` or `de-DE`.               |
 | `currency`      | ISO 4217 code used by currency metrics that do not set their own, such as `USD`.     |
@@ -47,8 +46,8 @@ Schema with `hatchmark schema project`.
 A source is one file read as a table. Its name (the key under `sources`) is lowercase snake_case,
 such as `orders` or `web_sessions`.
 
-**`path` is relative to `hatchmark.json`**, not to `dataDir`: a file at `data/orders.csv` is
-`"path": "data/orders.csv"`. Paths stay inside the project: no absolute paths and no `..`.
+**`path` is relative to `hatchmark.yaml`**, not to `dataDir`: a file at `data/orders.csv` is
+`path: data/orders.csv`. Paths stay inside the project: no absolute paths and no `..`.
 
 | `type`    | Options                                                                                                     |
 | --------- | ----------------------------------------------------------------------------------------------------------- |
@@ -56,24 +55,38 @@ such as `orders` or `web_sessions`.
 | `parquet` | None; Parquet carries its own column types.                                                                 |
 | `json`    | `format`: `array` (one array of objects, the default) or `ndjson` (one object per line).                    |
 
-```json
-"sources": {
-  "orders": { "type": "csv", "path": "data/orders.csv" },
-  "events": { "type": "parquet", "path": "data/events.parquet" },
-  "refunds": { "type": "json", "path": "data/refunds.ndjson", "format": "ndjson" },
-  "stores": { "type": "csv", "path": "data/stores.tsv", "delimiter": "\t" }
-}
+```yaml
+sources:
+  orders:
+    type: csv
+    path: data/orders.csv
+  events:
+    type: parquet
+    path: data/events.parquet
+  refunds:
+    type: json
+    path: data/refunds.ndjson
+    format: ndjson
+  stores:
+    type: csv
+    path: data/stores.tsv
+    delimiter: "\t"
 ```
 
 Every file source also takes these options:
 
-| Option      | Meaning                                                                                                                                                                                                                                                                                                                                                                                                                                       |
-| ----------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `timezone`  | IANA time zone that the file's timestamps without an offset were written in, such as `America/Chicago`. Without it they are read as UTC; a project whose `timezone` isn't UTC gets note `HM4016` when a source has them. Timestamps with an offset and dates never shift.                                                                                                                                                                     |
-| `freshness` | How complete the source is (its horizon). By default it is complete through the latest value of the time column a metric uses, over all rows. `{"column": "exported_at"}` measures another column, `{"lag": {"days": 1}}` or `{"lag": {"hours": 6}}` takes the still-filling end off, `{"through": "2026-11-26"}` fixes the last complete date, and `{"through": "as_of"}` says the source is complete whenever the build runs (sparse logs). |
+| Option      | Meaning                                                                                                                                                                                                                                                                                                                                                                                                                                 |
+| ----------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `timezone`  | IANA time zone that the file's timestamps without an offset were written in, such as `America/Chicago`. Without it they are read as UTC; a project whose `timezone` isn't UTC gets note `HM4016` when a source has them. Timestamps with an offset and dates never shift.                                                                                                                                                               |
+| `freshness` | How complete the source is (its horizon). By default it is complete through the latest value of the time column a metric uses, over all rows. `{ column: exported_at }` measures another column, `{ lag: { days: 1 } }` or `{ lag: { hours: 6 } }` takes the still-filling end off, `{ through: 2026-11-26 }` fixes the last complete date, and `{ through: as_of }` says the source is complete whenever the build runs (sparse logs). |
 
-```json
-"usage": { "type": "csv", "path": "data/usage_daily.csv", "freshness": { "lag": { "days": 1 } } }
+```yaml
+usage:
+  type: csv
+  path: data/usage_daily.csv
+  freshness:
+    lag:
+      days: 1
 ```
 
 [numbers.md](numbers.md#time) says how horizons decide `latest_data`.
@@ -84,14 +97,14 @@ which names the source and the column; `hatchmark check` does not catch every su
 
 ## Starting from `init --template minimal`
 
-`hatchmark init --template minimal` writes `hatchmark.json` with `"sources": {}` and empty
+`hatchmark init --template minimal` writes `hatchmark.yaml` with `sources: {}` and empty
 `data/`, `metrics/` and `dashboards/` directories. To get to a first page:
 
 1. Put the data file under `data/`, for example `data/orders.csv`.
-2. Add it to `sources` in `hatchmark.json`: `"orders": { "type": "csv", "path": "data/orders.csv" }`.
-3. Write one metric per file under `metrics/`, such as `metrics/revenue.json`. See
+2. Add it to `sources` in `hatchmark.yaml`: `orders: { type: csv, path: data/orders.csv }`.
+3. Write one metric per file under `metrics/`, such as `metrics/revenue.yaml`. See
    [metrics.md](metrics.md).
-4. Write a dashboard under `dashboards/`, such as `dashboards/sales.json`. See
+4. Write a dashboard under `dashboards/`, such as `dashboards/sales.yaml`. See
    [dashboards.md](dashboards.md).
 5. Run `hatchmark check --json` and fix every error, then `hatchmark build`.
 

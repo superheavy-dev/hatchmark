@@ -27,13 +27,13 @@ async function build(
 ) {
   const line = { type: "line", metrics: ["flow"], grain: "week" };
   const fixture = await writeProject({
-    "hatchmark.json": {
+    "hatchmark.yaml": {
       ...PROJECT_DEFAULTS,
       name: "Delta",
       timezone: "UTC",
       sources: { rows: { type: "csv", path: "rows.csv" } },
     },
-    "dashboards/d.json": {
+    "dashboards/d.yaml": {
       title: "D",
       period: { range, asOf, compare: "none" },
       blocks: [
@@ -41,7 +41,7 @@ async function build(
         { ...line, id: "changed", ...opts },
       ],
     },
-    "metrics/flow.json": metric({
+    "metrics/flow.yaml": metric({
       type: "aggregate",
       table: "rows",
       aggregate: "sum",

@@ -58,11 +58,11 @@ describe("DuckDB buckets agree with the core's bucketStart", SWEEP, () => {
       ),
     ].join("\n");
     const { root, project } = await writeProject({
-      "hatchmark.json": config(),
+      "hatchmark.yaml": config(),
       "days.csv": `${csv}\n`,
     });
     const spec = project.config.spec;
-    if (spec === undefined) throw new Error("invalid hatchmark.json");
+    if (spec === undefined) throw new Error("invalid hatchmark.yaml");
 
     const monthDays: string[] = [];
     for (let m = 1; m <= 12; m++) {
@@ -152,16 +152,16 @@ describe("plans and KPIs for anchors and shifts", SWEEP, () => {
   });
   const project = (extra: Record<string, unknown>, d: unknown) =>
     writeProject({
-      "hatchmark.json": config(extra),
+      "hatchmark.yaml": config(extra),
       "days.csv": csv,
-      "metrics/days.json": metric({
+      "metrics/days.yaml": metric({
         type: "aggregate",
         table: "days",
         time: "at",
         aggregate: "sum",
         column: "amount",
       }),
-      "dashboards/d.json": d,
+      "dashboards/d.yaml": d,
     });
   const P = { asOf: "2026-03-28", range: "last_30_days", compare: "previous_period" };
   const hash = async (extra: Record<string, unknown>, d: unknown) => {
@@ -371,15 +371,15 @@ describe("plans and KPIs for anchors and shifts", SWEEP, () => {
 describe("dates outside 0001-01-01 to 9998-12-31 fail with HM2015", SWEEP, () => {
   const runWith = async (csv: string, period: Record<string, unknown>, grain = "day") => {
     const loaded = await writeProject({
-      "hatchmark.json": config(),
+      "hatchmark.yaml": config(),
       "days.csv": csv,
-      "metrics/n.json": metric({
+      "metrics/n.yaml": metric({
         type: "aggregate",
         table: "days",
         time: "at",
         aggregate: "count",
       }),
-      "dashboards/d.json": {
+      "dashboards/d.yaml": {
         title: "D",
         period,
         blocks: [

@@ -8,15 +8,14 @@ import { runDashboard } from "../../src/compiler/index.js";
 import { createDuckDbExecutor } from "../../src/node/index.js";
 import { formatValue } from "../../src/render/index.js";
 import { buildProject, EXAMPLE, loadAt, removeProjects, writeExample } from "../node/fixture.js";
+import { fromYaml } from "../yaml.js";
 
 /** The period control on the built explorer example: presets, calendar keyboard, URL state. */
 let browser: Browser;
 let root: string;
 
 beforeAll(async () => {
-  const explorer = JSON.parse(
-    await readFile(path.join(EXAMPLE, "dashboards/explorer.json"), "utf8"),
-  );
+  const explorer = fromYaml(await readFile(path.join(EXAMPLE, "dashboards/explorer.yaml"), "utf8"));
   root = await writeExample({}, { explorer });
   expect((await buildProject(root)).code).toBe(0);
   browser = await chromium.launch();

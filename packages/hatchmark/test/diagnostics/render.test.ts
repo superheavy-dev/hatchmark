@@ -3,10 +3,10 @@ import {
   closestMatch,
   createReport,
   type Diagnostic,
-  JsonDocument,
-  parseJsonFile,
+  parseYamlFile,
   renderHuman,
   renderJson,
+  SpecDocument,
 } from "../../src/diagnostics/index.js";
 
 const sales = `{
@@ -22,19 +22,19 @@ const sales = `{
 `;
 
 function unknownMetric(): Diagnostic {
-  const doc = new JsonDocument("dashboards/sales.json", sales);
+  const doc = new SpecDocument("dashboards/sales.yaml", sales);
   const location = doc.locationOf("/charts/2/metric");
   if (location === undefined) throw new Error("range not found");
   return {
     code: "HM1002",
     severity: "error",
     message: 'unknown metric "net_revenu"',
-    file: "dashboards/sales.json",
+    file: "dashboards/sales.yaml",
     pointer: "/charts/2/metric",
     ...location,
-    label: "no file metrics/net_revenu.json",
+    label: "no file metrics/net_revenu.yaml",
     expected: ["gross_revenue", "net_revenue", "orders", "refunds"],
-    help: 'did you mean "net_revenue"? (metrics/net_revenue.json)',
+    help: 'did you mean "net_revenue"? (metrics/net_revenue.yaml)',
     fix: {
       range: location.range,
       text: '"net_revenue"',
@@ -51,11 +51,11 @@ describe("renderHuman", () => {
     expect(renderHuman(report)).toBe(
       [
         'error[HM1002]: unknown metric "net_revenu"',
-        " --> dashboards/sales.json:6:17",
+        " --> dashboards/sales.yaml:6:17",
         "  |",
         '6 |       "metric": "net_revenu",',
-        "  |                 ^^^^^^^^^^^^ no file metrics/net_revenu.json",
-        '  = help: did you mean "net_revenue"? (metrics/net_revenue.json)',
+        "  |                 ^^^^^^^^^^^^ no file metrics/net_revenu.yaml",
+        '  = help: did you mean "net_revenue"? (metrics/net_revenue.yaml)',
         "  = valid: gross_revenue, net_revenue, orders, refunds",
         '  = fix (safe): replace with "net_revenue"   ·   hatchmark explain HM1002',
         "",
@@ -67,8 +67,8 @@ describe("renderHuman", () => {
   it("still prints the location when there is no frame", () => {
     const { frame: _, ...rest } = unknownMetric();
     const text = renderHuman(createReport([rest]));
-    expect(text).toContain(" --> dashboards/sales.json:6:17");
-    expect(text).toContain("  = no file metrics/net_revenu.json");
+    expect(text).toContain(" --> dashboards/sales.yaml:6:17");
+    expect(text).toContain("  = no file metrics/net_revenu.yaml");
   });
 
   it("cuts long expected lists", () => {
@@ -79,29 +79,29 @@ describe("renderHuman", () => {
   });
 
   it("aligns carets after tabs", () => {
-    const text = '{\n\t"a": tru\n}';
-    const { diagnostics } = parseJsonFile("x.json", text);
+    const text = '{\n\t"a": *xy\n}';
+    const { diagnostics } = parseYamlFile("x.yaml", text);
     const out = renderHuman(createReport(diagnostics));
-    expect(out).toContain('2 |     "a": tru');
+    expect(out).toContain('2 |     "a": *xy');
     expect(out).toContain("  |          ^^^");
   });
 
   it("frames the right line in CR-only files", () => {
-    const text = '{\r\t"a": tru\r}';
-    const { diagnostics } = parseJsonFile("x.json", text);
+    const text = '{\r\t"a": *xy\r}';
+    const { diagnostics } = parseYamlFile("x.yaml", text);
     const out = renderHuman(createReport(diagnostics));
-    expect(out).toContain(" --> x.json:2:7");
-    expect(out).toContain('2 |     "a": tru');
+    expect(out).toContain(" --> x.yaml:2:7");
+    expect(out).toContain('2 |     "a": *xy');
     expect(out).toContain("  |          ^^^");
   });
 
   it("aligns carets after wide characters and combining marks", () => {
     for (const [text, line, caret] of [
-      ['{"界": tru}', '1 | {"界": tru}', `  | ${" ".repeat(7)}^^^`],
-      ['{"e\u0301": tru}', '1 | {"e\u0301": tru}', `  | ${" ".repeat(6)}^^^`],
-      ['{"📈": tru}', '1 | {"📈": tru}', `  | ${" ".repeat(7)}^^^`],
+      ['{"界": *xy}', '1 | {"界": *xy}', `  | ${" ".repeat(7)}^^^`],
+      ['{"e\u0301": *xy}', '1 | {"e\u0301": *xy}', `  | ${" ".repeat(6)}^^^`],
+      ['{"📈": *xy}', '1 | {"📈": *xy}', `  | ${" ".repeat(7)}^^^`],
     ] as const) {
-      const { diagnostics } = parseJsonFile("x.json", text);
+      const { diagnostics } = parseYamlFile("x.yaml", text);
       const out = renderHuman(createReport(diagnostics));
       expect(out, text).toContain(line);
       expect(out, text).toContain(caret);
@@ -109,22 +109,22 @@ describe("renderHuman", () => {
   });
 
   it("draws each frame from the text it was checked against, even after the file changes", () => {
-    const first = parseJsonFile("x.json", '{"before": tru}').diagnostics;
-    const second = parseJsonFile("x.json", '{"after": tru}').diagnostics;
-    expect(renderHuman(createReport(first)).split("\n")[3]).toBe('1 | {"before": tru}');
-    expect(renderHuman(createReport(second)).split("\n")[3]).toBe('1 | {"after": tru}');
-    expect(renderHuman(createReport(first)).split("\n")[3]).toBe('1 | {"before": tru}');
+    const first = parseYamlFile("x.yaml", '{"before": *xy}').diagnostics;
+    const second = parseYamlFile("x.yaml", '{"after": *xy}').diagnostics;
+    expect(renderHuman(createReport(first)).split("\n")[3]).toBe('1 | {"before": *xy}');
+    expect(renderHuman(createReport(second)).split("\n")[3]).toBe('1 | {"after": *xy}');
+    expect(renderHuman(createReport(first)).split("\n")[3]).toBe('1 | {"before": *xy}');
   });
 
   it("windows very long lines", () => {
-    const text = `[${"1,".repeat(500)}tru, ${"2,".repeat(500)}3]`;
-    const [d] = parseJsonFile("x.json", text).diagnostics;
+    const text = `[${"1,".repeat(500)}*xy, ${"2,".repeat(500)}3]`;
+    const [d] = parseYamlFile("x.yaml", text).diagnostics;
     expect(d?.frame?.column).toBeGreaterThan(1);
     expect(d?.frame?.more).toBe(true);
     expect(d?.frame?.text.length).toBeLessThanOrEqual(240);
     const lines = renderHuman(createReport(d ? [d] : [])).split("\n");
     const caretAt = lines[4]?.indexOf("^") ?? -1;
-    expect(lines[3]?.slice(caretAt, caretAt + 3)).toBe("tru");
+    expect(lines[3]?.slice(caretAt, caretAt + 3)).toBe("*xy");
     expect(lines[3]).toMatch(/^1 \| …1,.*…$/);
   });
 
@@ -142,7 +142,7 @@ describe("renderHuman", () => {
 describe("createReport and renderJson", () => {
   it("counts and sorts diagnostics deterministically", () => {
     const base = unknownMetric();
-    const warning: Diagnostic = { ...base, severity: "warning", file: "a.json" };
+    const warning: Diagnostic = { ...base, severity: "warning", file: "a.yaml" };
     const later: Diagnostic = {
       ...base,
       range: { start: { line: 9, column: 1 }, end: { line: 9, column: 2 } },

@@ -106,7 +106,7 @@ export interface PlannedQuery {
   id: string;
   source: string;
   /**
-   * The source's file and reader options as hatchmark.json declares them. They decide what rows
+   * The source's file and reader options as hatchmark.yaml declares them. They decide what rows
    * the query reads, so they are part of its id and of the plan hash.
    */
   input: FileSource;
@@ -213,9 +213,9 @@ export interface QueryPlan {
   version: typeof PLAN_VERSION;
   dashboard: string;
   period: { asOf: string; range: RangeSpec; compare: Comparison };
-  /** IANA time zone that dates are bucketed and windowed in, from hatchmark.json. */
+  /** IANA time zone that dates are bucketed and windowed in, from hatchmark.yaml. */
   timezone: string;
-  /** Where week, quarter and year buckets begin, from hatchmark.json (projectAnchors). */
+  /** Where week, quarter and year buckets begin, from hatchmark.yaml (projectAnchors). */
   anchors: Anchors;
   params: PlanParam[];
   /** The source horizons the plan needs, to resolve the as-of instant (planHorizons). */

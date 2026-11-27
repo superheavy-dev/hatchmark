@@ -5,7 +5,7 @@ import { usageError } from "../usage.js";
 
 export const schemaHelp: CommandHelp = {
   name: "schema",
-  summary: "Print the JSON Schema for hatchmark.json, metric files or dashboard files.",
+  summary: "Print the JSON Schema for hatchmark.yaml, metric files or dashboard files.",
   usage: "hatchmark schema [project|metric|dashboard]",
   options: [
     { flag: "[kind]", description: "Which schema. Without it, prints all three keyed by kind." },

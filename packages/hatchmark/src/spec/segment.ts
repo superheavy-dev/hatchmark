@@ -11,5 +11,5 @@ export const segmentSchema = z
       description: "Row filters, all of which must hold. Applied to every source with the columns.",
     }),
   })
-  .meta({ title: "Hatchmark segment (segments/<name>.json)" });
+  .meta({ title: "Hatchmark segment (segments/<name>.yaml)" });
 export type Segment = z.infer<typeof segmentSchema>;

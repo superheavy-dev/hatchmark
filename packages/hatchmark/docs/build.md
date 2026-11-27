@@ -4,7 +4,7 @@
 host. It never asks questions and prints one line of JSON when an agent runs it.
 
 ```sh
-hatchmark build            # writes outDir from hatchmark.json (dist by default)
+hatchmark build            # writes outDir from hatchmark.yaml (dist by default)
 hatchmark build --out site # writes site/ instead, relative to --cwd
 hatchmark build --json     # one line of JSON on stdout
 hatchmark build --no-cache # run every query instead of reusing .hatchmark/cache/
@@ -29,7 +29,7 @@ the rest of the dashboard is built.
 
 ```
 dist/
-  sales/index.html          one page per dashboard, named after dashboards/<name>.json
+  sales/index.html          one page per dashboard, named after dashboards/<name>.yaml
   index.html                a list of dashboards, only when there is more than one
   _hatchmark/
     hatchmark.<hash>.js     the browser runtime (tooltips, crosshair, keyboard)
@@ -98,7 +98,7 @@ Build keeps every query result, and the latest date of every time column it meas
 changed. `hatchmark init` adds `.hatchmark/` to `.gitignore`.
 
 - A result is reused only when everything that decides it is unchanged: the query (its metric,
-  filters, grouping, window and the source's reader options in `hatchmark.json`), the as-of date,
+  filters, grouping, window and the source's reader options in `hatchmark.yaml`), the as-of date,
   time zone, week and year anchors and filter defaults, the contents of the data files it reads,
   and the engine (the Hatchmark version, its query and executor code, and the DuckDB version).
 - Data files are compared by the SHA-256 of their contents, never by size or modification time,
@@ -106,7 +106,7 @@ changed. `hatchmark init` adds `.hatchmark/` to `.gitignore`.
   `.hatchmark/tmp/` (a copy-on-write clone where the file system supports it), hashes the copy and
   runs the queries on the copy, so a file edited while a build runs can never be stored under the
   wrong fingerprint. The copy is removed when the build ends.
-- Queries of raw SQL metrics (`"type": "sql"`) always run and are never cached: their SQL can
+- Queries of raw SQL metrics (`type: sql`) always run and are never cached: their SQL can
   read the clock or other files, which no cache key can see.
 - A cached build writes the same bytes as `hatchmark build --no-cache`. A damaged or unreadable
   entry is ignored and rewritten.
@@ -116,7 +116,7 @@ changed. `hatchmark init` adds `.hatchmark/` to `.gitignore`.
   a directory under it that the cache uses is a symbolic link, unreadable or unwritable, or when
   copying a data file, writing an entry or removing an unused one fails, the cache turns off for
   the rest of the command. The build continues as with `--no-cache`, prints one warning, and
-  reports `"enabled": false` with the reason in `cache.reason`; `explain` shows such queries as
+  reports `enabled: false` with the reason in `cache.reason`; `explain` shows such queries as
   `off`.
 
 `hatchmark explain --dashboard <name> --block <id>` lists each query's cache status after its SQL:

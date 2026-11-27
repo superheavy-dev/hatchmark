@@ -137,15 +137,15 @@ describe("hatchmark dev", { timeout: 30_000 }, () => {
       "dashboards",
       "data",
       "generate.ts",
-      "hatchmark.json",
+      "hatchmark.yaml",
       "metrics",
     ]);
   });
 
   it("pushes only the card whose title changed", async () => {
     hmr.clear();
-    await edit("dashboards/sales.json", (t) =>
-      t.replace('"Revenue by channel"', '"Revenue by sales channel"'),
+    await edit("dashboards/sales.yaml", (t) =>
+      t.replace("title: Revenue by channel\n", "title: Revenue by sales channel\n"),
     );
     const update = await hmr.next("hatchmark:update");
     expect(update.data?.dashboard).toBe("sales");
@@ -162,12 +162,14 @@ describe("hatchmark dev", { timeout: 30_000 }, () => {
       ["Revenue by channel, draft two", "Revenue by sales channel"],
     ]) {
       hmr.clear();
-      await edit("dashboards/sales.json", (t) =>
-        t.replace(/"Revenue by (?:sales )?channel[^"]*"/, `"${first}"`),
+      await edit("dashboards/sales.yaml", (t) =>
+        t.replace(/title: Revenue by (?:sales )?channel.*\n/, `title: ${first}\n`),
       );
       await hmr.next("hatchmark:update");
       hmr.clear();
-      await edit("dashboards/sales.json", (t) => t.replace(`"${first}"`, `"${second}"`));
+      await edit("dashboards/sales.yaml", (t) =>
+        t.replace(`title: ${first}\n`, `title: ${second}\n`),
+      );
       const update = await hmr.next("hatchmark:update");
       expect(update.data?.cards?.[0]?.html).toContain(second);
       expect(await (await fetch(new URL("/sales/", server.url))).text()).toContain(second);
@@ -176,9 +178,7 @@ describe("hatchmark dev", { timeout: 30_000 }, () => {
 
   it("pushes the KPIs and cards that show a metric whose label changed", async () => {
     hmr.clear();
-    await edit("metrics/orders.json", (t) =>
-      t.replace('"label": "Orders"', '"label": "Paid orders"'),
-    );
+    await edit("metrics/orders.yaml", (t) => t.replace("label: Orders\n", "label: Paid orders\n"));
     const update = await hmr.next("hatchmark:update", 15_000, "sales");
     await server.idle();
     expect(custom().every((e) => e === "hatchmark:update")).toBe(true);
@@ -211,10 +211,10 @@ describe("hatchmark dev", { timeout: 30_000 }, () => {
   });
 
   it("re-runs every dashboard that reads a data file shared by several sources", async () => {
-    await edit("hatchmark.json", (t) =>
+    await edit("hatchmark.yaml", (t) =>
       t.replace(
-        '"path": "data/orders.csv"\n    }',
-        '"path": "data/orders.csv"\n    },\n    "orders_alias": { "type": "csv", "path": "data/orders.csv" }',
+        "    path: data/orders.csv\n",
+        "    path: data/orders.csv\n  orders_alias:\n    type: csv\n    path: data/orders.csv\n",
       ),
     );
     await new Promise((resolve) => setTimeout(resolve, 300));
@@ -237,11 +237,9 @@ describe("hatchmark dev", { timeout: 30_000 }, () => {
   });
 
   it("shows check errors with their code, and clears them on the next good build", async () => {
-    const good = await readFile(path.join(dir, "dashboards/sales.json"), "utf8");
+    const good = await readFile(path.join(dir, "dashboards/sales.yaml"), "utf8");
     hmr.clear();
-    await edit("dashboards/sales.json", (t) =>
-      t.replace('"metric": "orders"', '"metric": "orderz"'),
-    );
+    await edit("dashboards/sales.yaml", (t) => t.replace("metric: orders\n", "metric: orderz\n"));
     const error = await hmr.next("hatchmark:error");
     expect(error.data?.diagnostics?.map((d) => d.code)).toContain("HM2003");
     expect(error.data?.overlay).toContain('id="hm-dev-overlay"');
@@ -250,33 +248,46 @@ describe("hatchmark dev", { timeout: 30_000 }, () => {
     expect(page).toContain('id="hm-dev-overlay"');
     expect(logs.join("")).toContain("error[HM2003]");
     hmr.clear();
-    await writeFile(path.join(dir, "dashboards/sales.json"), good);
+    await writeFile(path.join(dir, "dashboards/sales.yaml"), good);
     await hmr.next("hatchmark:ok");
     const after = await (await fetch(new URL("/sales/", server.url))).text();
     expect(after).not.toContain('id="hm-dev-overlay"');
   });
 
-  it("shows JSON syntax errors", async () => {
-    const good = await readFile(path.join(dir, "metrics/revenue.json"), "utf8");
+  it("shows YAML syntax errors", async () => {
+    const good = await readFile(path.join(dir, "metrics/revenue.yaml"), "utf8");
     hmr.clear();
-    await writeFile(path.join(dir, "metrics/revenue.json"), good.replace('"label"', "label"));
+    await writeFile(
+      path.join(dir, "metrics/revenue.yaml"),
+      good.replace("label: Revenue", "label: Revenue: total"),
+    );
     const error = await hmr.next("hatchmark:error");
     expect(error.data?.diagnostics?.map((d) => d.code)).toContain("HM1002");
     hmr.clear();
-    await writeFile(path.join(dir, "metrics/revenue.json"), good);
+    await writeFile(path.join(dir, "metrics/revenue.yaml"), good);
+    await hmr.next("hatchmark:ok");
+  });
+
+  it("reports a leftover hatchmark.json, and clears it when the file is deleted", async () => {
+    hmr.clear();
+    await writeFile(path.join(dir, "hatchmark.json"), "{}\n");
+    const error = await hmr.next("hatchmark:error");
+    expect(error.data?.diagnostics?.map((d) => d.code)).toEqual(["HM1007"]);
+    hmr.clear();
+    await rm(path.join(dir, "hatchmark.json"));
     await hmr.next("hatchmark:ok");
   });
 
   it("reloads the page on a structural change", async () => {
     hmr.clear();
-    await edit("dashboards/sales.json", (t) =>
-      t.replace('"span": 8', '"span": 6').replace(/"span": 4\n/, '"span": 6\n'),
+    await edit("dashboards/sales.yaml", (t) =>
+      t.replace("span: 8\n", "span: 6\n").replace("span: 4\n", "span: 6\n"),
     );
     const reload = await hmr.next("hatchmark:reload");
     expect(reload.data?.dashboard).toBe("sales");
     hmr.clear();
-    await edit("dashboards/sales.json", (t) =>
-      t.replace('"title": "Global sales"', '"title": "Worldwide sales"'),
+    await edit("dashboards/sales.yaml", (t) =>
+      t.replace("title: Global sales\n", "title: Worldwide sales\n"),
     );
     expect((await hmr.next("hatchmark:reload")).data?.dashboard).toBe("sales");
     await server.idle();
@@ -287,8 +298,8 @@ describe("hatchmark dev", { timeout: 30_000 }, () => {
   it("reloads the open pages of a removed dashboard and the index", async () => {
     hmr.clear();
     await rename(
-      path.join(dir, "dashboards/trends.json"),
-      path.join(dir, "dashboards/renamed.json"),
+      path.join(dir, "dashboards/trends.yaml"),
+      path.join(dir, "dashboards/renamed.yaml"),
     );
     await server.idle();
     await expect
@@ -302,8 +313,8 @@ describe("hatchmark dev", { timeout: 30_000 }, () => {
 
   it("reloads an open index page when the project name changes", async () => {
     hmr.clear();
-    await edit("hatchmark.json", (t) =>
-      t.replace('"name": "Global Sales"', '"name": "Global Sales EU"'),
+    await edit("hatchmark.yaml", (t) =>
+      t.replace("name: Global Sales\n", "name: Global Sales EU\n"),
     );
     await expect
       .poll(
@@ -384,7 +395,7 @@ describe("hatchmark dev command", () => {
     }
   }, 60_000);
 
-  it("rejects a bad port and a directory without hatchmark.json", async () => {
+  it("rejects a bad port and a directory without hatchmark.yaml", async () => {
     const out: string[] = [];
     const io = { ...quietIO, stdout: (t: string) => out.push(t) };
     expect(await run(["dev", "--port", "nope", "--json"], io)).toBe(2);

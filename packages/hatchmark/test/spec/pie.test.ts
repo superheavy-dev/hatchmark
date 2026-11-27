@@ -1,12 +1,12 @@
 import { describe, expect, it } from "vitest";
 import { checkReferences, parseDiagnostics } from "../../src/spec/index.js";
+import { fromYaml, toYaml } from "../yaml.js";
 import { applyFix, DASHBOARD, projectFrom } from "./helpers.js";
 
 const dashboard = (...blocks: unknown[]) => ({ sales: { ...DASHBOARD, filters: [], blocks } });
 const refs = (...blocks: unknown[]) =>
   checkReferences(projectFrom({ dashboards: dashboard(...blocks) }));
-const text = (block: unknown) =>
-  `${JSON.stringify({ ...DASHBOARD, filters: [], blocks: [block] }, null, 2)}\n`;
+const text = (block: unknown) => `${toYaml({ ...DASHBOARD, filters: [], blocks: [block] })}`;
 
 describe("pie checks", () => {
   it("accepts pie and donut with a limit of 1 to 12, and rejects other limits", () => {
@@ -63,7 +63,7 @@ describe("pie checks", () => {
       fix: { applicability: "unsafe" },
     });
     const fixed = applyFix(text(block), d?.fix);
-    expect(fixed).toContain('"limit": 6');
-    expect(refs(JSON.parse(fixed).blocks[0])).toEqual([]);
+    expect(fixed).toContain("limit: 6\n");
+    expect(refs(fromYaml(fixed).blocks[0])).toEqual([]);
   });
 });

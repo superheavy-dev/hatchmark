@@ -150,10 +150,10 @@ async function ranked(sql: string): Promise<{ key: string | null; v: number | nu
 beforeAll(async () => {
   oracle = await Oracle.open();
   project = await writeProject({
-    "hatchmark.json": CONFIG,
+    "hatchmark.yaml": CONFIG,
     "data/orders.csv": orders(),
-    ...Object.fromEntries(Object.entries(METRICS).map(([n, m]) => [`metrics/${n}.json`, m])),
-    ...Object.fromEntries(Object.entries(DASHBOARDS).map(([n, d]) => [`dashboards/${n}.json`, d])),
+    ...Object.fromEntries(Object.entries(METRICS).map(([n, m]) => [`metrics/${n}.yaml`, m])),
+    ...Object.fromEntries(Object.entries(DASHBOARDS).map(([n, d]) => [`dashboards/${n}.yaml`, d])),
   });
   csv = path.join(project.root, "data/orders.csv");
   const [end] = await oracle.rows(
@@ -171,9 +171,9 @@ describe("pie and donut blocks against a SQL oracle", () => {
   it("checks: HM4001 for a distinct count, HM5010 for 9 and 12 slices", () => {
     expect(project.diagnostics).toEqual([]);
     expect(checkReferences(project.project).map((d) => [d.code, d.file, d.pointer])).toEqual([
-      ["HM5010", "dashboards/pies.json", "/blocks/3/limit"],
-      ["HM4001", "dashboards/wrong.json", "/blocks/0/metric"],
-      ["HM5010", "dashboards/wrong.json", "/blocks/0/limit"],
+      ["HM5010", "dashboards/pies.yaml", "/blocks/3/limit"],
+      ["HM4001", "dashboards/wrong.yaml", "/blocks/0/metric"],
+      ["HM5010", "dashboards/wrong.yaml", "/blocks/0/limit"],
     ]);
   });
 
@@ -273,10 +273,10 @@ describe("pie and donut blocks against a SQL oracle", () => {
 
   it("warns when Other outweighs every slice shown (HM5011)", async () => {
     const one = await writeProject({
-      "hatchmark.json": CONFIG,
+      "hatchmark.yaml": CONFIG,
       "data/orders.csv": orders(),
-      "metrics/revenue.json": METRICS.revenue,
-      "dashboards/tiny.json": {
+      "metrics/revenue.yaml": METRICS.revenue,
+      "dashboards/tiny.yaml": {
         title: "Tiny",
         period: PERIOD,
         blocks: [{ type: "pie", id: "one", metric: "revenue", by: "country", limit: 1 }],

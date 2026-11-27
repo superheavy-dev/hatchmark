@@ -243,7 +243,7 @@ const SQL_TYPE: Record<Storage, string> = {
 
 /**
  * Wraps an executor with the build cache. readOnly (explain) reads entries but never writes.
- * root is the project directory; config the project's hatchmark.json.
+ * root is the project directory; config the project's hatchmark.yaml.
  */
 export async function createCachedExecutor(options: {
   root: string;
