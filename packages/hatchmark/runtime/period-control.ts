@@ -171,6 +171,10 @@ export function mountPeriod(root: HTMLElement, redraw: (view: PeriodView) => voi
 
   const drawCalendar = (focus = false) => {
     if (!months) return;
+    const had =
+      document.activeElement instanceof HTMLElement && months.contains(document.activeElement)
+        ? document.activeElement
+        : undefined;
     months.innerHTML = `<div class="hm-cal-nav"><button type="button" data-hm-cal="prev" aria-label="Previous month">\u2039</button><button type="button" data-hm-cal="next" aria-label="Next month">\u203A</button></div>${drawMonth(state.view)}${drawMonth(addMonths(state.view, 1))}`;
     const [prev, next] = months.querySelectorAll<HTMLButtonElement>(".hm-cal-nav button");
     if (prev) prev.disabled = monthStart(state.view) <= monthStart(min);
@@ -187,7 +191,15 @@ export function mountPeriod(root: HTMLElement, redraw: (view: PeriodView) => voi
             ? "Pick the last day"
             : "Pick the first day";
     }
-    if (focus) months.querySelector<HTMLButtonElement>(`[data-day="${state.focus}"]`)?.focus();
+    const day = months.querySelector<HTMLButtonElement>(`[data-day="${state.focus}"]`);
+    if (focus || had === undefined) {
+      if (focus) day?.focus();
+      return;
+    }
+    const same = had.dataset.hmCal
+      ? months.querySelector<HTMLButtonElement>(`[data-hm-cal="${had.dataset.hmCal}"]`)
+      : months.querySelector<HTMLButtonElement>(`[data-day="${had.dataset.day}"]`);
+    (same && !same.disabled ? same : day)?.focus();
   };
 
   const moveFocus = (day: string) => {
@@ -286,6 +298,11 @@ export function mountPeriod(root: HTMLElement, redraw: (view: PeriodView) => voi
   };
 
   button.addEventListener("click", () => (panel.hidden ? open() : close(true)));
+  document.addEventListener("keydown", (event) => {
+    if (event.key !== "Escape" || panel.hidden || panel.contains(event.target as Node)) return;
+    event.preventDefault();
+    close(true);
+  });
   document.addEventListener("pointerdown", (event) => {
     if (!panel.hidden && !root.contains(event.target as Node)) close(false);
   });
@@ -377,7 +394,18 @@ export function mountPeriod(root: HTMLElement, redraw: (view: PeriodView) => voi
   for (const [edge, input] of Object.entries(inputs)) {
     input?.addEventListener("change", () => {
       const value = input.value;
-      if (!/^\d{4}-\d{2}-\d{2}$/.test(value) || !inside(value)) return;
+      input.removeAttribute("aria-invalid");
+      if (!/^\d{4}-\d{2}-\d{2}$/.test(value) || !inside(value)) {
+        if (edge === "start") state.start = undefined;
+        state.end = undefined;
+        drawCalendar();
+        input.value = value;
+        if (value === "") return;
+        input.setAttribute("aria-invalid", "true");
+        if (status)
+          status.textContent = `Pick a day from ${short.format(toDate(min))} to ${short.format(toDate(max))}`;
+        return;
+      }
       if (edge === "start") {
         state.start = value;
         if (state.end !== undefined && state.end < value) state.end = undefined;

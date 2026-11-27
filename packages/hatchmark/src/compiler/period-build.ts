@@ -33,7 +33,12 @@ export function dayCubeQuery(query: PlannedQuery): PlannedQuery | undefined {
     measures: query.measures,
     dimensions: [{ kind: "time", column, grain: { unit: "day" } }, ...columns],
     groupingSets: [[0, ...columns.map((_, i) => i + 1)]],
-    window: { range: "all_time", shift: "none", column },
+    window: {
+      range: "all_time",
+      shift: "none",
+      column,
+      ...(query.window.horizons ? { horizons: query.window.horizons } : {}),
+    },
     params: query.params.filter((p) => p.kind !== "period"),
   };
   return { id: queryId(shape), ...shape };

@@ -12,7 +12,7 @@ import { periodCaption, periodText } from "../src/render/period.js";
  */
 
 export interface PeriodView {
-  /** The key the page now shows: a preset's when a custom range has the same dates. */
+  /** The key the page now shows: the requested one, so a link to dates stays a link to dates. */
   key: string;
   blocks: string;
   caption: string;
@@ -24,11 +24,7 @@ export interface PeriodView {
 
 function view(payload: PeriodData, requested: string): PeriodView | undefined {
   const days = parseDaysKey(requested);
-  const base = Object.values(payload.presets)[0]?.periodFilter;
-  const same =
-    days &&
-    base?.options.find((o) => o.current?.start === days.start && o.current.end === days.end);
-  const key = same ? same.key : requested;
+  const key = requested;
   let data: DashboardData | undefined = payload.presets[key];
   let presetOnly: string[] = [];
   if (data === undefined && days && payload.custom) {

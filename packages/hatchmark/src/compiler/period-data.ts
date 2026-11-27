@@ -1,6 +1,7 @@
 import type { Dashboard, Format, Project } from "../spec/index.js";
 import { assemble } from "./assemble.js";
 import type { DashboardData, DateSpan, Value } from "./dashboard-data.js";
+import { formatWall, parseInstant, toLocal } from "./instants.js";
 import type {
   ExecutionContext,
   MeasureComponent,
@@ -109,8 +110,14 @@ export function cubeResult(
   const bounds = queryBounds(query, context);
   if (bounds === undefined) return undefined;
   const origin = dayNumber(spanStart);
-  const lo = bounds.kind === "bounded" ? dayNumber(bounds.start) - origin : -Infinity;
-  const hi = bounds.kind === "bounded" ? dayNumber(bounds.end) - origin : Infinity;
+  const dayOf = (bound: string, up: boolean): number => {
+    if (!bound.endsWith("Z")) return dayNumber(bound) - origin;
+    const wall = formatWall(toLocal(parseInstant(bound), context.timezone));
+    const cut = up && !wall.endsWith("T00:00:00.000000") ? 1 : 0;
+    return dayNumber(wall.slice(0, 10)) - origin + cut;
+  };
+  const lo = bounds.kind === "bounded" ? dayOf(bounds.start, false) : -Infinity;
+  const hi = bounds.end === undefined ? Infinity : dayOf(bounds.end, true);
   const components = query.measures.flatMap((m) => m.components);
   const dims = query.dimensions;
   const texts = new Map<number, string>();

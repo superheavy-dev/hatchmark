@@ -189,6 +189,63 @@ describe("period control", () => {
     await page.close();
   });
 
+  it("keeps focus inside the dialog when a redraw disables or replaces the focused control (HAT-73)", async () => {
+    const { page, errors } = await open();
+    await page.locator(".hm-period-button").focus();
+    await page.keyboard.press("Enter");
+    await page.locator("[data-hm-cal=prev]").focus();
+    await page.keyboard.press("Enter");
+    await page.locator("[data-hm-cal=next]").focus();
+    await page.keyboard.press("Enter");
+    const inPanel = () =>
+      page.evaluate(() => !!document.activeElement?.closest(".hm-period-panel"));
+    expect(await page.locator("[data-hm-cal=next]").isDisabled()).toBe(true);
+    expect(await inPanel()).toBe(true);
+    await page.keyboard.press("Escape");
+    expect(await page.locator(".hm-period-panel").isHidden()).toBe(true);
+
+    await page.locator(".hm-period-button").click();
+    const days = page.locator(".hm-days button:not([aria-disabled])");
+    await days.nth(3).click();
+    await days.nth(6).hover();
+    expect(await inPanel()).toBe(true);
+    await page.keyboard.press("Escape");
+    expect(await page.locator(".hm-period-panel").isHidden()).toBe(true);
+    expect(errors).toEqual([]);
+  });
+
+  it("never applies a typed day outside the data: Apply stays off and the field says so (HAT-73)", async () => {
+    const { page, errors } = await open();
+    await page.locator(".hm-period-button").click();
+    const max = await page.locator("[data-hm-edge=end]").getAttribute("max");
+    const year = Number(max?.slice(0, 4));
+    await page.locator("[data-hm-edge=start]").fill(`${year}-01-05`);
+    await page.locator("[data-hm-edge=end]").fill(`${year}-01-10`);
+    expect(await page.locator("[data-hm-cal=apply]").isEnabled()).toBe(true);
+    await page.locator("[data-hm-edge=end]").fill(`${year + 1}-12-31`);
+    expect(await page.locator("[data-hm-edge=end]").getAttribute("aria-invalid")).toBe("true");
+    expect(await page.locator("[data-hm-edge=end]").inputValue()).toBe(`${year + 1}-12-31`);
+    expect(await page.locator("[data-hm-cal=apply]").isDisabled()).toBe(true);
+    expect(new URL(page.url()).searchParams.get("period")).toBeNull();
+    expect(errors).toEqual([]);
+  });
+
+  it("keeps a link to dates as dates, even when a preset reads the same days (HAT-73)", async () => {
+    const probe = await open();
+    const end = await probe.page.locator(".hm-cal").getAttribute("data-hm-end");
+    await probe.page.close();
+    const last = new Date(Date.parse(`${end}T00:00:00Z`) - 86_400_000);
+    const first = new Date(last.getTime() - 6 * 86_400_000);
+    const key = `${first.toISOString().slice(0, 10)}..${last.toISOString().slice(0, 10)}`;
+    const { page, errors } = await open(`?period=${key}`);
+    await settled(page);
+    expect(new URL(page.url()).searchParams.get("period")).toBe(key);
+    expect(await page.locator("[data-hm-preset=last_7_days]").getAttribute("aria-checked")).toBe(
+      "false",
+    );
+    expect(errors).toEqual([]);
+  });
+
   it("fits a 390 px phone with the dialog open", async () => {
     const { page } = await open("", 390);
     await page.locator(".hm-period-button").click();
