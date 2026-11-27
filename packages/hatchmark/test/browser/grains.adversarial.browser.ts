@@ -8,6 +8,8 @@ import path from "node:path";
 import { type Browser, chromium, type Locator, type Page } from "playwright";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import type { DashboardData, GrainSwitch, Series } from "../../src/compiler/dashboard-data.js";
+import { formatBucket, formatValue } from "../../src/render/index.js";
+import type { TimeGrain } from "../../src/spec/index.js";
 import {
   buildProject,
   EXAMPLE,
@@ -112,35 +114,125 @@ describe("grain switching on the built trends page (HAT-40 browser.mjs)", () => 
     await page.close();
   });
 
-  it("every grain panel's figure JSON and data table match DashboardData for that grain", async () => {
+  const SWITCHING = ["revenue_by_region", "orders_over_time", "revenue_by_channel"];
+  const optionsOf = (id: string) =>
+    (data.blocks.find((b) => b.id === id) as unknown as { grains: GrainSwitch }).grains.options;
+  const expected = (option: GrainSwitch["options"][number]) => {
+    const axis = option.axis as { buckets: string[]; grain: TimeGrain };
+    const metric = (name: string) => data.metrics[name] ?? { format: { type: "number" as const } };
+    return {
+      headers: axis.buckets.map((b) => formatBucket(b, axis.grain, data.locale)),
+      cells: option.series.map((s: Series) => ({
+        label: s.label,
+        text: s.values.map((v) => formatValue(v ?? null, metric(s.metric), data.locale, "full")),
+        short: s.values.map((v) =>
+          formatValue(v ?? null, metric(s.metric), data.locale, "compact"),
+        ),
+      })),
+    };
+  };
+
+  it("every grain panel's figure JSON and data table match DashboardData cell by cell, as the page formats them", async () => {
     const page = await open("t", 1280);
     const cards = page.locator("section[data-hm-grains]");
-    const ids = ["revenue_by_region", "orders_over_time", "revenue_by_channel"];
-    const bad: unknown[] = [];
     let panels = 0;
-    for (const [i, id] of ids.entries()) {
-      const block = data.blocks.find((b) => b.id === id) as unknown as { grains: GrainSwitch };
+    for (const [i, id] of SWITCHING.entries()) {
       for (const panel of await cards.nth(i).locator(".hm-grain-panel").all()) {
         panels++;
         const key = await panel.getAttribute("data-hm-grain");
-        const option = block.grains.options.find((o) => o.key === key);
+        const option = optionsOf(id).find((o) => o.key === key);
+        if (option === undefined) throw new Error(`${id}: no option ${key}`);
+        const want = expected(option);
         const json = JSON.parse(
           (await panel.locator("figure > script").textContent()) ?? "null",
         ) as {
-          headers: unknown[];
+          headers: string[];
           series: { v: unknown[] }[];
         };
-        const buckets = (option?.axis as { buckets: string[] } | undefined)?.buckets.length;
-        const same =
-          JSON.stringify(json.series.map((s) => s.v)) ===
-          JSON.stringify(option?.series.map((s: Series) => s.values));
-        const tableRows = await panel.locator("table tbody tr").count();
-        if (!same || json.headers.length !== buckets || tableRows === 0)
-          bad.push({ id, key, headers: json.headers.length, buckets, same, tableRows });
+        expect({ id, key, headers: json.headers, v: json.series.map((x) => x.v) }).toEqual({
+          id,
+          key,
+          headers: want.headers,
+          v: option.series.map((x: Series) => x.values),
+        });
+        const table = await panel.locator("table").evaluate((t) => ({
+          head: [...t.querySelectorAll("thead th")].map((c) => c.textContent),
+          rows: [...t.querySelectorAll("tbody tr")].map((r) =>
+            [...r.children].map((c) => c.textContent),
+          ),
+        }));
+        expect({ id, key, ...table }).toEqual({
+          id,
+          key,
+          head: ["Period", ...want.cells.map((c) => c.label)],
+          rows: want.headers.map((h, j) => [h, ...want.cells.map((c) => c.text[j])]),
+        });
       }
     }
-    expect(bad).toEqual([]);
     expect(panels).toBe(7);
+    await page.close();
+  });
+
+  it("hovering a newly revealed panel of every grain shows that bucket's values, in a tooltip or in the pinned readout", async () => {
+    const page = await open("t", 1280);
+    const cards = page.locator("section[data-hm-grains]");
+    for (const [i, id] of SWITCHING.entries()) {
+      const card = cards.nth(i);
+      for (const option of optionsOf(id)) {
+        await card.locator(`.hm-seg button[data-hm-grain="${option.key}"]`).click();
+        const panel = card.locator(".hm-grain-panel:not([hidden])");
+        expect(await panel.getAttribute("data-hm-grain")).toBe(option.key);
+        const want = expected(option);
+        const svg = panel.locator("svg[data-hm-kind]").filter({ visible: true });
+        await svg.scrollIntoViewIfNeeded();
+        const box = (await svg.boundingBox()) as {
+          x: number;
+          y: number;
+          width: number;
+          height: number;
+        };
+        const pinned = await svg.evaluate((e) => e.hasAttribute("data-hm-readout"));
+        const tip = panel.locator(".hm-tip");
+        const headers = new Set<string>();
+        for (const at of [0.15, 0.35, 0.5, 0.65, 0.85]) {
+          await page.mouse.move(box.x + box.width * at, box.y + box.height / 2);
+          const where = `${id} ${option.key} at ${at}`;
+          if (pinned) {
+            const shown = await svg.evaluate(
+              (e, n) => ({
+                header: e.querySelector(".hm-rh")?.textContent ?? "",
+                values: Array.from(
+                  { length: n },
+                  (_, k) => e.querySelector(`.hm-rv-${k}`)?.textContent ?? "",
+                ),
+              }),
+              want.cells.length,
+            );
+            const j = want.headers.indexOf(shown.header);
+            expect(j, `${where}: readout header ${shown.header}`).toBeGreaterThanOrEqual(0);
+            expect(shown.values, where).toEqual(want.cells.map((c) => c.short[j]));
+            headers.add(shown.header);
+            continue;
+          }
+          expect(await tip.isVisible(), `${where}: tooltip visible`).toBe(true);
+          const shown = await tip.evaluate((t) => ({
+            header: t.querySelector(".hm-tip-h")?.textContent ?? "",
+            rows: [...t.querySelectorAll(".hm-tip-r:not(.hm-tip-t)")].map((r) => [
+              r.querySelector(".hm-tip-n")?.textContent ?? "",
+              r.querySelector(".hm-tip-v")?.textContent ?? "",
+            ]),
+          }));
+          const j = want.headers.indexOf(shown.header);
+          expect(j, `${where}: tooltip header ${shown.header}`).toBeGreaterThanOrEqual(0);
+          expect(Object.fromEntries(shown.rows), where).toEqual(
+            Object.fromEntries(want.cells.map((c) => [c.label, c.text[j]])),
+          );
+          headers.add(shown.header);
+        }
+        expect(headers.size, `${id} ${option.key}: distinct buckets hovered`).toBeGreaterThan(1);
+        await page.mouse.move(0, 0);
+      }
+    }
     await page.close();
   });
 

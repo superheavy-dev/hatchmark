@@ -719,6 +719,31 @@ describe("plan hashes and query reuse for grain switches (HAT-40 data.mjs and ha
     expect(perBlock.a).toEqual(perBlock.b);
   });
 
+  it("the sales example plans to the hash it had before and after #16", async () => {
+    const { project } = await loadAt(EXAMPLE);
+    const { plan } = planDashboard(project, "sales");
+    expect(plan && planHash(plan)).toBe(
+      "036644c09b3f2391f21a9393307354d2d91ccd49d831b32a533a4ba31d8aa9ea",
+    );
+  });
+
+  it("the plan hash changes with what a block shows: the filter default, the option order, and grains at all", async () => {
+    const filter = (d: string) => [
+      { type: "grain", id: "g", options: ["week", "month"], default: d },
+    ];
+    const [weekDefault, monthDefault, weekFirst, monthFirst, none, some] = await Promise.all([
+      hashOf({}, dash([lineB({ grains: ["week", "month"] })], filter("week"))),
+      hashOf({}, dash([lineB({ grains: ["week", "month"] })], filter("month"))),
+      hashOf({}, dash([lineB({ grains: ["week", "month"] })])),
+      hashOf({}, dash([lineB({ grains: ["month", "week"] })])),
+      hashOf({}, dash([lineB({})])),
+      hashOf({}, dash([lineB({ grains: ["month", "quarter"] })])),
+    ]);
+    expect(weekDefault).not.toBe(monthDefault);
+    expect(weekFirst).not.toBe(monthFirst);
+    expect(none).not.toBe(some);
+  });
+
   it("the example dashboards plan to the same hash on every call", async () => {
     const { project } = await loadAt(EXAMPLE);
     for (const name of ["sales", "trends"]) {
