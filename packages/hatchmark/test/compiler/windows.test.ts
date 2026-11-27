@@ -304,6 +304,7 @@ describe("resolveRange (review of #14)", () => {
     const length = (w: { start: string; end: string }) =>
       (Date.parse(w.end) - Date.parse(w.start)) / DAY;
     let checked = 0;
+    const failures: string[] = [];
     for (let t = Date.UTC(2023, 0, 1); t < Date.UTC(2029, 0, 1); t += 3 * DAY) {
       for (const days of [1, 2, 7, 28, 29, 30, 31, 45, 90, 365]) {
         const window = { start: iso(t), end: iso(t + days * DAY) };
@@ -312,22 +313,26 @@ describe("resolveRange (review of #14)", () => {
           const moved = resolveRange(window, shift("month", by), "2026-01-01", DEFAULT_ANCHORS);
           if (moved?.kind !== "bounded") throw new Error("unbounded");
           const aligned = window.start.endsWith("-01") && window.end.endsWith("-01");
-          const expected = {
-            start: oracle(window.start, by),
-            end: aligned ? oracle(window.end, by) : iso(Date.parse(oracle(lastDay, by)) + DAY),
-          };
-          expect(moved, `${window.start} +${days}d by ${by}`).toMatchObject(expected);
+          const start = oracle(window.start, by);
+          const end = aligned ? oracle(window.end, by) : iso(Date.parse(oracle(lastDay, by)) + DAY);
           const delta = length(moved) - days;
-          expect(length(moved)).toBeGreaterThan(0);
-          if (by % 12 === 0) expect(Math.abs(delta)).toBeLessThanOrEqual(1);
-          if (!aligned && window.start.slice(0, 7) === lastDay.slice(0, 7)) {
-            expect(delta).toBeLessThanOrEqual(0);
-            expect(delta).toBeGreaterThanOrEqual(-3);
+          const sameMonth = !aligned && window.start.slice(0, 7) === lastDay.slice(0, 7);
+          if (
+            moved.start !== start ||
+            moved.end !== end ||
+            length(moved) <= 0 ||
+            (by % 12 === 0 && Math.abs(delta) > 1) ||
+            (sameMonth && (delta > 0 || delta < -3))
+          ) {
+            failures.push(
+              `${window.start} +${days}d by ${by}: got ${moved.start}..${moved.end} want ${start}..${end}`,
+            );
           }
           checked++;
         }
       }
     }
+    expect(failures.slice(0, 5)).toEqual([]);
     expect(checked).toBeGreaterThan(50_000);
     for (let y = 2023; y <= 2028; y++) {
       for (let m = 1; m <= 12; m++) {

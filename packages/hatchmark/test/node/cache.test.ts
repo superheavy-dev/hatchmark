@@ -2,7 +2,6 @@ import { createHash } from "node:crypto";
 import {
   appendFile,
   chmod,
-  cp,
   mkdir,
   mkdtemp,
   readdir,
@@ -26,7 +25,7 @@ import {
 } from "../../src/compiler/index.js";
 import { createCachedExecutor, createDuckDbExecutor } from "../../src/node/index.js";
 import { PROJECT_DEFAULTS, type ProjectConfig } from "../../src/spec/index.js";
-import { EXAMPLE, removeProjects } from "./fixture.js";
+import { copyProject, EXAMPLE, removeProjects } from "./fixture.js";
 
 /**
  * The build cache (src/node/cache.ts). The oracle for every attack is the same build with
@@ -41,11 +40,8 @@ afterAll(async () => {
 });
 
 async function example(): Promise<string> {
-  const root = await mkdtemp(path.join(tmpdir(), "hatchmark-cache-"));
+  const root = await copyProject(EXAMPLE, "hatchmark-cache-");
   roots.push(root);
-  await cp(EXAMPLE, root, { recursive: true });
-  await rm(path.join(root, "dist"), { recursive: true, force: true });
-  await rm(path.join(root, ".hatchmark"), { recursive: true, force: true });
   return root;
 }
 
@@ -218,7 +214,10 @@ describe("build cache", () => {
     expect(appended.files).toEqual((await build(root, false)).files);
   });
 
-  it("matches --no-cache after random same-size, same-mtime digit edits (HM_SWEEP=full for 40)", async () => {
+  const digitRounds = process.env.HM_SWEEP === "full" ? 40 : 3;
+  it("matches --no-cache after random same-size, same-mtime digit edits (HM_SWEEP=full for 40)", {
+    timeout: digitRounds * 10_000,
+  }, async () => {
     const root = await example();
     const file = path.join(root, "data", "orders.csv");
     let seed = 49;
@@ -227,8 +226,7 @@ describe("build cache", () => {
       return seed / 2147483648;
     };
     await build(root, true);
-    const rounds = process.env.HM_SWEEP === "full" ? 40 : 3;
-    for (let round = 0; round < rounds; round++) {
+    for (let round = 0; round < digitRounds; round++) {
       const text = await readFile(file, "utf8");
       const lines = text.split("\n");
       const at = 1 + Math.floor(random() * (lines.length - 2));

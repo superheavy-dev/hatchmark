@@ -31,6 +31,22 @@ export async function writeProject(files: Record<string, unknown>): Promise<{
 
 export const EXAMPLE = fileURLToPath(new URL("../../examples/global-sales/", import.meta.url));
 
+const LEFT_OUT = new Set([".hatchmark", "dist"]);
+
+export async function copyProject(from: string, prefix: string): Promise<string> {
+  const root = await mkdtemp(path.join(tmpdir(), prefix));
+  try {
+    await cp(from, root, {
+      recursive: true,
+      filter: (src) => !LEFT_OUT.has(path.relative(from, src).split(path.sep)[0] ?? ""),
+    });
+  } catch (error) {
+    await rm(root, { recursive: true, force: true }).catch(() => {});
+    throw error;
+  }
+  return root;
+}
+
 /**
  * Copies examples/global-sales into a fresh temporary directory, with hatchmark.json merged with
  * config (undefined drops a key) and its dashboards replaced by the given ones.
@@ -39,11 +55,9 @@ export async function writeExample(
   config: Record<string, unknown>,
   dashboards: Record<string, unknown>,
 ): Promise<string> {
-  const root = await mkdtemp(path.join(tmpdir(), "hatchmark-example-"));
+  const root = await copyProject(EXAMPLE, "hatchmark-example-");
   roots.push(root);
-  await cp(EXAMPLE, root, { recursive: true });
   await rm(path.join(root, "dashboards"), { recursive: true, force: true });
-  await rm(path.join(root, "dist"), { recursive: true, force: true });
   await mkdir(path.join(root, "dashboards"));
   const base = JSON.parse(await readFile(path.join(EXAMPLE, "hatchmark.json"), "utf8"));
   await writeFile(path.join(root, "hatchmark.json"), JSON.stringify({ ...base, ...config }));
