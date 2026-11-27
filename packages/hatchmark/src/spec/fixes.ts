@@ -67,7 +67,11 @@ export function addPropertyFix(
   }
   if (last === undefined) return undefined;
   const first = object.members[0] ?? last;
-  const firstLine = document.text.slice(0, first.keyStart).replace(/^[^]*[\r\n]/, "");
+  const firstLine =
+    document.text
+      .slice(0, first.keyStart)
+      .split(/\r\n|\r|\n/)
+      .at(-1) ?? "";
   const indent = firstLine.replace(/\?[ \t]+$/, "").length;
   const end = last.value.end;
   const lastValue = last.value;
