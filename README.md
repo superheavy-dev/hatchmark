@@ -33,7 +33,7 @@ CI runs lint, typecheck with build, and tests on Node 22 and the current LTS for
 
 ### JSON Schemas
 
-`packages/hatchmark/schema/*.schema.json` are generated from the Zod schemas in `packages/hatchmark/src/spec/` by `pnpm gen:schema` and committed; a test fails when they drift. Only schemas named with `.meta({ id: "Format" })` become `$defs` entries, under that name, and everything else is inlined. Name a schema when it is a real concept that several fields share or that editors and agents should recognise (a block, a filter, a period range), using a PascalCase name unique across the spec, and leave small one-off fields inline. A recursive schema must be named: an unnamed one would get a generated `__schemaN` name, which a test rejects.
+`packages/hatchmark/schema/*.schema.json` are generated from the Zod schemas in `packages/hatchmark/src/spec/` by `pnpm gen:schema` and committed; a test fails when they drift. Only schemas named with `.meta({ id: "Format" })` become `$defs` entries, under that name, and everything else is inlined. Name a schema when it is a real concept that several fields share or that editors and agents should recognise (a block, a filter, a period range), using a PascalCase name unique across the spec, and leave small one-off fields inline. The shipped names are listed in `test/spec/json-schema.test.ts`, so adding, renaming or removing one is an explicit change there. A recursive schema must be named: an unnamed one would get a generated `__schemaN` name, which a test rejects.
 
 ### Component previews
 
