@@ -1,0 +1,616 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "$schema": {
+      "$ref": "#/$defs/__schema0"
+    },
+    "title": {
+      "$ref": "#/$defs/__schema1"
+    },
+    "description": {
+      "$ref": "#/$defs/__schema2"
+    },
+    "period": {
+      "$ref": "#/$defs/__schema3"
+    },
+    "filters": {
+      "$ref": "#/$defs/__schema9"
+    },
+    "blocks": {
+      "$ref": "#/$defs/__schema14"
+    }
+  },
+  "required": [
+    "title",
+    "blocks"
+  ],
+  "additionalProperties": false,
+  "title": "Hatchmark dashboard (dashboards/<name>.json)",
+  "$defs": {
+    "__schema0": {
+      "type": "string",
+      "description": "Path or URL of the JSON Schema for this file, for editor completion."
+    },
+    "__schema1": {
+      "type": "string",
+      "minLength": 1
+    },
+    "__schema2": {
+      "type": "string"
+    },
+    "__schema3": {
+      "type": "object",
+      "properties": {
+        "asOf": {
+          "$ref": "#/$defs/__schema4"
+        },
+        "range": {
+          "$ref": "#/$defs/__schema7"
+        },
+        "compare": {
+          "$ref": "#/$defs/__schema8"
+        }
+      },
+      "required": [
+        "asOf",
+        "range",
+        "compare"
+      ],
+      "additionalProperties": false,
+      "description": "Defaults to {\"asOf\": \"latest_data\", \"range\": \"last_12_months\", \"compare\": \"previous_period\"}."
+    },
+    "__schema4": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/__schema5"
+        },
+        {
+          "$ref": "#/$defs/__schema6"
+        }
+      ],
+      "description": "\"latest_data\" (the last date in the data) or a fixed YYYY-MM-DD, so builds are reproducible."
+    },
+    "__schema5": {
+      "type": "string",
+      "const": "latest_data"
+    },
+    "__schema6": {
+      "type": "string",
+      "format": "date",
+      "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))$"
+    },
+    "__schema7": {
+      "type": "string",
+      "enum": [
+        "last_7_days",
+        "last_30_days",
+        "last_90_days",
+        "last_12_months",
+        "month_to_date",
+        "quarter_to_date",
+        "year_to_date",
+        "last_complete_month",
+        "last_complete_quarter",
+        "last_complete_year",
+        "all_time"
+      ]
+    },
+    "__schema8": {
+      "type": "string",
+      "enum": [
+        "previous_period",
+        "previous_year",
+        "none"
+      ]
+    },
+    "__schema9": {
+      "type": "array",
+      "items": {
+        "oneOf": [
+          {
+            "type": "object",
+            "properties": {
+              "type": {
+                "type": "string",
+                "const": "select"
+              },
+              "id": {
+                "$ref": "#/$defs/__schema10"
+              },
+              "label": {
+                "type": "string"
+              },
+              "column": {
+                "description": "Filters every block whose metric table has this column.",
+                "$ref": "#/$defs/__schema11"
+              },
+              "multiple": {
+                "type": "boolean"
+              },
+              "default": {
+                "description": "Default: no filter (all).",
+                "$ref": "#/$defs/__schema12"
+              }
+            },
+            "required": [
+              "type",
+              "id",
+              "column"
+            ],
+            "additionalProperties": false
+          },
+          {
+            "type": "object",
+            "properties": {
+              "type": {
+                "type": "string",
+                "const": "period"
+              },
+              "id": {
+                "$ref": "#/$defs/__schema10"
+              },
+              "label": {
+                "type": "string"
+              },
+              "options": {
+                "minItems": 1,
+                "type": "array",
+                "items": {
+                  "$ref": "#/$defs/__schema7"
+                }
+              },
+              "default": {
+                "$ref": "#/$defs/__schema7"
+              }
+            },
+            "required": [
+              "type",
+              "id",
+              "options",
+              "default"
+            ],
+            "additionalProperties": false
+          }
+        ]
+      }
+    },
+    "__schema10": {
+      "type": "string",
+      "pattern": "^[a-z][a-z0-9_]*$"
+    },
+    "__schema11": {
+      "type": "string",
+      "minLength": 1,
+      "description": "A column name in the source data."
+    },
+    "__schema12": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/__schema13"
+        },
+        {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/__schema13"
+          }
+        }
+      ]
+    },
+    "__schema13": {
+      "type": [
+        "string",
+        "number",
+        "boolean"
+      ]
+    },
+    "__schema14": {
+      "minItems": 1,
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/__schema15"
+      }
+    },
+    "__schema15": {
+      "oneOf": [
+        {
+          "type": "object",
+          "properties": {
+            "id": {
+              "$ref": "#/$defs/__schema16"
+            },
+            "title": {
+              "$ref": "#/$defs/__schema17"
+            },
+            "span": {
+              "$ref": "#/$defs/__schema19"
+            },
+            "type": {
+              "type": "string",
+              "const": "kpi"
+            },
+            "metric": {
+              "$ref": "#/$defs/__schema21"
+            },
+            "compare": {
+              "description": "Defaults to the dashboard period's compare.",
+              "$ref": "#/$defs/__schema8"
+            },
+            "sparkline": {
+              "type": "boolean"
+            }
+          },
+          "required": [
+            "type",
+            "metric"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "id": {
+              "$ref": "#/$defs/__schema16"
+            },
+            "title": {
+              "$ref": "#/$defs/__schema17"
+            },
+            "span": {
+              "$ref": "#/$defs/__schema19"
+            },
+            "metrics": {
+              "$ref": "#/$defs/__schema22"
+            },
+            "grain": {
+              "$ref": "#/$defs/__schema23"
+            },
+            "split": {
+              "$ref": "#/$defs/__schema24"
+            },
+            "type": {
+              "$ref": "#/$defs/__schema25"
+            }
+          },
+          "required": [
+            "metrics",
+            "grain",
+            "type"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "id": {
+              "$ref": "#/$defs/__schema16"
+            },
+            "title": {
+              "$ref": "#/$defs/__schema17"
+            },
+            "span": {
+              "$ref": "#/$defs/__schema19"
+            },
+            "metrics": {
+              "$ref": "#/$defs/__schema22"
+            },
+            "grain": {
+              "$ref": "#/$defs/__schema23"
+            },
+            "split": {
+              "$ref": "#/$defs/__schema24"
+            },
+            "type": {
+              "$ref": "#/$defs/__schema26"
+            },
+            "stack": {
+              "$ref": "#/$defs/__schema27"
+            }
+          },
+          "required": [
+            "metrics",
+            "grain",
+            "type"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "id": {
+              "$ref": "#/$defs/__schema16"
+            },
+            "title": {
+              "$ref": "#/$defs/__schema17"
+            },
+            "span": {
+              "$ref": "#/$defs/__schema19"
+            },
+            "type": {
+              "$ref": "#/$defs/__schema28"
+            },
+            "metrics": {
+              "$ref": "#/$defs/__schema22"
+            },
+            "by": {
+              "$ref": "#/$defs/__schema29"
+            },
+            "grain": {
+              "$ref": "#/$defs/__schema30"
+            },
+            "split": {
+              "$ref": "#/$defs/__schema31"
+            },
+            "stack": {
+              "$ref": "#/$defs/__schema32"
+            },
+            "orientation": {
+              "$ref": "#/$defs/__schema33"
+            },
+            "sort": {
+              "$ref": "#/$defs/__schema34"
+            },
+            "limit": {
+              "$ref": "#/$defs/__schema36"
+            }
+          },
+          "required": [
+            "type",
+            "metrics"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "id": {
+              "$ref": "#/$defs/__schema16"
+            },
+            "title": {
+              "$ref": "#/$defs/__schema17"
+            },
+            "span": {
+              "$ref": "#/$defs/__schema19"
+            },
+            "type": {
+              "type": "string",
+              "const": "bar_list"
+            },
+            "metric": {
+              "$ref": "#/$defs/__schema21"
+            },
+            "by": {
+              "$ref": "#/$defs/__schema11"
+            },
+            "limit": {
+              "description": "Rows shown. Default 10.",
+              "$ref": "#/$defs/__schema37"
+            },
+            "order": {
+              "type": "string",
+              "enum": [
+                "asc",
+                "desc"
+              ]
+            }
+          },
+          "required": [
+            "type",
+            "metric",
+            "by"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "id": {
+              "$ref": "#/$defs/__schema16"
+            },
+            "title": {
+              "$ref": "#/$defs/__schema17"
+            },
+            "span": {
+              "$ref": "#/$defs/__schema19"
+            },
+            "type": {
+              "type": "string",
+              "const": "table"
+            },
+            "by": {
+              "minItems": 1,
+              "maxItems": 3,
+              "type": "array",
+              "items": {
+                "$ref": "#/$defs/__schema11"
+              },
+              "description": "Grouping columns, outermost first."
+            },
+            "metrics": {
+              "minItems": 1,
+              "maxItems": 12,
+              "type": "array",
+              "items": {
+                "$ref": "#/$defs/__schema21"
+              }
+            },
+            "totals": {
+              "description": "Total row, recomputed from rows (not summed). Default true.",
+              "$ref": "#/$defs/__schema38"
+            },
+            "percentOfTotal": {
+              "description": "Metrics that also show their share of the total. Additive metrics only.",
+              "$ref": "#/$defs/__schema39"
+            },
+            "sort": {
+              "$ref": "#/$defs/__schema35"
+            },
+            "limit": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 1000
+            }
+          },
+          "required": [
+            "type",
+            "by",
+            "metrics"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "id": {
+              "$ref": "#/$defs/__schema16"
+            },
+            "title": {
+              "$ref": "#/$defs/__schema17"
+            },
+            "span": {
+              "$ref": "#/$defs/__schema19"
+            },
+            "type": {
+              "type": "string",
+              "const": "text"
+            },
+            "markdown": {
+              "type": "string",
+              "description": "Markdown. {{metric}} inserts the current value; {{metric.previous}}, {{metric.change}} and {{metric.change_pct}} insert the comparison."
+            }
+          },
+          "required": [
+            "type",
+            "markdown"
+          ],
+          "additionalProperties": false
+        }
+      ]
+    },
+    "__schema16": {
+      "description": "Stable block id. Defaults to <type>_<index>; set it to keep links and caches across reorders.",
+      "$ref": "#/$defs/__schema10"
+    },
+    "__schema17": {
+      "description": "Card title; state the finding.",
+      "$ref": "#/$defs/__schema18"
+    },
+    "__schema18": {
+      "type": "string"
+    },
+    "__schema19": {
+      "description": "Width in a 12-column grid.",
+      "$ref": "#/$defs/__schema20"
+    },
+    "__schema20": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 12
+    },
+    "__schema21": {
+      "description": "A metric name, the file name under metrics/.",
+      "$ref": "#/$defs/__schema10"
+    },
+    "__schema22": {
+      "minItems": 1,
+      "maxItems": 8,
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/__schema21"
+      }
+    },
+    "__schema23": {
+      "type": "string",
+      "enum": [
+        "day",
+        "week",
+        "month",
+        "quarter",
+        "year"
+      ]
+    },
+    "__schema24": {
+      "description": "Column that splits one metric into series.",
+      "$ref": "#/$defs/__schema11"
+    },
+    "__schema25": {
+      "type": "string",
+      "const": "line"
+    },
+    "__schema26": {
+      "type": "string",
+      "const": "area"
+    },
+    "__schema27": {
+      "type": "boolean"
+    },
+    "__schema28": {
+      "type": "string",
+      "const": "bar"
+    },
+    "__schema29": {
+      "description": "Category column on the axis. Use either by or grain.",
+      "$ref": "#/$defs/__schema11"
+    },
+    "__schema30": {
+      "description": "Time buckets on the axis. Use either by or grain.",
+      "$ref": "#/$defs/__schema23"
+    },
+    "__schema31": {
+      "$ref": "#/$defs/__schema11"
+    },
+    "__schema32": {
+      "type": "boolean"
+    },
+    "__schema33": {
+      "type": "string",
+      "enum": [
+        "vertical",
+        "horizontal"
+      ]
+    },
+    "__schema34": {
+      "$ref": "#/$defs/__schema35"
+    },
+    "__schema35": {
+      "type": "object",
+      "properties": {
+        "by": {
+          "type": "string",
+          "minLength": 1,
+          "description": "A metric name or a column in by."
+        },
+        "order": {
+          "type": "string",
+          "enum": [
+            "asc",
+            "desc"
+          ]
+        }
+      },
+      "required": [
+        "by",
+        "order"
+      ],
+      "additionalProperties": false
+    },
+    "__schema36": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 100
+    },
+    "__schema37": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 50
+    },
+    "__schema38": {
+      "type": "boolean"
+    },
+    "__schema39": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/__schema21"
+      }
+    }
+  }
+}

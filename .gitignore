@@ -6,3 +6,7 @@ coverage/
 .env
 .env.*
 !.env.example
+
+# Copied from the repository root at pack time
+packages/hatchmark/LICENSE
+packages/hatchmark/NOTICE

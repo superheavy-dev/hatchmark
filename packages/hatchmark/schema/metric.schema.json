@@ -1,0 +1,438 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "oneOf": [
+    {
+      "$ref": "#/$defs/__schema0"
+    },
+    {
+      "$ref": "#/$defs/__schema27"
+    },
+    {
+      "$ref": "#/$defs/__schema28"
+    }
+  ],
+  "title": "Hatchmark metric (metrics/<name>.json)",
+  "$defs": {
+    "__schema0": {
+      "type": "object",
+      "properties": {
+        "$schema": {
+          "$ref": "#/$defs/__schema1"
+        },
+        "label": {
+          "$ref": "#/$defs/__schema2"
+        },
+        "description": {
+          "$ref": "#/$defs/__schema3"
+        },
+        "format": {
+          "$ref": "#/$defs/__schema4"
+        },
+        "better": {
+          "$ref": "#/$defs/__schema12"
+        },
+        "type": {
+          "$ref": "#/$defs/__schema13"
+        },
+        "table": {
+          "$ref": "#/$defs/__schema14"
+        },
+        "aggregate": {
+          "$ref": "#/$defs/__schema16"
+        },
+        "column": {
+          "$ref": "#/$defs/__schema17"
+        },
+        "filters": {
+          "$ref": "#/$defs/__schema19"
+        },
+        "time": {
+          "$ref": "#/$defs/__schema26"
+        }
+      },
+      "required": [
+        "label",
+        "format",
+        "better",
+        "type",
+        "table",
+        "aggregate"
+      ],
+      "additionalProperties": false
+    },
+    "__schema1": {
+      "type": "string",
+      "description": "Path or URL of the JSON Schema for this file, for editor completion."
+    },
+    "__schema2": {
+      "type": "string",
+      "minLength": 1,
+      "description": "Human name, such as Net revenue."
+    },
+    "__schema3": {
+      "type": "string"
+    },
+    "__schema4": {
+      "oneOf": [
+        {
+          "$ref": "#/$defs/__schema5"
+        },
+        {
+          "$ref": "#/$defs/__schema7"
+        },
+        {
+          "$ref": "#/$defs/__schema9"
+        }
+      ],
+      "description": "How values of this metric are shown."
+    },
+    "__schema5": {
+      "type": "object",
+      "properties": {
+        "type": {
+          "type": "string",
+          "const": "number"
+        },
+        "decimals": {
+          "$ref": "#/$defs/__schema6"
+        },
+        "compact": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "type"
+      ],
+      "additionalProperties": false
+    },
+    "__schema6": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 6
+    },
+    "__schema7": {
+      "type": "object",
+      "properties": {
+        "type": {
+          "type": "string",
+          "const": "currency"
+        },
+        "currency": {
+          "description": "Overrides the project currency.",
+          "$ref": "#/$defs/__schema8"
+        },
+        "decimals": {
+          "$ref": "#/$defs/__schema6"
+        },
+        "compact": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "type"
+      ],
+      "additionalProperties": false
+    },
+    "__schema8": {
+      "type": "string",
+      "minLength": 3,
+      "maxLength": 3
+    },
+    "__schema9": {
+      "type": "object",
+      "properties": {
+        "type": {
+          "$ref": "#/$defs/__schema10"
+        },
+        "decimals": {
+          "$ref": "#/$defs/__schema11"
+        }
+      },
+      "required": [
+        "type"
+      ],
+      "additionalProperties": false,
+      "description": "The value is a fraction: 0.124 shows as 12.4%."
+    },
+    "__schema10": {
+      "type": "string",
+      "const": "percent"
+    },
+    "__schema11": {
+      "$ref": "#/$defs/__schema6"
+    },
+    "__schema12": {
+      "type": "string",
+      "enum": [
+        "up",
+        "down",
+        "neutral"
+      ],
+      "description": "Which direction of change is good; colours the KPI delta."
+    },
+    "__schema13": {
+      "type": "string",
+      "const": "aggregate"
+    },
+    "__schema14": {
+      "description": "A source name from hatchmark.json.",
+      "$ref": "#/$defs/__schema15"
+    },
+    "__schema15": {
+      "type": "string",
+      "pattern": "^[a-z][a-z0-9_]*$"
+    },
+    "__schema16": {
+      "type": "string",
+      "enum": [
+        "sum",
+        "count",
+        "count_distinct",
+        "avg",
+        "min",
+        "max",
+        "median"
+      ]
+    },
+    "__schema17": {
+      "description": "Column to aggregate. Not used by count.",
+      "$ref": "#/$defs/__schema18"
+    },
+    "__schema18": {
+      "type": "string",
+      "minLength": 1,
+      "description": "A column name in the source data."
+    },
+    "__schema19": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/__schema20"
+      }
+    },
+    "__schema20": {
+      "oneOf": [
+        {
+          "$ref": "#/$defs/__schema21"
+        },
+        {
+          "$ref": "#/$defs/__schema23"
+        },
+        {
+          "$ref": "#/$defs/__schema24"
+        },
+        {
+          "$ref": "#/$defs/__schema25"
+        }
+      ],
+      "description": "A row filter. between is inclusive at both ends."
+    },
+    "__schema21": {
+      "type": "object",
+      "properties": {
+        "column": {
+          "$ref": "#/$defs/__schema18"
+        },
+        "op": {
+          "type": "string",
+          "enum": [
+            "eq",
+            "neq",
+            "gt",
+            "gte",
+            "lt",
+            "lte"
+          ]
+        },
+        "value": {
+          "$ref": "#/$defs/__schema22"
+        }
+      },
+      "required": [
+        "column",
+        "op",
+        "value"
+      ],
+      "additionalProperties": false
+    },
+    "__schema22": {
+      "type": [
+        "string",
+        "number",
+        "boolean"
+      ]
+    },
+    "__schema23": {
+      "type": "object",
+      "properties": {
+        "column": {
+          "$ref": "#/$defs/__schema18"
+        },
+        "op": {
+          "type": "string",
+          "enum": [
+            "in",
+            "not_in"
+          ]
+        },
+        "values": {
+          "minItems": 1,
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/__schema22"
+          }
+        }
+      },
+      "required": [
+        "column",
+        "op",
+        "values"
+      ],
+      "additionalProperties": false
+    },
+    "__schema24": {
+      "type": "object",
+      "properties": {
+        "column": {
+          "$ref": "#/$defs/__schema18"
+        },
+        "op": {
+          "type": "string",
+          "enum": [
+            "is_null",
+            "not_null"
+          ]
+        }
+      },
+      "required": [
+        "column",
+        "op"
+      ],
+      "additionalProperties": false
+    },
+    "__schema25": {
+      "type": "object",
+      "properties": {
+        "column": {
+          "$ref": "#/$defs/__schema18"
+        },
+        "op": {
+          "type": "string",
+          "const": "between"
+        },
+        "from": {
+          "$ref": "#/$defs/__schema22"
+        },
+        "to": {
+          "$ref": "#/$defs/__schema22"
+        }
+      },
+      "required": [
+        "column",
+        "op",
+        "from",
+        "to"
+      ],
+      "additionalProperties": false
+    },
+    "__schema26": {
+      "description": "Date or timestamp column that places rows in time. Needed for time series and period comparison.",
+      "$ref": "#/$defs/__schema18"
+    },
+    "__schema27": {
+      "type": "object",
+      "properties": {
+        "$schema": {
+          "$ref": "#/$defs/__schema1"
+        },
+        "label": {
+          "$ref": "#/$defs/__schema2"
+        },
+        "description": {
+          "$ref": "#/$defs/__schema3"
+        },
+        "format": {
+          "$ref": "#/$defs/__schema4"
+        },
+        "better": {
+          "$ref": "#/$defs/__schema12"
+        },
+        "type": {
+          "type": "string",
+          "const": "ratio"
+        },
+        "numerator": {
+          "description": "Metric name.",
+          "$ref": "#/$defs/__schema15"
+        },
+        "denominator": {
+          "description": "Metric name.",
+          "$ref": "#/$defs/__schema15"
+        }
+      },
+      "required": [
+        "label",
+        "format",
+        "better",
+        "type",
+        "numerator",
+        "denominator"
+      ],
+      "additionalProperties": false
+    },
+    "__schema28": {
+      "type": "object",
+      "properties": {
+        "$schema": {
+          "$ref": "#/$defs/__schema1"
+        },
+        "label": {
+          "$ref": "#/$defs/__schema2"
+        },
+        "description": {
+          "$ref": "#/$defs/__schema3"
+        },
+        "format": {
+          "$ref": "#/$defs/__schema4"
+        },
+        "better": {
+          "$ref": "#/$defs/__schema12"
+        },
+        "type": {
+          "type": "string",
+          "const": "sql"
+        },
+        "table": {
+          "$ref": "#/$defs/__schema15"
+        },
+        "sql": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Escape hatch: one SQL aggregate expression over the table, such as sum(amount) - sum(refund)."
+        },
+        "additive": {
+          "type": "boolean",
+          "description": "True only if summing the metric over groups gives the metric over all rows."
+        },
+        "filters": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/__schema20"
+          }
+        },
+        "time": {
+          "$ref": "#/$defs/__schema26"
+        }
+      },
+      "required": [
+        "label",
+        "format",
+        "better",
+        "type",
+        "table",
+        "sql",
+        "additive"
+      ],
+      "additionalProperties": false
+    }
+  }
+}
