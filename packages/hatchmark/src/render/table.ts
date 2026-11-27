@@ -50,14 +50,6 @@ export function renderTable(block: TableData, ctx: RenderContext): string {
   const keyClass = (i: number) =>
     `hm-key${i === 0 ? "" : " hm-key2"}${i === width - 1 ? " hm-fill" : grouped ? " hm-outer" : ""}`;
   const levelOf = (row: TableRow) => row.level ?? 1;
-  const years = block.by.map((b) =>
-    /\byears?\b/i.test(`${b.column.replaceAll("_", " ")} ${b.label}`),
-  );
-  /** A key as shown: a year column reads 2026, never 2,026. */
-  const keyText = (i: number, key: TableRow["keys"][number]) =>
-    years[i] && typeof key === "number" && Number.isInteger(key)
-      ? String(key)
-      : formatKey(key, locale);
   const solo = new Set<number>();
   block.rows.forEach((row, index) => {
     if (row.kind !== "subtotal") return;
@@ -192,12 +184,12 @@ export function renderTable(block: TableData, ctx: RenderContext): string {
     const otherAt = row.kind === "other" ? (block.subtotals ? width - 1 : 0) : undefined;
     const other = `Other (${(row.count ?? 0).toLocaleString(locale)})`;
     const outer = (indices: number[]) =>
-      indices.map((i) => keyText(i, row.keys[i] ?? null)).join(" · ");
+      indices.map((i) => formatKey(row.keys[i] ?? null, locale)).join(" · ");
     const inner = width - 1;
     const extra = !grouped
       ? ""
       : level !== undefined
-        ? mobile(keyText(level - 1, row.keys[level - 1] ?? null))
+        ? mobile(formatKey(row.keys[level - 1] ?? null, locale))
         : otherAt !== undefined
           ? otherAt < inner
             ? mobile(other)
@@ -206,7 +198,7 @@ export function renderTable(block: TableData, ctx: RenderContext): string {
             ? mobile(outer([...shown].sort()), true)
             : mobile(outer(Array.from({ length: inner }, (_, i) => i)), true);
     return row.keys.map((key, i) => {
-      const text = keyText(i, key);
+      const text = formatKey(key, locale);
       const nullCls = key === null ? " hm-null" : "";
       const tail = i === inner ? extra : "";
       if (level !== undefined) {

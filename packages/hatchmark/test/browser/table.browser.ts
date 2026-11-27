@@ -68,6 +68,18 @@ beforeAll(async () => {
     subtotals: variant("table-subtotals-other"),
     two: variant("table-two-columns"),
     tall: variant("table-tall"),
+    stores: dashboard("stores", "Stores", [
+      {
+        ...TRICKY,
+        id: "stores",
+        by: [{ column: "store_id", label: "Store" }],
+        rows: [10432, 2025, 1200].map((key, i) => ({
+          keys: [key],
+          values: { revenue: 12500 - i },
+        })),
+        rowCount: 3,
+      },
+    ]),
     teams: variant("table-group-teams"),
     cities: variant("table-group-cities"),
     products: variant("table-group-products"),
@@ -261,7 +273,7 @@ describe("review regressions (HAT-55)", () => {
       "−10",
       "−2",
       "2",
-      "1.000",
+      "1000",
     ]);
     await page.close();
   });
@@ -273,7 +285,7 @@ describe("review regressions (HAT-55)", () => {
         .locator("tbody th span")
         .evaluateAll((spans) => spans.map((s) => [s.textContent, s.classList.contains("hm-sr")]));
     const expected = [
-      ["1,000", false],
+      ["1000", false],
       ["1000", false],
       ["zzz", false],
     ];
@@ -616,6 +628,17 @@ describe("narrow layouts of grouped tables", () => {
       await page.close();
     });
   }
+
+  it("shows numeric group values as labels, without thousands separators, whatever the column is called", async () => {
+    const page = await open("stores");
+    expect(await page.locator("tbody .hm-key span:not(.hm-m)").allTextContents()).toEqual([
+      "10432",
+      "2025",
+      "1200",
+    ]);
+    expect(await page.locator("tbody td:not(.hm-key)").first().textContent()).toBe("$12,500");
+    await page.close();
+  });
 
   it("keeps each row's group readable to screen readers on a phone", async () => {
     const page = await open("two", 390);

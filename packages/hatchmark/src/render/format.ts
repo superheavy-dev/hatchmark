@@ -255,9 +255,14 @@ function formatIso(date: Date): string {
   return date.toISOString().slice(0, 10);
 }
 
-/** A category key as text: null is "(empty)", booleans and numbers as written. */
+/**
+ * A category key as text: null is "(empty)", booleans as written. A number in a grouping column is
+ * a label, not a quantity (a year, a seat count, a store id), so it has no thousands separator.
+ */
 export function formatKey(key: string | number | boolean | null, locale: string): string {
   if (key === null) return "(empty)";
-  if (typeof key === "number") return minus(numberFormat(locale, {}).format(key));
+  if (typeof key === "number") {
+    return minus(numberFormat(locale, { useGrouping: false }).format(key));
+  }
   return String(key);
 }
