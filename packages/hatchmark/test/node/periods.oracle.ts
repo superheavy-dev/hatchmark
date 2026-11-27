@@ -15,6 +15,8 @@ import { Oracle } from "./fixture.js";
 
 export type Key = string | number | boolean | null;
 export type Row = {
+  /** The instant, epoch milliseconds. */
+  t: number | null;
   d: string | null;
   region: string | null;
   channel: string | null;
@@ -58,6 +60,7 @@ export async function readRows(root: string, timeZone = "America/New_York"): Pro
       day: "2-digit",
     });
     return raw.map((r) => ({
+      t: r.t === null ? null : Date.parse(r.t as string),
       d: r.t === null ? null : local.format(new Date(r.t as string)),
       region: r.region as string | null,
       channel: r.channel as string | null,
@@ -195,6 +198,91 @@ export function windows(
   return { current: [s, next], previous: shift([s, next], unit, -count) };
 }
 
+/**
+ * A measure's horizon (RFC 0001 sections 6.1 and 6.3) in local wall-clock microseconds: the
+ * earlier of the as-of instant T (the end of the as-of local date) and the source horizon, which
+ * is the newest instant of the time column over all rows, taken as complete through it (+1 µs, so
+ * the newest row counts). cut is the local midnight at or before it, as a date: KPI and table
+ * windows end there (exclusive).
+ */
+export type Horizon = { asOf: string; us: bigint; cut: string };
+export function horizonOf(rows: Row[], asOf: string, timeZone = "America/New_York"): Horizon {
+  const newest = rows.reduce((m, r) => (r.t !== null && r.t > m ? r.t : m), -Infinity);
+  const parts = Object.fromEntries(
+    new Intl.DateTimeFormat("en-CA", {
+      timeZone,
+      year: "numeric",
+      month: "2-digit",
+      day: "2-digit",
+      hour: "2-digit",
+      minute: "2-digit",
+      second: "2-digit",
+      hourCycle: "h23",
+    })
+      .formatToParts(new Date(newest))
+      .map((p) => [p.type, Number(p.value)]),
+  ) as Record<string, number>;
+  const localMs =
+    Date.UTC(
+      parts.year ?? 0,
+      (parts.month ?? 1) - 1,
+      parts.day ?? 1,
+      parts.hour,
+      parts.minute,
+      parts.second,
+    ) +
+    (newest % 1000);
+  const source = BigInt(localMs) * 1000n + 1n;
+  const day = iso(localMs);
+  const date = asOf === "latest_data" ? day : asOf;
+  const end = naive(addDays(date, 1));
+  const us = source < end ? source : end;
+  return { asOf: date, us, cut: iso(Number(us / 1000n)) };
+}
+/** A local date's midnight in wall-clock microseconds. */
+const naive = (d: string) => BigInt(ms(d)) * 1000n;
+/** A wall-clock microsecond count as YYYY-MM-DDTHH:MM:SS.ffffff. */
+function wallText(us: bigint): string {
+  const t = new Date(Number(us / 1000n)).toISOString();
+  return `${t.slice(0, 19)}.${String(us % 1_000_000n).padStart(6, "0")}`;
+}
+
+/**
+ * KPI, table and category windows (RFC 0001 section 6.4): the range's window ended at the last
+ * complete day before the horizon. Last N slides back keeping its days and compares with the same
+ * days before it (previous_year moves its first and last day); to-date is the range as of the day
+ * before the cut; complete units and explicit ranges end at the cut and compare over the same
+ * number of days from the comparison's own start, never past its written end.
+ */
+export function ended(
+  range: Range,
+  h: Horizon,
+  anchors: Anchors,
+  compare: "previous_period" | "previous_year" = "previous_period",
+): { current: Window; previous: Window } {
+  const full = windows(range, h.asOf, anchors, compare);
+  const [s, e] = full.current;
+  if (h.cut >= e) return full;
+  const spec = typeof range === "string" ? (NAMED[range] as Exclude<Range, string>) : range;
+  if (typeof spec !== "string" && "last" in spec) {
+    const n = daysBetween(s, e);
+    const current: Window = [addDays(h.cut, -n), h.cut];
+    return {
+      current,
+      previous:
+        compare === "previous_year"
+          ? shift(current, "year", -1)
+          : [addDays(current[0], -n), current[0]],
+    };
+  }
+  if (typeof spec !== "string" && "to_date" in spec && h.cut > s)
+    return windows(range, addDays(h.cut, -1), anchors, compare);
+  const current: Window = [s, [s, h.cut].sort()[1] as string];
+  const [ps, pe] = full.previous;
+  const pend = addDays(ps, daysBetween(current[0], current[1]));
+  return { current, previous: [ps, [pend, pe].sort()[0] as string] };
+}
+
 const paid = (rs: Row[]) => rs.filter((r) => r.status === "paid");
 const sum = (rs: Row[]) => rs.reduce((s, r) => s + (r.a ?? 0), 0);
 const amounts = (rs: Row[]) => paid(rs).flatMap((r) => (r.a === null ? [] : [r.a]));
@@ -260,27 +348,46 @@ export class Diff {
 
 export type Context = {
   rows: Row[];
-  current: Window;
-  previous: Window;
+  range: Range;
+  horizon: Horizon;
+  compare?: "previous_period" | "previous_year";
   anchors: Anchors;
   /** The grain filter's default, if the dashboard has one. */
   grainDefault?: GrainSpec;
   /** True for a custom range from day cubes: these metrics must be null (presetOnly on KPIs). */
   presetOnly?: Set<string>;
 };
+type Resolved = Context & {
+  /** The range's window as written (time series, the period line). */
+  current: Window;
+  previous: Window;
+  /** The window ended at the horizon (KPIs, tables, category charts). */
+  kpi: { current: Window; previous: Window };
+  empty?: "no_complete_day" | "no_data";
+};
 const span = (w: Window) => ({ start: w[0], end: w[1] });
-const blind = (ctx: Context, m: string) => ctx.presetOnly?.has(m) === true;
+const blind = (ctx: Resolved, m: string) => ctx.presetOnly?.has(m) === true;
 
 /** Checks one DashboardData against the oracle, block by block, per the dashboard spec. */
 export function checkDashboard(
   data: DashboardData,
   blocks: SpecBlock[],
-  ctx: Context,
+  context: Context,
   diff = new Diff(),
 ): Diff {
+  const full = windows(context.range, context.horizon.asOf, context.anchors, context.compare);
+  const kpi = ended(context.range, context.horizon, context.anchors, context.compare);
+  const [ks, ke] = kpi.current;
+  const ctx: Resolved = {
+    ...context,
+    ...full,
+    kpi,
+    ...(ks < ke ? {} : { empty: context.horizon.us > naive(ks) ? "no_complete_day" : "no_data" }),
+  };
+  diff.same("asOf", data.asOf, ctx.horizon.asOf);
   diff.same("period.current", data.period.current, span(ctx.current));
   diff.same("period.previous", data.period.previous, span(ctx.previous));
-  const cur = inWindow(ctx.rows, ctx.current);
+  const cur = inWindow(ctx.rows, ctx.kpi.current);
   for (const sb of blocks) {
     const b = data.blocks.find((x) => x.id === sb.id);
     if (b === undefined) {
@@ -290,25 +397,27 @@ export function checkDashboard(
     if (sb.type === "kpi") checkKpi(b as KpiData, sb, ctx, cur, diff);
     else if (sb.type === "table") checkTable(b as TableData, sb, ctx, cur, diff);
     else if (sb.type === "bar" && sb.by !== undefined) checkBar(b as BarData, sb, ctx, cur, diff);
-    else checkTime(b as LineData, sb, ctx, cur, diff);
+    else checkTime(b as LineData, sb, ctx, inWindow(ctx.rows, ctx.current), diff);
   }
   return diff;
 }
 
-function checkKpi(b: KpiData, sb: SpecBlock, ctx: Context, cur: Row[], diff: Diff): void {
+function checkKpi(b: KpiData, sb: SpecBlock, ctx: Resolved, cur: Row[], diff: Diff): void {
   const m = sb.metric as string;
   const at = `${sb.id}`;
-  diff.same(`${at}.current`, b.current, span(ctx.current));
-  diff.same(`${at}.previous`, b.previous, span(ctx.previous));
-  if (blind(ctx, m)) {
-    diff.same(`${at}.presetOnly`, b.presetOnly, true);
+  diff.same(`${at}.current`, b.current, span(ctx.kpi.current));
+  diff.same(`${at}.previous`, b.previous, span(ctx.kpi.previous));
+  diff.same(`${at}.empty`, b.empty, ctx.empty);
+  if (blind(ctx, m) || ctx.empty) {
+    if (ctx.empty) diff.num(`${at}.changePct`, b.changePct, null);
+    diff.same(`${at}.presetOnly`, b.presetOnly, blind(ctx, m) ? true : undefined);
     diff.num(`${at}.value`, b.value, null);
     diff.num(`${at}.previousValue`, b.previousValue, null);
     diff.num(`${at}.change`, b.change, null);
   } else {
     diff.same(`${at}.presetOnly`, b.presetOnly, undefined);
     const v = metricOf(m, cur);
-    const p = metricOf(m, inWindow(ctx.rows, ctx.previous));
+    const p = metricOf(m, inWindow(ctx.rows, ctx.kpi.previous));
     const change = v === null || p === null ? null : v - p;
     diff.num(`${at}.value`, b.value, v);
     diff.num(`${at}.previousValue`, b.previousValue, p);
@@ -324,16 +433,18 @@ function checkKpi(b: KpiData, sb: SpecBlock, ctx: Context, cur: Row[], diff: Dif
   if (sb.sparkline) {
     const g = { unit: "month" };
     const buckets = spine(ctx.current, g);
+    const series = inWindow(ctx.rows, ctx.current);
     diff.same(`${at}.sparkline.buckets`, b.sparkline?.buckets, buckets);
+    diff.same(`${at}.sparkline.partial`, b.sparkline?.partial, partialOf(buckets, g, ctx.horizon));
     buckets.forEach((x, i) => {
       diff.num(
         `${at}.sparkline ${x}`,
         b.sparkline?.values[i],
-        blind(ctx, m)
+        blind(ctx, m) || naive(x) >= ctx.horizon.us
           ? null
           : metricOf(
               m,
-              cur.filter((r) => bucket(r.d as string, g) === x),
+              series.filter((r) => bucket(r.d as string, g) === x),
             ),
       );
     });
@@ -391,7 +502,7 @@ function groups(rows: Row[], by: string[]): Map<string, { keys: Key[]; rows: Row
   return out;
 }
 
-function checkBar(b: BarData, sb: SpecBlock, ctx: Context, cur: Row[], diff: Diff): void {
+function checkBar(b: BarData, sb: SpecBlock, ctx: Resolved, cur: Row[], diff: Diff): void {
   const by = sb.by as string;
   const all = groups(cur, [by]);
   const cats = b.axis.kind === "category" ? b.axis.categories : [];
@@ -422,7 +533,7 @@ function checkBar(b: BarData, sb: SpecBlock, ctx: Context, cur: Row[], diff: Dif
   }
 }
 
-function checkTable(b: TableData, sb: SpecBlock, ctx: Context, cur: Row[], diff: Diff): void {
+function checkTable(b: TableData, sb: SpecBlock, ctx: Resolved, cur: Row[], diff: Diff): void {
   const by = sb.by as string[];
   const metrics = sb.metrics as string[];
   const all = groups(cur, by);
@@ -437,8 +548,10 @@ function checkTable(b: TableData, sb: SpecBlock, ctx: Context, cur: Row[], diff:
     diff,
   );
   diff.same(`${sb.id}.rowCount`, b.rowCount, all.size);
+  diff.same(`${sb.id}.window`, b.window, span(ctx.kpi.current));
+  diff.same(`${sb.id}.empty`, b.empty, ctx.empty);
   const totals = Object.fromEntries(
-    metrics.map((m) => [m, blind(ctx, m) ? null : metricOf(m, cur)]),
+    metrics.map((m) => [m, blind(ctx, m) || ctx.empty ? null : metricOf(m, cur)]),
   );
   for (const m of metrics) diff.num(`${sb.id} total ${m}`, b.total?.values[m], totals[m] ?? null);
   const share = (v: number | null, t: number | null) => (v === null || !t ? null : v / t);
@@ -465,7 +578,7 @@ function checkTable(b: TableData, sb: SpecBlock, ctx: Context, cur: Row[], diff:
   }
 }
 
-function checkTime(b: LineData, sb: SpecBlock, ctx: Context, cur: Row[], diff: Diff): void {
+function checkTime(b: LineData, sb: SpecBlock, ctx: Resolved, cur: Row[], diff: Diff): void {
   const own = resolveGrain(sb.grain, ctx.anchors);
   if (sb.grains === undefined) {
     checkSeries(`${sb.id} ${grainKey(own)}`, b.axis, b.series, own, sb, ctx, cur, diff);
@@ -501,17 +614,20 @@ function checkSeries(
   series: Series[],
   g: Grain,
   sb: SpecBlock,
-  ctx: Context,
+  ctx: Resolved,
   cur: Row[],
   diff: Diff,
 ): void {
   const buckets = spine(ctx.current, g);
+  const h = ctx.horizon.us;
+  const cut = h > naive(ctx.current[0]) && h < naive(ctx.current[1]);
   diff.same(`${at}.axis`, axis, {
     kind: "time",
     grain: g.unit,
     buckets,
-    window: span(ctx.current),
+    window: { ...span(ctx.current), ...(cut ? { endAt: wallText(h) } : {}) },
   });
+  const partial = partialOf(buckets, g, ctx.horizon);
   const metrics = sb.metrics as string[];
   const byBucket = new Map<string, Row[]>();
   for (const r of cur) {
@@ -552,14 +668,31 @@ function checkSeries(
     const s = series.find((x) => x.key === w.key);
     if (s === undefined) continue;
     if (w.split !== undefined) diff.same(`${at} ${w.key} splitValue`, s.splitValue, w.split);
+    diff.same(`${at} ${w.key} partial`, s.partial, blind(ctx, w.metric) ? s.partial : partial);
     buckets.forEach((x, i) => {
       diff.num(
         `${at} ${w.key} ${x}`,
         s.values[i],
-        blind(ctx, w.metric) ? null : metricOf(w.metric, w.rows(byBucket.get(x) ?? [])),
+        blind(ctx, w.metric) || naive(x) >= h
+          ? null
+          : metricOf(w.metric, w.rows(byBucket.get(x) ?? [])),
       );
     });
   }
+}
+
+/**
+ * The bucket the horizon cuts (start before it, end after it), with the share elapsed in local
+ * wall-clock time, rounded down to six decimals; undefined when none does.
+ */
+function partialOf(buckets: string[], g: Grain, h: Horizon) {
+  for (const [index, b] of buckets.entries()) {
+    const start = naive(b);
+    const end = naive(addUnits(b, g.unit, 1));
+    if (start < h.us && h.us < end)
+      return [{ index, elapsed: Number(((h.us - start) * 1_000_000n) / (end - start)) / 1e6 }];
+  }
+  return undefined;
 }
 
 /** The embedded PeriodData of a built page. */

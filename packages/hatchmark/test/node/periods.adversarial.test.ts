@@ -16,6 +16,8 @@ import {
   checkDashboard,
   compareData,
   Diff,
+  type Horizon,
+  horizonOf,
   periodsOf,
   type Range,
   type Row,
@@ -23,7 +25,6 @@ import {
   readRows,
   type SpecBlock,
   type Window,
-  windows,
 } from "./periods.oracle.js";
 
 const ANCHORS: Anchors = { week: "sunday", quarter: "01-01", year: "01-01" };
@@ -36,6 +37,7 @@ let root: string;
 let payload: PeriodData;
 let rows: Row[];
 let asOf: string;
+let horizon: Horizon;
 const tally = { cells: 0, mismatches: 0 };
 
 beforeAll(async () => {
@@ -47,6 +49,7 @@ beforeAll(async () => {
   ) as PeriodData;
   rows = await readRows(root);
   asOf = rows.reduce((m, r) => (r.d !== null && r.d > m ? r.d : m), "");
+  horizon = horizonOf(rows, "latest_data");
 });
 afterAll(async () => {
   console.log(`periods.adversarial: ${tally.cells} cells compared, ${tally.mismatches} mismatches`);
@@ -68,15 +71,14 @@ const custom = (w: Window) =>
   });
 const checkCustom = (w: Window, diff: Diff) => {
   const data = custom(w);
-  const { current, previous } = windows({ start: w[0], end: w[1] }, asOf, ANCHORS);
   diff.same(`${w} periodFilter.custom`, data.periodFilter?.custom, payload.custom?.span);
   return checkDashboard(
     data,
     explorer.blocks,
     {
       rows,
-      current,
-      previous,
+      range: { start: w[0], end: w[1] },
+      horizon,
       anchors: ANCHORS,
       grainDefault: grainDefault(),
       presetOnly: new Set(["customers"]),
@@ -134,12 +136,10 @@ describe("period filter presets match the oracle (from the embedded data-hm-peri
         (d) => JSON.stringify(d.period.range) === JSON.stringify(option),
       ) as DashboardData;
       expect(data, JSON.stringify(option)).toBeDefined();
-      const { current, previous } = windows(option, asOf, ANCHORS);
-      diff.same(`${JSON.stringify(option)} asOf`, data.asOf, asOf);
       checkDashboard(
         data,
         explorer.blocks,
-        { rows, current, previous, anchors: ANCHORS, grainDefault: grainDefault() },
+        { rows, range: option, horizon, anchors: ANCHORS, grainDefault: grainDefault() },
         diff,
       );
     }
@@ -164,23 +164,40 @@ describe("custom ranges through customRangeDashboard match the oracle", () => {
     expect(diff.cells).toBeGreaterThan(20_000);
   });
 
-  it("a custom range equal to a preset's dates equals that preset, but for a calendar comparison", () => {
+  it("a custom range equal to a preset's dates draws the same series, and the same KPIs and tables when their ended windows agree", () => {
     const diff = new Diff();
     for (const [key, preset] of Object.entries(payload.presets)) {
       const span = preset.period.current as { start: string; end: string };
       const data = custom([span.start, span.end]);
-      const strip = (d: DashboardData) => ({ ...d, period: { ...d.period, range: undefined } });
-      // A custom range compares with the same number of days just before it; a calendar preset
-      // (month_to_date, last_complete_quarter, ...) with the previous bucket. The runtime shows the
-      // preset itself for those dates, so only the current window has to agree there.
-      const sameComparison =
-        JSON.stringify(data.period.previous) === JSON.stringify(preset.period.previous);
-      const skip = [
-        "periodFilter",
-        "presetOnly",
-        ...(sameComparison ? [] : ["previous", "previousValue", "change", "changePct"]),
-      ];
-      compareData(strip(data), strip(preset), new Set(skip), new Set(["customers"]), diff, key);
+      // KPI and table windows end at the horizon by range kind (RFC 0001 section 6.4): a sliding
+      // last N or a calendar comparison can differ from the explicit range of the same dates. The
+      // runtime shows the preset itself for those dates, so only the series always have to agree.
+      const windowsOf = (d: DashboardData) =>
+        JSON.stringify(
+          d.blocks.filter((b) => b.type === "kpi").map((b) => [b.current, b.previous]),
+        );
+      const same = windowsOf(data) === windowsOf(preset);
+      const strip = (d: DashboardData): unknown => ({
+        ...d,
+        period: { ...d.period, range: undefined, previous: undefined },
+        blocks: same
+          ? d.blocks
+          : d.blocks.flatMap((b) =>
+              b.type === "kpi"
+                ? [{ id: b.id, sparkline: b.sparkline } as unknown]
+                : b.type === "line"
+                  ? [b as unknown]
+                  : [],
+            ),
+      });
+      compareData(
+        strip(data),
+        strip(preset),
+        new Set(["periodFilter", "presetOnly"]),
+        new Set(),
+        diff,
+        key,
+      );
     }
     record(diff);
     expect(diff.problems.slice(0, 10)).toEqual([]);
@@ -225,12 +242,16 @@ describe("custom ranges: the browser path equals runDashboard's SQL path with th
           diff,
           `${w}`,
         );
-        const { current, previous } = windows({ start: w[0], end: w[1] }, asOf, ANCHORS);
-        const customers = explorer.blocks.filter((b) => b.id === "customers");
         checkDashboard(
           sql.data as DashboardData,
-          customers,
-          { rows, current, previous, anchors: ANCHORS },
+          explorer.blocks,
+          {
+            rows,
+            range: { start: w[0], end: w[1] },
+            horizon,
+            anchors: ANCHORS,
+            grainDefault: grainDefault(),
+          },
           diff,
         );
       }

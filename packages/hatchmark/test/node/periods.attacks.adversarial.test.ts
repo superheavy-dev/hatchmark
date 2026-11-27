@@ -18,6 +18,9 @@ import {
   checkDashboard,
   compareData,
   Diff,
+  ended,
+  type Horizon,
+  horizonOf,
   periodsOf,
   type Range,
   type Row,
@@ -25,7 +28,6 @@ import {
   readRows,
   type SpecBlock,
   type Window,
-  windows,
 } from "./periods.oracle.js";
 
 const tally = { cells: 0, mismatches: 0 };
@@ -192,8 +194,16 @@ async function build(
   config: Record<string, unknown>,
   dashboards: Record<string, unknown>,
   extra = false,
+  truncate?: string,
 ): Promise<Built> {
   const root = await writeExample(config, dashboards);
+  if (truncate) {
+    const csv = path.join(root, "data/orders.csv");
+    const [header, ...lines] = (await readFile(csv, "utf8")).trimEnd().split("\n");
+    const kept = lines.filter((l) => (l.split(",")[1] ?? "") < truncate);
+    const last = `999999,${truncate},C99999,United States,Americas,Direct,Home,paid,1.00`;
+    await writeFile(csv, `${[header, ...kept, last].join("\n")}\n`);
+  }
   for (const [name, m] of Object.entries(extra ? EXTRA_METRICS : {}))
     await writeFile(
       path.join(root, `metrics/${name}.json`),
@@ -218,6 +228,7 @@ type Case = {
   payload: PeriodData;
   rows: Row[];
   asOf: string;
+  horizon: Horizon;
   anchors: Anchors;
   blocks: SpecBlock[];
   options: Range[];
@@ -236,12 +247,17 @@ function checkPresets(c: Case, diff: Diff): void {
       diff.problems.push(`no preset for ${JSON.stringify(option)}`);
       continue;
     }
-    diff.same(`${JSON.stringify(option)} asOf`, data.asOf, c.asOf);
-    const { current, previous } = windows(option, c.asOf, c.anchors, c.compare);
     checkDashboard(
       data,
       c.blocks,
-      { rows, current, previous, anchors: c.anchors, grainDefault: c.grainDefault },
+      {
+        rows,
+        range: option,
+        horizon: c.horizon,
+        anchors: c.anchors,
+        grainDefault: c.grainDefault,
+        ...(c.compare ? { compare: c.compare } : {}),
+      },
       diff,
     );
   }
@@ -256,14 +272,14 @@ function customOf(c: Case, w: Window): DashboardData {
 function checkCustom(c: Case, w: Window, diff: Diff): DashboardData {
   const rows = c.where ? c.rows.filter(c.where) : c.rows;
   const data = customOf(c, w);
-  const { current, previous } = windows({ start: w[0], end: w[1] }, c.asOf, c.anchors, c.compare);
   checkDashboard(
     data,
     c.blocks,
     {
       rows,
-      current,
-      previous,
+      range: { start: w[0], end: w[1] },
+      horizon: c.horizon,
+      ...(c.compare ? { compare: c.compare } : {}),
       anchors: c.anchors,
       grainDefault: c.grainDefault,
       presetOnly: c.blind ?? new Set(c.payload.custom?.presetOnly),
@@ -325,6 +341,7 @@ describe("empty and null groups, non-additive metrics, and a select default with
     const base = {
       rows: b.rows,
       asOf: "2026-10-31",
+      horizon: horizonOf(b.rows, "latest_data"),
       anchors: { week: "sunday", quarter: "01-01", year: "01-01" },
       blocks: NULL_BLOCKS,
       options: NULL_OPTIONS,
@@ -530,19 +547,23 @@ describe("empty and null groups, non-additive metrics, and a select default with
       const cases: [string, Case, DashboardData, Window][] = [];
       for (const c of [nulls, combo]) {
         for (const d of Object.values(c.payload.presets)) {
-          const s = d.period.current as { start: string; end: string };
           cases.push([
             `${c.grainDefault} ${JSON.stringify(d.period.range)}`,
             c,
             d,
-            [s.start, s.end],
+            ended(d.period.range as Range, c.horizon, c.anchors).current,
           ]);
         }
         for (const w of [
           ...NULL_EDGES,
           ...randomRanges(20, c.payload.custom?.span as { start: string; end: string }, 99),
         ])
-          cases.push([`${c.grainDefault} custom ${w}`, c, customOf(c, w), w]);
+          cases.push([
+            `${c.grainDefault} custom ${w}`,
+            c,
+            customOf(c, w),
+            ended({ start: w[0], end: w[1] }, c.horizon, c.anchors).current,
+          ]);
       }
       for (const [at, c, data, w] of cases) {
         const where = c.where ? "AND region IN ('EMEA', 'APAC')" : "";
@@ -562,9 +583,12 @@ describe("empty and null groups, non-additive metrics, and a select default with
           };
         };
         const total = got.find((r) => r.g === 3);
-        const want = total
-          ? metrics(total)
-          : { revenue: 0, orders: 0, avg_order_value: null, refund_rate: null };
+        const want =
+          w[0] >= w[1]
+            ? { revenue: null, orders: null, avg_order_value: null, refund_rate: null }
+            : total
+              ? metrics(total)
+              : { revenue: 0, orders: 0, avg_order_value: null, refund_rate: null };
         for (const [m, v] of Object.entries(want))
           diff.num(`${at} total ${m}`, table.total?.values[m], v);
         const leaves = got.filter((r) => r.g === 0);
@@ -611,6 +635,8 @@ describe.each([
     },
     anchors: { week: "wednesday", quarter: "02-15", year: "08-15" },
     asOf: "latest_data",
+    truncate: undefined,
+    dayElapsed: 0.788113,
     edges: [
       ["2026-02-14", "2026-02-16"],
       ["2025-08-14", "2025-08-16"],
@@ -624,6 +650,8 @@ describe.each([
     config: {},
     anchors: { week: "sunday", quarter: "01-01", year: "01-01" },
     asOf: "2026-03-30",
+    truncate: undefined,
+    dayElapsed: undefined,
     edges: [
       ["2026-03-30", "2026-03-31"],
       ["2026-03-07", "2026-03-10"],
@@ -632,7 +660,46 @@ describe.each([
       ["2026-03-25", "2026-03-31"],
     ] as Window[],
   },
-])("$name", ({ config, anchors, asOf, edges }) => {
+  {
+    name: "a horizon at 12:30 p.m. on Oct 1, the first day of a month and a quarter (to-date windows have no complete day)",
+    config: {},
+    anchors: { week: "sunday", quarter: "01-01", year: "01-01" },
+    asOf: "latest_data",
+    truncate: "2026-10-01T16:30:00Z",
+    dayElapsed: 0.520833,
+    edges: [["2026-09-30", "2026-10-02"]] as Window[],
+  },
+  {
+    name: "a horizon at 3 p.m. on the 23-hour DST start day, 2026-03-08 (elapsed in wall-clock time)",
+    config: {},
+    anchors: { week: "sunday", quarter: "01-01", year: "01-01" },
+    asOf: "latest_data",
+    truncate: "2026-03-08T19:00:00Z",
+    dayElapsed: 0.625,
+    edges: [["2026-03-01", "2026-03-09"]] as Window[],
+  },
+  {
+    name: "a horizon in the repeated fall-back hour, 1:30 a.m. EST on 2025-11-02 (wall-clock 1.5 of 25 hours)",
+    config: {
+      weekStart: undefined,
+      anchors: { week: "wednesday", quarter: "02-15", year: "08-15" },
+    },
+    anchors: { week: "wednesday", quarter: "02-15", year: "08-15" },
+    asOf: "latest_data",
+    truncate: "2025-11-02T06:30:00Z",
+    dayElapsed: 0.0625,
+    edges: [["2025-10-29", "2025-11-03"]] as Window[],
+  },
+  {
+    name: "a fixed as-of before the newest data on a timestamp horizon day: 2026-10-30",
+    config: {},
+    anchors: { week: "sunday", quarter: "01-01", year: "01-01" },
+    asOf: "2026-10-30",
+    truncate: undefined,
+    dayElapsed: undefined,
+    edges: [["2026-10-25", "2026-10-31"]] as Window[],
+  },
+])("$name", ({ config, anchors, asOf, edges, truncate, dayElapsed }) => {
   let c: Case;
   beforeAll(async () => {
     const explorer = JSON.parse(
@@ -649,12 +716,13 @@ describe.each([
       },
     ];
     const filters = [periodFilter(ANCHOR_OPTIONS), grainFilter("week")];
-    const b = await build(config, { a: dash("Anchors", filters, blocks, asOf) });
+    const b = await build(config, { a: dash("Anchors", filters, blocks, asOf) }, false, truncate);
     const last = b.rows.reduce((m, r) => (r.d !== null && r.d > m ? r.d : m), "");
     c = {
       payload: b.payloads.a as PeriodData,
       rows: b.rows,
       asOf: asOf === "latest_data" ? last : asOf,
+      horizon: horizonOf(b.rows, asOf),
       anchors,
       blocks,
       options: ANCHOR_OPTIONS,
@@ -674,10 +742,27 @@ describe.each([
     expect(diff.cells).toBeGreaterThan(2000);
   });
 
-  it("custom ranges at anchor boundaries and 60 random ones match the oracle", () => {
+  it("the default preset's day series ends with the partial share the RFC's wall-clock rule gives", () => {
+    const line = c.payload.presets.last_12_months?.blocks.find((x) => x.id === "revenue_by_region");
+    const day =
+      line?.type === "line" ? line.grains?.options.find((o) => o.key === "day") : undefined;
+    const partial = day?.series.map((x) => x.partial?.[0]?.elapsed);
+    expect(new Set(partial)).toEqual(new Set([dayElapsed]));
+    if (truncate === "2026-10-01T16:30:00Z") {
+      for (const key of ["month_to_date", "quarter_to_date"]) {
+        const k = c.payload.presets[key]?.blocks.find((x) => x.id === "revenue");
+        expect(k, key).toMatchObject({ value: null, empty: "no_complete_day" });
+      }
+    }
+  });
+
+  it("custom ranges at anchor boundaries, ranges ending on the as-of day, and 60 random ones match the oracle", () => {
     const diff = new Diff();
+    const end = c.payload.custom?.span.end as string;
+    const tail = [1, 2, 8, 31].map((n): Window => [addDays(end, -n), end]);
     for (const w of [
       ...edges,
+      ...tail,
       ...randomRanges(60, c.payload.custom?.span as { start: string; end: string }, 2026),
     ])
       checkCustom(c, w, diff);
