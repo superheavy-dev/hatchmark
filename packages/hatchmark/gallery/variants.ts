@@ -615,7 +615,7 @@ const TABLES: GalleryVariant[] = [
   one(
     "table",
     "table-windows",
-    "Metrics with different horizons: the subtitle names the one that ends earlier",
+    "Metrics with different horizons: the column that ends earlier gets a window marker",
     TABLE_WINDOWS,
   ),
   one("table", "table-subtotals", "Subtotals by region, with in-cell bars", TABLE_SUBTOTALS),

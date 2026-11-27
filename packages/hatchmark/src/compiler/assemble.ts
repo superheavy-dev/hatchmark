@@ -866,8 +866,20 @@ class Assembler {
       };
     });
     const read = scopes.filter(({ m }) => emptyOf.get(m) === undefined);
-    const window = read.find((s) => s.window !== undefined)?.window;
-    const through = window ? undefined : read.find((s) => s.through !== undefined)?.through;
+    const mostRead = <T>(values: T[]): T | undefined => {
+      const counts = new Map<string, { value: T; count: number }>();
+      for (const value of values) {
+        const id = JSON.stringify(value);
+        counts.set(id, { value, count: (counts.get(id)?.count ?? 0) + 1 });
+      }
+      let best: { value: T; count: number } | undefined;
+      for (const entry of counts.values()) if (!best || entry.count > best.count) best = entry;
+      return best?.value;
+    };
+    const window = mostRead(read.flatMap((s) => (s.window ? [s.window] : [])));
+    const through = window
+      ? undefined
+      : mostRead(read.flatMap((s) => (s.window === undefined && s.through ? [s.through] : [])));
     const windows = Object.fromEntries(
       read.flatMap((s) =>
         window && s.window && JSON.stringify(s.window) !== JSON.stringify(window)

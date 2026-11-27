@@ -8,7 +8,6 @@ import { metric, Oracle, removeProjects, run, writeProject } from "./fixture.js"
 afterAll(removeProjects);
 
 const TZ = "America/New_York";
-const NBSP = "\u00A0";
 const TIMED = "at,market,channel,amount,units\n";
 const SOURCES: Record<string, string> = {
   sales:
@@ -210,7 +209,16 @@ async function build(c: Case) {
   const html = renderFragment(result.data);
   const subtitle = html.match(/<\/h2><p id="hm-t-s">([^<]+)/)?.[1];
   const described = html.includes('aria-describedby="hm-t-s"');
-  return { root: fixture.root, block, subtitle, described };
+  const notes = Object.fromEntries(
+    [...html.matchAll(/role="tooltip" id="hm-t-w(\d+)">([^<]+)</g)].map(([, i, text]) => [
+      c.metrics[Number(i)],
+      text,
+    ]),
+  );
+  const sortDescribed = [...html.matchAll(/class="hm-sort" aria-describedby="hm-t-w(\d+)"/g)].map(
+    ([, i]) => c.metrics[Number(i)],
+  );
+  return { root: fixture.root, block, subtitle, described, notes, sortDescribed };
 }
 
 const addDays = (day: string, n: number) =>
@@ -223,11 +231,6 @@ const words = (start: string, end: string) => {
     ? `${day(start)}, ${start.slice(0, 4)}`
     : `${day(start)} – ${day(last)}, ${last.slice(0, 4)}`;
 };
-const list = (labels: string[]) =>
-  labels.length <= 2
-    ? labels.join(" and ")
-    : `${labels.slice(0, -1).join(", ")} and ${labels[labels.length - 1]}`;
-
 type Horizon = { end: string; midday: boolean; micros: number; lastDate: string };
 type Effective =
   | { untimed: true }
@@ -316,24 +319,50 @@ async function oracleFor(root: string, c: Case) {
     Effective
   >;
 
-  const label = (m: string) => sumOf(m)?.label ?? ratioOf(m)?.label ?? m;
-  const scope = (w: Effective) => {
-    if ("untimed" in w) return "all time";
-    if ("empty" in w)
-      return w.empty === "no_data" ? "no data in this period" : "no complete day yet";
-    return w.start ? words(w.start, w.end) : `through ${words(addDays(w.end, -1), w.end)}`;
-  };
-  const groups = new Map<string, string[]>();
+  type Dated = { start?: string; end: string };
+  const isDated = (w: Effective): w is Dated => "end" in w;
+  const keyOf = (w: Dated) => `${w.start ?? ""}|${w.end}`;
+  const counts = new Map<string, { w: Dated; n: number }>();
   for (const m of c.metrics) {
-    const s = scope(windows[m] as Effective);
-    groups.set(s, [...(groups.get(s) ?? []), label(m)]);
+    const w = windows[m] as Effective;
+    if (!isDated(w)) continue;
+    counts.set(keyOf(w), { w, n: (counts.get(keyOf(w))?.n ?? 0) + 1 });
   }
+  let main: Dated | undefined;
+  let most = 0;
+  for (const { w, n } of counts.values())
+    if (n > most) {
+      main = w;
+      most = n;
+    }
+  const through = (w: Dated) => words(addDays(w.end, -1), w.end);
   const allEmpty = c.metrics.every((m) => "empty" in (windows[m] as Effective));
   const subtitle = allEmpty
     ? undefined
-    : groups.size === 1
-      ? ([...groups.keys()][0] as string)
-      : [...groups].map(([s, labels]) => `${list(labels)}: ${s.replaceAll(" ", NBSP)}`).join("; ");
+    : main === undefined
+      ? "all time"
+      : main.start
+        ? words(main.start, main.end)
+        : `through ${through(main)}`;
+  const behind = (w: Dated) => {
+    const days = main ? (Date.parse(main.end) - Date.parse(w.end)) / 86_400_000 : 0;
+    return days > 0 ? ` · ${days} ${days === 1 ? "day" : "days"} behind` : "";
+  };
+  const noteMap = new Map<string, string>();
+  for (const m of c.metrics) {
+    const w = windows[m] as Effective;
+    if ("untimed" in w) {
+      if (main) noteMap.set(m, "All time");
+    } else if ("empty" in w) {
+      noteMap.set(m, w.empty === "no_data" ? "No data in this period" : "No complete day yet");
+    } else if (main && keyOf(w) !== keyOf(main)) {
+      const read =
+        w.start && w.start !== main.start ? words(w.start, w.end) : `Data through ${through(w)}`;
+      noteMap.set(m, `${read}${behind(w)}`);
+    }
+  }
+  const notes = Object.fromEntries(noteMap);
+  const mainWindow = main;
 
   const sum = async (m: string, w: Effective, group: string) => {
     const s = sumOf(m);
@@ -365,7 +394,7 @@ async function oracleFor(root: string, c: Case) {
       }),
     );
   };
-  return { windows, subtitle, value, close: () => oracle.close() };
+  return { windows, subtitle, notes, main: mainWindow, value, close: () => oracle.close() };
 }
 
 async function attack(c: Case) {
@@ -385,12 +414,12 @@ async function attack(c: Case) {
       }
     }
     expect(engine.described).toBe(engine.subtitle !== undefined);
-    const firstDated = c.metrics
-      .map((m) => want.windows[m] as Effective)
-      .find((w): w is { start?: string; end: string } => "end" in w);
-    if (firstDated?.start)
-      expect(engine.block.window).toEqual({ start: firstDated.start, end: firstDated.end });
-    else if (firstDated) expect(engine.block.through).toBe(addDays(firstDated.end, -1));
+    expect(engine.subtitle).toBe(want.subtitle);
+    expect(engine.notes).toEqual(want.notes);
+    expect(engine.sortDescribed).toEqual(c.metrics.filter((m) => Object.hasOwn(want.notes, m)));
+    if (want.main?.start)
+      expect(engine.block.window).toEqual({ start: want.main.start, end: want.main.end });
+    else if (want.main) expect(engine.block.through).toBe(addDays(want.main.end, -1));
     else expect([engine.block.window, engine.block.through]).toEqual([undefined, undefined]);
     return { ...engine, want };
   } finally {
@@ -398,54 +427,60 @@ async function attack(c: Case) {
   }
 }
 
-const plain = (s: string | undefined) => s?.replaceAll(NBSP, " ");
-
 it("last 7 days: sources ending mid-day, at local midnight, and on the DST day", async () => {
-  const { subtitle, want } = await attack({
+  const { want } = await attack({
     metrics: ["revenue", "refunds", "returns", "units"],
     range: "last_7_days",
     asOf: "2026-11-05",
   });
-  expect(plain(want.subtitle)).toBe(
-    "Revenue: Oct 28 – Nov 3, 2026; Refunds: Oct 27 – Nov 2, 2026; Returns: Oct 25 – Oct 31, 2026; Units: all time",
-  );
-  expect(subtitle).toBe(want.subtitle);
+  expect([want.subtitle, want.notes]).toEqual([
+    "Oct 28 – Nov 3, 2026",
+    {
+      refunds: "Oct 27 – Nov 2, 2026 · 1 day behind",
+      returns: "Oct 25 – Oct 31, 2026 · 3 days behind",
+      units: "All time",
+    },
+  ]);
 });
 
 it("month to date: untimed first, a source with no complete day, a source ending at midnight", async () => {
-  const { subtitle, want } = await attack({
+  const { want } = await attack({
     metrics: ["units", "returns", "revenue", "refunds"],
     range: "month_to_date",
     asOf: "2026-11-05",
   });
-  expect(plain(want.subtitle)).toBe(
-    "Units: all time; Returns: no complete day yet; Revenue: Nov 1 – Nov 3, 2026; Refunds: Nov 1 – Nov 2, 2026",
-  );
-  expect(subtitle).toBe(want.subtitle);
+  expect([want.subtitle, want.notes]).toEqual([
+    "Nov 1 – Nov 3, 2026",
+    {
+      units: "All time",
+      returns: "No complete day yet",
+      refunds: "Data through Nov 2, 2026 · 1 day behind",
+    },
+  ]);
 });
 
 it("all time with a fixed as-of before the newest data groups the metrics it caps", async () => {
-  const { subtitle, want } = await attack({
+  const { want } = await attack({
     metrics: ["units", "revenue", "refunds", "returns"],
     range: "all_time",
     asOf: "2026-11-02",
   });
-  expect(plain(want.subtitle)).toBe(
-    "Units: all time; Revenue and Refunds: through Nov 2, 2026; Returns: through Oct 31, 2026",
-  );
-  expect(subtitle).toBe(want.subtitle);
+  expect([want.subtitle, want.notes]).toEqual([
+    "through Nov 2, 2026",
+    { units: "All time", returns: "Data through Oct 31, 2026 · 2 days behind" },
+  ]);
 });
 
 it("all time under latest_data", async () => {
-  const { subtitle, want } = await attack({
+  const { want } = await attack({
     metrics: ["revenue", "refunds", "units"],
     range: "all_time",
     asOf: "latest_data",
   });
-  expect(plain(want.subtitle)).toBe(
-    "Revenue: through Nov 3, 2026; Refunds: through Nov 2, 2026; Units: all time",
-  );
-  expect(subtitle).toBe(want.subtitle);
+  expect([want.subtitle, want.notes]).toEqual([
+    "through Nov 3, 2026",
+    { refunds: "Data through Nov 2, 2026 · 1 day behind", units: "All time" },
+  ]);
 });
 
 it("latest_data names the stale metric; latest_common_data keeps one window", async () => {
@@ -454,118 +489,120 @@ it("latest_data names the stale metric; latest_common_data keeps one window", as
     range: "month_to_date",
     asOf: "latest_data",
   });
-  expect(plain(latest.want.subtitle)).toBe(
-    "Revenue: Nov 1 – Nov 3, 2026; Refunds: Nov 1 – Nov 2, 2026",
-  );
-  expect(latest.subtitle).toBe(latest.want.subtitle);
+  expect([latest.want.subtitle, latest.want.notes]).toEqual([
+    "Nov 1 – Nov 3, 2026",
+    { refunds: "Data through Nov 2, 2026 · 1 day behind" },
+  ]);
   const common = await attack({
     metrics: ["revenue", "refunds"],
     range: "month_to_date",
     asOf: "latest_common_data",
   });
-  expect(common.want.subtitle).toBe("Nov 1 – Nov 2, 2026");
-  expect(common.subtitle).toBe(common.want.subtitle);
+  expect([common.want.subtitle, common.want.notes]).toEqual(["Nov 1 – Nov 2, 2026", {}]);
 });
 
 it("ratios across two sources read through the most stale operand, in either position", async () => {
-  const { subtitle, want } = await attack({
+  const { want } = await attack({
     metrics: ["revenue", "rate", "inverse", "per_ticket"],
     range: "month_to_date",
     asOf: "2026-11-05",
   });
-  expect(plain(want.subtitle)).toBe(
-    "Revenue: Nov 1 – Nov 3, 2026; Refund rate, Inverse and Per ticket: Nov 1 – Nov 2, 2026",
-  );
-  expect(subtitle).toBe(want.subtitle);
+  expect([want.subtitle, want.notes]).toEqual([
+    "Nov 1 – Nov 2, 2026",
+    { revenue: "Data through Nov 3, 2026" },
+  ]);
 });
 
 it("a ratio first, then its fresher operand", async () => {
-  const { subtitle, want } = await attack({
+  const { want } = await attack({
     metrics: ["per_ticket", "revenue"],
     range: "last_7_days",
     asOf: "2026-11-05",
   });
-  expect(plain(want.subtitle)).toBe(
-    "Per ticket: Oct 27 – Nov 2, 2026; Revenue: Oct 28 – Nov 3, 2026",
-  );
-  expect(subtitle).toBe(want.subtitle);
+  expect([want.subtitle, want.notes]).toEqual([
+    "Oct 27 – Nov 2, 2026",
+    { revenue: "Oct 28 – Nov 3, 2026" },
+  ]);
 });
 
 it("two time columns of one source, and a ratio between them", async () => {
-  const { subtitle, want } = await attack({
+  const { want } = await attack({
     metrics: ["placed", "shipped", "ship_rate"],
     range: "month_to_date",
     asOf: "2026-11-05",
   });
-  expect(plain(want.subtitle)).toBe(
-    "Placed: Nov 1 – Nov 3, 2026; Shipped and Ship rate: Nov 1, 2026",
-  );
-  expect(subtitle).toBe(want.subtitle);
+  expect([want.subtitle, want.notes]).toEqual([
+    "Nov 1, 2026",
+    { placed: "Data through Nov 3, 2026" },
+  ]);
 });
 
 it("a date column complete through the same day as a timestamp source keeps one window", async () => {
-  const { subtitle, want } = await attack({
+  const { want } = await attack({
     metrics: ["revenue", "daily"],
     range: "month_to_date",
     asOf: "2026-11-05",
   });
-  expect(want.subtitle).toBe("Nov 1 – Nov 3, 2026");
-  expect(subtitle).toBe(want.subtitle);
+  expect([want.subtitle, want.notes]).toEqual(["Nov 1 – Nov 3, 2026", {}]);
 });
 
 it("a metric filter that drops the newest row keeps the source's horizon", async () => {
-  const { subtitle, want } = await attack({
+  const { want } = await attack({
     metrics: ["web", "revenue", "refunds"],
     range: "month_to_date",
     asOf: "2026-11-05",
   });
-  expect(plain(want.subtitle)).toBe(
-    "Web revenue and Revenue: Nov 1 – Nov 3, 2026; Refunds: Nov 1 – Nov 2, 2026",
-  );
-  expect(subtitle).toBe(want.subtitle);
+  expect([want.subtitle, want.notes]).toEqual([
+    "Nov 1 – Nov 3, 2026",
+    { refunds: "Data through Nov 2, 2026 · 1 day behind" },
+  ]);
 });
 
 it("a freshness lag moves only that source's window", async () => {
-  const { subtitle, want } = await attack({
+  const { want } = await attack({
     metrics: ["refunds", "revenue"],
     range: "month_to_date",
     asOf: "2026-11-05",
     lagDays: { sales: 2 },
   });
-  expect(plain(want.subtitle)).toBe("Refunds: Nov 1 – Nov 2, 2026; Revenue: Nov 1, 2026");
-  expect(subtitle).toBe(want.subtitle);
+  expect([want.subtitle, want.notes]).toEqual([
+    "Nov 1 – Nov 2, 2026",
+    { revenue: "Data through Nov 1, 2026 · 1 day behind" },
+  ]);
 });
 
 it("an explicit range ending before every horizon keeps one window", async () => {
-  const { subtitle, want } = await attack({
+  const { want } = await attack({
     metrics: ["revenue", "refunds", "returns"],
     range: { start: "2026-10-25", end: "2026-10-31" },
     asOf: "2026-11-05",
   });
-  expect(want.subtitle).toBe("Oct 25 – Oct 30, 2026");
-  expect(subtitle).toBe(want.subtitle);
+  expect([want.subtitle, want.notes]).toEqual(["Oct 25 – Oct 30, 2026", {}]);
 });
 
 it("a metric named constructor in a mixed table", async () => {
-  const { subtitle, want } = await attack({
+  const { want } = await attack({
     metrics: ["units", "constructor", "refunds", "returns"],
     range: "last_7_days",
     asOf: "2026-11-05",
   });
-  expect(plain(want.subtitle)).toBe(
-    "Units: all time; Constructor: Oct 28 – Nov 3, 2026; Refunds: Oct 27 – Nov 2, 2026; Returns: Oct 25 – Oct 31, 2026",
-  );
-  expect(subtitle).toBe(want.subtitle);
+  expect([want.subtitle, want.notes]).toEqual([
+    "Oct 28 – Nov 3, 2026",
+    {
+      units: "All time",
+      refunds: "Oct 27 – Nov 2, 2026 · 1 day behind",
+      returns: "Oct 25 – Oct 31, 2026 · 3 days behind",
+    },
+  ]);
 });
 
 it("an empty metric next to untimed ones only", async () => {
-  const { subtitle, want } = await attack({
+  const { want } = await attack({
     metrics: ["units", "returns"],
     range: "month_to_date",
     asOf: "2026-11-05",
   });
-  expect(plain(want.subtitle)).toBe("Units: all time; Returns: no complete day yet");
-  expect(subtitle).toBe(want.subtitle);
+  expect([want.subtitle, want.notes]).toEqual(["all time", { returns: "No complete day yet" }]);
 });
 
 it("subtotals, Other and the total read each metric's own window", async () => {
@@ -581,10 +618,12 @@ it("subtotals, Other and the total read each metric's own window", async () => {
   const engine = await build(c);
   const want = await oracleFor(engine.root, c);
   try {
-    expect(plain(want.subtitle)).toBe(
-      "Revenue: Oct 28 – Nov 3, 2026; Refunds: Oct 27 – Nov 2, 2026; Units: all time",
-    );
+    expect([want.subtitle, want.notes]).toEqual([
+      "Oct 28 – Nov 3, 2026",
+      { refunds: "Oct 27 – Nov 2, 2026 · 1 day behind", units: "All time" },
+    ]);
     expect(engine.subtitle).toBe(want.subtitle);
+    expect(engine.notes).toEqual(want.notes);
     expect(engine.block.rows.some((r) => r.kind === "other")).toBe(true);
     for (const m of c.metrics) {
       const markets = await want.value(m);

@@ -273,15 +273,15 @@ export interface TableData extends BlockCommon {
    */
   total?: { values: Record<string, Value>; share?: Record<string, Value> };
   /**
-   * The window of the first metric that reads one; the other dated metrics read the same unless
+   * The window most dated metrics read (the first one on a tie); the others read the same unless
    * windows lists them. Each metric's window ends at its own horizon.
    */
   window?: DateSpan;
   /** Dated metrics whose window differs from window (an earlier or later horizon), by name. */
   windows?: Record<string, DateSpan>;
   /**
-   * Set instead of window when the period has no start (all time): the last day, inclusive, that the
-   * first dated metric reads. throughs lists dated metrics that read through another day.
+   * Set instead of window when the period has no start (all time): the last day, inclusive, that most
+   * dated metrics read. throughs lists dated metrics that read through another day.
    */
   through?: string;
   throughs?: Record<string, string>;

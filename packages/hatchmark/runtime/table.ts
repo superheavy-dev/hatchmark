@@ -203,6 +203,33 @@ export function wireTable(card: HTMLElement): void {
   live.className = "hm-sr";
   live.setAttribute("aria-live", "polite");
   card.append(live);
+  const marks = [...table.querySelectorAll<HTMLButtonElement>("button.hm-win")];
+  const close = () => {
+    for (const mark of marks) mark.parentElement?.classList.remove("hm-open");
+  };
+  for (const mark of marks) {
+    const box = mark.parentElement;
+    mark.addEventListener("click", (event) => {
+      event.stopPropagation();
+      const open = !box?.classList.contains("hm-open");
+      close();
+      box?.classList.remove("hm-shut");
+      box?.classList.toggle("hm-open", open);
+    });
+    box?.addEventListener("mouseleave", () => box.classList.remove("hm-shut"));
+    mark.addEventListener("blur", () => {
+      box?.classList.remove("hm-shut");
+      box?.classList.remove("hm-open");
+    });
+  }
+  if (marks.length > 0) {
+    document.addEventListener("click", close);
+    table.addEventListener("keydown", (event) => {
+      if (event.key !== "Escape") return;
+      close();
+      for (const mark of marks) mark.parentElement?.classList.add("hm-shut");
+    });
+  }
   const headers = [...(table.tHead?.querySelectorAll<HTMLTableCellElement>("th") ?? [])];
   for (const th of headers) {
     const button = th.querySelector<HTMLButtonElement>("button.hm-sort");

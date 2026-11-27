@@ -71,6 +71,7 @@ beforeAll(async () => {
     tallScroll: variant("table-tall-scroll"),
     tallShared: variant("table-tall-shared"),
     tallSharedPage: variant("table-tall-shared-page"),
+    windows: variant("table-windows"),
     cut: dashboard("cut", "Cut", [
       {
         ...TRICKY,
@@ -870,6 +871,73 @@ describe("overflow: page or scroll, by layout", () => {
     expect(heights).toHaveLength(2);
     expect(Math.abs((heights[0] ?? 0) - (heights[1] ?? 0))).toBeLessThan(1);
     pinned(await probe(page, 700));
+    await page.close();
+  });
+});
+
+describe("columns that read another window", () => {
+  const tip = (page: Page) => page.locator(".hm-win-tip");
+  const text = "Data through Oct 29, 2026 · 2 days behind";
+
+  it("keeps the subtitle on the main window and describes the column and its sort button", async () => {
+    const page = await open("windows");
+    expect(await page.locator("#hm-windows-s").textContent()).toBe(
+      "Revenue, Orders and Customers by Country, Oct 2026",
+    );
+    expect(await page.locator("table").getAttribute("aria-describedby")).toBe("hm-windows-s");
+    const described = await page.$$eval("thead [aria-describedby]", (nodes) =>
+      nodes.map((n) => [
+        n.textContent?.trim() || n.getAttribute("aria-label"),
+        document.getElementById(n.getAttribute("aria-describedby") ?? "")?.textContent,
+      ]),
+    );
+    expect(described).toEqual([
+      ["Customers", text],
+      ["Window of Customers", text],
+    ]);
+    expect(await page.locator("button.hm-win").count()).toBe(1);
+    expect(await tip(page).isVisible()).toBe(false);
+    await page.close();
+  });
+
+  it("shows the window on hover and on keyboard focus, and Escape hides it", async () => {
+    const page = await open("windows");
+    await page.hover("button.hm-win");
+    expect(await tip(page).textContent()).toBe(text);
+    expect(await tip(page).isVisible()).toBe(true);
+    await page.mouse.move(0, 0);
+    expect(await tip(page).isVisible()).toBe(false);
+    await page.focus("thead th:last-child button.hm-sort");
+    await page.keyboard.press("Tab");
+    expect(await page.evaluate(() => document.activeElement?.className)).toBe("hm-win");
+    expect(await tip(page).isVisible()).toBe(true);
+    await page.keyboard.press("Escape");
+    expect(await tip(page).isVisible()).toBe(false);
+    await page.close();
+  });
+
+  it("opens on tap on a phone, reachable in the scrolled header, and closes on a tap elsewhere", async () => {
+    const context = await browser.newContext({
+      viewport: { width: 390, height: 800 },
+      hasTouch: true,
+    });
+    const page = await context.newPage();
+    await page.goto(urls.windows ?? "");
+    const mark = page.locator("button.hm-win");
+    await mark.tap();
+    expect(await tip(page).isVisible()).toBe(true);
+    const box = await tip(page).boundingBox();
+    expect(box && box.x >= 0 && box.x + box.width <= 390).toBe(true);
+    await page.locator("h2").first().tap();
+    expect(await tip(page).isVisible()).toBe(false);
+    await context.close();
+  });
+
+  it("keeps CSV headers to the column labels", async () => {
+    const page = await open("windows");
+    expect((await download(page)).slice(1).split("\r\n")[0]).toBe(
+      "Country,Revenue,Orders,Customers",
+    );
     await page.close();
   });
 });

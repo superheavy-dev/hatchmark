@@ -40,13 +40,14 @@ What it draws:
 - Long names wrap to at most two lines and keep the full text in a tooltip. On narrow screens the
   table scrolls sideways with its key column pinned, and bars are hidden (see Narrow screens).
 - Undefined values show `—`; a null group shows "(empty)".
-- The subtitle says what the metrics read, and the table refers to it as its description. Each
-  metric's window ends at its own last complete day (see numbers.md). When every metric reads the
-  same window the subtitle gives just that window ("Nov 1 – Nov 3, 2026"; "through Nov 3, 2026" for
-  an `all_time` period; "all time" when no metric has a time column). When they differ, it names
-  every metric with its window and groups the ones that share it: "Revenue and Orders: Nov 1 –
-  Nov 3, 2026; Refunds: Nov 1, 2026; Units: all time". A metric with no data in the window reads
-  "no data in this period" or "no complete day yet".
+- The subtitle gives the table's main window, the one most of its metrics read ("Nov 1 – Nov 3,
+  2026"; "through Nov 3, 2026" for an `all_time` period; "all time" when no metric has a time
+  column), and the table refers to it as its description. Each metric's window ends at its own last
+  complete day (see numbers.md), so a column whose metric reads another window gets a small marker
+  in its header. Hovering, focusing or tapping it shows that window, which is also the column's
+  accessible description: "Data through Oct 29, 2026 · 2 days behind", "All time" for a metric
+  without a time column, or "No data in this period" / "No complete day yet". CSV headers keep the
+  plain labels.
 
 ## Sorting
 

@@ -57,9 +57,17 @@ async function table(
   if (result.data === undefined) throw new Error("no dashboard data");
   const block = result.data.blocks[0] as TableData;
   const html = renderFragment(result.data);
-  const shown = html.match(/<\/h2><p id="hm-t-s">([^<]+)/)?.[1];
-  const subtitle = shown?.replaceAll("\u00A0", " ");
+  const subtitle = html.match(/<\/h2><p id="hm-t-s">([^<]+)/)?.[1];
   const described = html.includes('<table aria-describedby="hm-t-s"');
+  const notes = Object.fromEntries(
+    [...html.matchAll(/role="tooltip" id="hm-t-w(\d+)">([^<]+)</g)].map(([, i, text]) => [
+      metrics[Number(i)],
+      text,
+    ]),
+  );
+  const sortDescribed = [...html.matchAll(/class="hm-sort" aria-describedby="hm-t-w(\d+)"/g)].map(
+    ([, i]) => metrics[Number(i)],
+  );
   const raw = (source: string) => `read_csv('${path.join(fixture.root, `${source}.csv`)}')`;
   const oracle = await Oracle.open();
   const sql = async (q: string) => {
@@ -70,7 +78,7 @@ async function table(
     }
   };
   const values = Object.fromEntries(block.rows.map((r) => [String(r.keys[0]), r.values]));
-  return { block, subtitle, shown, described, sql, raw, values };
+  return { block, subtitle, described, notes, sortDescribed, sql, raw, values };
 }
 
 const newYorkMidnight = (day: string) =>
@@ -79,7 +87,7 @@ const newYorkDays = (first: string, end: string) =>
   `FILTER (WHERE "at" >= ${newYorkMidnight(first)} AND "at" < ${newYorkMidnight(end)})`;
 
 it("names the metric that ends at an earlier horizon and the untimed one, each matching SQL", async () => {
-  const { block, subtitle, sql, raw, values } = await table(["revenue", "refunds", "units"]);
+  const { block, subtitle, notes, sql, raw, values } = await table(["revenue", "refunds", "units"]);
   const expected = await sql(`
     SELECT s.market, s.revenue, r.refunds, s.units FROM
       (SELECT market, sum(amount) ${newYorkDays("2026-11-01", "2026-11-04")} AS revenue, sum(units) AS units
@@ -100,17 +108,19 @@ it("names the metric that ends at an earlier horizon and the untimed one, each m
   expect(block.window).toEqual({ start: "2026-11-01", end: "2026-11-04" });
   expect(block.windows).toEqual({ refunds: { start: "2026-11-01", end: "2026-11-02" } });
   expect(block.allTime).toEqual(["units"]);
-  expect(subtitle).toBe("Revenue: Nov 1 – Nov 3, 2026; Refunds: Nov 1, 2026; Units: all time");
+  expect(subtitle).toBe("Nov 1 – Nov 3, 2026");
+  expect(notes).toEqual({ refunds: "Data through Nov 1, 2026 · 2 days behind", units: "All time" });
 });
 
 it("takes the window from the first dated metric when the first metric has no time column", async () => {
-  const { block, subtitle } = await table(["units", "revenue"]);
+  const { block, subtitle, notes } = await table(["units", "revenue"]);
   expect(block.window).toEqual({ start: "2026-11-01", end: "2026-11-04" });
-  expect(subtitle).toBe("Units: all time; Revenue: Nov 1 – Nov 3, 2026");
+  expect(subtitle).toBe("Nov 1 – Nov 3, 2026");
+  expect(notes).toEqual({ units: "All time" });
 });
 
 it("says through each horizon for an all-time period, matching SQL", async () => {
-  const { block, subtitle, sql, raw, values } = await table(
+  const { block, subtitle, notes, sql, raw, values } = await table(
     ["revenue", "refunds", "units"],
     "all_time",
   );
@@ -124,53 +134,54 @@ it("says through each horizon for an all-time period, matching SQL", async () =>
   expect(values.A).toEqual(expected[0]);
   expect(block.through).toBe("2026-11-03");
   expect(block.throughs).toEqual({ refunds: "2026-11-01" });
-  expect(subtitle).toBe(
-    "Revenue: through Nov 3, 2026; Refunds: through Nov 1, 2026; Units: all time",
-  );
+  expect(subtitle).toBe("through Nov 3, 2026");
+  expect(notes).toEqual({ refunds: "Data through Nov 1, 2026 · 2 days behind", units: "All time" });
 });
 
 it("says all time when no metric has a time column", async () => {
-  const { block, subtitle } = await table(["units", "stock"]);
+  const { block, subtitle, notes } = await table(["units", "stock"]);
   expect(block.window).toBeUndefined();
   expect(subtitle).toBe("all time");
+  expect(notes).toEqual({});
 });
 
 it("says which metric has no data in the period while the others fill the rows", async () => {
-  const { block, subtitle, values } = await table(["revenue", "lapsed"], "month_to_date", {
+  const { block, subtitle, notes, values } = await table(["revenue", "lapsed"], "month_to_date", {
     lapsed: sum("old", "amount", "Lapsed"),
   });
   expect(block.emptyMetrics).toEqual({ lapsed: "no_data" });
   expect(values.A).toEqual({ revenue: 105, lapsed: null });
-  expect(subtitle).toBe("Revenue: Nov 1 – Nov 3, 2026; Lapsed: no data in this period");
+  expect(subtitle).toBe("Nov 1 – Nov 3, 2026");
+  expect(notes).toEqual({ lapsed: "No data in this period" });
 });
 
-it("groups metrics that share a window, keeps each window on one line, and describes the table", async () => {
-  const { subtitle, shown, described } = await table(
-    ["revenue", "orders", "refunds"],
+it("takes the main window from most metrics and marks the column that reads another", async () => {
+  const { block, subtitle, described, notes, sortDescribed } = await table(
+    ["refunds", "revenue", "orders"],
     "month_to_date",
-    {
-      orders: sum("sales", "units", "Orders"),
-    },
+    { orders: sum("sales", "units", "Orders") },
   );
-  expect(subtitle).toBe("Revenue and Orders: Nov 1 – Nov 3, 2026; Refunds: Nov 1, 2026");
-  expect(shown).toBe(
-    "Revenue and Orders: Nov\u00A01\u00A0–\u00A0Nov\u00A03,\u00A02026; Refunds: Nov\u00A01,\u00A02026",
-  );
+  expect(block.window).toEqual({ start: "2026-11-01", end: "2026-11-04" });
+  expect(block.windows).toEqual({ refunds: { start: "2026-11-01", end: "2026-11-02" } });
+  expect(subtitle).toBe("Nov 1 – Nov 3, 2026");
+  expect(notes).toEqual({ refunds: "Data through Nov 1, 2026 · 2 days behind" });
+  expect(sortDescribed).toEqual(["refunds"]);
   expect(described).toBe(true);
 });
 
-it("keeps the plain window when every metric shares it", async () => {
-  const { subtitle, described } = await table(["revenue", "orders"], "month_to_date", {
+it("keeps the plain window and no marker when every metric shares it", async () => {
+  const { subtitle, described, notes } = await table(["revenue", "orders"], "month_to_date", {
     orders: sum("sales", "units", "Orders"),
   });
   expect(subtitle).toBe("Nov 1 – Nov 3, 2026");
+  expect(notes).toEqual({});
   expect(described).toBe(true);
 });
 
 it.each(["month_to_date", "all_time"])(
   "renders a metric named constructor next to one with another window (%s)",
   async (range) => {
-    const { subtitle, values, sql, raw } = await table(["constructor", "refunds"], range, {
+    const { subtitle, notes, values, sql, raw } = await table(["constructor", "refunds"], range, {
       constructor: sum("sales", "amount", "Constructor"),
     });
     const start = range === "all_time" ? "" : `"at" >= ${newYorkMidnight("2026-11-01")} AND `;
@@ -180,10 +191,7 @@ it.each(["month_to_date", "all_time"])(
         (SELECT sum(amount) FROM ${raw("refunds")} WHERE ${start}"at" < ${newYorkMidnight("2026-11-02")}
           AND market = 'A') AS refunds`);
     expect(values.A).toEqual({ constructor: expected?.sales, refunds: expected?.refunds });
-    expect(subtitle).toBe(
-      range === "all_time"
-        ? "Constructor: through Nov 3, 2026; Refunds: through Nov 1, 2026"
-        : "Constructor: Nov 1 – Nov 3, 2026; Refunds: Nov 1, 2026",
-    );
+    expect(subtitle).toBe(range === "all_time" ? "through Nov 3, 2026" : "Nov 1 – Nov 3, 2026");
+    expect(notes).toEqual({ refunds: "Data through Nov 1, 2026 · 2 days behind" });
   },
 );
