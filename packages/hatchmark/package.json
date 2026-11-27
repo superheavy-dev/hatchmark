@@ -28,7 +28,7 @@
     "NOTICE"
   ],
   "scripts": {
-    "build": "tsc -p tsconfig.build.json && vite build",
+    "build": "tsc -p tsconfig.build.json && vite build && vite build --mode periods",
     "typecheck": "tsc -p tsconfig.json --noEmit && tsc -p runtime/tsconfig.json",
     "gen:schema": "pnpm build && node scripts/write-schemas.ts",
     "gen:text-metrics": "node scripts/gen-text-metrics.ts",

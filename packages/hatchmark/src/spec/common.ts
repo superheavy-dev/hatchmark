@@ -1,4 +1,14 @@
 import { z } from "zod";
+import { PERIOD_RANGES, TIME_GRAINS, WEEKDAYS } from "./units.js";
+
+export {
+  grainKey,
+  grainUnit,
+  PERIOD_RANGES,
+  resolveGrain,
+  TIME_GRAINS,
+  WEEKDAYS,
+} from "./units.js";
 
 /** Metric, source, block and filter names: lowercase snake_case, so they are safe in SQL and URLs. */
 export const IDENTIFIER_PATTERN = /^[a-z][a-z0-9_]*$/;
@@ -40,35 +50,12 @@ export const schemaRef = z
 
 export const scalar = z.union([z.string(), z.number(), z.boolean()]);
 
-export const TIME_GRAINS = ["day", "week", "month", "quarter", "year"] as const;
 export const timeGrain = z.enum(TIME_GRAINS).meta({ id: "TimeGrain" });
 export type TimeGrain = z.infer<typeof timeGrain>;
 
-export const PERIOD_RANGES = [
-  "last_7_days",
-  "last_30_days",
-  "last_90_days",
-  "last_12_months",
-  "month_to_date",
-  "quarter_to_date",
-  "year_to_date",
-  "last_complete_month",
-  "last_complete_quarter",
-  "last_complete_year",
-  "all_time",
-] as const;
 export const periodRange = z.enum(PERIOD_RANGES).meta({ id: "PeriodRange" });
 export type PeriodRange = z.infer<typeof periodRange>;
 
-export const WEEKDAYS = [
-  "monday",
-  "tuesday",
-  "wednesday",
-  "thursday",
-  "friday",
-  "saturday",
-  "sunday",
-] as const;
 export const weekday = z.enum(WEEKDAYS).meta({ id: "Weekday" });
 export type Weekday = z.infer<typeof weekday>;
 
@@ -133,26 +120,6 @@ export const grainSchema = z
       'A bucket unit, such as "month", or {"unit": "year", "anchor": "02-01"} to override the project anchors.',
   });
 export type Grain = z.infer<typeof grainSchema>;
-
-/** The unit of a grain as written. */
-export function grainUnit(grain: Grain): TimeGrain {
-  return typeof grain === "string" ? grain : grain.unit;
-}
-
-/** A grain with the anchor a bucket uses: its own, else the project's. */
-export function resolveGrain(grain: Grain, anchors: Anchors): ResolvedGrain {
-  const unit = grainUnit(grain);
-  const own = typeof grain === "string" ? undefined : grain.anchor;
-  if (unit === "day" || unit === "month") return { unit };
-  if (unit === "week") return { unit, anchor: (own as Weekday | undefined) ?? anchors.week };
-  return { unit, anchor: own ?? anchors[unit] };
-}
-
-/** A grain as one string, such as "month" or "week:sunday". Resolved grains with the same buckets share a key. */
-export function grainKey(grain: Grain): string {
-  const anchor = typeof grain === "string" ? undefined : grain.anchor;
-  return anchor === undefined ? grainUnit(grain) : `${grainUnit(grain)}:${anchor}`;
-}
 
 /**
  * Grains a card or a grain filter switches between: two to six. check resolves them at the project

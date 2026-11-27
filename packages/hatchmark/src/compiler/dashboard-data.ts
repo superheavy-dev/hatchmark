@@ -100,6 +100,11 @@ export interface KpiData extends BlockCommon {
   changeKind?: "relative" | "points";
   /** Present when the block asks for a sparkline: the metric by month over the current window. */
   sparkline?: { grain: TimeGrain; buckets: string[]; values: Value[]; partial?: PartialBucket[] };
+  /**
+   * True on a custom range of a static page when the metric cannot be added up from day-grain
+   * data (a distinct count or a median): value is null, and the reader needs a preset.
+   */
+  presetOnly?: true;
 }
 
 /** One drawn series: a metric, or one value of the split column for a single metric. */
@@ -355,6 +360,29 @@ export interface ScatterData extends BlockCommon {
 
 export type BlockData = KpiData | LineData | BarData | PieData | TableData | ScatterData;
 
+/** One preset of a period filter. */
+export interface PeriodOption {
+  /** rangeKey of the preset: "last_7_days", "month_to_date", or "2026-01-01..2026-03-31". */
+  key: string;
+  /** Control text, such as "Last 7 days"; absent for a range of dates, which shows its dates. */
+  label?: string;
+  /** The dates the preset covers at this page's as-of date. */
+  current?: DateSpan;
+}
+
+export interface PeriodFilter {
+  id: string;
+  label: string;
+  options: PeriodOption[];
+  /** The key of the range the page shows: a preset's, or "<first>..<last>" for a custom range. */
+  selected: string;
+  /**
+   * The days a custom range may cover, from the first day with data through the as-of date; absent
+   * when the filter offers the presets only. Set by the build that embeds the day-grain data.
+   */
+  custom?: DateSpan;
+}
+
 export interface DashboardData {
   version: typeof DASHBOARD_DATA_VERSION;
   /** Dashboard name: the file name under dashboards/, also its output route. */
@@ -375,6 +403,8 @@ export interface DashboardData {
   anchors: Anchors;
   /** The dashboard's grain filter: one control that switches every block whose grains list the choice. */
   grainFilter?: { id: string; label: string; options: GrainOption[]; selected: string };
+  /** The dashboard's period filter: presets, and a calendar for any range when custom is set. */
+  periodFilter?: PeriodFilter;
   /** Every metric any block shows, by name. */
   metrics: Record<string, MetricInfo>;
   /** Blocks in spec order. Block types the engine cannot produce yet are omitted with a warning. */

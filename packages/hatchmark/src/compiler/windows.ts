@@ -1,13 +1,12 @@
-import {
-  type Anchors,
-  type Comparison,
-  PERIOD_RANGES,
-  type PeriodRange,
-  type RangeSpec,
-  type ResolvedGrain,
-  type TimeGrain,
-  WEEKDAYS,
+import type {
+  Anchors,
+  Comparison,
+  PeriodRange,
+  RangeSpec,
+  ResolvedGrain,
+  TimeGrain,
 } from "../spec/index.js";
+import { PERIOD_RANGES, TIME_GRAINS, WEEKDAYS } from "../spec/units.js";
 import { DAY_US, formatInstant, formatWall, fromLocal, parseInstant, toLocal } from "./instants.js";
 import type { ExecutionContext, PlannedParam, PlannedQuery } from "./plan.js";
 
@@ -370,23 +369,55 @@ function endedWindow(
 /**
  * The range a period filter makes current: its bound range, else its default, else the base range
  * when there is no period filter. A dashboard has at most one period filter (check, HM3007), so
- * the dashboard's period and every query it windows resolve to the same range. Throws on a binding
- * that is not a period range.
+ * the dashboard's period and every query it windows resolve to the same range. A binding is any
+ * range a spec can write: a named range, a shorthand, or {start, end} for a custom range. Throws on
+ * a binding that is not one.
  */
 export function effectiveRange(
   base: RangeSpec,
-  param: { id: string; default: PeriodRange } | undefined,
+  param: { id: string; default: RangeSpec } | undefined,
   bindings: ExecutionContext["bindings"],
 ): RangeSpec {
   if (param === undefined) return base;
   const bound = bindings[param.id];
   if (bound === undefined) return param.default;
-  if (typeof bound === "string" && (PERIOD_RANGES as readonly string[]).includes(bound)) {
-    return bound as PeriodRange;
-  }
+  if (isRange(bound)) return bound;
   throw new TypeError(
     `period filter "${param.id}" is bound to ${JSON.stringify(bound)}, not a period range`,
   );
+}
+
+const DAY = /^\d{4}-\d{2}-\d{2}$/;
+
+/** Whether a value has the shape of a RangeSpec, checked without the spec schema. */
+function isRange(value: unknown): value is RangeSpec {
+  if (typeof value === "string") return (PERIOD_RANGES as readonly string[]).includes(value);
+  if (typeof value !== "object" || value === null || Array.isArray(value)) return false;
+  const r = value as Record<string, unknown>;
+  const unit = (u: unknown) => (TIME_GRAINS as readonly unknown[]).includes(u);
+  const day = (d: unknown): d is string => {
+    if (typeof d !== "string" || !DAY.test(d)) return false;
+    const date = parse(d);
+    const normal = addDays(date, 0);
+    return normal.m === date.m && normal.d === date.d;
+  };
+  switch (Object.keys(r).sort().join(",")) {
+    case "end,start":
+      return day(r.start) && day(r.end) && r.start < r.end;
+    case "last,unit":
+      return (
+        Number.isInteger(r.last) &&
+        (r.last as number) >= 1 &&
+        (r.last as number) <= 3660 &&
+        unit(r.unit)
+      );
+    case "to_date":
+      return unit(r.to_date);
+    case "last_complete":
+      return unit(r.last_complete);
+    default:
+      return false;
+  }
 }
 
 /** The first day of the time bucket a date falls in. */

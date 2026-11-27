@@ -175,6 +175,11 @@ export const CODES = {
     explanation:
       'A table with "overflow": "page" grows as tall as its rows, but this one shares its grid row with other blocks, and a grid row is as tall as its tallest card. Its neighbours stretch to the table\'s height with empty space below their content. Remove "overflow" (a table in a shared row scrolls inside its card by default), or give the table its own row with "span": 12.',
   },
+  HM2025: {
+    title: "grain no block switches to",
+    explanation:
+      "A grain filter offers a grain that no line, area or bar block lists in its grains, so choosing it changes nothing on the page. The filter drives only blocks whose grains include the chosen grain, compared at the project anchors. Add the grain to the blocks that should switch, or remove the option.",
+  },
   HM3001: {
     title: "missing required property",
     explanation:
@@ -349,6 +354,11 @@ export const CODES = {
     explanation:
       'A scatter block\'s "size" metric sets each point\'s area, which cannot be negative. Points whose size is negative (or undefined) are drawn at the smallest size, so they look like small positive values; the tooltip still shows the real number. Size by a metric that is zero or more, such as gross revenue or orders instead of net revenue or growth, or remove "size" and show the signed metric on an axis.',
   },
+  HM4041: {
+    title: "metric needs a preset",
+    explanation:
+      'Informational. A period filter offers custom ranges, which a static page computes in the browser by adding up day-grain aggregates. Distinct counts, medians and SQL metrics not declared additive cannot be added up that way, so for a custom range the page shows them as "—" and says to pick a preset; every preset is computed exactly at build time. Live custom ranges come with hatchmark serve. Set "custom": false on the filter to offer presets only.',
+  },
   HM5001: {
     title: "too many points per series",
     explanation:
@@ -368,6 +378,11 @@ export const CODES = {
     title: "too many scatter points",
     explanation:
       'A scatter block draws at most 500 points: past that the dots merge into a blot and the page gets heavy. The block\'s "by" column has more categories, so Hatchmark kept the 500 largest (by size, else by y) and left the rest out; the warning says how many. Set "limit" to keep fewer on purpose (no warning then), filter the dashboard, or plot a coarser column, such as country instead of city.',
+  },
+  HM5002: {
+    title: "page over the size budget",
+    explanation:
+      'A built dashboard page weighs more than 3 MB of HTML, counting everything it carries: every chart drawn ahead at each layout and grain, the data of each period preset, and the day-grain data a custom range is computed from. Such a page is slow on a phone. The warning splits the size into those parts. When the day-grain data is the largest, set "custom": false on the period filter so readers pick from the presets only; otherwise list fewer grains or presets, split by fewer values, or move blocks to another dashboard.',
   },
   HM9001: {
     title: "internal error",

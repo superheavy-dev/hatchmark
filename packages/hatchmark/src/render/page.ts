@@ -10,6 +10,7 @@ import type {
   ScatterData,
   TableData,
 } from "../compiler/dashboard-data.js";
+import type { PeriodData } from "../compiler/period-data.js";
 import { aloneInRow, MIN_CHART_SPAN } from "../spec/layout.js";
 import { barCategories, barHeight, renderBar } from "./bar.js";
 import type { RenderContext } from "./chart.js";
@@ -17,6 +18,7 @@ import { chartRuntimeData, chartTable, describeChart } from "./describe.js";
 import { formatDate, formatSpan } from "./format.js";
 import { renderKpi } from "./kpi.js";
 import { renderLine } from "./line.js";
+import { PERIOD_MOBILE, periodCaption, periodControl, periodStyles } from "./period.js";
 import { isPie, pieHeight, renderPie } from "./pie.js";
 import { renderScatter } from "./scatter.js";
 import { esc, scriptJson } from "./svg.js";
@@ -54,6 +56,9 @@ export const LAYOUTS = [
 ] as const;
 export type Layout = (typeof LAYOUTS)[number];
 
+/** Weekdays from Monday, to order the calendar's columns from the project's week anchor. */
+const WEEK_ORDER = ["monday", "tuesday", "wednesday", "thursday", "friday", "saturday", "sunday"];
+
 /** Plot height on phones (layout rule 02). */
 const MOBILE_CHART_HEIGHT = 230;
 
@@ -85,6 +90,8 @@ export const FONT_FILES: FontFile[] = (
 export interface PageAssets {
   /** The browser runtime script. */
   runtime: string;
+  /** The script that recomputes a page for another period (runtime/periods.ts), when one is used. */
+  periods?: string;
   /** URL per font file name from FONT_FILES. */
   fonts: Record<string, string>;
 }
@@ -94,6 +101,8 @@ export interface PageOptions {
   theme?: Theme;
   /** Data files the dashboard reads, named in the footer. */
   sources?: string[];
+  /** Presets and day-grain data for the period filter, embedded in the page (runPeriodData). */
+  periods?: PeriodData;
 }
 
 function context(data: DashboardData, theme: Theme): RenderContext {
@@ -311,7 +320,17 @@ function grainCard(
     };
   });
   const subtitles = panels.map((p) => p.subtitle).join("");
-  const head = `<header class="hm-card-head hm-switch"><div class="hm-card-titles"><h2 id="${esc(id)}">${panels.map((p) => p.title).join("")}</h2>${subtitles ? `<p>${subtitles}</p>` : ""}</div>${grainControl(options, selected, "Grain")}</header>`;
+  const head = `<header class="hm-card-head hm-switch"><div class="hm-card-titles"><h2 id="${esc(id)}">${panels.map((p) => p.title).join("")}</h2>${subtitles ? `<p>${subtitles}</p>` : ""}</div>${grainControl(
+    options,
+    selected,
+    `Grain: ${
+      block.title ??
+      metricLabels(
+        ctx,
+        block.series.map((s) => s.metric),
+      )
+    }`,
+  )}</header>`;
   return `<section class="hm-card hm-${block.type}" style="--span:${chartSpan(block)}" aria-labelledby="${esc(id)}" data-hm-grains>${head}${panels.map((p) => p.body).join("")}</section>`;
 }
 
@@ -438,7 +457,7 @@ export function pageStyles(assets: PageAssets, theme: Theme = DEFAULT_THEME): st
       ? ""
       : `.hm-grid>*{grid-column:1/-1}.hm-strip{--cols:2}.hm-kpi{grid-column:span 1}`;
     const mobile = layout.mobile
-      ? `.hm-header{flex-direction:column;align-items:flex-start}.hm-header-side{align-items:flex-start}.hm-kpi-value{font-size:20px;line-height:28px;letter-spacing:-0.01em}.hm-kpi-figure{gap:6px}.hm-track{display:none}.hm-table td.hm-cellbar,.hm-table td.hm-share{padding-left:16px}.hm-table:is(.hm-ma,.hm-mb) tr>.hm-outer{width:0;min-width:0;max-width:0;padding:0;border-left:0;overflow:hidden}.hm-table:is(.hm-ma,.hm-mb) tr>.hm-outer>*{position:absolute;width:1px;height:1px;margin:-1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap}.hm-table:is(.hm-ma,.hm-mb) thead tr>.hm-outer>*{display:none}.hm-table:is(.hm-ma,.hm-mb) tr>.hm-fill{position:sticky;left:0;z-index:1;padding-left:0;padding-right:12px;background:var(--hm-card);box-shadow:inset -1px 0 0 var(--hm-border)}.hm-table:is(.hm-ma,.hm-mb) thead tr>.hm-fill{z-index:3}.hm-tall .hm-table:is(.hm-ma,.hm-mb) thead tr>.hm-fill{box-shadow:inset -1px 0 0 var(--hm-border),inset 0 -1px 0 var(--hm-border-strong)}.hm-table:is(.hm-ma,.hm-mb) .hm-fill span{max-width:176px}.hm-table:is(.hm-ma,.hm-mb) tr>.hm-fill+*{padding-left:12px}.hm-table:is(.hm-ma,.hm-mb) .hm-key span.hm-m{display:-webkit-box}.hm-table .hm-key span.hm-msub{-webkit-line-clamp:1;font-size:12px;line-height:16px;font-weight:400;color:var(--hm-text-muted)}.hm-table.hm-deep tr[data-hm-level="2"] .hm-m{padding-left:12px}.hm-table.hm-deep tr:not(.hm-subtotal)>.hm-fill>span{padding-left:24px}.hm-table:is(.hm-ma,.hm-mb) tfoot tr>:first-child{box-shadow:inset -1px 0 0 var(--hm-border)}.hm-tall .hm-table:is(.hm-ma,.hm-mb) tfoot tr>:first-child{box-shadow:inset -1px 0 0 var(--hm-border),inset 0 1px 0 var(--hm-border-strong)}`
+      ? `${PERIOD_MOBILE}.hm-header{flex-direction:column;align-items:flex-start}.hm-header-side{align-items:flex-start;align-self:stretch}.hm-kpi-value{font-size:20px;line-height:28px;letter-spacing:-0.01em}.hm-kpi-figure{gap:6px}.hm-track{display:none}.hm-table td.hm-cellbar,.hm-table td.hm-share{padding-left:16px}.hm-table:is(.hm-ma,.hm-mb) tr>.hm-outer{width:0;min-width:0;max-width:0;padding:0;border-left:0;overflow:hidden}.hm-table:is(.hm-ma,.hm-mb) tr>.hm-outer>*{position:absolute;width:1px;height:1px;margin:-1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap}.hm-table:is(.hm-ma,.hm-mb) thead tr>.hm-outer>*{display:none}.hm-table:is(.hm-ma,.hm-mb) tr>.hm-fill{position:sticky;left:0;z-index:1;padding-left:0;padding-right:12px;background:var(--hm-card);box-shadow:inset -1px 0 0 var(--hm-border)}.hm-table:is(.hm-ma,.hm-mb) thead tr>.hm-fill{z-index:3}.hm-tall .hm-table:is(.hm-ma,.hm-mb) thead tr>.hm-fill{box-shadow:inset -1px 0 0 var(--hm-border),inset 0 -1px 0 var(--hm-border-strong)}.hm-table:is(.hm-ma,.hm-mb) .hm-fill span{max-width:176px}.hm-table:is(.hm-ma,.hm-mb) tr>.hm-fill+*{padding-left:12px}.hm-table:is(.hm-ma,.hm-mb) .hm-key span.hm-m{display:-webkit-box}.hm-table .hm-key span.hm-msub{-webkit-line-clamp:1;font-size:12px;line-height:16px;font-weight:400;color:var(--hm-text-muted)}.hm-table.hm-deep tr[data-hm-level="2"] .hm-m{padding-left:12px}.hm-table.hm-deep tr:not(.hm-subtotal)>.hm-fill>span{padding-left:24px}.hm-table:is(.hm-ma,.hm-mb) tfoot tr>:first-child{box-shadow:inset -1px 0 0 var(--hm-border)}.hm-tall .hm-table:is(.hm-ma,.hm-mb) tfoot tr>:first-child{box-shadow:inset -1px 0 0 var(--hm-border),inset 0 1px 0 var(--hm-border-strong)}`
       : "";
     return `@container hm ${query}{.hm-page{${width};padding:${layout.page}px 0}.hm-l${i}{display:block}${column}${mobile}}`;
   }).join("");
@@ -465,6 +484,7 @@ export function pageStyles(assets: PageAssets, theme: Theme = DEFAULT_THEME): st
     `.hm-kpi-note{font-size:12px;line-height:16px;color:var(--hm-text-subtle)}.hm-spark{display:block;width:100%;height:24px;margin-top:8px}`,
     `.hm-switch{flex-direction:row;flex-wrap:wrap;justify-content:space-between;align-items:flex-start;gap:8px 12px}.hm-card-titles{display:flex;flex-direction:column;gap:2px;min-width:0}.hm-header-side{display:flex;flex-direction:column;align-items:flex-end;gap:8px;max-width:100%;min-width:0}`,
     `.hm-seg{display:inline-flex;flex:0 1 auto;flex-wrap:wrap;max-width:100%;min-width:0;gap:2px;padding:2px;background:var(--hm-card-alt);border:1px solid var(--hm-border);border-radius:${theme.radius.control}px}.hm-seg button{font:inherit;font-size:12px;line-height:16px;font-weight:500;padding:3px 10px;border:0;border-radius:${Math.max(0, theme.radius.control - 2)}px;background:transparent;color:var(--hm-text-muted);cursor:pointer}.hm-seg button:hover{color:var(--hm-text)}.hm-seg button[aria-checked=true]{background:var(--hm-card);color:var(--hm-text);box-shadow:0 0 0 1px var(--hm-border-strong)}.hm-seg button:focus-visible{outline:2px solid var(--hm-focus);outline-offset:1px}[data-hm-grain][hidden]{display:none}`,
+    periodStyles(theme),
     `.hm-chart{position:relative}.hm-v{display:none}.hm-v svg{display:block;max-width:100%;height:auto;overflow:visible;touch-action:pan-y}.hm-v svg:focus,.hm-spark:focus{outline:none}.hm-v svg:focus-visible,.hm-spark:focus-visible,.hm-table-wrap:focus-visible{outline:2px solid var(--hm-focus);outline-offset:2px;border-radius:2px}`,
     `.hm-chart text{font-variant-numeric:tabular-nums}.hm-dim .hm-slice:not(.hm-on){opacity:.35}.hm-b-context{background:var(--hm-context)}`,
     `.hm-table-wrap{overflow-x:auto}.hm-table{width:100%;border-collapse:collapse}`,
@@ -525,6 +545,11 @@ ${head}
 `;
 }
 
+/** A dashboard's blocks as the page's grid items, for the runtime that redraws them for a period. */
+export function renderDashboardBlocks(data: DashboardData, theme: Theme = DEFAULT_THEME): string {
+  return renderBlocks(data.blocks, context(data, theme));
+}
+
 /**
  * A dashboard's blocks without the page header and footer, for galleries and embeds; pair it with
  * pageHead() once per document.
@@ -543,16 +568,36 @@ export function renderDashboardPage(data: DashboardData, options: PageOptions): 
   const theme = options.theme ?? DEFAULT_THEME;
   const ctx = context(data, theme);
   const locale = data.locale;
-  const period = data.period.current
-    ? `${formatSpan(data.period.current, locale)}${data.period.previous ? ` compared with ${formatSpan(data.period.previous, locale)}` : ""}`
-    : "All time";
   const asOf = `<p class="hm-asof">Data through ${esc(formatDate(data.asOf, locale))}</p>`;
-  const header = `<header class="hm-header"><div class="hm-titles"><div class="hm-brand"><span class="hm-logo" aria-hidden="true"></span>${esc(data.project)}</div><div class="hm-title"><h1>${esc(data.title)}</h1><p class="hm-caption">${esc(period)} \u00B7 ${esc(data.currency)}</p>${data.description ? `<p class="hm-description">${esc(data.description)}</p>` : ""}</div></div>${data.grainFilter ? `<div class="hm-header-side">${grainControl(data.grainFilter.options, data.grainFilter.selected, data.grainFilter.label, ` data-hm-grain-filter="${esc(data.grainFilter.id)}"`)}${asOf}</div>` : asOf}</header>`;
+  const controls = [
+    data.periodFilter
+      ? periodControl(
+          { ...data, periodFilter: data.periodFilter },
+          options.periods ? options.assets.periods : undefined,
+          WEEK_ORDER.indexOf(data.anchors.week),
+        )
+      : "",
+    data.grainFilter
+      ? grainControl(
+          data.grainFilter.options,
+          data.grainFilter.selected,
+          `${data.grainFilter.label}, all charts`,
+          ` data-hm-grain-filter="${esc(data.grainFilter.id)}"`,
+        )
+      : "",
+  ].join("");
+  const note = data.periodFilter
+    ? `<p class="hm-period-note" data-hm-period-note aria-live="polite" hidden></p>`
+    : "";
+  const header = `<header class="hm-header"><div class="hm-titles"><div class="hm-brand"><span class="hm-logo" aria-hidden="true"></span>${esc(data.project)}</div><div class="hm-title"><h1>${esc(data.title)}</h1><p class="hm-caption" data-hm-caption>${esc(periodCaption(data))}</p>${note}${data.description ? `<p class="hm-description">${esc(data.description)}</p>` : ""}</div></div>${controls ? `<div class="hm-header-side">${controls}${asOf}</div>` : asOf}</header>`;
+  const embedded = options.periods
+    ? `<script type="application/json" data-hm-periods>${scriptJson(options.periods)}</script>`
+    : "";
   const sources = options.sources?.length
     ? `Source: ${options.sources.join(", ")}`
     : `Source: ${data.project}`;
   const footer = `<footer class="hm-footer"><span>${esc(sources)}</span><span>Hatchmark \u00B7 ${esc(theme.id === "default" ? "Default theme" : theme.id)}</span></footer>`;
-  const body = `<div class="hm-page">${header}<main class="hm-grid">${renderBlocks(data.blocks, ctx)}</main>${footer}</div>`;
+  const body = `<div class="hm-page">${header}<main class="hm-grid">${renderBlocks(data.blocks, ctx)}</main>${footer}</div>${embedded}`;
   return document(`${data.title} \u00B7 ${data.project}`, pageHead(options.assets, theme), body);
 }
 

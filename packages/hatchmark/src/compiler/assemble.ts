@@ -1,17 +1,14 @@
 import { type Diagnostic, docsCommand } from "../diagnostics/index.js";
-import {
-  type Block,
-  blockId,
-  type DashboardFilter,
-  grainKey,
-  type Metric,
-  PIE_DEFAULT_LIMIT,
-  type Project,
-  type RangeSpec,
-  type ResolvedGrain,
-  resolveGrain,
-  timeNature,
+import type {
+  Block,
+  DashboardFilter,
+  Metric,
+  Project,
+  RangeSpec,
+  ResolvedGrain,
 } from "../spec/index.js";
+import { timeNature } from "../spec/semantics.js";
+import { blockId, grainKey, PIE_DEFAULT_LIMIT, resolveGrain } from "../spec/units.js";
 import {
   type BarData,
   type BlockData,
@@ -25,6 +22,8 @@ import {
   type LineData,
   type MetricInfo,
   type PartialBucket,
+  type PeriodFilter,
+  type PeriodOption,
   type PieData,
   type PieSlice,
   type ScatterData,
@@ -37,6 +36,7 @@ import {
   type Value,
 } from "./dashboard-data.js";
 import { formatWall, fromLocal, parseInstant, toLocal } from "./instants.js";
+import { rangeKey, rangeName } from "./periods.js";
 import type {
   BlockPlan,
   ExecutionContext,
@@ -1180,6 +1180,39 @@ export function grainLabels(grains: ResolvedGrain[]): string[] {
   });
 }
 
+/** DashboardData.periodFilter from the dashboard's period filter, with the selected range's key. */
+function periodFilter(
+  filters: DashboardFilter[] | undefined,
+  plan: QueryPlan,
+  context: ExecutionContext,
+  range: RangeSpec,
+): { periodFilter: PeriodFilter } | Record<string, never> {
+  const filter = filters?.find((f) => f.type === "period");
+  if (filter === undefined) return {};
+  const options = filter.options.map((option): PeriodOption => {
+    const label = rangeName(option);
+    let current: DateSpan | undefined;
+    try {
+      current = span(resolveRange(option, "none", context.asOf, plan.anchors), context.timezone);
+    } catch (error) {
+      if (!(error instanceof RangeError)) throw error;
+    }
+    return {
+      key: rangeKey(option),
+      ...(label === undefined ? {} : { label }),
+      ...(current ? { current } : {}),
+    };
+  });
+  return {
+    periodFilter: {
+      id: filter.id,
+      label: filter.label ?? "Period",
+      options,
+      selected: rangeKey(range),
+    },
+  };
+}
+
 /** DashboardData.grainFilter from the dashboard's grain filter, resolved at the project anchors. */
 function grainFilter(
   filters: DashboardFilter[] | undefined,
@@ -1309,6 +1342,7 @@ export function assemble(
     timezone: plan.timezone,
     anchors: plan.anchors,
     ...grainFilter(spec.filters, plan),
+    ...periodFilter(spec.filters, plan, context, period.range),
     metrics,
     blocks,
   };

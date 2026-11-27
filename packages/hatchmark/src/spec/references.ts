@@ -40,6 +40,7 @@ import {
   timeNature,
 } from "./semantics.js";
 import { parseTemporal, temporalRepair } from "./temporal.js";
+import { rangeKey } from "./units.js";
 
 export const TEXT_REFERENCE_FIELDS = ["value", "previous", "change", "change_pct"] as const;
 function optional<K extends string, V>(key: K, value: V | undefined): { [P in K]?: V } {
@@ -1424,6 +1425,91 @@ function checkDashboard(project: Project, file: SpecFile<"dashboard">, out: Diag
       `/filters/${i}/default`,
       "default",
     );
+  });
+
+  const switched = new Set(
+    dashboard.blocks.flatMap((block) =>
+      "grains" in block && block.grains !== undefined ? block.grains.map(resolvedKey) : [],
+    ),
+  );
+  (dashboard.filters ?? []).forEach((filter, i) => {
+    if (filter.type === "grain") {
+      const keys = filter.options.map(resolvedKey);
+      if (!keys.some((key) => switched.has(key))) {
+        r.report("HM2025", `/filters/${i}`, `grain filter "${filter.id}" switches no block`, {
+          severity: "warning",
+          label: "no line, area or bar block lists these grains",
+          help: `add "grains" with ${keys.map((k) => JSON.stringify(k)).join(", ")} to the blocks it should switch, or remove the filter`,
+        });
+        return;
+      }
+      keys.forEach((key, j) => {
+        if (switched.has(key) || keys.indexOf(key) !== j) return;
+        r.report(
+          "HM2025",
+          `/filters/${i}/options/${j}`,
+          `grain filter "${filter.id}" offers ${JSON.stringify(filter.options[j])}, which no block lists in its grains`,
+          {
+            severity: "warning",
+            help: "add it to the grains of the blocks it should switch, or remove the option",
+          },
+        );
+      });
+      return;
+    }
+    if (filter.type !== "period") return;
+    const keys = filter.options.map(rangeKey);
+    keys.forEach((key, j) => {
+      const first = keys.indexOf(key);
+      if (first === j) return;
+      r.report(
+        "HM3007",
+        `/filters/${i}/options/${j}`,
+        `preset ${JSON.stringify(filter.options[j])} reads the same dates as ${JSON.stringify(filter.options[first])} (${key})`,
+        { help: "list each preset once" },
+      );
+    });
+    if (!keys.includes(rangeKey(filter.default))) {
+      r.report(
+        "HM3007",
+        `/filters/${i}/default`,
+        `default ${JSON.stringify(filter.default)} is not one of options (${keys.join(", ")})`,
+        { help: "add it to options, or pick one of them" },
+      );
+    }
+    if (filter.custom === false) return;
+    const presetOnly = new Set<string>();
+    const visit = (name: string, seen: Set<string>) => {
+      const metric = project.metrics.get(name)?.spec;
+      if (metric === undefined || seen.has(name)) return;
+      seen.add(name);
+      if (metric.type === "ratio") {
+        visit(metric.numerator, seen);
+        visit(metric.denominator, seen);
+        return;
+      }
+      if (metric.type !== "aggregate" && metric.type !== "sql") return;
+      if (metric.time === undefined) return;
+      const additive =
+        metric.type === "sql"
+          ? metric.additive === true
+          : ["sum", "count", "min", "max", "avg"].includes(metric.aggregate);
+      if (!additive) presetOnly.add(name);
+    };
+    for (const block of dashboard.blocks) {
+      for (const ref of blockMetricRefs(block)) visit(ref.name, new Set());
+    }
+    for (const name of [...presetOnly].sort()) {
+      r.report(
+        "HM4041",
+        `/filters/${i}`,
+        `metric "${name}" cannot be added up from days, so a custom range shows it as "—" and asks for a preset`,
+        {
+          severity: "note",
+          help: 'every preset computes it exactly; set "custom": false to offer presets only and silence this note',
+        },
+      );
+    }
   });
 
   let grainFilter: string | undefined;

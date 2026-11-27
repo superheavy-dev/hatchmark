@@ -45,7 +45,8 @@ export function renderKpi(block: KpiData, ctx: RenderContext): string {
     delta = `<span class="hm-delta hm-${judged}">${arrow ? `<span aria-hidden="true">${arrow}</span>\u2009` : ""}${esc(changeText)}<span class="hm-sr"> (${spoken})</span></span>`;
   }
   let note: string;
-  if (block.value === null) note = "No data in this period";
+  if (block.presetOnly === true) note = "Pick a preset to see this";
+  else if (block.value === null) note = "No data in this period";
   else if (block.previous === undefined || block.previousValue === undefined) {
     note = block.current ? formatSpan(block.current, locale) : "All time";
   } else {

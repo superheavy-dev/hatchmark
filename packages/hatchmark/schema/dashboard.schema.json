@@ -285,13 +285,20 @@
             },
             "options": {
               "minItems": 1,
+              "maxItems": 12,
               "type": "array",
               "items": {
-                "$ref": "#/$defs/PeriodRange"
-              }
+                "$ref": "#/$defs/Range"
+              },
+              "description": "Presets the reader picks from, such as [{\"last\": 7, \"unit\": \"day\"}, {\"to_date\": \"month\"}, {\"last_complete\": \"month\"}, \"last_12_months\"]. Each is computed exactly at build time."
             },
             "default": {
-              "$ref": "#/$defs/PeriodRange"
+              "description": "The preset the page shows first; one of options.",
+              "$ref": "#/$defs/Range"
+            },
+            "custom": {
+              "description": "Also offer a calendar for any start and end date. Default true. A static build embeds day-grain aggregates for it; set false to offer only the presets and keep the page small (HM5002).",
+              "type": "boolean"
             }
           },
           "required": [
