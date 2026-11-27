@@ -21,6 +21,32 @@ failed: 1 error, 0 warnings
 
 The layout may change between releases. Do not parse it; use the JSON form.
 
+### Default notes (HM4040)
+
+Some choices differ between companies, such as where a week starts or whether a time series starts
+at the start of the bucket that holds the range start. Each one has a documented default and an
+option that changes it. When a project relies on such a default, check reports an HM4040 note per
+definition, naming the default and the option. The human form folds them into one line per file:
+
+```
+note[HM4040]: dashboards/sales.yaml: 3 default definitions, run hatchmark check --explain-defaults
+```
+
+`hatchmark check --explain-defaults` prints every note in full. The JSON form always lists every
+note. Notes don't change `ok`, the counts or the exit code, `--strict` included, and check leaves
+them out while the project has errors. Setting an option explicitly, even to its default value,
+silences its note.
+
+| Default                                               | Reported on                                       | Option                                          |
+| ----------------------------------------------------- | ------------------------------------------------- | ----------------------------------------------- |
+| A time series starts at the start of its first bucket | each `line`, `area` or time `bar` above day grain | block `"edges": "clip"`                         |
+| Buckets the data doesn't fully cover are marked       | each `line`, `area` or time `bar`                 | block `"incomplete": "hide"` or `"show"`        |
+| Charts end at the newest source's horizon             | each dashboard without `period`                   | `period.asOf`: `"latest_common_data"` or a date |
+| Weeks start on Monday                                 | `hatchmark.yaml`, when a week block relies on it  | `anchors.week`, or a block's grain anchor       |
+| Quarters and years start on Jan 1                     | `hatchmark.yaml`, when such a block relies on it  | `anchors.year`, or a block's grain anchor       |
+| An interval ending at a bucket end counts in it       | metrics with `active`                             | `active.ends`                                   |
+| A split entity takes its current group                | `per_entity` metrics                              | `group_at`                                      |
+
 ## JSON form, format_version "1"
 
 A report is one line of JSON on stdout:

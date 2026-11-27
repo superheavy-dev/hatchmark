@@ -56,9 +56,17 @@ const COMMANDS: Record<string, Command> = {
   },
   check: {
     help: checkHelp,
-    options: { strict: { type: "boolean" }, sql: { type: "boolean" } },
+    options: {
+      strict: { type: "boolean" },
+      sql: { type: "boolean" },
+      "explain-defaults": { type: "boolean" },
+    },
     run: (ctx, positionals, flags) =>
-      check(ctx, positionals, { strict: flags.strict === true, sql: flags.sql === true }),
+      check(ctx, positionals, {
+        strict: flags.strict === true,
+        sql: flags.sql === true,
+        explainDefaults: flags["explain-defaults"] === true,
+      }),
   },
   build: {
     help: buildHelp,

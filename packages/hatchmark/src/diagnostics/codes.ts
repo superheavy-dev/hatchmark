@@ -328,7 +328,7 @@ export const CODES = {
   HM4040: {
     title: "default business definition",
     explanation:
-      "Informational. The file relies on a default for a choice that differs between companies, such as whether an interval ending exactly at a bucket end still counts in that bucket. The note names the default and the option that changes it. Setting the option explicitly, even to its default value, silences the note.",
+      "Informational. The file relies on a default for a choice that differs between companies: where weeks, quarters and years start, whether a time series starts at the start of its first bucket (edges), how buckets the data does not fully cover are shown (incomplete), which source horizon a dashboard ends at (period asOf), whether an interval ending exactly at a bucket end still counts in that bucket, or which instant gives an entity its group. The note names the default and the option that changes it. Setting the option explicitly, even to its default value, silences the note. Human output folds these notes into one line per file; hatchmark check --explain-defaults prints them all, and the JSON report always lists them.",
   },
   HM4060: {
     title: "stacked metrics do not add up",
