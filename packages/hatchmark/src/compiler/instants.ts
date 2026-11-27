@@ -88,9 +88,11 @@ export function fromLocal(wall: bigint, timezone: string): bigint {
   const before = offsetSeconds(wall - DAY_US / 2n, timezone);
   const after = offsetSeconds(wall + DAY_US / 2n, timezone);
   const first = wall - before * 1_000_000n;
-  if (before === after || toLocal(first, timezone) === wall) return first;
+  if (before === after) return first;
   const second = wall - after * 1_000_000n;
-  return toLocal(second, timezone) === wall ? second : first;
+  const shown = [first, second].filter((us) => toLocal(us, timezone) === wall);
+  if (shown.length === 0) return first;
+  return shown.reduce((a, b) => (a > b ? a : b));
 }
 
 export const describeInstant = (us: bigint, timezone: string) =>

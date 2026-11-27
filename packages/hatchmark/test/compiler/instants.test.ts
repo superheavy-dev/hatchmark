@@ -22,14 +22,14 @@ describe("fromLocal across daylight saving changes", () => {
 
   it.each([
     ["America/New_York", "2026-11-01T00:30:00", "2026-11-01T04:30:00.000000Z"],
-    ["America/New_York", "2026-11-01T01:00:00", "2026-11-01T05:00:00.000000Z"],
-    ["America/New_York", "2026-11-01T01:30:00", "2026-11-01T05:30:00.000000Z"],
+    ["America/New_York", "2026-11-01T01:00:00", "2026-11-01T06:00:00.000000Z"],
+    ["America/New_York", "2026-11-01T01:30:00", "2026-11-01T06:30:00.000000Z"],
     ["America/New_York", "2026-11-01T02:00:00", "2026-11-01T07:00:00.000000Z"],
     ["Australia/Sydney", "2026-04-05T01:30:00", "2026-04-04T14:30:00.000000Z"],
-    ["Australia/Sydney", "2026-04-05T02:30:00", "2026-04-04T15:30:00.000000Z"],
+    ["Australia/Sydney", "2026-04-05T02:30:00", "2026-04-04T16:30:00.000000Z"],
     ["Australia/Sydney", "2026-04-05T03:00:00", "2026-04-04T17:00:00.000000Z"],
   ])(
-    "reads %s %s, in or around the fall-back overlap, as its first occurrence",
+    "reads %s %s, in or around the fall-back overlap, as its later occurrence, as DuckDB does",
     (zone, wall, expected) => {
       expect(local(wall, zone)).toBe(expected);
     },

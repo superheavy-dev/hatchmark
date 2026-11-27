@@ -656,6 +656,7 @@ Timezone rules:
 
 - Timestamps with an offset are instants. Naive timestamps are UTC unless the source sets `"timezone": "America/Chicago"`; HM4016 (note) asks the question when a non-UTC project reads naive timestamps. Date columns are local dates and never shift.
 - Day buckets are 23 or 25 local hours on DST days. `elapsed` uses local wall-clock time, so 2 p.m. is 14/24 of the day on any day.
+- A local wall time is turned into an instant (a window bound, a day lag, a comparison cutoff) the way DuckDB reads a naive timestamp. A time that a fall-back change repeats is its later occurrence: 1:30 a.m. on Nov 1, 2026 in New York is 1:30 a.m. EST (06:30 UTC). A time that a spring-forward change skips is read with the offset before the change: 2:30 a.m. on Mar 8, 2026 in New York is 3:30 a.m. EDT.
 - A week belongs to the bucket of its first day and is labelled by it ("Week of Nov 22"). There is no week numbering, so no ISO week 53 question.
 
 ### 6.3 Resolving `latest_data`
