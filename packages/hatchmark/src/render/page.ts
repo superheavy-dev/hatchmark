@@ -2,6 +2,8 @@ import type {
   BarData,
   BlockData,
   DashboardData,
+  GrainOption,
+  GrainSwitch,
   KpiData,
   LineData,
   TableData,
@@ -187,7 +189,53 @@ function chartBody(block: LineData | BarData, ctx: RenderContext, label: string)
   ].join("");
 }
 
+/** A segmented control: one radio button per grain, the selected one checked. */
+function grainControl(options: GrainOption[], selected: string, label: string, extra = ""): string {
+  const buttons = options
+    .map(
+      (o) =>
+        `<button type="button" role="radio" aria-checked="${o.key === selected}" tabindex="${o.key === selected ? 0 : -1}" data-hm-grain="${esc(o.key)}">${esc(o.label)}</button>`,
+    )
+    .join("");
+  return `<div class="hm-seg"${extra} role="radiogroup" aria-label="${esc(label)}">${buttons}</div>`;
+}
+
+/**
+ * A chart card that switches grains: the control in its header, and every grain's heading and chart
+ * drawn ahead, all but the selected one hidden. The runtime only toggles which one shows.
+ */
+function grainCard(
+  block: (LineData | BarData) & { grains: GrainSwitch },
+  ctx: RenderContext,
+): string {
+  const id = `hm-${block.id}-t`;
+  const { selected, options } = block.grains;
+  const panels = options.map((o) => {
+    const variant = {
+      ...block,
+      id: `${block.id}-${o.key.replace(":", "-")}`,
+      axis: o.axis,
+      series: o.series,
+    } as LineData | BarData;
+    const { title, subtitle } = blockHeading(variant, ctx);
+    const hidden = o.key === selected ? "" : " hidden";
+    return {
+      title: `<span data-hm-grain="${esc(o.key)}"${hidden}>${esc(title)}</span>`,
+      subtitle: subtitle
+        ? `<span data-hm-grain="${esc(o.key)}"${hidden}>${esc(subtitle)}</span>`
+        : "",
+      body: `<div class="hm-grain-panel" data-hm-grain="${esc(o.key)}"${hidden}>${chartBody(variant, ctx, title)}</div>`,
+    };
+  });
+  const subtitles = panels.map((p) => p.subtitle).join("");
+  const head = `<header class="hm-card-head hm-switch"><div class="hm-card-titles"><h2 id="${esc(id)}">${panels.map((p) => p.title).join("")}</h2>${subtitles ? `<p>${subtitles}</p>` : ""}</div>${grainControl(options, selected, "Grain")}</header>`;
+  return `<section class="hm-card hm-${block.type}" style="--span:${chartSpan(block)}" aria-labelledby="${esc(id)}" data-hm-grains>${head}${panels.map((p) => p.body).join("")}</section>`;
+}
+
 function card(block: LineData | BarData | TableData, ctx: RenderContext): string {
+  if (block.type !== "table" && block.grains !== undefined) {
+    return grainCard(block as (LineData | BarData) & { grains: GrainSwitch }, ctx);
+  }
   const { title, subtitle } = blockHeading(block, ctx);
   const id = `hm-${block.id}-t`;
   const body = block.type === "table" ? renderTable(block, ctx) : chartBody(block, ctx, title);
@@ -261,7 +309,7 @@ export function pageStyles(assets: PageAssets, theme: Theme = DEFAULT_THEME): st
       ? ""
       : `.hm-grid>*{grid-column:1/-1}.hm-strip{--cols:2}.hm-kpi{grid-column:span 1}`;
     const mobile = layout.mobile
-      ? `.hm-header{flex-direction:column;align-items:flex-start}.hm-kpi-value{font-size:20px;line-height:28px;letter-spacing:-0.01em}.hm-kpi-figure{gap:6px}.hm-track{display:none}`
+      ? `.hm-header{flex-direction:column;align-items:flex-start}.hm-header-side{align-items:flex-start}.hm-kpi-value{font-size:20px;line-height:28px;letter-spacing:-0.01em}.hm-kpi-figure{gap:6px}.hm-track{display:none}`
       : "";
     return `@container hm ${query}{.hm-page{${width};padding:${layout.page}px 0}.hm-l${i}{display:block}${column}${mobile}}`;
   }).join("");
@@ -286,6 +334,8 @@ export function pageStyles(assets: PageAssets, theme: Theme = DEFAULT_THEME): st
     `.hm-kpi-value{font-size:${d.kpiSize}px;line-height:${d.kpiLineHeight}px;letter-spacing:-0.02em;white-space:nowrap}.hm-kpi-value.hm-null{color:var(--hm-text-subtle)}`,
     `.hm-delta{font-weight:500;white-space:nowrap}.hm-good{color:var(--hm-good)}.hm-bad{color:var(--hm-bad)}.hm-neutral{color:var(--hm-text-muted)}`,
     `.hm-kpi-note{font-size:12px;line-height:16px;color:var(--hm-text-subtle)}.hm-spark{display:block;width:100%;height:24px;margin-top:8px}`,
+    `.hm-switch{flex-direction:row;flex-wrap:wrap;justify-content:space-between;align-items:flex-start;gap:8px 12px}.hm-card-titles{display:flex;flex-direction:column;gap:2px;min-width:0}.hm-header-side{display:flex;flex-direction:column;align-items:flex-end;gap:8px}`,
+    `.hm-seg{display:inline-flex;flex:none;gap:2px;padding:2px;background:var(--hm-card-alt);border:1px solid var(--hm-border);border-radius:${theme.radius.control}px}.hm-seg button{font:inherit;font-size:12px;line-height:16px;font-weight:500;padding:3px 10px;border:0;border-radius:${Math.max(0, theme.radius.control - 2)}px;background:transparent;color:var(--hm-text-muted);cursor:pointer}.hm-seg button:hover{color:var(--hm-text)}.hm-seg button[aria-checked=true]{background:var(--hm-card);color:var(--hm-text);box-shadow:0 0 0 1px var(--hm-border-strong)}.hm-seg button:focus-visible{outline:2px solid var(--hm-focus);outline-offset:1px}[data-hm-grain][hidden]{display:none}`,
     `.hm-chart{position:relative}.hm-v{display:none}.hm-v svg{display:block;max-width:100%;height:auto;overflow:visible;touch-action:pan-y}.hm-v svg:focus,.hm-spark:focus{outline:none}.hm-v svg:focus-visible,.hm-spark:focus-visible,.hm-table-wrap:focus-visible{outline:2px solid var(--hm-focus);outline-offset:2px;border-radius:2px}`,
     `.hm-chart text{font-variant-numeric:tabular-nums}`,
     `.hm-table-wrap{overflow-x:auto}.hm-table{width:100%;border-collapse:collapse}`,
@@ -358,7 +408,8 @@ export function renderDashboardPage(data: DashboardData, options: PageOptions): 
   const period = data.period.current
     ? `${formatSpan(data.period.current, locale)}${data.period.previous ? ` compared with ${formatSpan(data.period.previous, locale)}` : ""}`
     : "All time";
-  const header = `<header class="hm-header"><div class="hm-titles"><div class="hm-brand"><span class="hm-logo" aria-hidden="true"></span>${esc(data.project)}</div><div class="hm-title"><h1>${esc(data.title)}</h1><p class="hm-caption">${esc(period)} \u00B7 ${esc(data.currency)}</p>${data.description ? `<p class="hm-description">${esc(data.description)}</p>` : ""}</div></div><p class="hm-asof">Data through ${esc(formatDate(data.asOf, locale))}</p></header>`;
+  const asOf = `<p class="hm-asof">Data through ${esc(formatDate(data.asOf, locale))}</p>`;
+  const header = `<header class="hm-header"><div class="hm-titles"><div class="hm-brand"><span class="hm-logo" aria-hidden="true"></span>${esc(data.project)}</div><div class="hm-title"><h1>${esc(data.title)}</h1><p class="hm-caption">${esc(period)} \u00B7 ${esc(data.currency)}</p>${data.description ? `<p class="hm-description">${esc(data.description)}</p>` : ""}</div></div>${data.grainFilter ? `<div class="hm-header-side">${grainControl(data.grainFilter.options, data.grainFilter.selected, data.grainFilter.label, ` data-hm-grain-filter="${esc(data.grainFilter.id)}"`)}${asOf}</div>` : asOf}</header>`;
   const sources = options.sources?.length
     ? `Source: ${options.sources.join(", ")}`
     : `Source: ${data.project}`;

@@ -297,7 +297,87 @@
             "default"
           ],
           "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "type": {
+              "type": "string",
+              "const": "grain"
+            },
+            "id": {
+              "type": "string",
+              "pattern": "^[a-z][a-z0-9_]*$"
+            },
+            "label": {
+              "type": "string"
+            },
+            "options": {
+              "minItems": 2,
+              "maxItems": 6,
+              "type": "array",
+              "items": {
+                "$ref": "#/$defs/Grain"
+              },
+              "description": "Grains to switch between. Drives every time-series block whose grains list the chosen grain."
+            },
+            "default": {
+              "$ref": "#/$defs/Grain"
+            }
+          },
+          "required": [
+            "type",
+            "id",
+            "options",
+            "default"
+          ],
+          "additionalProperties": false
         }
+      ]
+    },
+    "Grain": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/TimeGrain"
+        },
+        {
+          "type": "object",
+          "properties": {
+            "unit": {
+              "$ref": "#/$defs/TimeGrain"
+            },
+            "anchor": {
+              "description": "Overrides the project anchor: a weekday for weeks, MM-DD for quarters and years, such as \"07-01\" for a year from July 1.",
+              "anyOf": [
+                {
+                  "$ref": "#/$defs/Weekday"
+                },
+                {
+                  "type": "string",
+                  "pattern": "^(0[1-9]|1[0-2])-(0[1-9]|1[0-9]|2[0-8])$",
+                  "description": "Where a quarter or year bucket begins, such as \"02-01\"."
+                }
+              ]
+            }
+          },
+          "required": [
+            "unit"
+          ],
+          "additionalProperties": false
+        }
+      ],
+      "description": "A bucket unit, such as \"month\", or {\"unit\": \"year\", \"anchor\": \"02-01\"} to override the project anchors."
+    },
+    "Weekday": {
+      "type": "string",
+      "enum": [
+        "monday",
+        "tuesday",
+        "wednesday",
+        "thursday",
+        "friday",
+        "saturday",
+        "sunday"
       ]
     },
     "Block": {
@@ -397,6 +477,15 @@
         "grain": {
           "$ref": "#/$defs/Grain"
         },
+        "grains": {
+          "description": "Grains the card switches between, such as [\"week\", \"month\", \"quarter\"]. grain is the default and must be one of them. A grain filter drives every block that lists its chosen grain.",
+          "minItems": 2,
+          "maxItems": 6,
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/Grain"
+          }
+        },
         "split": {
           "description": "Column that splits one metric into series.",
           "type": "string",
@@ -413,51 +502,6 @@
         "type"
       ],
       "additionalProperties": false
-    },
-    "Grain": {
-      "anyOf": [
-        {
-          "$ref": "#/$defs/TimeGrain"
-        },
-        {
-          "type": "object",
-          "properties": {
-            "unit": {
-              "$ref": "#/$defs/TimeGrain"
-            },
-            "anchor": {
-              "description": "Overrides the project anchor: a weekday for weeks, MM-DD for quarters and years, such as \"07-01\" for a year from July 1.",
-              "anyOf": [
-                {
-                  "$ref": "#/$defs/Weekday"
-                },
-                {
-                  "type": "string",
-                  "pattern": "^(0[1-9]|1[0-2])-(0[1-9]|1[0-9]|2[0-8])$",
-                  "description": "Where a quarter or year bucket begins, such as \"02-01\"."
-                }
-              ]
-            }
-          },
-          "required": [
-            "unit"
-          ],
-          "additionalProperties": false
-        }
-      ],
-      "description": "A bucket unit, such as \"month\", or {\"unit\": \"year\", \"anchor\": \"02-01\"} to override the project anchors."
-    },
-    "Weekday": {
-      "type": "string",
-      "enum": [
-        "monday",
-        "tuesday",
-        "wednesday",
-        "thursday",
-        "friday",
-        "saturday",
-        "sunday"
-      ]
     },
     "AreaBlock": {
       "type": "object",
@@ -489,6 +533,15 @@
         },
         "grain": {
           "$ref": "#/$defs/Grain"
+        },
+        "grains": {
+          "description": "Grains the card switches between, such as [\"week\", \"month\", \"quarter\"]. grain is the default and must be one of them. A grain filter drives every block that lists its chosen grain.",
+          "minItems": 2,
+          "maxItems": 6,
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/Grain"
+          }
         },
         "split": {
           "description": "Column that splits one metric into series.",
@@ -550,6 +603,15 @@
         "grain": {
           "description": "Time buckets on the axis. Use either by or grain.",
           "$ref": "#/$defs/Grain"
+        },
+        "grains": {
+          "description": "Grains the card switches between, such as [\"week\", \"month\", \"quarter\"]. grain is the default and must be one of them. A grain filter drives every block that lists its chosen grain.",
+          "minItems": 2,
+          "maxItems": 6,
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/Grain"
+          }
         },
         "split": {
           "type": "string",

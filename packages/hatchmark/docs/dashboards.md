@@ -8,7 +8,11 @@ under `dashboards/`; the file name is the page's name and URL (`dashboards/sales
 {
   "title": "Global sales",
   "description": "Orders from every market, last 12 months against the 12 before.",
-  "period": { "asOf": "latest_data", "range": "last_12_months", "compare": "previous_period" },
+  "period": {
+    "asOf": "latest_data",
+    "range": "last_12_months",
+    "compare": "previous_period"
+  },
   "blocks": [
     { "type": "kpi", "metric": "revenue", "sparkline": true },
     { "type": "kpi", "metric": "orders" },
@@ -88,17 +92,23 @@ Metric names in blocks are metric file names (see [metrics.md](metrics.md)); col
 
 ## Filters
 
-`filters` declares controls a reader can change: `select` on a column, or `period` with a list of
-ranges.
+`filters` declares controls a reader can change: `select` on a column, `period` with a list of
+ranges, or `grain` with a list of grains.
 
 ```json
 "filters": [
   { "type": "select", "id": "region", "label": "Region", "column": "region", "multiple": true },
-  { "type": "period", "id": "period", "options": ["last_30_days", "last_12_months"], "default": "last_12_months" }
+  { "type": "period", "id": "period", "options": ["last_30_days", "last_12_months"], "default": "last_12_months" },
+  { "type": "grain", "id": "grain", "options": ["week", "month", "quarter"], "default": "month" }
 ]
 ```
 
-`hatchmark check` validates them. **This version does not draw filter controls yet:** the built page
-shows the data at each filter's `default`, and does not say so on the page. A `select` filter with a
+A `grain` filter draws one control in the page header. Choosing a grain switches every line, area
+and bar block whose `grains` list it; the others keep their grain. Its `default` is shown first in
+those blocks. A dashboard has at most one `grain` filter (`HM3007`).
+
+`hatchmark check` validates them. **This version does not draw `select` and `period` controls
+yet:** the built page shows the data at each of those filters' `default`, and does not say so on the
+page. A `select` filter with a
 `default` therefore filters the whole page (only the default's rows); leave `default` out to show
 all rows. A dashboard has at most one `period` filter (`HM3007`).

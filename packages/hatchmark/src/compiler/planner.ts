@@ -6,6 +6,8 @@ import {
   type Comparison,
   type Dashboard,
   DEFAULT_PERIOD,
+  type Grain,
+  grainKey,
   type Metric,
   type Project,
   projectAnchors,
@@ -224,6 +226,39 @@ function planReading(
   return { queries, measures };
 }
 
+/** A line, area or bar block's metrics over its axes: time buckets at a grain, or its by column. */
+function seriesReading(
+  ctx: Context,
+  block: Block & { type: "line" | "area" | "bar" },
+  grain: ResolvedGrain | undefined,
+): Reading {
+  const axes: AxisDimension[] =
+    grain !== undefined
+      ? [{ kind: "time", grain }]
+      : [{ kind: "column", column: block.type === "bar" ? (block.by ?? "") : "" }];
+  if (block.split !== undefined) axes.push({ kind: "column", column: block.split });
+  const sets =
+    block.split === undefined ? [[0]] : block.type === "bar" ? [[0, 1], [0], [1]] : [[0, 1], [1]];
+  return planReading(ctx, block.metrics, axes, sets, "none");
+}
+
+/**
+ * The grain a time-series block shows first: the dashboard grain filter's default when the block's
+ * grains list it, else the block's grain.
+ */
+export function shownGrain(
+  ctx: { spec: Dashboard; anchors: Anchors },
+  grain: Grain,
+  grains: Grain[] | undefined,
+): ResolvedGrain {
+  const own = resolveGrain(grain, ctx.anchors);
+  const filter = ctx.spec.filters?.find((f) => f.type === "grain");
+  if (filter === undefined || grains === undefined) return own;
+  const chosen = resolveGrain(filter.default, ctx.anchors);
+  const listed = grains.some((g) => grainKey(resolveGrain(g, ctx.anchors)) === grainKey(chosen));
+  return listed ? chosen : own;
+}
+
 function planBlockAt(
   ctx: Context,
   block: Block,
@@ -270,7 +305,13 @@ function planBlockAt(
     };
   }
 
-  const readings: { measures: Reading; previous?: Reading; sparkline?: Reading } = (() => {
+  const readings: {
+    measures: Reading;
+    previous?: Reading;
+    sparkline?: Reading;
+    grain?: ResolvedGrain;
+    grains?: { grain: ResolvedGrain; reading: Reading }[];
+  } = (() => {
     switch (block.type) {
       case "kpi": {
         const names = [block.metric];
@@ -295,22 +336,22 @@ function planBlockAt(
         };
       }
       case "line":
-      case "area": {
-        const axes: AxisDimension[] = [
-          { kind: "time", grain: resolveGrain(block.grain, ctx.anchors) },
-        ];
-        if (block.split !== undefined) axes.push({ kind: "column", column: block.split });
-        const sets = block.split === undefined ? [[0]] : [[0, 1], [1]];
-        return { measures: planReading(ctx, block.metrics, axes, sets, "none") };
-      }
+      case "area":
       case "bar": {
-        const axes: AxisDimension[] =
-          block.grain !== undefined
-            ? [{ kind: "time", grain: resolveGrain(block.grain, ctx.anchors) }]
-            : [{ kind: "column", column: block.by ?? "" }];
-        if (block.split !== undefined) axes.push({ kind: "column", column: block.split });
-        const sets = block.split === undefined ? [[0]] : [[0, 1], [0], [1]];
-        return { measures: planReading(ctx, block.metrics, axes, sets, "none") };
+        if (block.grain === undefined) return { measures: seriesReading(ctx, block, undefined) };
+        const grain = shownGrain(ctx, block.grain, block.grains);
+        return {
+          measures: seriesReading(ctx, block, grain),
+          ...(block.grains === undefined ? {} : { grain }),
+          ...(block.grains === undefined
+            ? {}
+            : {
+                grains: block.grains.map((g) => {
+                  const resolved = resolveGrain(g, ctx.anchors);
+                  return { grain: resolved, reading: seriesReading(ctx, block, resolved) };
+                }),
+              }),
+        };
       }
       case "table": {
         const axes: AxisDimension[] = block.by.map((column) => ({ kind: "column", column }));
@@ -325,9 +366,12 @@ function planBlockAt(
     }
   })();
 
-  const all = [readings.measures, readings.previous, readings.sparkline].flatMap((r) =>
-    r ? r.queries : [],
-  );
+  const all = [
+    readings.measures,
+    readings.previous,
+    readings.sparkline,
+    ...(readings.grains ?? []).map((g) => g.reading),
+  ].flatMap((r) => (r ? r.queries : []));
   const queries = [...new Map(all.map((q) => [q.id, q])).values()];
   return {
     block: {
@@ -337,6 +381,16 @@ function planBlockAt(
       measures: readings.measures.measures,
       ...(readings.previous ? { previous: readings.previous.measures } : {}),
       ...(readings.sparkline ? { sparkline: readings.sparkline.measures } : {}),
+      ...(readings.grain ? { grain: readings.grain } : {}),
+      ...(readings.grains
+        ? {
+            grains: readings.grains.map(({ grain, reading }) => ({
+              grain,
+              queryIds: reading.queries.map((q) => q.id),
+              measures: reading.measures,
+            })),
+          }
+        : {}),
     },
     queries,
     diagnostics: [],

@@ -3,6 +3,9 @@ import {
   columnName,
   comparison,
   customIssue,
+  type Grain,
+  grainKey,
+  grainOptions,
   grainSchema,
   identifier,
   periodRange,
@@ -51,8 +54,43 @@ const timeSeriesFields = {
   ...blockCommon,
   metrics: metricList,
   grain: grainSchema,
+  grains: grainsField(),
   split: columnName.optional().meta({ description: "Column that splits one metric into series." }),
 };
+
+function grainsField() {
+  return grainOptions.optional().meta({
+    description:
+      'Grains the card switches between, such as ["week", "month", "quarter"]. grain is the default and must be one of them. A grain filter drives every block that lists its chosen grain.',
+  });
+}
+
+function grainInGrains(
+  b: { grain?: Grain | undefined; grains?: Grain[] | undefined },
+  ctx: z.RefinementCtx,
+): void {
+  if (b.grains === undefined) return;
+  if (b.grain === undefined) {
+    ctx.addIssue(
+      customIssue(
+        "HM3007",
+        ["grains"],
+        'grains switches time buckets; use it with "grain", not "by"',
+      ),
+    );
+    return;
+  }
+  const keys = b.grains.map(grainKey);
+  if (!keys.includes(grainKey(b.grain))) {
+    ctx.addIssue(
+      customIssue(
+        "HM3007",
+        ["grain"],
+        `grain "${grainKey(b.grain)}" is not in grains (${keys.join(", ")}); add it, or make one of them the grain`,
+      ),
+    );
+  }
+}
 
 function oneMetricWhenSplit(
   b: { metrics: string[]; split?: string | undefined },
@@ -72,11 +110,13 @@ function oneMetricWhenSplit(
 const lineBlock = z
   .strictObject({ ...timeSeriesFields, type: z.literal("line") })
   .superRefine(oneMetricWhenSplit)
+  .superRefine(grainInGrains)
   .meta({ id: "LineBlock" });
 
 const areaBlock = z
   .strictObject({ ...timeSeriesFields, type: z.literal("area"), stack: z.boolean().optional() })
   .superRefine(oneMetricWhenSplit)
+  .superRefine(grainInGrains)
   .meta({ id: "AreaBlock" });
 
 const barBlock = z
@@ -90,6 +130,7 @@ const barBlock = z
     grain: grainSchema
       .optional()
       .meta({ description: "Time buckets on the axis. Use either by or grain." }),
+    grains: grainsField(),
     split: columnName.optional(),
     stack: z.boolean().optional(),
     orientation: z.enum(["vertical", "horizontal"]).optional(),
@@ -121,6 +162,7 @@ const barBlock = z
       }
     }
     oneMetricWhenSplit(b, ctx);
+    grainInGrains(b, ctx);
   })
   .meta({ id: "BarBlock" });
 
@@ -210,6 +252,29 @@ export const dashboardFilterSchema = z
       options: z.array(periodRange).min(1),
       default: periodRange,
     }),
+    z
+      .strictObject({
+        type: z.literal("grain"),
+        id: identifier,
+        label: z.string().optional(),
+        options: grainOptions.meta({
+          description:
+            "Grains to switch between. Drives every time-series block whose grains list the chosen grain.",
+        }),
+        default: grainSchema,
+      })
+      .superRefine((f, ctx) => {
+        const keys = f.options.map(grainKey);
+        if (!keys.includes(grainKey(f.default))) {
+          ctx.addIssue(
+            customIssue(
+              "HM3007",
+              ["default"],
+              `default "${grainKey(f.default)}" is not in options (${keys.join(", ")})`,
+            ),
+          );
+        }
+      }),
   ])
   .meta({ id: "DashboardFilter" });
 export type DashboardFilter = z.infer<typeof dashboardFilterSchema>;

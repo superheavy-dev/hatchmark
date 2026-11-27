@@ -148,6 +148,26 @@ export function resolveGrain(grain: Grain, anchors: Anchors): ResolvedGrain {
   return { unit, anchor: own ?? anchors[unit] };
 }
 
+/** A grain as one string, such as "month" or "week:sunday". Resolved grains with the same buckets share a key. */
+export function grainKey(grain: Grain): string {
+  const anchor = typeof grain === "string" ? undefined : grain.anchor;
+  return anchor === undefined ? grainUnit(grain) : `${grainUnit(grain)}:${anchor}`;
+}
+
+/** Grains a card or a grain filter switches between: two to six, none listed twice (HM3007). */
+export const grainOptions = z
+  .array(grainSchema)
+  .min(2)
+  .max(6)
+  .superRefine((grains, ctx) => {
+    const keys = grains.map(grainKey);
+    keys.forEach((key, i) => {
+      if (keys.indexOf(key) !== i) {
+        ctx.addIssue(customIssue("HM3007", [i], `grain "${key}" is listed twice`));
+      }
+    });
+  });
+
 const isoDay = z.iso.date();
 
 export const rangeSchema = z

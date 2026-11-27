@@ -1127,7 +1127,19 @@ function checkDashboard(project: Project, file: SpecFile<"dashboard">, out: Diag
 
   const filterIds = new Set<string>();
   let periodFilter: string | undefined;
+  let grainFilter: string | undefined;
   (dashboard.filters ?? []).forEach((filter, i) => {
+    if (filter.type === "grain") {
+      if (grainFilter !== undefined) {
+        r.report(
+          "HM3007",
+          `/filters/${i}`,
+          `a dashboard takes one grain filter, and "${grainFilter}" is already one`,
+          { help: "merge the options into one grain filter" },
+        );
+      }
+      grainFilter ??= filter.id;
+    }
     if (filter.type === "period") {
       if (periodFilter !== undefined) {
         r.report(

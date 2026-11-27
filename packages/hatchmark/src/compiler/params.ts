@@ -24,26 +24,31 @@ export function resolveParams(project: Project, dashboard: string): PlanParam[] 
     if (!list.includes(metric.time)) list.push(metric.time);
     timeColumns[metric.table] = list.sort();
   }
-  return (spec.filters ?? []).map((filter): PlanParam => {
+  return (spec.filters ?? []).flatMap((filter): PlanParam[] => {
+    if (filter.type === "grain") return [];
     if (filter.type === "period") {
-      return {
-        id: filter.id,
-        kind: "period",
-        options: filter.options,
-        default: filter.default,
-        columns: timeColumns,
-      };
+      return [
+        {
+          id: filter.id,
+          kind: "period",
+          options: filter.options,
+          default: filter.default,
+          columns: timeColumns,
+        },
+      ];
     }
     const fallback = filter.default;
-    return {
-      id: filter.id,
-      kind: "select",
-      column: filter.column,
-      operator: "in",
-      multiple: filter.multiple === true,
-      default: fallback === undefined ? [] : Array.isArray(fallback) ? fallback : [fallback],
-      sources: sources.filter((s) => hasColumn(project.columns.get(s), filter.column) !== false),
-    };
+    return [
+      {
+        id: filter.id,
+        kind: "select",
+        column: filter.column,
+        operator: "in",
+        multiple: filter.multiple === true,
+        default: fallback === undefined ? [] : Array.isArray(fallback) ? fallback : [fallback],
+        sources: sources.filter((s) => hasColumn(project.columns.get(s), filter.column) !== false),
+      },
+    ];
   });
 }
 

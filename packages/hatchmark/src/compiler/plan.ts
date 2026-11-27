@@ -184,6 +184,17 @@ export interface BlockPlan {
   previous?: Record<string, MeasureExpression>;
   /** A KPI's metric by month over the current window, when the block asks for a sparkline. */
   sparkline?: Record<string, MeasureExpression>;
+  /**
+   * The grain a time-series block shows first, when it switches grains: the grain filter's default
+   * when the block lists it, else the block's grain. measures are this grain's.
+   */
+  grain?: ResolvedGrain;
+  /** One reading per grain a block switches between (its grains, in spec order), all built ahead. */
+  grains?: {
+    grain: ResolvedGrain;
+    queryIds: string[];
+    measures: Record<string, MeasureExpression>;
+  }[];
 }
 
 export interface QueryPlan {

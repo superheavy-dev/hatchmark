@@ -19,6 +19,7 @@ A metric by category or by time bucket, as vertical or horizontal bars.
 | --------------- | ---------------------------------------------------------------------------------------------- |
 | `metrics`       | One to eight metrics. Several metrics are drawn side by side (grouped) unless `stack` is true. |
 | `by` or `grain` | A category column, or time buckets. Use one of the two.                                        |
+| `grains`        | With `grain` only: grains the card switches between, as for [line](line.md).                   |
 | `split`         | A column that splits one metric into a bar segment per value.                                  |
 | `stack`         | `true` stacks the series; otherwise they are grouped side by side.                             |
 | `orientation`   | `vertical` (default) or `horizontal`. Horizontal suits long category names and rankings.       |

@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   formatBucket,
+  formatBucketTick,
   formatChange,
   formatSpan,
   formatTicks,
@@ -75,5 +76,14 @@ describe("dates", () => {
   it("names buckets by grain", () => {
     expect(formatBucket("2026-10-05", "week", "en-US")).toBe("Week of Oct 5, 2026");
     expect(formatBucket("2026-10-01", "quarter", "en-US")).toBe("Q4 2026");
+  });
+
+  it("names anchored quarters and years by their first day, never as calendar ones", () => {
+    expect(formatBucket("2025-07-01", "year", "en-US")).toBe("Year of Jul 1, 2025");
+    expect(formatBucket("2025-02-15", "quarter", "en-US")).toBe("Quarter of Feb 15, 2025");
+    expect(formatBucket("2025-01-01", "year", "en-US")).toBe("2025");
+    expect(formatBucketTick("2025-07-01", "year", "en-US", false)).toBe("Jul 2025");
+    expect(formatBucketTick("2025-02-01", "quarter", "en-US", false)).toBe("Feb 2025");
+    expect(formatBucketTick("2025-04-01", "quarter", "en-US", false)).toBe("Q2");
   });
 });

@@ -168,6 +168,19 @@ describe("checkReferences", () => {
     ]);
   });
 
+  it("allows one grain filter per dashboard (HM3007)", () => {
+    const grain = (id: string) => ({
+      type: "grain",
+      id,
+      options: ["week", "month"],
+      default: "month",
+    });
+    const dashboards = { sales: { ...DASHBOARD, filters: [grain("grain"), grain("grain_2")] } };
+    expect(refs({ dashboards }).map((d) => [d.code, d.pointer, d.message])).toEqual([
+      ["HM3007", "/filters/1", 'a dashboard takes one grain filter, and "grain" is already one'],
+    ]);
+  });
+
   it("checks text references with exact positions inside the string", () => {
     const markdown =
       "Hi\\n{{revenue.chnage}} and {{ revenu }} and {{ 1x }} and {{merchants.previous}}";

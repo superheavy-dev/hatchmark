@@ -2,6 +2,8 @@ import { type Diagnostic, docsCommand } from "../diagnostics/index.js";
 import {
   type Block,
   blockId,
+  type DashboardFilter,
+  grainKey,
   type Metric,
   type Project,
   type RangeSpec,
@@ -15,6 +17,7 @@ import {
   DASHBOARD_DATA_VERSION,
   type DashboardData,
   type DateSpan,
+  type GrainOption,
   type KpiData,
   type LineData,
   type MetricInfo,
@@ -310,7 +313,10 @@ class Assembler {
 
   line(block: Block & { type: "line" | "area" }, plan: BlockPlan, common: Common): LineData {
     const expressions = block.metrics.map((m) => plan.measures[m]);
-    const axis = this.timeAxis(expressions, resolveGrain(block.grain, this.plan.anchors));
+    const axis = this.timeAxis(
+      expressions,
+      plan.grain ?? resolveGrain(block.grain, this.plan.anchors),
+    );
     const [first = ""] = block.metrics;
     const series =
       block.split === undefined
@@ -336,7 +342,10 @@ class Assembler {
       stack: block.stack ?? false,
     };
     if (block.grain !== undefined) {
-      const axis = this.timeAxis(expressions, resolveGrain(block.grain, this.plan.anchors));
+      const axis = this.timeAxis(
+        expressions,
+        plan.grain ?? resolveGrain(block.grain, this.plan.anchors),
+      );
       const series = split
         ? this.splitSeries(first, plan.measures[first], axis.buckets, 2, 2)
         : this.metricSeries(block.metrics, plan.measures, axis.buckets);
@@ -364,6 +373,59 @@ class Assembler {
       : this.metricSeries(block.metrics, plan.measures, shown);
     const omitted = sorted.length - shown.length;
     return { ...base, axis, series, ...(omitted > 0 ? { omittedCategories: omitted } : {}) };
+  }
+
+  /**
+   * A time-series block with its grain switch: each grain's axis and series from that grain's
+   * reading, and HM5001 for any grain past MAX_POINTS buckets.
+   */
+  series<T extends LineData | BarData>(
+    block: Block & { type: "line" | "area" | "bar" },
+    plan: BlockPlan,
+    build: (block: Block & { type: "line" | "area" | "bar" }, plan: BlockPlan) => T,
+  ): T {
+    const data = build(block, plan);
+    const variants = (plan.grains ?? []).map((g) => {
+      const { axis, series } = build(
+        { ...block, grain: g.grain },
+        { ...plan, grain: g.grain, measures: g.measures },
+      );
+      return { grain: g.grain, axis: axis as TimeAxis, series };
+    });
+    const axes =
+      variants.length > 0
+        ? variants.map((v) => v.axis)
+        : data.axis.kind === "time"
+          ? [data.axis]
+          : [];
+    for (const axis of axes) {
+      if (axis.buckets.length <= MAX_POINTS) continue;
+      const file = this.project.dashboards.get(this.plan.dashboard);
+      const pointer = `${plan.pointer}/${plan.grains === undefined ? "grain" : "grains"}`;
+      this.diagnostics.push({
+        code: "HM5001",
+        severity: "warning",
+        message: `block "${plan.blockId}" draws ${axis.buckets.length} ${axis.grain} points per series, more than ${MAX_POINTS}`,
+        ...(file ? { file: file.file, pointer, ...file.document.locationOf(pointer) } : {}),
+        help: "use a coarser grain or a shorter range",
+        docs: docsCommand("HM5001"),
+      });
+    }
+    if (plan.grains === undefined || plan.grain === undefined) return data;
+    const labels = grainLabels(variants.map((v) => v.grain));
+    const selected = grainKey(plan.grain);
+    return {
+      ...data,
+      grains: {
+        selected,
+        options: variants.map((v, i) => ({
+          key: grainKey(v.grain),
+          label: labels[i] ?? v.grain.unit,
+          axis: v.axis,
+          series: v.series,
+        })),
+      },
+    };
   }
 
   table(block: Block & { type: "table" }, plan: BlockPlan, common: Common): TableData {
@@ -452,6 +514,45 @@ class Assembler {
 type Common = { id: string; title?: string; span: number };
 
 /** A column's header text: underscores as spaces, first letter capitalized ("ship_country"). */
+const MAX_POINTS = 1000;
+
+const UNIT_LABELS = { day: "Day", week: "Week", month: "Month", quarter: "Quarter", year: "Year" };
+const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+
+/** Control text per grain: the unit, with its anchor ("Year from Jul 1") when two share a unit. */
+export function grainLabels(grains: ResolvedGrain[]): string[] {
+  return grains.map((g) => {
+    const unit = UNIT_LABELS[g.unit];
+    if (!("anchor" in g) || grains.filter((o) => o.unit === g.unit).length < 2) return unit;
+    const anchor =
+      g.unit === "week"
+        ? `${g.anchor.charAt(0).toUpperCase()}${g.anchor.slice(1, 3)}`
+        : `${MONTHS[Number(g.anchor.slice(0, 2)) - 1]} ${Number(g.anchor.slice(3))}`;
+    return `${unit} from ${anchor}`;
+  });
+}
+
+/** DashboardData.grainFilter from the dashboard's grain filter, resolved at the project anchors. */
+function grainFilter(
+  filters: DashboardFilter[] | undefined,
+  plan: QueryPlan,
+): { grainFilter: NonNullable<DashboardData["grainFilter"]> } | Record<string, never> {
+  const filter = filters?.find((f) => f.type === "grain");
+  if (filter === undefined) return {};
+  const options = filter.options.map((g) => resolveGrain(g, plan.anchors));
+  const labels = grainLabels(options);
+  return {
+    grainFilter: {
+      id: filter.id,
+      label: filter.label ?? "Grain",
+      options: options.map(
+        (g, i): GrainOption => ({ key: grainKey(g), label: labels[i] ?? g.unit }),
+      ),
+      selected: grainKey(resolveGrain(filter.default, plan.anchors)),
+    },
+  };
+}
+
 function columnLabel(column: string): string {
   const text = column.replaceAll("_", " ");
   return text.charAt(0).toUpperCase() + text.slice(1);
@@ -490,10 +591,14 @@ export function assemble(
       blocks.push(assembler.kpi(block, blockPlan, common));
     } else if (block.type === "line" || block.type === "area") {
       for (const m of block.metrics) shown.add(m);
-      blocks.push(assembler.line(block, blockPlan, common));
+      blocks.push(
+        assembler.series(block, blockPlan, (b, p) => assembler.line(b as typeof block, p, common)),
+      );
     } else if (block.type === "bar") {
       for (const m of block.metrics) shown.add(m);
-      blocks.push(assembler.bar(block, blockPlan, common));
+      blocks.push(
+        assembler.series(block, blockPlan, (b, p) => assembler.bar(b as typeof block, p, common)),
+      );
     } else if (block.type === "table") {
       for (const m of block.metrics) shown.add(m);
       blocks.push(assembler.table(block, blockPlan, common));
@@ -538,6 +643,7 @@ export function assemble(
     currency: config.currency,
     timezone: plan.timezone,
     anchors: plan.anchors,
+    ...grainFilter(spec.filters, plan),
     metrics,
     blocks,
   };

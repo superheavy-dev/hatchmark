@@ -230,6 +230,47 @@ describe("spec schemas", () => {
     expect(range({ last: 0, unit: "day" }).map((d) => d.code)).not.toEqual([]);
   });
 
+  it("accept grain switches and one grain filter, and reject mismatches (HM3007)", () => {
+    const line = (extra: Record<string, unknown>) => ({
+      type: "line",
+      metrics: ["revenue"],
+      grain: "month",
+      ...extra,
+    });
+    const grainFilter = {
+      type: "grain",
+      id: "grain",
+      options: ["week", "month"],
+      default: "month",
+    };
+    expect(
+      diagnose("dashboard", {
+        ...DASHBOARD,
+        filters: [grainFilter],
+        blocks: [
+          line({ grains: ["week", "month", { unit: "quarter", anchor: "02-01" }] }),
+          { type: "bar", metrics: ["orders"], grain: "month", grains: ["month", "quarter"] },
+        ],
+      }),
+    ).toEqual([]);
+    const codes = (blocks: unknown[], filters?: unknown[]) =>
+      diagnose("dashboard", { ...DASHBOARD, ...(filters ? { filters } : {}), blocks }).map((d) => [
+        d.code,
+        d.pointer,
+      ]);
+    expect(codes([line({ grains: ["week", "quarter"] })])).toEqual([["HM3007", "/blocks/0/grain"]]);
+    expect(codes([line({ grains: ["month", "month"] })])).toEqual([
+      ["HM3007", "/blocks/0/grains/1"],
+    ]);
+    expect(codes([line({ grains: ["month"] })]).map(([c]) => c)).toEqual(["HM3005"]);
+    expect(
+      codes([{ type: "bar", metrics: ["orders"], by: "plan", grains: ["month", "quarter"] }]),
+    ).toEqual([["HM3007", "/blocks/0/grains"]]);
+    expect(codes([line({})], [{ ...grainFilter, default: "quarter" }])).toEqual([
+      ["HM3007", "/filters/0/default"],
+    ]);
+  });
+
   it("reject invalid file names", () => {
     expect(diagnose("metric", METRICS.orders, "Net-Revenue")[0]).toMatchObject({ code: "HM1004" });
     expect(diagnose("dashboard", DASHBOARD, "sales-overview")).toEqual([]);

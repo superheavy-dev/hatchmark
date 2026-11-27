@@ -273,3 +273,57 @@ describe("planner", () => {
     ]);
   });
 });
+
+describe("planner grain switches", () => {
+  const switching = (filters?: unknown[]) =>
+    plan(
+      dash(
+        [
+          {
+            type: "line",
+            metrics: ["revenue"],
+            grain: "month",
+            grains: ["week", "month", "quarter"],
+          },
+          { type: "bar", metrics: ["orders"], grain: "month", grains: ["month", "quarter"] },
+        ],
+        filters ? { filters } : {},
+      ),
+    );
+
+  it("plans one query set per grain and keeps measures on the shown grain", () => {
+    const p = switching();
+    const [line, bar] = p.blocks;
+    expect(line?.grains?.map((g) => g.grain)).toEqual([
+      { unit: "week", anchor: "monday" },
+      { unit: "month" },
+      { unit: "quarter", anchor: "01-01" },
+    ]);
+    expect(line?.grain).toEqual({ unit: "month" });
+    for (const g of line?.grains ?? []) {
+      const q = query(p, ref(g.measures.revenue));
+      expect(q.dimensions).toEqual([{ kind: "time", column: "ordered_at", grain: g.grain }]);
+      expect(line?.queryIds).toContain(q.id);
+    }
+    expect(ref(line?.measures.revenue)).toBe(ref(line?.grains?.[1]?.measures.revenue));
+    expect(bar?.grains).toHaveLength(2);
+    expect(p.params).toEqual([]);
+  });
+
+  it("shows the grain filter's default in blocks that list it, and the block's grain elsewhere", () => {
+    const p = switching([
+      { type: "grain", id: "grain", options: ["week", "quarter"], default: "week" },
+    ]);
+    const [line, bar] = p.blocks;
+    expect(line?.grain).toEqual({ unit: "week", anchor: "monday" });
+    expect(ref(line?.measures.revenue)).toBe(ref(line?.grains?.[0]?.measures.revenue));
+    expect(bar?.grain).toEqual({ unit: "month" });
+    expect(p.params).toEqual([]);
+  });
+
+  it("leaves blocks without grains unchanged", () => {
+    const p = plan(dash([{ type: "line", metrics: ["revenue"], grain: "month" }]));
+    expect(p.blocks[0]?.grains).toBeUndefined();
+    expect(p.blocks[0]?.grain).toBeUndefined();
+  });
+});
