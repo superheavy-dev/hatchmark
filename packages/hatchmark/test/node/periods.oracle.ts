@@ -687,14 +687,23 @@ function checkSeries(
 
 /**
  * The bucket the horizon cuts (start before it, end after it), with the share elapsed in local
- * wall-clock time, rounded down to six decimals; undefined when none does.
+ * wall-clock time, rounded down to six decimals, the local days it covers and the horizon as local
+ * wall-clock time; undefined when none does.
  */
+const DAY_US = 86_400_000_000n;
 function partialOf(buckets: string[], g: Grain, h: Horizon) {
   for (const [index, b] of buckets.entries()) {
     const start = naive(b);
     const end = naive(addUnits(b, g.unit, 1));
     if (start < h.us && h.us < end)
-      return [{ index, elapsed: Number(((h.us - start) * 1_000_000n) / (end - start)) / 1e6 }];
+      return [
+        {
+          index,
+          elapsed: Number(((h.us - start) * 1_000_000n) / (end - start)) / 1e6,
+          days: Number((h.us - start + DAY_US - 1n) / DAY_US),
+          through: new Date(Number(h.us / 1000n)).toISOString().slice(0, 19),
+        },
+      ];
   }
   return undefined;
 }
