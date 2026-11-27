@@ -55,8 +55,8 @@ Colour is on in a terminal unless you pass `--no-color` or set `NO_COLOR`.
 | `HM0001` | Unknown command. The diagnostic suggests the closest one.                                                                                                                                                                                                                                                |
 | `HM0002` | Unknown option, a value that is not allowed, or an unexpected argument.                                                                                                                                                                                                                                  |
 | `HM0003` | Missing argument.                                                                                                                                                                                                                                                                                        |
-| `HM0005` | `AGENTS.md` markers are not exactly one start line before one end line. Init wrote nothing. Fix the markers, or delete every marker line.                                                                                                                                                                |
 | `HM0004` | `init` would overwrite existing files, or found a directory or a symlink where it writes a file, and wrote nothing. The diagnostic lists the paths. `--force` overwrites regular files only, and init never writes through a symlink. `AGENTS.md` and `.gitignore` are always merged, never overwritten. |
+| `HM0005` | `AGENTS.md` markers are not exactly one start line before one end line. Init wrote nothing. Fix the markers, or delete every marker line.                                                                                                                                                                |
 
 ## init
 
