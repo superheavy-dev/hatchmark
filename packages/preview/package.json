@@ -17,5 +17,8 @@
     "build": "tsc -p tsconfig.build.json",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "site": "node dist/lib/preview/src/build.js"
+  },
+  "devDependencies": {
+    "playwright": "^1.65.1"
   }
 }

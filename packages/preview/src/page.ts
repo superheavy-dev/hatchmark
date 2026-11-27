@@ -124,16 +124,29 @@ const state = {
   view: "components",
   theme: matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light",
   width: "desktop",
+  section: "",
 };
-for (const [key, value] of new URLSearchParams(location.hash.slice(1))) {
-  if (key in state) state[key] = value;
+function read() {
+  state.section = "";
+  for (const [key, value] of new URLSearchParams(location.hash.slice(1))) {
+    if (key in state) state[key] = value;
+  }
+}
+function frameSrc() {
+  const page = (VIEWS[state.view] ?? VIEWS.components) + location.search;
+  return state.view === "components" && state.section ? page + "#" + state.section : page;
+}
+function writeHash() {
+  const params = new URLSearchParams(state);
+  if (!state.section) params.delete("section");
+  history.replaceState(null, "", "#" + params);
 }
 function themeFrame() {
   const root = frame.contentDocument?.documentElement;
   if (root) root.dataset.theme = state.theme;
 }
 function apply() {
-  const src = VIEWS[state.view] ?? VIEWS.components;
+  const src = frameSrc();
   if (frame.getAttribute("src") !== src) frame.setAttribute("src", src);
   document.documentElement.dataset.theme = state.theme;
   document.body.dataset.width = state.width;
@@ -141,15 +154,29 @@ function apply() {
     button.setAttribute("aria-pressed", String(state[button.dataset.key] === button.value));
   }
   themeFrame();
-  history.replaceState(null, "", "#" + new URLSearchParams(state));
+  writeHash();
 }
-frame.addEventListener("load", themeFrame);
+frame.addEventListener("load", () => {
+  themeFrame();
+  const inner = frame.contentWindow;
+  if (!inner || state.view !== "components") return;
+  inner.addEventListener("hashchange", () => {
+    state.section = inner.location.hash.slice(1);
+    frame.setAttribute("src", frameSrc());
+    writeHash();
+  });
+});
 document.addEventListener("click", (event) => {
   const button = event.target.closest("button[data-key]");
   if (!button) return;
   state[button.dataset.key] = button.value;
   apply();
 });
+addEventListener("hashchange", () => {
+  read();
+  apply();
+});
+read();
 apply();`;
 
 function toggle(key: string, label: string, options: [string, string][]): string {
@@ -196,7 +223,19 @@ figcaption { display: flex; gap: 8px; align-items: baseline; margin-bottom: 8px;
 .tile { border: 1px solid var(--line); border-radius: 8px; padding: 16px; overflow-x: auto; }
 footer { color: var(--muted); border-top: 1px solid var(--line); padding-top: 12px; }`;
 
+/**
+ * Sends a gallery opened outside the shell to the shell, carrying its query string and its fragment as the section, so
+ * every link gets the toolbar. Inside the shell's iframe the page is not the top window and stays.
+ */
+const GALLERY_REDIRECT = `<script>
+if (window.top === window.self) {
+  const section = location.hash.slice(1);
+  location.replace("../" + location.search + (section ? "#" + new URLSearchParams({ section }) : ""));
+}
+</script>`;
+
 function gallery(input: SiteInput): string {
+  const head = `${GALLERY_REDIRECT}${input.head ? `\n${input.head}` : ""}`;
   const groups = groupByComponent(input.entries);
   const label = escapeHtml(buildLabel(input.build));
   const sha = escapeHtml(input.build.sha ?? "local");
@@ -206,7 +245,7 @@ function gallery(input: SiteInput): string {
 <p>The renderer registers gallery entries in <code>packages/preview/src/entries.ts</code>.</p>
 <p>Build: ${label} (<code>${sha}</code>)</p>
 </main>`;
-    return htmlDocument("Hatchmark components", GALLERY_STYLE, body, input.head);
+    return htmlDocument("Hatchmark components", GALLERY_STYLE, body, head);
   }
   const nav = [...groups].map(
     ([component, variants]) =>
@@ -230,7 +269,7 @@ ${figures.join("\n")}
 ${sections.join("\n")}
 <footer>Build: ${label} (<code>${sha}</code>)</footer>
 </main>`;
-  return htmlDocument("Hatchmark components", GALLERY_STYLE, body, input.head);
+  return htmlDocument("Hatchmark components", GALLERY_STYLE, body, head);
 }
 
 function notice(title: string, text: string): string {
