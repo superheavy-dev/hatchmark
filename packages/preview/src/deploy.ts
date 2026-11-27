@@ -11,7 +11,8 @@ const WRANGLER = join(
   dirname(createRequire(import.meta.url).resolve("wrangler/package.json")),
   "bin/wrangler.js",
 );
-const WORKER_NOT_FOUND = new Set([10007, 10090]);
+/** Wrangler's own check before \`versions upload\` when the Worker is missing (API errors 10007 and 10090). */
+const WORKER_NOT_FOUND = "Worker that does not yet exist";
 
 /** One line of the file wrangler writes to WRANGLER_OUTPUT_FILE_PATH. */
 interface WranglerOutput {
@@ -93,7 +94,7 @@ function deployPullRequest(pr: number, sha: string): void {
     `PR #${pr} at ${sha}`,
   ];
   let result = wrangler(args);
-  if (result?.type === "command-failed" && WORKER_NOT_FOUND.has(result.code ?? 0)) {
+  if (result?.type === "command-failed" && result.message?.includes(WORKER_NOT_FOUND)) {
     createWorker();
     result = wrangler(args);
   }

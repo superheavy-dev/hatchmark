@@ -42,6 +42,6 @@ and links the result. If the final flags differ, change the one call in `buildDa
 - Push to main: `wrangler deploy`, so `https://hatchmark-preview.hatchmark.workers.dev` shows main's gallery.
 - Merge queue: builds the site, does not deploy, so the required `preview` check reports.
 
-`versions upload` cannot create a Worker and does not turn on preview URLs. When the Worker does not exist yet (Cloudflare error 10007 or 10090), the deploy script first deploys a placeholder page with `wrangler deploy`, which creates the Worker with `workers_dev` and `preview_urls` on, then retries the upload.
+`versions upload` cannot create a Worker and does not turn on preview URLs. When the Worker does not exist yet, wrangler stops with "You cannot upload a new version of a Worker that does not yet exist" (it maps Cloudflare errors 10007 and 10090 to that message); the deploy script then first deploys a placeholder page with `wrangler deploy`, which creates the Worker with `workers_dev` and `preview_urls` on, then retries the upload.
 
 Runs without Cloudflare credentials (pull requests from forks and Dependabot) build the site and skip the deploy with a notice. URLs are read from the file wrangler writes to `WRANGLER_OUTPUT_FILE_PATH`, not scraped from its logs.
