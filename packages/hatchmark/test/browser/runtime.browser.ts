@@ -13,6 +13,7 @@ let browser: Browser;
 let dir: string;
 let url: string;
 let sparkUrl: string;
+type Box = { x: number; y: number; width: number; height: number };
 
 beforeAll(async () => {
   browser = await chromium.launch();
@@ -94,29 +95,51 @@ describe("browser runtime", () => {
     expect(await page.locator(".hm-line .hm-tip").count()).toBe(0);
   });
 
-  it("shows the KPI sparkline tooltip above the point on hover and with arrow keys", async () => {
-    const page = await browser.newPage({ viewport: { width: 1440, height: 900 } });
-    await page.goto(sparkUrl);
-    const kpi = page.locator(".hm-kpi[data-hm-chart]").first();
-    const spark = kpi.locator("svg.hm-spark");
-    const box = (await spark.boundingBox()) as { x: number; y: number; width: number };
-    await page.mouse.move(box.x + box.width * 0.5, box.y + 4);
-    const tip = kpi.locator(".hm-tip");
-    await expect.poll(() => tip.isVisible()).toBe(true);
-    expect(await tip.locator(".hm-tip-h").textContent()).toMatch(/^\w{3} 20\d\d$/);
-    expect(await kpi.locator(".hm-hover line").count()).toBe(3);
-    const tipBox = (await tip.boundingBox()) as { y: number; height: number };
-    const dot = (await kpi.locator(".hm-hover .hm-dot").first().boundingBox()) as { y: number };
-    expect(tipBox.y + tipBox.height).toBeLessThanOrEqual(dot.y);
-    await page.mouse.move(5, 5);
-    await expect.poll(() => tip.isVisible()).toBe(false);
-    await spark.focus();
-    await page.keyboard.press("End");
-    const last = await tip.locator(".hm-tip-h").textContent();
-    await page.keyboard.press("ArrowLeft");
-    expect(await tip.locator(".hm-tip-h").textContent()).not.toBe(last);
-    expect(await tip.locator(".hm-tip-v").textContent()).toMatch(/^\$[\d,]+$/);
-  });
+  for (const width of [1440, 390]) {
+    it(`keeps the KPI sparkline tooltip off the figure at ${width} px, on hover and with keys`, async () => {
+      const page = await browser.newPage({ viewport: { width, height: 800 } });
+      await page.goto(sparkUrl);
+      const kpi = page.locator(".hm-kpi[data-hm-chart]").first();
+      const spark = kpi.locator("svg.hm-spark");
+      const tip = kpi.locator(".hm-tip");
+      const clear = async () => {
+        const t = (await tip.boundingBox()) as Box;
+        for (const selector of [".hm-kpi-value", ".hm-kpi-figure", ".hm-kpi-note"]) {
+          const b = (await kpi.locator(selector).boundingBox()) as Box;
+          const overlaps =
+            t.x < b.x + b.width &&
+            b.x < t.x + t.width &&
+            t.y < b.y + b.height &&
+            b.y < t.y + t.height;
+          expect(overlaps, selector).toBe(false);
+        }
+        expect(await kpi.locator(".hm-hover line").count()).toBe(3);
+      };
+      const box = (await spark.boundingBox()) as Box;
+      for (const at of [0.05, 0.5, 0.95]) {
+        await page.mouse.move(box.x + box.width * at, box.y + box.height / 2);
+        await expect.poll(() => tip.isVisible()).toBe(true);
+        expect(await tip.locator(".hm-tip-h").textContent()).toMatch(/^\w{3} 20\d\d$/);
+        await clear();
+        expect(((await tip.boundingBox()) as Box).y).toBeGreaterThanOrEqual(box.y + box.height);
+      }
+      await page.mouse.move(1, 1);
+      await expect.poll(() => tip.isVisible()).toBe(false);
+      await page.evaluate((bottom) => {
+        document.body.style.paddingBottom = "800px";
+        scrollTo(0, bottom - innerHeight + 30);
+      }, box.y + box.height);
+      await spark.focus();
+      await page.keyboard.press("End");
+      const last = await tip.locator(".hm-tip-h").textContent();
+      await page.keyboard.press("ArrowLeft");
+      expect(await tip.locator(".hm-tip-h").textContent()).not.toBe(last);
+      expect(await tip.locator(".hm-tip-v").textContent()).toMatch(/^\$[\d,]+$/);
+      await clear();
+      const beside = (await tip.boundingBox()) as Box;
+      expect(beside.y + beside.height).toBeLessThanOrEqual(800);
+    });
+  }
 
   it("switches to dark with data-theme", async () => {
     const page = await browser.newPage();

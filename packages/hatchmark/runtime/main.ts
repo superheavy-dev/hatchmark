@@ -1,6 +1,9 @@
 /**
  * The Hatchmark browser runtime: tooltips, the line crosshair (KPI sparklines included) and the bar
- * highlight, plus keyboard stepping through points. Charts are already drawn on the server, so this
+ * highlight, plus keyboard stepping through points. A KPI tooltip is position:fixed, so the strip's
+ * overflow does not clip it, and floats below the sparkline (beside the point near the viewport
+ * bottom) so it never covers the figure. .hm-root's container-type makes it the containing block,
+ * so the runtime measures the tooltip's origin instead of assuming the viewport. Charts are already drawn on the server, so this
  * only reads the chart geometry from data-hm-* attributes and the formatted values from the JSON each
  * chart's figure carries. One pointer listener per chart, no dependencies.
  */
@@ -45,6 +48,7 @@ function svgElement(tag: string, attrs: Record<string, string | number>): SVGEle
 
 function attach(figure: HTMLElement, chart: RuntimeChart): void {
   const n = chart.headers.length;
+  const kpi = figure.classList.contains("hm-kpi");
   let tip: HTMLDivElement | undefined;
   let overlay: SVGElement | undefined;
   let current: { svg: SVGSVGElement; index: number } | undefined;
@@ -113,7 +117,7 @@ function attach(figure: HTMLElement, chart: RuntimeChart): void {
     return tip;
   };
 
-  const place = (svg: SVGSVGElement, x: number, y: number, gap = 0) => {
+  const place = (svg: SVGSVGElement, x: number, y: number) => {
     if (!tip) return;
     const box = svg.getBoundingClientRect();
     const frame = figure.getBoundingClientRect();
@@ -123,10 +127,27 @@ function attach(figure: HTMLElement, chart: RuntimeChart): void {
     const height = tip.offsetHeight;
     let left = px + 14;
     if (left + width > frame.width) left = px - 14 - width;
-    let top = py + gap;
-    if (gap && top + height > frame.height) top = py - gap - height;
     tip.style.left = `${Math.max(0, left)}px`;
-    tip.style.top = `${Math.max(0, Math.min(frame.height - height, top))}px`;
+    tip.style.top = `${Math.max(0, Math.min(frame.height - height, py))}px`;
+  };
+
+  const placeKpi = (svg: SVGSVGElement, x: number) => {
+    if (!tip) return;
+    const box = svg.getBoundingClientRect();
+    const px = box.left + (x * box.width) / svg.viewBox.baseVal.width;
+    const width = tip.offsetWidth;
+    const height = tip.offsetHeight;
+    let left = Math.max(4, Math.min(innerWidth - width - 4, px - width / 2));
+    let top = box.bottom + 8;
+    if (top + height > innerHeight) {
+      const note = figure.querySelector(".hm-kpi-note")?.getBoundingClientRect().bottom ?? box.top;
+      left = px + 14 + width <= innerWidth ? px + 14 : px - 14 - width;
+      top = Math.min(note + 4, innerHeight - height - 4);
+    }
+    tip.style.left = tip.style.top = "0";
+    const origin = tip.getBoundingClientRect();
+    tip.style.left = `${left - origin.left}px`;
+    tip.style.top = `${top - origin.top}px`;
   };
 
   const show = (svg: SVGSVGElement, index: number) => {
@@ -179,7 +200,8 @@ function attach(figure: HTMLElement, chart: RuntimeChart): void {
         return;
       }
       tooltip(index);
-      place(svg, x, highest, 12);
+      if (kpi) placeKpi(svg, x);
+      else place(svg, x, highest + 12);
       return;
     }
     const [start = 0, step = 0] = numbers(svg, "band");
