@@ -26,8 +26,8 @@ ZONE` value is converted to it. A timestamp without an offset (`2026-01-31 18:30
   day. `latest_common_data` takes the oldest horizon instead, so no source ends before the others.
   A source with `{"through": "as_of"}` doesn't vote; with no source left to vote, the build fails
   with HM4011. Data checks warn when a source is more than a day behind the as-of (HM4010), when a
-  horizon is more than a day after the build machine's clock (HM4012; the clock never changes the
-  output), and when a block's window starts after every source it reads ends (HM4013). These data
+  column's newest value is more than a day after the build machine's clock (HM4012; the clock never
+  changes the output), and when a block's window starts after every source it reads ends (HM4013). These data
   checks run wherever data is read: `hatchmark build`, `check --sql` and `explain`; a plain
   `hatchmark check` reads no data.
 - **Buckets.** Time series bucket by local date; weeks start on the week anchor, and quarters and

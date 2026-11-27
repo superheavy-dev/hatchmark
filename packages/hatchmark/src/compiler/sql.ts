@@ -378,25 +378,6 @@ export function horizonSql(
   };
 }
 
-/**
- * The first distinct values of a time column after a UTC instant, as UTC instants in order (a DATE
- * as its local midnight in the time zone), for HM4012's example rows.
- */
-export function afterSql(
-  source: SqlSource,
-  name: string,
-  timezone: string,
-  after: string,
-  limit: number,
-): BuiltSql {
-  const sql = new Sql();
-  const at = instant(source, name, timezone, sql);
-  return {
-    text: `SELECT DISTINCT strftime(timezone('UTC', ${at}), '%Y-%m-%dT%H:%M:%S.%f') AS hm_v FROM ${source.relation} WHERE ${at} > CAST(${sql.bind(after)} AS TIMESTAMPTZ) ORDER BY hm_v LIMIT ${limit}`,
-    params: sql.values(),
-  };
-}
-
 /** The SQL type a value is bound as; the executor binds each parameter with exactly this type. */
 export function sqlType(
   value: SqlValue,

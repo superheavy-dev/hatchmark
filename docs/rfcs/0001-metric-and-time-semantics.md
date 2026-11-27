@@ -715,7 +715,7 @@ Accessibility: the dash or hollow point is never the only signal; the tooltip, t
 | ------ | -------- | ---------------------------------------------------------------------------------------------------------------------------- |
 | HM4010 | warning  | a source's horizon is more than one day behind the dashboard's as-of; names the source, both dates and the fix (`freshness`) |
 | HM4011 | error    | `latest_data` has no source to resolve from                                                                                  |
-| HM4012 | warning  | a horizon is more than a day after the build machine's clock (future-dated rows); lists the first rows                       |
+| HM4012 | warning  | a column's newest value is more than a day after the build machine's clock (future-dated rows); names that value and the clock |
 | HM4013 | warning  | a block's window has no data before its horizon (a KPI that would be empty)                                                  |
 | HM4014 | warning  | `incomplete: "show"` on a flow whose last bucket is partial                                                                  |
 | HM4015 | warning  | a snapshot source has a bucket with no snapshot, or its last snapshot in a complete bucket isn't on the bucket's last day    |
@@ -925,7 +925,7 @@ interface ExecutionContext {
 }
 ```
 
-New pure core functions: `resolveRange(spec, shift, asOf, anchors)`, `bucketBounds(range, grain)`, `bucketStatus(bucket, horizon, timezone)`, `trimWindow(bounds, horizon, rangeKind)`, `targetValue(target, bucket, grain)`, `parseFormula(text)` and `parseRowExpr(text)` with positions. The executor gains two methods. `horizon(column): Promise<{ latest?: string; date: boolean; naive: boolean }>` runs `select max(<column>)` with no filters and returns a date, or a UTC instant, with whether the column holds timestamps without an offset; the core turns it into the horizon (the time zone, the lag, DST) and compares horizons as instants. `after(column, timezone, instant, limit)` returns the first values after an instant, for HM4012's example rows.
+New pure core functions: `resolveRange(spec, shift, asOf, anchors)`, `bucketBounds(range, grain)`, `bucketStatus(bucket, horizon, timezone)`, `trimWindow(bounds, horizon, rangeKind)`, `targetValue(target, bucket, grain)`, `parseFormula(text)` and `parseRowExpr(text)` with positions. The executor gains one method, `horizon(column): Promise<{ latest?: string; date: boolean; naive: boolean }>`, which runs `select max(<column>)` with no filters and returns a date, or a UTC instant, with whether the column holds timestamps without an offset; the core turns it into the horizon (the time zone, the lag, DST) and compares horizons as instants. HM4012 names that newest value; it never runs a second query, stops a build, or changes the output.
 
 ## 12. SQL the executor generates
 

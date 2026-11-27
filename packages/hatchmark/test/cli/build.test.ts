@@ -53,7 +53,6 @@ const deps: BuildDeps = {
   createExecutor: async () => ({
     execute: async () => ({ columns: [], rows: [] }),
     horizon: async () => ({ latest: "2026-10-31", date: true, naive: false }),
-    after: async () => [],
     close: async () => {},
   }),
   runDashboard: async (_project, name) => ({

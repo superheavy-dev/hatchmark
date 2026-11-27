@@ -1,5 +1,5 @@
 import { afterAll, describe, expect, it } from "vitest";
-import { explainDashboard, type KpiData } from "../../src/compiler/index.js";
+import { explainDashboard, type KpiData, runDashboard } from "../../src/compiler/index.js";
 import { createDuckDbExecutor } from "../../src/node/index.js";
 import { PROJECT_DEFAULTS } from "../../src/spec/index.js";
 import { metric, removeProjects, run, writeProject } from "./fixture.js";
@@ -209,7 +209,7 @@ describe("source horizons", () => {
 
   it("warns with HM4012 only against the clock passed in, without changing the output", async () => {
     const fixture = await project({});
-    const behind = await build(fixture, new Date("2026-05-01T12:00:00Z"));
+    const behind = await build(fixture, new Date("2026-04-30T12:00:00Z"));
     expect(behind.codes).toEqual([
       ["HM4010", "warning", "/sources/orders"],
       ["HM4012", "warning", "/sources/sessions"],
@@ -437,7 +437,7 @@ describe("horizon edges (HAT-44 and HAT-45 on #19)", () => {
     }
   });
 
-  it("warns with HM4012 next to HM4010 on the same source, listing the first future rows", async () => {
+  it("warns with HM4012 next to HM4010 on the same source, naming the newest value", async () => {
     const fixture = await sources(
       {
         orders: {
@@ -468,7 +468,7 @@ describe("horizon edges (HAT-44 and HAT-45 on #19)", () => {
       ["HM4012", "warning", "/sources/orders"],
     ]);
     expect(built.diagnostics[1]?.message).toBe(
-      'source "orders" has rows in "shipped_at" more than a day after this machine\'s clock (2026-11-27 00:00); the first are at 2099-06-01 18:00, 2099-06-02 18:00',
+      'source "orders" has data in "shipped_at" through 2099-06-02 18:00, more than a day after this machine\'s clock (2026-11-27 00:00)',
     );
     const config = fixture.project.config.spec;
     if (config === undefined) throw new Error("no config");
@@ -478,6 +478,76 @@ describe("horizon edges (HAT-44 and HAT-45 on #19)", () => {
       expect(explained.diagnostics.map((d) => d.code)).toEqual(["HM4010", "HM4012"]);
     } finally {
       await executor.close();
+    }
+  });
+
+  it("builds future-dated data byte for byte the same under any clock, warning with HM4012", async () => {
+    const fixture = await sources(
+      { orders: { text: "at,v\n2026-05-30T10:00:00Z,3\n2099-06-01T18:00:00Z,7\n" } },
+      { asOf: "latest_data", range: "all_time" },
+    );
+    const runs = await Promise.all(
+      ["2026-06-01T00:00:00Z", "2099-06-01T00:00:00Z", "2100-06-01T00:00:00Z"].map((now) =>
+        build(fixture, new Date(now)),
+      ),
+    );
+    expect(runs.map((r) => r.diagnostics.map((d) => d.message))).toEqual([
+      [
+        'source "orders" has data in "at" through 2099-06-01 18:00, more than a day after this machine\'s clock (2026-06-01 00:00)',
+      ],
+      [],
+      [],
+    ]);
+    expect(runs[0]?.value("orders")).toBe(10);
+    const bytes = runs.map((r) => JSON.stringify(r.data));
+    expect(new Set([...bytes, JSON.stringify((await build(fixture)).data)]).size).toBe(1);
+  });
+
+  it("warns with HM4012 exactly when a row is more than a day after the clock, and lists it", async () => {
+    const date = await build(
+      await sources(
+        { orders: { text: "at,v\n2026-06-02,7\n" } },
+        { asOf: "latest_data", range: "all_time" },
+      ),
+      new Date("2026-06-01T12:00:00Z"),
+    );
+    expect(date.codes).toEqual([]);
+    const dayAfter = await build(
+      await sources(
+        { orders: { text: "at,v\n2026-06-03,7\n" } },
+        { asOf: "latest_data", range: "all_time" },
+      ),
+      new Date("2026-06-01T12:00:00Z"),
+    );
+    expect(dayAfter.diagnostics.map((d) => d.message)).toEqual([
+      'source "orders" has data in "at" through 2026-06-03 00:00, more than a day after this machine\'s clock (2026-06-01 12:00)',
+    ]);
+    const fixture = await sources(
+      { orders: { text: "at,v\n2026-06-02T00:00:00.500Z,7\n" } },
+      { asOf: "latest_data", range: "all_time" },
+    );
+    expect((await build(fixture, new Date("2026-06-01T00:00:00.500Z"))).codes).toEqual([]);
+    expect((await build(fixture, new Date("2026-06-01T00:00:00.499Z"))).codes).toEqual([
+      ["HM4012", "warning", "/sources/orders"],
+    ]);
+  });
+
+  it("rejects an as-of in year 10000 reached through a timestamp's local date", async () => {
+    for (const [timezone, text] of [
+      ["Europe/Berlin", "at,v\n9999-12-31 23:59:59,1\n"],
+      ["Asia/Tokyo", "at,v\n9999-12-31T23:00:00Z,1\n"],
+    ] as const) {
+      const built = await build(
+        await sources(
+          { orders: { text, options: { timezone: "UTC" } } },
+          { asOf: "latest_data", range: "all_time" },
+          { timezone },
+        ),
+      );
+      expect(built.data).toBeUndefined();
+      expect(built.diagnostics.map((d) => d.message)).toEqual([
+        "the as-of date 10000-01-01 is outside the supported dates 0001-01-01 to 9998-12-31",
+      ]);
     }
   });
 });

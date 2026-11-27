@@ -33,12 +33,10 @@ import { nextDay, queryBounds, resolveRange, SUPPORTED_DATES } from "./windows.j
  * latest value of a column over all rows, ignoring filters: "YYYY-MM-DD" for a DATE column, else the
  * UTC instant "YYYY-MM-DDTHH:MM:SS.ffffff" (timestamps without an offset read in the source's
  * timezone, else UTC); latest is undefined when the column is empty, and naive is true for a
- * timestamp column without an offset. after returns the first distinct values of a column later than
- * a UTC instant, as UTC instants (a DATE as its local midnight in the time zone), for HM4012.
+ * timestamp column without an offset.
  */
 export interface DashboardExecutor extends QueryExecutor {
   horizon(column: TimeColumn): Promise<{ latest?: string; date: boolean; naive: boolean }>;
-  after(column: TimeColumn, timezone: string, instant: string, limit: number): Promise<string[]>;
 }
 
 function failure(message: string): Diagnostic {
@@ -69,8 +67,8 @@ const startOf = (date: string, timezone: string) => fromLocal(parseInstant(date)
  *
  * Errors: HM4011 when "latest_data" has no voting horizon to resolve from; HM2015 when a horizon
  * cannot be measured or a date is out of range. Warnings: HM4010 for a source more than a day
- * behind T, HM4012 for a measured horizon more than a day after the build machine's clock (now; the
- * clock never changes the output), with its first rows, and HM4013 for a block whose every window
+ * behind T, HM4012 for a column whose newest value is more than a day after the build machine's clock
+ * (now; it never stops the build or changes the output), and HM4013 for a block whose every window
  * starts at or after its horizon. Note: HM4016 for timestamps without an offset that a source with
  * no timezone has, in a project whose time zone isn't UTC.
  */
@@ -99,6 +97,7 @@ export async function executionContext(
     return result;
   };
   const measured = new Map<PlannedHorizon, bigint | undefined>();
+  const newest = new Map<PlannedHorizon, bigint>();
   const naive = new Set<string>();
   try {
     for (const column of planTimeColumns(plan)) {
@@ -117,6 +116,7 @@ export async function executionContext(
         measured.set(h, undefined);
         continue;
       }
+      newest.set(h, result.date ? startOf(result.latest, tz) : parseInstant(result.latest));
       const lag = typeof h.rule === "object" ? h.rule.lag : undefined;
       const days = lag !== undefined && "days" in lag ? BigInt(lag.days) * DAY_US : 0n;
       let through = result.date
@@ -180,7 +180,7 @@ export async function executionContext(
     }
     instant = startOf(nextDay(asOfRule), tz);
   }
-  const asOf = formatWall(toLocal(instant - 1n, tz)).slice(0, 10);
+  const asOf = formatWall(toLocal(instant - 1n, tz)).split("T")[0] as string;
 
   const horizonOf = (h: PlannedHorizon) => measured.get(h) ?? (h.votes ? undefined : instant);
   const horizons = plan.horizons.flatMap((h): SourceHorizon[] => {
@@ -202,7 +202,8 @@ export async function executionContext(
     horizons,
   };
   try {
-    if (!(asOf >= SUPPORTED_DATES.first && asOf <= SUPPORTED_DATES.last)) {
+    const day = parseInstant(asOf);
+    if (day < parseInstant(SUPPORTED_DATES.first) || day > parseInstant(SUPPORTED_DATES.last)) {
       throw new RangeError(
         `the as-of date ${asOf} is outside the supported dates ${SUPPORTED_DATES.first} to ${SUPPORTED_DATES.last}`,
       );
@@ -232,26 +233,13 @@ export async function executionContext(
   if (now !== undefined) {
     const limit = BigInt(now.getTime()) * 1000n + DAY_US;
     const ahead = new Set<string>();
-    for (const [h, through] of measured) {
-      if (through === undefined || h.column === undefined || ahead.has(h.source)) continue;
-      if (through <= limit) continue;
+    for (const [h, latest] of newest) {
+      if (h.column === undefined || ahead.has(h.source) || latest <= limit) continue;
       ahead.add(h.source);
-      let rows: string[];
-      try {
-        rows = await executor.after(
-          { source: h.source, column: h.column },
-          tz,
-          formatInstant(limit),
-          3,
-        );
-      } catch (error) {
-        return { diagnostics: [failure(`cannot read future-dated rows: ${message(error)}`)] };
-      }
-      const listed = rows.map((r) => describeInstant(parseInstant(r), tz)).join(", ");
       notes.push({
         code: "HM4012",
         severity: "warning",
-        message: `source "${h.source}" has rows in "${h.column}" more than a day after this machine's clock (${describeInstant(limit - DAY_US, tz)})${listed ? `; the first are at ${listed}` : ""}`,
+        message: `source "${h.source}" has data in "${h.column}" through ${describeInstant(latest, tz)}, more than a day after this machine's clock (${describeInstant(limit - DAY_US, tz)})`,
         ...atSource(h.source),
         help: "look for future-dated rows, such as a typo in a year or scheduled entries, or set period.asOf",
         docs: docsCommand("HM4012"),

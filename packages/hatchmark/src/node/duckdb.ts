@@ -14,7 +14,6 @@ import {
   VARCHAR,
 } from "@duckdb/node-api";
 import {
-  afterSql,
   type BuiltSql,
   canonicalJson,
   column,
@@ -142,13 +141,6 @@ export async function createDuckDbExecutor(options: {
       const { values, types } = boundParams(params);
       const value = (await connection.runAndReadAll(text, values, types)).getRows()[0]?.[0];
       return { ...(typeof value === "string" ? { latest: value } : {}), date, naive };
-    },
-    async after({ source, column }: TimeColumn, timezone: string, instant: string, limit: number) {
-      const { text, params } = afterSql(await load(source), column, timezone, instant, limit);
-      const { values, types } = boundParams(params);
-      return (await connection.runAndReadAll(text, values, types))
-        .getRows()
-        .map((r) => String(r[0]));
     },
     async close() {
       connection.closeSync();
