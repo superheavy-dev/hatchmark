@@ -53,8 +53,8 @@ describe("hatchmark dev in the browser", () => {
     await page.evaluate(() => {
       (window as unknown as { hmMarker: boolean }).hmMarker = true;
     });
-    await edit("dashboards/sales.json", (t) =>
-      t.replace('"Revenue by channel"', '"Revenue by sales channel"'),
+    await edit("dashboards/sales.yaml", (t) =>
+      t.replace("title: Revenue by channel\n", "title: Revenue by sales channel\n"),
     );
     const title = page.locator(".hm-bar h2");
     await expect
@@ -83,8 +83,10 @@ describe("hatchmark dev in the browser", () => {
     await page.locator("[data-hm-grain-filter] button[data-hm-grain='quarter:01-01']").click();
     const orders = page.locator(".hm-bar");
     await orders.locator(".hm-seg button[data-hm-grain=month]").click();
-    await edit("dashboards/trends.json", (t) =>
-      t.replace('"Revenue by region"', '"Regional revenue"').replace('"Orders"', '"Paid orders"'),
+    await edit("dashboards/trends.yaml", (t) =>
+      t
+        .replace("title: Revenue by region\n", "title: Regional revenue\n")
+        .replace("title: Orders\n", "title: Paid orders\n"),
     );
     const line = page.locator(".hm-line").first();
     await expect
@@ -108,10 +110,8 @@ describe("hatchmark dev in the browser", () => {
     const shots = process.env.HATCHMARK_DEV_SCREENSHOTS;
     const page = await browser.newPage({ viewport: { width: 1280, height: 860 } });
     await open(page);
-    const good = await readFile(path.join(dir, "dashboards/sales.json"), "utf8");
-    await edit("dashboards/sales.json", (t) =>
-      t.replace('"metric": "orders"', '"metric": "orderz"'),
-    );
+    const good = await readFile(path.join(dir, "dashboards/sales.yaml"), "utf8");
+    await edit("dashboards/sales.yaml", (t) => t.replace("metric: orders\n", "metric: orderz\n"));
     const overlay = page.locator("#hm-dev-overlay");
     await expect.poll(() => overlay.isVisible(), { timeout: 15_000 }).toBe(true);
     expect(await overlay.locator("pre").textContent()).toContain("error[HM2003]");
@@ -131,7 +131,7 @@ describe("hatchmark dev in the browser", () => {
       });
       await page.screenshot({ path: path.join(shots, "overlay-dark.png") });
     }
-    await writeFile(path.join(dir, "dashboards/sales.json"), good);
+    await writeFile(path.join(dir, "dashboards/sales.yaml"), good);
     await expect.poll(() => overlay.count(), { timeout: 15_000 }).toBe(0);
     await page.close();
   });
@@ -179,10 +179,13 @@ async function expectLiveAgain(page: Page, root: string, restore: () => Promise<
   await page.evaluate(() => {
     (window as unknown as { hmMarker: boolean }).hmMarker = true;
   });
-  const file = path.join(root, "dashboards/sales.json");
+  const file = path.join(root, "dashboards/sales.yaml");
   await writeFile(
     file,
-    (await readFile(file, "utf8")).replace('"Revenue by channel"', '"Channel revenue"'),
+    (await readFile(file, "utf8")).replace(
+      "title: Revenue by channel\n",
+      "title: Channel revenue\n",
+    ),
   );
   await expect
     .poll(() => page.locator(".hm-bar h2").textContent(), { timeout: 15_000 })
@@ -195,10 +198,10 @@ async function expectLiveAgain(page: Page, root: string, restore: () => Promise<
 describe("an open dev tab whose dashboard comes and goes", () => {
   it("shows a tab whose first build failed that its file was removed, then the live page", async () => {
     const own = await ownServer(async (root) => {
-      const file = path.join(root, "dashboards/sales.json");
+      const file = path.join(root, "dashboards/sales.yaml");
       await writeFile(
         file,
-        (await readFile(file, "utf8")).replace('"metric": "orders"', '"metric": "orderz"'),
+        (await readFile(file, "utf8")).replace("metric: orders\n", "metric: orderz\n"),
       );
     });
     const page = await browser.newPage({ viewport: { width: 1280, height: 860 } });
@@ -208,16 +211,16 @@ describe("an open dev tab whose dashboard comes and goes", () => {
       await ready;
       expect(await page.locator("h1").textContent()).toBe("Waiting for a good build");
       expect(await page.locator("#hm-dev-overlay").isVisible()).toBe(true);
-      const good = await readFile(path.join(EXAMPLE, "dashboards/sales.json"), "utf8");
+      const good = await readFile(path.join(EXAMPLE, "dashboards/sales.yaml"), "utf8");
       const removed = connected(page);
-      await rm(path.join(own.root, "dashboards/sales.json"));
+      await rm(path.join(own.root, "dashboards/sales.yaml"));
       await expect
         .poll(() => page.locator("h1").textContent(), { timeout: 15_000 })
         .toBe("Dashboard removed");
       await removed;
       expect(await page.locator("#hm-dev-overlay").count()).toBe(0);
       await expectLiveAgain(page, own.root, () =>
-        writeFile(path.join(own.root, "dashboards/sales.json"), good),
+        writeFile(path.join(own.root, "dashboards/sales.yaml"), good),
       );
     } finally {
       await page.close();
@@ -233,7 +236,7 @@ describe("an open dev tab whose dashboard comes and goes", () => {
       await page.goto(new URL("/sales/", own.server.url).href);
       await ready;
       expect(await page.locator("h1").textContent()).toBe("Global sales");
-      const file = path.join(own.root, "dashboards/sales.json");
+      const file = path.join(own.root, "dashboards/sales.yaml");
       const hold = path.join(own.root, "sales.hold");
       const removed = connected(page);
       await rename(file, hold);

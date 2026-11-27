@@ -4,6 +4,7 @@ import path from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import { nodeProjectHost } from "../../src/node/index.js";
 import { checkReferences, loadProject, parseDiagnostics } from "../../src/spec/index.js";
+import { fromYaml, toYaml } from "../yaml.js";
 import { applyFix, CONFIG, DASHBOARD, METRICS } from "./helpers.js";
 
 const dirs: string[] = [];
@@ -31,19 +32,19 @@ describe("loadProject", () => {
 
   it("loads metrics and dashboards in name order and checks data files", async () => {
     const root = await tempProject({
-      "hatchmark.json": JSON.stringify(CONFIG),
+      "hatchmark.yaml": toYaml(CONFIG),
       "data/orders.csv": '\ufeffamount,"region, US"\r\n1,West\n',
-      "metrics/revenue.json": JSON.stringify(METRICS.revenue),
-      "metrics/orders.json": JSON.stringify(METRICS.orders),
+      "metrics/revenue.yaml": toYaml(METRICS.revenue),
+      "metrics/orders.yaml": toYaml(METRICS.orders),
       "metrics/notes.txt": "ignored",
-      "dashboards/sales.json": JSON.stringify(DASHBOARD),
+      "dashboards/sales.yaml": toYaml(DASHBOARD),
     });
     const { project, diagnostics } = await loadProject(nodeProjectHost(root));
     expect([...(project?.metrics.keys() ?? [])]).toEqual(["orders", "revenue"]);
-    expect(project?.dashboards.get("sales")?.file).toBe("dashboards/sales.json");
+    expect(project?.dashboards.get("sales")?.file).toBe("dashboards/sales.yaml");
     expect(project && parseDiagnostics(project)).toEqual([]);
     expect(diagnostics).toMatchObject([
-      { code: "HM2010", pointer: "/sources/merchants/path", file: "hatchmark.json" },
+      { code: "HM2010", pointer: "/sources/merchants/path", file: "hatchmark.yaml" },
     ]);
     expect([...(project?.missingData ?? [])]).toEqual(["merchants"]);
     expect(project?.columns.get("orders")).toEqual(["amount", "region, US"]);
@@ -51,7 +52,7 @@ describe("loadProject", () => {
 
   it("reads a header-only CSV with no trailing line break as complete", async () => {
     const root = await tempProject({
-      "hatchmark.json": JSON.stringify({
+      "hatchmark.yaml": toYaml({
         ...CONFIG,
         sources: { orders: { type: "csv", path: "data/orders.csv" } },
       }),
@@ -63,8 +64,8 @@ describe("loadProject", () => {
 
   it("falls back to the configured directories when the config is invalid", async () => {
     const root = await tempProject({
-      "hatchmark.json": JSON.stringify({ ...CONFIG, metricsDir: "defs", locale: 1, sources: {} }),
-      "defs/orders.json": JSON.stringify(METRICS.orders),
+      "hatchmark.yaml": toYaml({ ...CONFIG, metricsDir: "defs", locale: 1, sources: {} }),
+      "defs/orders.yaml": toYaml(METRICS.orders),
     });
     const { project } = await loadProject(nodeProjectHost(root));
     expect(project?.config.spec).toBeUndefined();
@@ -79,7 +80,7 @@ describe("source paths with glob characters", () => {
     ["[", "data/orders[1].csv", "data/orders_1_.csv"],
   ])("rejects %s with HM2016 at the path, even when the file exists", async (_, file, renamed) => {
     const root = await tempProject({
-      "hatchmark.json": JSON.stringify({
+      "hatchmark.yaml": toYaml({
         ...CONFIG,
         sources: { orders: { type: "csv", path: file } },
       }),
@@ -94,12 +95,12 @@ describe("source paths with glob characters", () => {
     expect(found).toMatchObject([
       {
         severity: "error",
-        file: "hatchmark.json",
+        file: "hatchmark.yaml",
         pointer: "/sources/orders/path",
         fix: { applicability: "unsafe", text: JSON.stringify(renamed) },
       },
     ]);
-    const fixed = JSON.parse(applyFix(project.config.document.text, found[0]?.fix));
+    const fixed = fromYaml(applyFix(project.config.document.text, found[0]?.fix));
     expect(fixed.sources.orders.path).toBe(renamed);
   });
 });

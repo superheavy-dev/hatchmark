@@ -8,6 +8,7 @@ import { runDashboard } from "../../src/compiler/index.js";
 import { customRangeDashboard, type PeriodData } from "../../src/compiler/period-data.js";
 import { createDuckDbExecutor } from "../../src/node/index.js";
 import type { RangeSpec } from "../../src/spec/index.js";
+import { toYaml } from "../yaml.js";
 import { loadAt, Oracle } from "./fixture.js";
 
 const TZ = "America/New_York";
@@ -215,7 +216,7 @@ async function writeProject(): Promise<string> {
   const dir = await mkdtemp(path.join(tmpdir(), "hatchmark-periods-custom-"));
   const { orders, sessions } = generate();
   const files: Record<string, string> = {
-    "hatchmark.json": JSON.stringify({
+    "hatchmark.yaml": toYaml({
       version: 1,
       name: "Period custom range attacks",
       dataDir: "data",
@@ -241,10 +242,9 @@ async function writeProject(): Promise<string> {
     "data/orders.csv": orders,
     "data/sessions.csv": sessions,
   };
-  for (const [name, spec] of Object.entries(METRICS))
-    files[`metrics/${name}.json`] = JSON.stringify(spec);
+  for (const [name, spec] of Object.entries(METRICS)) files[`metrics/${name}.yaml`] = toYaml(spec);
   for (const [name, spec] of Object.entries(DASHBOARDS))
-    files[`dashboards/${name}.json`] = JSON.stringify(spec);
+    files[`dashboards/${name}.yaml`] = toYaml(spec);
   for (const [file, text] of Object.entries(files)) {
     await mkdir(path.dirname(path.join(dir, file)), { recursive: true });
     await writeFile(path.join(dir, file), text);
@@ -519,7 +519,7 @@ function ranges(p: PeriodData): Win[] {
 async function sqlPath(name: string, w: Win): Promise<DashboardData> {
   const { project } = await loadAt(root);
   const config = project.config.spec;
-  if (config === undefined) throw new Error("invalid hatchmark.json");
+  if (config === undefined) throw new Error("invalid hatchmark.yaml");
   const executor = await createDuckDbExecutor({ root, config });
   try {
     const binding = { start: w.start, end: w.end } as unknown as RangeSpec;

@@ -25,6 +25,7 @@ import {
 } from "../../src/compiler/index.js";
 import { createCachedExecutor, createDuckDbExecutor } from "../../src/node/index.js";
 import { PROJECT_DEFAULTS, type ProjectConfig } from "../../src/spec/index.js";
+import { fromYaml, toYaml } from "../yaml.js";
 import { copyProject, EXAMPLE, removeProjects } from "./fixture.js";
 
 /**
@@ -111,7 +112,7 @@ async function editJson(
   edit: (value: Record<string, any>) => Record<string, unknown>,
 ): Promise<void> {
   const at = path.join(root, file);
-  await writeFile(at, JSON.stringify(edit(JSON.parse(await readFile(at, "utf8"))), null, 2));
+  await writeFile(at, toYaml(edit(fromYaml(await readFile(at, "utf8")))));
 }
 
 /** The example's last order, the newest row. */
@@ -173,17 +174,17 @@ describe("build cache", { timeout: 30_000 }, () => {
   it("recomputes only the queries a metric edit changes", async () => {
     const root = await example();
     const cold = await build(root, true);
-    const file = path.join(root, "metrics", "refund_rate.json");
-    const metric = JSON.parse(await readFile(file, "utf8"));
+    const file = path.join(root, "metrics", "refund_rate.yaml");
+    const metric = fromYaml(await readFile(file, "utf8"));
     metric.label = "Refunds (share of orders)";
-    await writeFile(file, JSON.stringify(metric, null, 2));
+    await writeFile(file, toYaml(metric));
     const labelled = await build(root, true);
     expect(labelled.report.cache?.misses).toBe(0);
 
-    const revenue = path.join(root, "metrics", "revenue.json");
-    const spec = JSON.parse(await readFile(revenue, "utf8"));
+    const revenue = path.join(root, "metrics", "revenue.yaml");
+    const spec = fromYaml(await readFile(revenue, "utf8"));
     spec.filters = [{ column: "status", op: "eq", value: "refunded" }];
-    await writeFile(revenue, JSON.stringify(spec, null, 2));
+    await writeFile(revenue, toYaml(spec));
     const oracle = await build(root, false);
     const edited = await build(root, true);
     expect(edited.report.cache?.misses).toBeGreaterThan(0);
@@ -194,13 +195,13 @@ describe("build cache", { timeout: 30_000 }, () => {
     expect(edited.files).toEqual(oracle.files);
   });
 
-  it("invalidates on a reader option in hatchmark.json and on appended rows that move latest_data", async () => {
+  it("invalidates on a reader option in hatchmark.yaml and on appended rows that move latest_data", async () => {
     const root = await example();
     await build(root, true);
-    const config = path.join(root, "hatchmark.json");
-    const project = JSON.parse(await readFile(config, "utf8"));
+    const config = path.join(root, "hatchmark.yaml");
+    const project = fromYaml(await readFile(config, "utf8"));
     project.timezone = "Europe/London";
-    await writeFile(config, JSON.stringify(project, null, 2));
+    await writeFile(config, toYaml(project));
     const zoned = await build(root, true);
     expect(zoned.report.cache?.hits).toBe(0);
     expect(zoned.files).toEqual((await build(root, false)).files);
@@ -249,12 +250,12 @@ describe("build cache", { timeout: 30_000 }, () => {
   it("never caches raw SQL metrics, which can read the clock or files no key covers", async () => {
     const root = await example();
     await writeFile(path.join(root, "data", "adjustment.csv"), "adjustment\n7\n");
-    const file = path.join(root, "metrics", "orders.json");
-    const { aggregate: _, column: __, ...metric } = JSON.parse(await readFile(file, "utf8"));
+    const file = path.join(root, "metrics", "orders.yaml");
+    const { aggregate: _, column: __, ...metric } = fromYaml(await readFile(file, "utf8"));
     const adjustment = path.join(root, "data", "adjustment.csv").replaceAll("'", "''");
     await writeFile(
       file,
-      JSON.stringify({
+      toYaml({
         ...metric,
         type: "sql",
         additive: false,
@@ -357,12 +358,12 @@ describe("build cache", { timeout: 30_000 }, () => {
   const edits: [string, (root: string) => Promise<void>][] = [
     [
       "weekStart",
-      (root) => editJson(root, "hatchmark.json", (c) => ({ ...c, weekStart: "monday" })),
+      (root) => editJson(root, "hatchmark.yaml", (c) => ({ ...c, weekStart: "monday" })),
     ],
     [
       "source timezone",
       (root) =>
-        editJson(root, "hatchmark.json", (c) => {
+        editJson(root, "hatchmark.yaml", (c) => {
           c.sources.orders.timezone = "Asia/Tokyo";
           return c;
         }),
@@ -370,7 +371,7 @@ describe("build cache", { timeout: 30_000 }, () => {
     [
       "freshness lag",
       (root) =>
-        editJson(root, "hatchmark.json", (c) => {
+        editJson(root, "hatchmark.yaml", (c) => {
           c.sources.orders.freshness = { lag: { days: 40 } };
           return c;
         }),
@@ -378,7 +379,7 @@ describe("build cache", { timeout: 30_000 }, () => {
     [
       "freshness through",
       (root) =>
-        editJson(root, "hatchmark.json", (c) => {
+        editJson(root, "hatchmark.yaml", (c) => {
           c.sources.orders.freshness = { through: "2025-06-30" };
           return c;
         }),
@@ -388,7 +389,7 @@ describe("build cache", { timeout: 30_000 }, () => {
       async (root) => {
         const file = path.join(root, "data", "orders.csv");
         await writeFile(file, (await readFile(file, "utf8")).replaceAll(",", ";"));
-        await editJson(root, "hatchmark.json", (c) => {
+        await editJson(root, "hatchmark.yaml", (c) => {
           c.sources.orders.delimiter = ";";
           return c;
         });
@@ -810,7 +811,7 @@ describe("cached executor", () => {
     await executor.close();
   });
 
-  it("refuses to serve a plan made for another hatchmark.json", async () => {
+  it("refuses to serve a plan made for another hatchmark.yaml", async () => {
     const root = await project();
     const result: QueryResult = { columns: [{ name: "v", type: "number" }], rows: [[1]] };
     await roundTrip(root, result);

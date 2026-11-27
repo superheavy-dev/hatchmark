@@ -19,15 +19,16 @@ import {
   type ProjectHost,
   parseDiagnostics,
 } from "../../src/spec/index.js";
+import { toYaml } from "../yaml.js";
 
 const files: Record<string, string> = {
-  "hatchmark.json": JSON.stringify({
+  "hatchmark.yaml": toYaml({
     ...PROJECT_DEFAULTS,
     name: "Worker smoke",
     sources: { orders: { type: "csv", path: "data/orders.csv" } },
   }),
   "data/orders.csv": "ordered_at,region,amount\n2026-10-01,West,10\n",
-  "metrics/revenue.json": JSON.stringify({
+  "metrics/revenue.yaml": toYaml({
     label: "Revenue",
     type: "aggregate",
     table: "orders",
@@ -37,9 +38,8 @@ const files: Record<string, string> = {
     format: { type: "currency" },
     better: "up",
   }),
-  "dashboards/sales.json":
-    '{\n  "title": "Sales",\n  "blocks": [{"type": "kpi", "metric": "revenu"}]\n}\n',
-  "dashboards/ok.json": JSON.stringify({
+  "dashboards/sales.yaml": "title: Sales\nblocks:\n  - type: kpi\n    metric: revenu\n",
+  "dashboards/ok.yaml": toYaml({
     title: "OK",
     period: { asOf: "2026-10-31", range: "last_complete_month", compare: "none" },
     blocks: [{ type: "kpi", metric: "revenue" }],

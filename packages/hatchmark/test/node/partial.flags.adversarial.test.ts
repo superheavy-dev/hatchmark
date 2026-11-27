@@ -83,7 +83,7 @@ function daily(fromUtc: string, toUtc: string): [string, number][] {
 
 async function project(sources: Source[], dashboards: Record<string, unknown>) {
   const files: Record<string, unknown> = {
-    "hatchmark.json": {
+    "hatchmark.yaml": {
       ...PROJECT_DEFAULTS,
       name: "Partial flags",
       timezone: TZ,
@@ -102,12 +102,12 @@ async function project(sources: Source[], dashboards: Record<string, unknown>) {
         s.column + ",v" + (region ? ",region" : ""),
         ...s.rows.map((r) => r.filter((x) => x !== undefined).join(",")),
       ].join("\n") + "\n";
-    files["metrics/" + s.name + ".json"] = metric(
+    files["metrics/" + s.name + ".yaml"] = metric(
       { type: "aggregate", table: s.name, aggregate: "sum", column: "v", time: s.column },
       { type: "currency" },
     );
   }
-  for (const [name, d] of Object.entries(dashboards)) files["dashboards/" + name + ".json"] = d;
+  for (const [name, d] of Object.entries(dashboards)) files["dashboards/" + name + ".yaml"] = d;
   return writeProject(files);
 }
 async function horizons(root: string, sources: Source[]): Promise<Record<string, string>> {

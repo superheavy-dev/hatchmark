@@ -49,34 +49,34 @@ const orders = (body: Record<string, unknown>) =>
   metric({ table: "orders", time: "day", type: "aggregate", ...body });
 
 const METRICS: Record<string, unknown> = {
-  "metrics/revenue.json": orders({ aggregate: "sum", column: "amount" }),
-  "metrics/orders.json": orders({ aggregate: "count" }),
-  "metrics/aov.json": orders({ aggregate: "avg", column: "amount" }),
-  "metrics/biggest.json": orders({ aggregate: "max", column: "amount" }),
-  "metrics/smallest.json": orders({ aggregate: "min", column: "amount" }),
-  "metrics/customers.json": orders({ aggregate: "count_distinct", column: "customer_id" }),
-  "metrics/refunds.json": orders({
+  "metrics/revenue.yaml": orders({ aggregate: "sum", column: "amount" }),
+  "metrics/orders.yaml": orders({ aggregate: "count" }),
+  "metrics/aov.yaml": orders({ aggregate: "avg", column: "amount" }),
+  "metrics/biggest.yaml": orders({ aggregate: "max", column: "amount" }),
+  "metrics/smallest.yaml": orders({ aggregate: "min", column: "amount" }),
+  "metrics/customers.yaml": orders({ aggregate: "count_distinct", column: "customer_id" }),
+  "metrics/refunds.yaml": orders({
     aggregate: "count",
     filters: [{ column: "refunded", op: "eq", value: true }],
   }),
-  "metrics/refund_rate.json": metric({
+  "metrics/refund_rate.yaml": metric({
     type: "ratio",
     numerator: "refunds",
     denominator: "orders",
   }),
-  "metrics/visits.json": metric({
+  "metrics/visits.yaml": metric({
     type: "aggregate",
     table: "visits",
     aggregate: "sum",
     column: "visits",
   }),
-  "metrics/sales.json": metric({
+  "metrics/sales.yaml": metric({
     type: "aggregate",
     table: "orders",
     aggregate: "sum",
     column: "amount",
   }),
-  "metrics/per_visit.json": metric({ type: "ratio", numerator: "sales", denominator: "visits" }),
+  "metrics/per_visit.yaml": metric({ type: "ratio", numerator: "sales", denominator: "visits" }),
 };
 
 const ADDITIVE = ["revenue", "orders", "aov", "biggest", "smallest", "refund_rate"];
@@ -84,7 +84,7 @@ const ADDITIVE = ["revenue", "orders", "aov", "biggest", "smallest", "refund_rat
 beforeAll(async () => {
   oracle = await Oracle.open();
   const fixture = await writeProject({
-    "hatchmark.json": {
+    "hatchmark.yaml": {
       ...PROJECT_DEFAULTS,
       name: "Tables",
       sources: {
@@ -95,7 +95,7 @@ beforeAll(async () => {
     "orders.csv": ordersCsv(),
     "visits.csv": VISITS,
     ...METRICS,
-    "dashboards/probe.json": { title: "Probe", blocks: [{ type: "text", markdown: "x" }] },
+    "dashboards/probe.yaml": { title: "Probe", blocks: [{ type: "text", markdown: "x" }] },
   });
   root = fixture.root;
   await oracle.run(
@@ -112,7 +112,7 @@ afterAll(async () => {
 
 async function table(block: Record<string, unknown>, filters: unknown[] = []) {
   const fixture = await writeProject({
-    "hatchmark.json": {
+    "hatchmark.yaml": {
       ...PROJECT_DEFAULTS,
       name: "Tables",
       sources: {
@@ -123,7 +123,7 @@ async function table(block: Record<string, unknown>, filters: unknown[] = []) {
     "orders.csv": ordersCsv(),
     "visits.csv": VISITS,
     ...METRICS,
-    "dashboards/probe.json": {
+    "dashboards/probe.yaml": {
       title: "Probe",
       period: { asOf: "2026-02-28", range: "all_time", compare: "none" },
       filters,

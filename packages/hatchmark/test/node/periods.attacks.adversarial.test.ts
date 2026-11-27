@@ -11,6 +11,7 @@ import { customRangeDashboard, type PeriodData } from "../../src/compiler/period
 import { parseDaysKey } from "../../src/compiler/periods.js";
 import { createDuckDbExecutor } from "../../src/node/index.js";
 import type { RangeSpec } from "../../src/spec/index.js";
+import { fromYaml, toYaml } from "../yaml.js";
 import { buildProject, EXAMPLE, loadAt, Oracle, removeProjects, writeExample } from "./fixture.js";
 import {
   type Anchors,
@@ -208,8 +209,8 @@ async function build(
   }
   for (const [name, m] of Object.entries(extra ? EXTRA_METRICS : {}))
     await writeFile(
-      path.join(root, `metrics/${name}.json`),
-      JSON.stringify({ label: name, format: { type: "number" }, better: "up", ...m }),
+      path.join(root, `metrics/${name}.yaml`),
+      toYaml({ label: name, format: { type: "number" }, better: "up", ...m }),
     );
   if (extra) {
     const csv = path.join(root, "data/orders.csv");
@@ -395,7 +396,7 @@ describe("empty and null groups, non-additive metrics, and a select default with
   it("the browser path equals runDashboard's SQL path for the metrics dashboard and the null groups, but for preset-only metrics", async () => {
     const { project } = await loadAt(b.root);
     const config = project.config.spec;
-    if (config === undefined) throw new Error("invalid hatchmark.json");
+    if (config === undefined) throw new Error("invalid hatchmark.yaml");
     const executor = await createDuckDbExecutor({ root: b.root, config });
     const diff = new Diff();
     try {
@@ -704,8 +705,8 @@ describe.each([
 ])("$name", ({ config, anchors, asOf, edges, truncate, dayElapsed }) => {
   let c: Case;
   beforeAll(async () => {
-    const explorer = JSON.parse(
-      await readFile(path.join(EXAMPLE, "dashboards/explorer.json"), "utf8"),
+    const explorer = fromYaml(
+      await readFile(path.join(EXAMPLE, "dashboards/explorer.yaml"), "utf8"),
     );
     const blocks: SpecBlock[] = [
       ...explorer.blocks,
@@ -776,8 +777,8 @@ describe.each([
 describe("invalid custom ranges throw instead of returning numbers", () => {
   let payload: PeriodData;
   beforeAll(async () => {
-    const explorer = JSON.parse(
-      await readFile(path.join(EXAMPLE, "dashboards/explorer.json"), "utf8"),
+    const explorer = fromYaml(
+      await readFile(path.join(EXAMPLE, "dashboards/explorer.yaml"), "utf8"),
     );
     payload = (await build({}, { explorer })).payloads.explorer as PeriodData;
   });

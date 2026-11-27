@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { checkReferences } from "../../src/spec/index.js";
+import { fromYaml } from "../yaml.js";
 import { applyFix, DASHBOARD, projectFrom } from "./helpers.js";
 
 describe("HM2024", () => {
@@ -23,13 +24,13 @@ describe("HM2024", () => {
     expect(found.map((d) => d.pointer)).toEqual(["/blocks/0/span", "/blocks/1/span"]);
     expect(found[0]).toMatchObject({
       severity: "warning",
-      file: "dashboards/sales.json",
+      file: "dashboards/sales.yaml",
       message: "a line chart needs at least 3 of the 12 columns, but this one has span 1",
       fix: { text: "3", applicability: "safe" },
       docs: "hatchmark explain HM2024",
     });
     const fixed = applyFix(project.dashboards.get("sales")?.document.text ?? "", found[0]?.fix);
-    expect(JSON.parse(fixed).blocks[0].span).toBe(3);
+    expect(fromYaml(fixed).blocks[0].span).toBe(3);
   });
 
   it("is quiet from span 3, and for tables and KPIs at any span", () => {

@@ -26,21 +26,21 @@ it("keeps the exact series cutoff for a timestamp source with a freshness lag", 
   ] as const;
   const range = { start: "2026-10-31", end: "2026-11-02" };
   const { root, project } = await writeProject({
-    "hatchmark.json": {
+    "hatchmark.yaml": {
       ...PROJECT_DEFAULTS,
       name: "Horizon repro",
       timezone: "America/New_York",
       sources: { orders: { type: "csv", path: "orders.csv", freshness: { lag: { hours: 2 } } } },
     },
     "orders.csv": `at,v\n${pairs.map((pair) => pair.join(",")).join("\n")}\n`,
-    "metrics/orders.json": metric({
+    "metrics/orders.yaml": metric({
       type: "aggregate",
       table: "orders",
       aggregate: "sum",
       column: "v",
       time: "at",
     }),
-    "dashboards/d.json": {
+    "dashboards/d.yaml": {
       title: "D",
       period: { asOf: "2026-11-01", range: "last_7_days", compare: "none" },
       filters: [{ type: "period", id: "period", options: ["last_7_days"], default: "last_7_days" }],
@@ -75,7 +75,7 @@ it("keeps the four-argument assemble, equal to runDashboard, on the explorer exa
   const root = EXAMPLE;
   const { project } = await loadAt(root);
   const config = project.config.spec;
-  if (config === undefined) throw new Error("invalid hatchmark.json");
+  if (config === undefined) throw new Error("invalid hatchmark.yaml");
   const db = await createDuckDbExecutor({ root, config });
   try {
     const { plan } = planDashboard(project, "explorer");

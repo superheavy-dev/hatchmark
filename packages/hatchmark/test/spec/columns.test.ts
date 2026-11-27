@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { resolveParams } from "../../src/compiler/index.js";
 import { checkReferences, hasColumn, sameColumn } from "../../src/spec/index.js";
+import { fromYaml } from "../yaml.js";
 import { applyFix, DASHBOARD, METRICS, projectFrom } from "./helpers.js";
 
 describe("column names", () => {
@@ -69,13 +70,13 @@ describe("HM3008", () => {
     expect(rest).toEqual([]);
     expect(d).toMatchObject({
       severity: "error",
-      file: "dashboards/sales.json",
+      file: "dashboards/sales.yaml",
       pointer: "/filters/0/default",
       message: 'filter "region" selects one value, but its default is a list',
       fix: { text: '"West"', applicability: "safe" },
     });
     const fixed = applyFix(project.dashboards.get("sales")?.document.text ?? "", d?.fix);
-    expect(JSON.parse(fixed).filters[0].default).toBe("West");
+    expect(fromYaml(fixed).filters[0].default).toBe("West");
   });
 
   it("offers multiple: true as an unsafe fix for a longer list, and no fix for an empty one", () => {
@@ -88,7 +89,7 @@ describe("HM3008", () => {
     });
     const project = withFilter({ default: ["West", "East"] });
     const fixed = applyFix(project.dashboards.get("sales")?.document.text ?? "", many?.fix);
-    expect(JSON.parse(fixed).filters[0]).toMatchObject({
+    expect(fromYaml(fixed).filters[0]).toMatchObject({
       multiple: true,
       default: ["West", "East"],
     });

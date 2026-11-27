@@ -5,6 +5,7 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { run as cli } from "../../src/cli/main.js";
 import { printSql, type SqlValue, sqlType } from "../../src/compiler/index.js";
 import { boundParams } from "../../src/node/duckdb.js";
+import { toYaml } from "../yaml.js";
 import { removeProjects, writeProject } from "./fixture.js";
 
 afterAll(removeProjects);
@@ -368,7 +369,7 @@ describe("a hostile project's printed SQL runs like its bound SQL", () => {
 
   beforeAll(async () => {
     const files: Record<string, unknown> = {
-      "hatchmark.json": {
+      "hatchmark.yaml": {
         version: 1,
         name: "Hostile",
         dataDir: "data",
@@ -384,9 +385,9 @@ describe("a hostile project's printed SQL runs like its bound SQL", () => {
         sources: { events: { type: "csv", path: "data/events.csv" } },
       },
       "data/events.csv": hostileCsv(),
-      "dashboards/hostile.json": DASHBOARD,
+      "dashboards/hostile.yaml": DASHBOARD,
     };
-    for (const [name, m] of Object.entries(METRICS)) files[`metrics/${name}.json`] = m;
+    for (const [name, m] of Object.entries(METRICS)) files[`metrics/${name}.yaml`] = m;
     ({ root } = await writeProject(files));
   });
 
@@ -495,14 +496,14 @@ describe("a hostile project's printed SQL runs like its bound SQL", () => {
   ])(
     "check rejects the reserved $hm_p prefix in a sql metric (%s), and explain refuses to run",
     async (_, sql) => {
-      const file = path.join(root, "metrics/r_reserved.json");
-      await writeFile(file, JSON.stringify(sqlMetric(sql)));
+      const file = path.join(root, "metrics/r_reserved.yaml");
+      await writeFile(file, toYaml(sqlMetric(sql)));
       try {
         const check = await hatchmark("check", "--json");
         expect(check.code).not.toBe(0);
         const hits = (
           JSON.parse(check.stdout).diagnostics as { code: string; file?: string }[]
-        ).filter((d) => d.file === "metrics/r_reserved.json");
+        ).filter((d) => d.file === "metrics/r_reserved.yaml");
         expect(hits.map((d) => d.code)).toEqual(["HM3005"]);
         expect((await hatchmark("explain", "k_count", "--json")).code).not.toBe(0);
       } finally {
@@ -512,10 +513,10 @@ describe("a hostile project's printed SQL runs like its bound SQL", () => {
   );
 
   it("check accepts sql that only looks like the reserved prefix", async () => {
-    const file = path.join(root, "metrics/r_ok.json");
+    const file = path.join(root, "metrics/r_ok.yaml");
     await writeFile(
       file,
-      JSON.stringify(sqlMetric("count(*) FILTER (WHERE \"Order Status\" <> 'hm_p1 $hm $1')")),
+      toYaml(sqlMetric("count(*) FILTER (WHERE \"Order Status\" <> 'hm_p1 $hm $1')")),
     );
     try {
       expect((await hatchmark("check", "--json")).code).toBe(0);
@@ -525,17 +526,18 @@ describe("a hostile project's printed SQL runs like its bound SQL", () => {
   });
 
   it("check rejects a spec number that parses to Infinity (1e400)", async () => {
-    const file = path.join(root, "metrics/f_inf.json");
+    const file = path.join(root, "metrics/f_inf.yaml");
     await writeFile(
       file,
-      JSON.stringify(
-        agg({ aggregate: "count", filters: [F("amount", "lt", { value: 0 })] }),
-      ).replace('"value":0', '"value":1e400'),
+      toYaml(agg({ aggregate: "count", filters: [F("amount", "lt", { value: 0 })] })).replace(
+        "value: 0\n",
+        "value: 1e400\n",
+      ),
     );
     try {
       const check = await hatchmark("check", "--json");
       expect(check.code).not.toBe(0);
-      expect(check.stdout).toContain("f_inf.json");
+      expect(check.stdout).toContain("f_inf.yaml");
     } finally {
       await rm(file);
     }

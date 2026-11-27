@@ -1,12 +1,12 @@
 import { describe, expect, it } from "vitest";
 import { checkReferences, parseDiagnostics } from "../../src/spec/index.js";
+import { fromYaml, toYaml } from "../yaml.js";
 import { applyFix, DASHBOARD, projectFrom } from "./helpers.js";
 
 const dashboard = (...blocks: unknown[]) => ({ sales: { ...DASHBOARD, filters: [], blocks } });
 const refs = (...blocks: unknown[]) =>
   checkReferences(projectFrom({ dashboards: dashboard(...blocks) }));
-const text = (block: unknown) =>
-  `${JSON.stringify({ ...DASHBOARD, filters: [], blocks: [block] }, null, 2)}\n`;
+const text = (block: unknown) => `${toYaml({ ...DASHBOARD, filters: [], blocks: [block] })}`;
 
 describe("stack checks", () => {
   it("accepts stack true, false and percent, and rejects other values (HM3004)", () => {
@@ -56,7 +56,7 @@ describe("stack checks", () => {
       label: "ratio does not add up across rows",
       fix: { text: "true", applicability: "unsafe" },
     });
-    expect(applyFix(text(block), d?.fix)).toContain('"stack": true');
+    expect(applyFix(text(block), d?.fix)).toContain("stack: true\n");
     const [distinct] = refs({
       type: "bar",
       metrics: ["merchants"],
@@ -105,8 +105,8 @@ describe("stack checks", () => {
         fix: { text: "false", applicability: "unsafe" },
       });
       const fixed = applyFix(text(block), d?.fix);
-      expect(fixed).toContain('"stack": false');
-      expect(refs(JSON.parse(fixed).blocks[0])).toEqual([]);
+      expect(fixed).toContain("stack: false\n");
+      expect(refs(fromYaml(fixed).blocks[0])).toEqual([]);
     }
   });
 

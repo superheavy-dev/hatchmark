@@ -1,20 +1,14 @@
-{
-  "$schema": "../../../schema/metric.schema.json",
-  "label": "Orders",
-  "description": "Paid orders.",
-  "type": "aggregate",
-  "table": "orders",
-  "aggregate": "count",
-  "filters": [
-    {
-      "column": "status",
-      "op": "eq",
-      "value": "paid"
-    }
-  ],
-  "time": "ordered_at",
-  "format": {
-    "type": "number"
-  },
-  "better": "up"
-}
+# yaml-language-server: $schema=../../../schema/metric.schema.json
+label: Orders
+description: Paid orders.
+type: aggregate
+table: orders
+aggregate: count
+filters:
+  - column: status
+    op: eq
+    value: paid
+time: ordered_at
+format:
+  type: number
+better: up

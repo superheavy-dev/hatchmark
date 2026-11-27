@@ -1,12 +1,11 @@
 import { describe, expect, it } from "vitest";
 import { PROJECT_DEFAULTS, parseSpecFile } from "../../src/spec/index.js";
+import { fromYaml, toYaml } from "../yaml.js";
 import { applyFix, CONFIG, DASHBOARD, METRICS, projectFrom } from "./helpers.js";
 
-const json = (v: unknown): string => `${JSON.stringify(v, null, 2)}\n`;
-
 function diagnose(kind: "project" | "metric" | "dashboard", value: unknown, name = "x") {
-  const file = kind === "project" ? "hatchmark.json" : `${kind}s/${name}.json`;
-  return parseSpecFile(kind, file, typeof value === "string" ? value : json(value)).diagnostics;
+  const file = kind === "project" ? "hatchmark.yaml" : `${kind}s/${name}.yaml`;
+  return parseSpecFile(kind, file, typeof value === "string" ? value : toYaml(value)).diagnostics;
 }
 
 describe("spec schemas", () => {
@@ -30,12 +29,12 @@ describe("spec schemas", () => {
       range: { start: { line: 1, column: 1 } },
       fix: { applicability: "safe" },
     });
-    const fixed = applyFix(json(rest), d?.fix);
-    expect(JSON.parse(fixed)).toEqual({ ...rest, locale: PROJECT_DEFAULTS.locale });
-    expect(fixed).toContain('\n  "locale": "en-US"\n}');
+    const fixed = applyFix(toYaml(rest), d?.fix);
+    expect(fromYaml(fixed)).toEqual({ ...rest, locale: PROJECT_DEFAULTS.locale });
+    expect(fixed).toContain('\n"locale": "en-US"');
     expect(diagnose("project", fixed)).toEqual([]);
     const compact = JSON.stringify(rest);
-    expect(JSON.parse(applyFix(compact, diagnose("project", compact)[0]?.fix))).toEqual({
+    expect(fromYaml(applyFix(compact, diagnose("project", compact)[0]?.fix))).toEqual({
       ...rest,
       locale: "en-US",
     });
@@ -301,15 +300,15 @@ describe("spec schemas", () => {
     expect(diagnose("dashboard", DASHBOARD, "sales-overview")).toEqual([]);
   });
 
-  it("stop at JSON syntax errors without schema noise", () => {
-    expect(diagnose("dashboard", '{"title": "x",}').map((d) => d.code)).toEqual(["HM1002"]);
+  it("stop at YAML syntax errors without schema noise", () => {
+    expect(diagnose("dashboard", "title: x\n  blocks: [\n").map((d) => d.code)).toEqual(["HM1002"]);
   });
 
   it("validate after duplicate keys but keep the file unusable", () => {
     const file = parseSpecFile(
       "metric",
-      "metrics/orders.json",
-      json(METRICS.orders).replace('"label"', '"label": "A",\n  "label"'),
+      "metrics/orders.yaml",
+      toYaml(METRICS.orders).replace("label:", "label: A\nlabel:"),
     );
     expect(file.diagnostics.map((d) => d.code)).toEqual(["HM1003"]);
     expect(file.spec).toBeUndefined();

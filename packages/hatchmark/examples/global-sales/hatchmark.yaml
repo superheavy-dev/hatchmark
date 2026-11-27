@@ -1,21 +1,17 @@
-{
-  "$schema": "../../schema/project.schema.json",
-  "version": 1,
-  "name": "Global Sales",
-  "dataDir": "data",
-  "metricsDir": "metrics",
-  "dashboardsDir": "dashboards",
-  "outDir": "dist",
-  "locale": "en-US",
-  "currency": "USD",
-  "timezone": "America/New_York",
-  "weekStart": "sunday",
-  "theme": "default",
-  "telemetry": false,
-  "sources": {
-    "orders": {
-      "type": "csv",
-      "path": "data/orders.csv"
-    }
-  }
-}
+# yaml-language-server: $schema=../../schema/project.schema.json
+version: 1
+name: Global Sales
+dataDir: data
+metricsDir: metrics
+dashboardsDir: dashboards
+outDir: dist
+locale: en-US
+currency: USD
+timezone: America/New_York
+weekStart: sunday
+theme: default
+telemetry: false
+sources:
+  orders:
+    type: csv
+    path: data/orders.csv

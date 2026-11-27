@@ -41,7 +41,7 @@ async function withExecutor<T>(
   f: (executor: Awaited<ReturnType<typeof createDuckDbExecutor>>) => Promise<T>,
 ): Promise<T> {
   const config = project.config.spec;
-  if (config === undefined) throw new Error("invalid hatchmark.json");
+  if (config === undefined) throw new Error("invalid hatchmark.yaml");
   const executor = await createDuckDbExecutor({ root, config });
   try {
     return await f(executor);
@@ -90,12 +90,12 @@ describe("explain", () => {
 
   it("prints a fractional filter on a FLOAT column with the type it runs with", async () => {
     const { root } = await writeProject({
-      "hatchmark.json": {
+      "hatchmark.yaml": {
         ...PROJECT_DEFAULTS,
         name: "t",
         sources: { t: { type: "parquet", path: "data/t.parquet" } },
       },
-      "metrics/tenths.json": metric({
+      "metrics/tenths.yaml": metric({
         type: "aggregate",
         table: "t",
         aggregate: "count",
@@ -126,20 +126,20 @@ describe("explain", () => {
 
   it("filters adjacent BIGINT values exactly, and prints what runs", async () => {
     const { root, project } = await writeProject({
-      "hatchmark.json": {
+      "hatchmark.yaml": {
         ...PROJECT_DEFAULTS,
         name: "t",
         sources: { t: { type: "csv", path: "data/t.csv" } },
       },
       "data/t.csv": "d,x\n2026-01-15,9007199254740996\n2026-01-15,9007199254740997\n",
-      "metrics/exact.json": metric({
+      "metrics/exact.yaml": metric({
         type: "aggregate",
         table: "t",
         aggregate: "count",
         time: "d",
         filters: [{ column: "x", op: "eq", value: 9007199254740996 }],
       }),
-      "dashboards/d.json": {
+      "dashboards/d.yaml": {
         title: "D",
         period: { asOf: "2026-01-31", range: "all_time", compare: "none" },
         blocks: [{ type: "kpi", metric: "exact" }],
@@ -165,20 +165,20 @@ describe("explain", () => {
 
   it("builds and prints a whole-number filter past int64 as HUGEINT", async () => {
     const { root, project } = await writeProject({
-      "hatchmark.json": {
+      "hatchmark.yaml": {
         ...PROJECT_DEFAULTS,
         name: "t",
         sources: { t: { type: "csv", path: "data/t.csv" } },
       },
       "data/t.csv": "d,x\n2026-01-15,5\n",
-      "metrics/huge.json": metric({
+      "metrics/huge.yaml": metric({
         type: "aggregate",
         table: "t",
         aggregate: "count",
         time: "d",
         filters: [{ column: "x", op: "lt", value: 1e19 }],
       }),
-      "dashboards/d.json": {
+      "dashboards/d.yaml": {
         title: "D",
         period: { asOf: "2026-01-15", range: "all_time", compare: "none" },
         blocks: [{ type: "kpi", metric: "huge" }],
@@ -204,24 +204,24 @@ describe("explain", () => {
 
   it("reports the planner's warning for a block it leaves out, with no queries", async () => {
     const { root, project } = await writeProject({
-      "hatchmark.json": {
+      "hatchmark.yaml": {
         ...PROJECT_DEFAULTS,
         name: "t",
         sources: { orders: { type: "csv", path: "data/orders.csv" } },
       },
       "data/orders.csv": "ordered_at,status\n2026-01-01,paid\n",
-      "segments/paid.json": {
+      "segments/paid.yaml": {
         label: "Paid",
         filters: [{ column: "status", op: "eq", value: "paid" }],
       },
-      "metrics/paid.json": metric({
+      "metrics/paid.yaml": metric({
         type: "aggregate",
         table: "orders",
         aggregate: "count",
         time: "ordered_at",
         segments: ["paid"],
       }),
-      "dashboards/d.json": { title: "D", blocks: [{ type: "kpi", id: "k", metric: "paid" }] },
+      "dashboards/d.yaml": { title: "D", blocks: [{ type: "kpi", id: "k", metric: "paid" }] },
     });
     const [byMetric, byBlock] = await withExecutor(root, project, async (e) => [
       await explainMetric(project, "paid", e),
@@ -253,14 +253,14 @@ describe("explain", () => {
 
   it("reads a metric without a time column once, over all rows", async () => {
     const { root, project } = await writeProject({
-      "hatchmark.json": {
+      "hatchmark.yaml": {
         ...PROJECT_DEFAULTS,
         name: "t",
         sources: { items: { type: "csv", path: "data/items.csv" } },
       },
       "data/items.csv": "sku,price\na,1\nb,2\n",
-      "metrics/skus.json": metric({ type: "aggregate", table: "items", aggregate: "count" }),
-      "dashboards/d.json": {
+      "metrics/skus.yaml": metric({ type: "aggregate", table: "items", aggregate: "count" }),
+      "dashboards/d.yaml": {
         title: "D",
         period: { asOf: "2026-01-01" },
         blocks: [{ type: "kpi", metric: "skus" }],

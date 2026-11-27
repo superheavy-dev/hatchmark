@@ -32,7 +32,7 @@ async function table(
   extra: Record<string, unknown> = {},
 ) {
   const fixture = await writeProject({
-    "hatchmark.json": {
+    "hatchmark.yaml": {
       ...PROJECT_DEFAULTS,
       name: "Table windows",
       timezone: "America/New_York",
@@ -44,9 +44,9 @@ async function table(
       Object.entries(SOURCES).map(([key, csv]) => [`${key}.csv`, columns + csv]),
     ),
     ...Object.fromEntries(
-      Object.entries({ ...METRICS, ...extra }).map(([key, spec]) => [`metrics/${key}.json`, spec]),
+      Object.entries({ ...METRICS, ...extra }).map(([key, spec]) => [`metrics/${key}.yaml`, spec]),
     ),
-    "dashboards/d.json": {
+    "dashboards/d.yaml": {
       title: "D",
       period: { asOf: "2026-11-05", range, compare: "none" },
       blocks: [{ id: "t", type: "table", by: ["market"], metrics }],

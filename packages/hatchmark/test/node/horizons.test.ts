@@ -28,7 +28,7 @@ async function project(options: {
     sessions: metric({ type: "aggregate", table: "sessions", aggregate: "count", time: "day" }),
   };
   return writeProject({
-    "hatchmark.json": {
+    "hatchmark.yaml": {
       ...PROJECT_DEFAULTS,
       name: "Horizons",
       timezone: options.timezone ?? "UTC",
@@ -40,8 +40,8 @@ async function project(options: {
     "orders.csv": ORDERS,
     "sessions.csv": SESSIONS,
     ...options.files,
-    ...Object.fromEntries(Object.entries(metrics).map(([n, m]) => [`metrics/${n}.json`, m])),
-    "dashboards/d.json": {
+    ...Object.fromEntries(Object.entries(metrics).map(([n, m]) => [`metrics/${n}.yaml`, m])),
+    "dashboards/d.yaml": {
       title: "D",
       period: {
         asOf: options.asOf ?? "latest_data",
@@ -279,7 +279,7 @@ async function sources(
   options: { timezone?: string; files?: Record<string, unknown>; blocks?: unknown[] } = {},
 ) {
   return writeProject({
-    "hatchmark.json": {
+    "hatchmark.yaml": {
       ...PROJECT_DEFAULTS,
       name: "Edges",
       timezone: options.timezone ?? "UTC",
@@ -290,7 +290,7 @@ async function sources(
     ...Object.fromEntries(Object.entries(csv).map(([n, s]) => [`${n}.csv`, s.text])),
     ...Object.fromEntries(
       Object.entries(csv).map(([n, s]) => [
-        `metrics/${n}.json`,
+        `metrics/${n}.yaml`,
         metric({
           type: "aggregate",
           table: n,
@@ -301,7 +301,7 @@ async function sources(
       ]),
     ),
     ...options.files,
-    "dashboards/d.json": {
+    "dashboards/d.yaml": {
       title: "D",
       period: { compare: "none", ...period },
       blocks: options.blocks ?? Object.keys(csv).map((n) => ({ type: "kpi", id: n, metric: n })),
@@ -435,7 +435,7 @@ describe("horizon edges", () => {
         { asOf: "2026-06-10", range },
         {
           files: {
-            "metrics/share.json": metric({ type: "ratio", numerator: "num", denominator: "den" }),
+            "metrics/share.yaml": metric({ type: "ratio", numerator: "num", denominator: "den" }),
           },
           blocks: [
             { type: "kpi", id: "share", metric: "share" },
@@ -482,7 +482,7 @@ describe("horizon edges", () => {
       { asOf: "latest_data", range: "all_time" },
       {
         files: {
-          "metrics/shipped.json": metric({
+          "metrics/shipped.yaml": metric({
             type: "aggregate",
             table: "orders",
             aggregate: "sum",

@@ -4,6 +4,7 @@ import path from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import { run } from "../../src/cli/main.js";
 import { jsonSchema } from "../../src/spec/index.js";
+import { fromYaml } from "../yaml.js";
 
 const dirs: string[] = [];
 afterEach(async () => {
@@ -49,18 +50,18 @@ describe("hatchmark init and check", () => {
       next: ["hatchmark check --cwd shop"],
     });
     expect(init.json().created).toEqual([
-      "hatchmark.json",
+      "hatchmark.yaml",
       "data/orders.csv",
-      "metrics/revenue.json",
-      "metrics/orders.json",
-      "metrics/avg_order_value.json",
-      "metrics/customers.json",
-      "dashboards/sales.json",
+      "metrics/revenue.yaml",
+      "metrics/orders.yaml",
+      "metrics/avg_order_value.yaml",
+      "metrics/customers.yaml",
+      "dashboards/sales.yaml",
       "AGENTS.md",
       "CLAUDE.md",
       ".gitignore",
     ]);
-    const config = JSON.parse(await readFile(path.join(cwd, "shop/hatchmark.json"), "utf8"));
+    const config = fromYaml(await readFile(path.join(cwd, "shop/hatchmark.yaml"), "utf8"));
     expect(config).toMatchObject({
       name: "shop",
       locale: "en-US",
@@ -84,9 +85,9 @@ describe("hatchmark init and check", () => {
     await cli(["init", "a", "--name", "x"], { cwd });
     await cli(["init", "b", "--name", "x"], { cwd });
     for (const file of [
-      "hatchmark.json",
+      "hatchmark.yaml",
       "data/orders.csv",
-      "dashboards/sales.json",
+      "dashboards/sales.yaml",
       "AGENTS.md",
     ]) {
       expect(await readFile(path.join(cwd, "a", file), "utf8"), file).toBe(
@@ -103,18 +104,18 @@ describe("hatchmark init and check", () => {
   it("refuses to overwrite without --force and writes nothing", async () => {
     const cwd = await tempDir();
     await cli(["init"], { cwd });
-    await writeFile(path.join(cwd, "metrics/revenue.json"), "{}");
+    await writeFile(path.join(cwd, "metrics/revenue.yaml"), "{}");
     const again = await cli(["init"], { cwd });
     expect(again.code).toBe(2);
     expect(again.json().diagnostics[0]).toMatchObject({
       code: "HM0004",
-      expected: expect.arrayContaining(["hatchmark.json"]),
+      expected: expect.arrayContaining(["hatchmark.yaml"]),
     });
-    expect(await readFile(path.join(cwd, "metrics/revenue.json"), "utf8")).toBe("{}");
+    expect(await readFile(path.join(cwd, "metrics/revenue.yaml"), "utf8")).toBe("{}");
     const forced = await cli(["init", "--force"], { cwd });
     expect(forced.code).toBe(0);
-    expect(forced.json().updated).toEqual(["metrics/revenue.json"]);
-    expect(forced.json().unchanged).toContain("hatchmark.json");
+    expect(forced.json().updated).toEqual(["metrics/revenue.yaml"]);
+    expect(forced.json().unchanged).toContain("hatchmark.yaml");
   });
 
   it("merges AGENTS.md and .gitignore and leaves an existing CLAUDE.md alone", async () => {
@@ -152,14 +153,14 @@ describe("hatchmark init and check", () => {
     const cwd = await tempDir();
     await cli(["init"], { cwd });
     await writeFile(
-      path.join(cwd, "dashboards/broken.json"),
+      path.join(cwd, "dashboards/broken.yaml"),
       '{"title": "x", "blocks": [{"type": "kpi", "metric": "revenu"}]}',
     );
     const broken = await cli(["check"], { cwd });
     expect(broken.code).toBe(1);
     expect(broken.json().diagnostics.map((d: { code: string }) => d.code)).toEqual(["HM2003"]);
     expect((await cli(["check", "metrics"], { cwd })).json().ok).toBe(true);
-    await rm(path.join(cwd, "dashboards/broken.json"));
+    await rm(path.join(cwd, "dashboards/broken.yaml"));
     await rm(path.join(cwd, "data/orders.csv"));
     const missing = await cli(["check"], { cwd });
     expect(missing.code).toBe(3);
@@ -174,12 +175,12 @@ describe("hatchmark init and check", () => {
     const cwd = await tempDir();
     await cli(["init"], { cwd });
     await writeFile(
-      path.join(cwd, "dashboards/broken.json"),
+      path.join(cwd, "dashboards/broken.yaml"),
       '{"title": "x", "blocks": [{"type": "kpi", "metric": "revenu"}]}',
     );
     const out = await cli(["check", "--no-color"], { cwd, tty: true });
     expect(out.stdout).toContain('error[HM2003]: unknown metric "revenu"');
-    expect(out.stdout).toContain(" --> dashboards/broken.json:1:");
+    expect(out.stdout).toContain(" --> dashboards/broken.yaml:1:");
     expect(out.stdout).not.toContain("\u001b[");
     expect((await cli(["check"], { cwd, tty: true, env: { NO_COLOR: "1" } })).stdout).not.toContain(
       "\u001b[",
@@ -264,10 +265,10 @@ describe("CLI regressions", () => {
     const cwd = await tempDir();
     await cli(["init", "p"], { cwd });
     await writeFile(
-      path.join(cwd, "p/dashboards/bad.json"),
+      path.join(cwd, "p/dashboards/bad.yaml"),
       '{"title":"Broken","blocks":[{"type":"kpi","metric":"revenu"}]}',
     );
-    const out = await cli(["check", "--cwd", "p", "dashboards/bad.json"], { cwd });
+    const out = await cli(["check", "--cwd", "p", "dashboards/bad.yaml"], { cwd });
     expect(out.code).toBe(1);
     expect(out.json().diagnostics.map((d: { code: string }) => d.code)).toEqual(["HM2003"]);
   });
@@ -282,7 +283,7 @@ describe("CLI regressions", () => {
         code: "HM0004",
         expected: ["data/orders.csv"],
       });
-      await expect(readFile(path.join(cwd, "hatchmark.json"))).rejects.toThrow();
+      await expect(readFile(path.join(cwd, "hatchmark.yaml"))).rejects.toThrow();
     }
     const dangling = await tempDir();
     await symlink("notes", path.join(dangling, "CLAUDE.md"));
@@ -290,7 +291,7 @@ describe("CLI regressions", () => {
     expect(out.code).toBe(2);
     expect(out.json().diagnostics[0]).toMatchObject({ code: "HM0004", expected: ["CLAUDE.md"] });
     await expect(readFile(path.join(dangling, "notes"))).rejects.toThrow();
-    await expect(readFile(path.join(dangling, "hatchmark.json"))).rejects.toThrow();
+    await expect(readFile(path.join(dangling, "hatchmark.yaml"))).rejects.toThrow();
     const linked = await tempDir();
     await writeFile(path.join(linked, "CLAUDE.md"), "My Claude notes\n");
     await symlink("CLAUDE.md", path.join(linked, "AGENTS.md"));
@@ -332,7 +333,7 @@ describe("CLI regressions", () => {
         expect(out.json().diagnostics[0], text).toMatchObject({ code: "HM0005", expected: lines });
       }
       expect(await readFile(path.join(cwd, "AGENTS.md"), "utf8")).toBe(text);
-      await expect(readFile(path.join(cwd, "hatchmark.json"))).rejects.toThrow();
+      await expect(readFile(path.join(cwd, "hatchmark.yaml"))).rejects.toThrow();
     }
   });
 
@@ -384,8 +385,8 @@ describe("CLI regressions", () => {
     });
     expect(macStyle.code).toBe(0);
     expect(macStyle.json().root).toBe(path.join(await realpath(cwd), "private/tmp/x"));
-    expect(await readFile(path.join(cwd, "private/tmp/x/hatchmark.json"), "utf8")).toContain(
-      '"name": "x"',
+    expect(await readFile(path.join(cwd, "private/tmp/x/hatchmark.yaml"), "utf8")).toContain(
+      "name: x\n",
     );
     expect(
       (await cli(["init", "--template", "minimal", "--force"], { cwd: path.join(cwd, "tmp/x") }))
@@ -404,14 +405,14 @@ describe("CLI regressions", () => {
       expect(out.code).toBe(2);
       expect(out.json().diagnostics[0]).toMatchObject({ code: "HM0004", expected: ["data"] });
     }
-    await expect(readFile(path.join(inside, "hatchmark.json"))).rejects.toThrow();
+    await expect(readFile(path.join(inside, "hatchmark.yaml"))).rejects.toThrow();
   });
 
-  it("checks hatchmark.json first, whatever the path scope", async () => {
+  it("checks hatchmark.yaml first, whatever the path scope", async () => {
     const cwd = await tempDir();
     await cli(["init"], { cwd });
-    await writeFile(path.join(cwd, "hatchmark.json"), "{");
-    for (const scope of [["dashboards/sales.json"], ["metrics"], ["data/orders.csv"]]) {
+    await writeFile(path.join(cwd, "hatchmark.yaml"), "{");
+    for (const scope of [["dashboards/sales.yaml"], ["metrics"], ["data/orders.csv"]]) {
       const out = await cli(["check", ...scope], { cwd });
       expect(out.code, scope.join(" ")).toBe(2);
       expect(out.json().diagnostics[0].code).toBe("HM1002");
@@ -430,9 +431,9 @@ describe("CLI regressions", () => {
     }
   });
 
-  it("exits 2 for a malformed hatchmark.json and for inherited property names as commands", async () => {
+  it("exits 2 for a malformed hatchmark.yaml and for inherited property names as commands", async () => {
     const cwd = await tempDir();
-    await writeFile(path.join(cwd, "hatchmark.json"), "{");
+    await writeFile(path.join(cwd, "hatchmark.yaml"), "{");
     const out = await cli(["check"], { cwd });
     expect(out.code).toBe(2);
     expect(out.json().diagnostics[0].code).toBe("HM1002");
@@ -550,8 +551,8 @@ describe("schema, explain, version, doctor", () => {
     expect((await cli(["check", "--cwd", "shop"], { cwd })).json()).not.toHaveProperty("sql");
 
     await writeFile(
-      path.join(cwd, "shop/metrics/hm1.json"),
-      await readFile(path.join(cwd, "shop/metrics/orders.json"), "utf8"),
+      path.join(cwd, "shop/metrics/hm1.yaml"),
+      await readFile(path.join(cwd, "shop/metrics/orders.yaml"), "utf8"),
     );
     expect((await cli(["explain", "hm1", "--cwd", "shop"], { cwd })).json()).toMatchObject({
       metric: "hm1",
@@ -560,14 +561,14 @@ describe("schema, explain, version, doctor", () => {
       code: "HM2003",
     });
 
-    await writeFile(path.join(cwd, "shop/metrics/unused.json"), "{\n");
-    const scoped = ["check", "dashboards/sales.json", "--cwd", "shop"];
+    await writeFile(path.join(cwd, "shop/metrics/unused.yaml"), "{\n");
+    const scoped = ["check", "dashboards/sales.yaml", "--cwd", "shop"];
     expect((await cli(scoped, { cwd })).code).toBe(0);
     const blocked = await cli([...scoped, "--sql"], { cwd });
     expect(blocked.code).toBe(1);
     expect(
       blocked.json().diagnostics.map((d: { code: string; file: string }) => [d.code, d.file]),
-    ).toEqual([["HM2015", "dashboards/sales.json"]]);
+    ).toEqual([["HM2015", "dashboards/sales.yaml"]]);
     expect(blocked.json().sql).toEqual([]);
   });
 

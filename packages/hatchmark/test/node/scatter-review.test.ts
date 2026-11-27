@@ -4,6 +4,7 @@ import type { ScatterData, TableData } from "../../src/compiler/index.js";
 import { renderFragment } from "../../src/render/index.js";
 import { checkReferences, PROJECT_DEFAULTS } from "../../src/spec/index.js";
 import { applyFix, DASHBOARD, projectFrom } from "../spec/helpers.js";
+import { fromYaml } from "../yaml.js";
 import { metric, Oracle, removeProjects, run, writeProject } from "./fixture.js";
 
 afterAll(removeProjects);
@@ -40,7 +41,7 @@ async function check(
   filters: unknown[] = [],
 ) {
   const fixture = await writeProject({
-    "hatchmark.json": {
+    "hatchmark.yaml": {
       ...PROJECT_DEFAULTS,
       name: "Independent scatter oracle",
       timezone: "America/New_York",
@@ -52,9 +53,9 @@ async function check(
       Object.entries(sources).map(([key, csv]) => [`${key}.csv`, columns + csv]),
     ),
     ...Object.fromEntries(
-      Object.entries(metrics).map(([key, spec]) => [`metrics/${key}.json`, spec]),
+      Object.entries(metrics).map(([key, spec]) => [`metrics/${key}.yaml`, spec]),
     ),
-    "dashboards/d.json": {
+    "dashboards/d.yaml": {
       title: "D",
       period: { asOf: "2026-11-05", range, compare: "none" },
       filters,
@@ -250,7 +251,7 @@ it("the HM2024 safe edit and the documented HM5020/HM5021 manual edits clear the
   expect(span?.fix?.applicability).toBe("safe");
   const sales = spec.dashboards.get("sales");
   if (sales === undefined) throw new Error("sales dashboard missing");
-  const fixed = JSON.parse(applyFix(sales.document.text, span?.fix)).blocks[0];
+  const fixed = fromYaml(applyFix(sales.document.text, span?.fix)).blocks[0];
   expect(fixed.span).toBe(3);
   fixed.y = "avg_order_value";
   delete fixed.size;

@@ -6,6 +6,7 @@ import type { DashboardData, PieData } from "../../src/compiler/dashboard-data.j
 import type { Diagnostic } from "../../src/diagnostics/diagnostic.js";
 import { renderFragment } from "../../src/render/page.js";
 import { checkReferences } from "../../src/spec/index.js";
+import { toYaml } from "../yaml.js";
 import { Oracle, removeProjects, run, writeProject } from "./fixture.js";
 
 type Key = string | number | boolean | null;
@@ -597,10 +598,10 @@ async function cliCheck(file: string): Promise<Diagnostic[]> {
 beforeAll(async () => {
   oracle = await Oracle.open();
   project = await writeProject({
-    "hatchmark.json": CONFIG,
+    "hatchmark.yaml": CONFIG,
     ...data(),
-    ...Object.fromEntries(Object.entries(METRICS).map(([n, m]) => [`metrics/${n}.json`, m])),
-    ...Object.fromEntries(Object.entries(DASHBOARDS).map(([n, d]) => [`dashboards/${n}.json`, d])),
+    ...Object.fromEntries(Object.entries(METRICS).map(([n, m]) => [`metrics/${n}.yaml`, m])),
+    ...Object.fromEntries(Object.entries(DASHBOARDS).map(([n, d]) => [`dashboards/${n}.yaml`, d])),
   });
   const csv = (f: string) =>
     `read_csv('${path.join(project.root, "data", f)}', all_varchar = true)`;
@@ -640,10 +641,10 @@ describe("pie and donut against a SQL oracle", () => {
   });
 
   it("schema: limit 13 and limit 0 are rejected (HM3005)", async () => {
-    const file = path.join(project.root, "dashboards/schema.json");
+    const file = path.join(project.root, "dashboards/schema.yaml");
     await writeFile(
       file,
-      JSON.stringify({
+      toYaml({
         title: "Schema",
         period: MTD,
         blocks: [
@@ -653,7 +654,7 @@ describe("pie and donut against a SQL oracle", () => {
       }),
     );
     try {
-      const schema = (await cliCheck("dashboards/schema.json")).filter((d) => d.code === "HM3005");
+      const schema = (await cliCheck("dashboards/schema.yaml")).filter((d) => d.code === "HM3005");
       expect(schema.some((d) => d.pointer?.startsWith("/blocks/0"))).toBe(true);
       expect(schema.some((d) => d.pointer?.startsWith("/blocks/1"))).toBe(true);
     } finally {
@@ -663,7 +664,7 @@ describe("pie and donut against a SQL oracle", () => {
 
   it("check: non-additive metrics are HM4001 errors, additive ones are clean, limits past 6 warn HM5010", () => {
     expect(project.diagnostics).toEqual([]);
-    const diags = checkReferences(project.project).filter((d) => d.file?.endsWith("checks.json"));
+    const diags = checkReferences(project.project).filter((d) => d.file?.endsWith("checks.yaml"));
     const of = (id: string) => {
       const p = at(CHECKS, id);
       return diags.filter((d) => d.pointer === p || d.pointer?.startsWith(`${p}/`));

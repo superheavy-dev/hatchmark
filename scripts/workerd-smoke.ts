@@ -47,7 +47,7 @@ try {
   assert.equal(body.report.format_version, "1");
   assert.equal(body.report.error_count, 1);
   assert.equal(body.report.diagnostics[0].code, "HM2003");
-  assert.deepEqual(body.report.diagnostics[0].range.start, { line: 3, column: 40 });
+  assert.deepEqual(body.report.diagnostics[0].range.start, { line: 4, column: 13 });
   assert.match(body.human, /did you mean "revenue"\?/);
   assert.deepEqual(body.columns, ["ordered_at", "region", "amount"]);
   assert.match(body.schemaTitle, /dashboard/);

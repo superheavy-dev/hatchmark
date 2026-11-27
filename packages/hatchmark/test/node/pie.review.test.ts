@@ -39,14 +39,14 @@ let oracle: Oracle;
 
 beforeAll(async () => {
   project = await writeProject({
-    "hatchmark.json": {
+    "hatchmark.yaml": {
       ...PROJECT_DEFAULTS,
       name: "Parts",
       timezone: "America/New_York",
       sources: { orders: { type: "csv", path: "data/orders.csv" } },
     },
     "data/orders.csv": source,
-    "metrics/amount.json": metric(
+    "metrics/amount.yaml": metric(
       {
         label: "Revenue",
         type: "aggregate",
@@ -58,10 +58,10 @@ beforeAll(async () => {
       },
       { type: "currency", currency: "USD" },
     ),
-    "dashboards/ordinary.json": dashboard(),
-    "dashboards/filtered.json": dashboard("paid"),
-    "dashboards/negative.json": dashboard("negative"),
-    "dashboards/partial.json": {
+    "dashboards/ordinary.yaml": dashboard(),
+    "dashboards/filtered.yaml": dashboard("paid"),
+    "dashboards/negative.yaml": dashboard("negative"),
+    "dashboards/partial.yaml": {
       ...dashboard(),
       period: { ...period, range: { start: "2026-06-03", end: "2026-06-04" } },
       blocks: [category, { type: "table", by: ["category"], metrics: ["amount"] }],

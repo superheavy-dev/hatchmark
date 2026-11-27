@@ -175,10 +175,10 @@ function close(actual: Value | undefined, expected: number | null | undefined): 
 beforeAll(async () => {
   oracle = await Oracle.open();
   project = await writeProject({
-    "hatchmark.json": CONFIG,
+    "hatchmark.yaml": CONFIG,
     "data/orders.csv": orders(),
-    ...Object.fromEntries(Object.entries(METRICS).map(([n, m]) => [`metrics/${n}.json`, m])),
-    ...Object.fromEntries(Object.entries(DASHBOARDS).map(([n, d]) => [`dashboards/${n}.json`, d])),
+    ...Object.fromEntries(Object.entries(METRICS).map(([n, m]) => [`metrics/${n}.yaml`, m])),
+    ...Object.fromEntries(Object.entries(DASHBOARDS).map(([n, d]) => [`dashboards/${n}.yaml`, d])),
   });
   csv = path.join(project.root, "data/orders.csv");
   const [end] = await oracle.rows(

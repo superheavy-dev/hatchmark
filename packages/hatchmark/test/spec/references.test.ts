@@ -4,6 +4,7 @@ import {
   dashboardDependencies,
   dashboardsAffectedBy,
 } from "../../src/spec/index.js";
+import { fromYaml } from "../yaml.js";
 import { applyFix, CONFIG, DASHBOARD, METRICS, projectFrom } from "./helpers.js";
 
 function refs(files: Parameters<typeof projectFrom>[0]) {
@@ -22,9 +23,9 @@ describe("checkReferences", () => {
     expect(rest).toEqual([]);
     expect(d).toMatchObject({
       code: "HM2003",
-      file: "dashboards/sales.json",
+      file: "dashboards/sales.yaml",
       pointer: "/blocks/0/metric",
-      label: "no file metrics/revenu.json",
+      label: "no file metrics/revenu.yaml",
       help: 'did you mean "revenue"?',
       fix: { text: '"revenue"', applicability: "unsafe" },
     });
@@ -36,7 +37,7 @@ describe("checkReferences", () => {
     expect(refs({ metrics })).toMatchObject([
       {
         code: "HM2001",
-        file: "metrics/orders.json",
+        file: "metrics/orders.yaml",
         pointer: "/table",
         help: 'did you mean "orders"?',
       },
@@ -65,9 +66,9 @@ describe("checkReferences", () => {
     };
     const ds = refs({ metrics, dashboards: {} }).map((d) => [d.file, d.code, d.pointer]);
     expect(ds).toEqual([
-      ["metrics/a.json", "HM2004", "/numerator"],
-      ["metrics/b.json", "HM2004", "/numerator"],
-      ["metrics/b.json", "HM2003", "/denominator"],
+      ["metrics/a.yaml", "HM2004", "/numerator"],
+      ["metrics/b.yaml", "HM2004", "/numerator"],
+      ["metrics/b.yaml", "HM2003", "/denominator"],
     ]);
   });
 
@@ -127,7 +128,7 @@ describe("checkReferences", () => {
       columns,
       dashboards: withBlocks(table(["avg_order_value", "merchants"])),
     });
-    const fixed = JSON.parse(applyFix(text, first?.fix));
+    const fixed = fromYaml(applyFix(text, first?.fix));
     expect(fixed.blocks[0].percentOfTotal).toEqual(["merchants"]);
   });
 
@@ -400,14 +401,14 @@ describe("dependency graph", () => {
   });
 
   it("names the dashboards to recompile after an edit", () => {
-    expect(dashboardsAffectedBy(project, "hatchmark.json")).toEqual([
+    expect(dashboardsAffectedBy(project, "hatchmark.yaml")).toEqual([
       "merchants",
       "notes",
       "sales",
     ]);
-    expect(dashboardsAffectedBy(project, "metrics/orders.json")).toEqual(["notes", "sales"]);
+    expect(dashboardsAffectedBy(project, "metrics/orders.yaml")).toEqual(["notes", "sales"]);
     expect(dashboardsAffectedBy(project, "data/merchants.parquet")).toEqual(["merchants", "sales"]);
-    expect(dashboardsAffectedBy(project, "dashboards/notes.json")).toEqual(["notes"]);
+    expect(dashboardsAffectedBy(project, "dashboards/notes.yaml")).toEqual(["notes"]);
     expect(dashboardsAffectedBy(project, "README.md")).toEqual([]);
   });
 
@@ -421,6 +422,6 @@ describe("dependency graph", () => {
     expect(dashboardsAffectedBy(p, "data/orders.csv")).toEqual(["sales"]);
     expect(dashboardsAffectedBy(p, "./data/orders.csv")).toEqual(["sales"]);
     expect(dashboardsAffectedBy(p, "data\\orders.csv")).toEqual(["sales"]);
-    expect(dashboardsAffectedBy(p, "./hatchmark.json")).toEqual(["sales"]);
+    expect(dashboardsAffectedBy(p, "./hatchmark.yaml")).toEqual(["sales"]);
   });
 });

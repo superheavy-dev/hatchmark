@@ -139,7 +139,7 @@ const sumOf = (m: string) => (Object.hasOwn(SUM, m) ? SUM[m] : undefined);
 function metricFiles(): Record<string, unknown> {
   const files: Record<string, unknown> = {};
   for (const [name, m] of Object.entries(SUM)) {
-    files[`metrics/${name}.json`] = metric({
+    files[`metrics/${name}.yaml`] = metric({
       type: "aggregate",
       label: m.label,
       table: m.table,
@@ -150,7 +150,7 @@ function metricFiles(): Record<string, unknown> {
     });
   }
   for (const [name, r] of Object.entries(RATIO)) {
-    files[`metrics/${name}.json`] = metric({ type: "ratio", ...r });
+    files[`metrics/${name}.yaml`] = metric({ type: "ratio", ...r });
   }
   return files;
 }
@@ -169,7 +169,7 @@ interface Case {
 
 async function build(c: Case) {
   const fixture = await writeProject({
-    "hatchmark.json": {
+    "hatchmark.yaml": {
       ...PROJECT_DEFAULTS,
       name: "Windows",
       timezone: TZ,
@@ -186,7 +186,7 @@ async function build(c: Case) {
     },
     ...Object.fromEntries(Object.entries(SOURCES).map(([s, csv]) => [`${s}.csv`, `${csv}\n`])),
     ...metricFiles(),
-    "dashboards/d.json": {
+    "dashboards/d.yaml": {
       title: "D",
       period: { asOf: c.asOf, range: c.range, compare: "none" },
       blocks: [

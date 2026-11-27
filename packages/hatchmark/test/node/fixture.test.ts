@@ -16,7 +16,7 @@ it("copies a project without walking its build cache, which a concurrent build m
   const from = await mkdtemp(path.join(tmpdir(), "hatchmark-fixture-"));
   dirs.push(from);
   await mkdir(path.join(from, "data", "dist"), { recursive: true });
-  await writeFile(path.join(from, "hatchmark.json"), "{}");
+  await writeFile(path.join(from, "hatchmark.yaml"), "{}");
   await writeFile(path.join(from, "data", "dist", "kept.csv"), "a\n1\n");
   await mkdir(path.join(from, "dist"));
   await writeFile(path.join(from, "dist", "index.html"), "");
@@ -30,7 +30,7 @@ it("copies a project without walking its build cache, which a concurrent build m
     "data",
     path.join("data", "dist"),
     path.join("data", "dist", "kept.csv"),
-    "hatchmark.json",
+    "hatchmark.yaml",
   ]);
 });
 

@@ -150,7 +150,7 @@ const horizon = {} as Record<Source, string>;
 beforeAll(async () => {
   const metrics: Record<string, unknown> = {};
   for (const [name, [def, , source]] of Object.entries(LEAF))
-    metrics[`metrics/${name}.json`] = metric({
+    metrics[`metrics/${name}.yaml`] = metric({
       label: name,
       type: "aggregate",
       table: source,
@@ -158,14 +158,14 @@ beforeAll(async () => {
       ...def,
     });
   for (const [name, [numerator, denominator]] of Object.entries(RATIO))
-    metrics[`metrics/${name}.json`] = metric({
+    metrics[`metrics/${name}.yaml`] = metric({
       label: name,
       type: "ratio",
       numerator,
       denominator,
     });
   const fixture = await writeProject({
-    "hatchmark.json": {
+    "hatchmark.yaml": {
       version: 1,
       name: "table windows",
       dataDir: "data",
@@ -188,7 +188,7 @@ beforeAll(async () => {
     "data/visits.csv": csv(VISITS),
     "data/legacy.csv": csv(LEGACY),
     ...metrics,
-    "dashboards/w.json": {
+    "dashboards/w.yaml": {
       title: "W",
       period: {
         asOf: "latest_data",

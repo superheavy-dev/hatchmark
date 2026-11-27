@@ -310,15 +310,15 @@ const built: { ok?: boolean; diagnostics: { code: string; pointer?: string }[] }
 beforeAll(async () => {
   const metrics: Record<string, unknown> = {};
   for (const [name, [def]] of Object.entries(LEAF))
-    metrics[`metrics/${name}.json`] = metric({ ...def, label: name });
+    metrics[`metrics/${name}.yaml`] = metric({ ...def, label: name });
   for (const [name, [numerator, denominator]] of Object.entries(RATIO))
-    metrics[`metrics/${name}.json`] = metric({
+    metrics[`metrics/${name}.yaml`] = metric({
       label: name,
       type: "ratio",
       numerator,
       denominator,
     });
-  metrics["metrics/net.json"] = metric({
+  metrics["metrics/net.yaml"] = metric({
     label: "net",
     type: "formula",
     expr: "revenue - web_total",
@@ -336,7 +336,7 @@ beforeAll(async () => {
   ];
   const period = { asOf: "2026-11-01", range: "all_time", compare: "previous_period" };
   const fixture = await writeProject({
-    "hatchmark.json": {
+    "hatchmark.yaml": {
       version: 1,
       name: "table oracle",
       dataDir: "data",
@@ -357,8 +357,8 @@ beforeAll(async () => {
     "data/orders.csv": csv(ORDERS),
     "data/visits.csv": csv(VISITS),
     ...metrics,
-    "dashboards/main.json": { title: "Main", period, blocks },
-    "dashboards/filtered.json": {
+    "dashboards/main.yaml": { title: "Main", period, blocks },
+    "dashboards/filtered.yaml": {
       title: "Filtered",
       period,
       filters: [

@@ -12,6 +12,7 @@ import type {
 } from "../../src/compiler/dashboard-data.js";
 import { planDashboard, planHash } from "../../src/compiler/index.js";
 import { checkReferences, parseDiagnostics } from "../../src/spec/index.js";
+import { fromYaml } from "../yaml.js";
 import {
   buildProject,
   EXAMPLE,
@@ -756,7 +757,7 @@ describe("plan hashes and query reuse for grain switches", () => {
 
 describe("the trends example rebuilds byte for byte", () => {
   it("builds the same HTML twice, with unique ids and every switching card at month", async () => {
-    const trends = JSON.parse(await readFile(path.join(EXAMPLE, "dashboards/trends.json"), "utf8"));
+    const trends = fromYaml(await readFile(path.join(EXAMPLE, "dashboards/trends.yaml"), "utf8"));
     const root = await writeExample({}, { t: trends });
     expect((await buildProject(root)).code).toBe(0);
     const a = await readFile(path.join(root, "dist/t/index.html"), "utf8");

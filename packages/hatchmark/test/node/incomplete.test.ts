@@ -22,7 +22,7 @@ async function dashboard(options: {
   freshness?: Record<string, unknown>;
 }) {
   const fixture = await writeProject({
-    "hatchmark.json": {
+    "hatchmark.yaml": {
       ...PROJECT_DEFAULTS,
       name: "Incomplete",
       timezone: options.timezone ?? "UTC",
@@ -40,14 +40,14 @@ async function dashboard(options: {
     ...Object.fromEntries(Object.entries(options.sources).map(([n, text]) => [`${n}.csv`, text])),
     ...Object.fromEntries(
       Object.keys(options.sources).map((n) => [
-        `metrics/${n}.json`,
+        `metrics/${n}.yaml`,
         metric({ type: "aggregate", table: n, aggregate: "sum", column: "v", time: "at" }),
       ]),
     ),
     ...Object.fromEntries(
-      Object.entries(options.metrics ?? {}).map(([n, m]) => [`metrics/${n}.json`, m]),
+      Object.entries(options.metrics ?? {}).map(([n, m]) => [`metrics/${n}.yaml`, m]),
     ),
-    "dashboards/d.json": { title: "D", period: options.period, blocks: options.blocks },
+    "dashboards/d.yaml": { title: "D", period: options.period, blocks: options.blocks },
   });
   const { data, diagnostics } = await run(fixture.root, fixture.project, "d");
   const block = <T>(id: string) => data?.blocks.find((b) => b.id === id) as T;

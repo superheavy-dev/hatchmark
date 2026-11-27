@@ -766,10 +766,10 @@ const inList = (keys: string[]) => `country IN (${keys.map((k) => `'${k}'`).join
 beforeAll(async () => {
   oracle = await Oracle.open();
   project = await writeProject({
-    "hatchmark.json": CONFIG,
+    "hatchmark.yaml": CONFIG,
     ...data(),
-    ...Object.fromEntries(Object.entries(METRICS).map(([n, m]) => [`metrics/${n}.json`, m])),
-    ...Object.fromEntries(Object.entries(DASHBOARDS).map(([n, d]) => [`dashboards/${n}.json`, d])),
+    ...Object.fromEntries(Object.entries(METRICS).map(([n, m]) => [`metrics/${n}.yaml`, m])),
+    ...Object.fromEntries(Object.entries(DASHBOARDS).map(([n, d]) => [`dashboards/${n}.yaml`, d])),
   });
   const csv = (f: string) =>
     `read_csv('${path.join(project.root, "data", f).replaceAll("'", "''")}', all_varchar = true)`;
@@ -807,7 +807,7 @@ describe("scatter against a SQL oracle", () => {
 
   it("check: HM5020 for x = y, HM5021 for size = x or y, an unknown size is an error, span 2 is HM2024", () => {
     const diags = [...project.diagnostics, ...checkReferences(project.project)].filter((d) =>
-      d.file?.endsWith("checks.json"),
+      d.file?.endsWith("checks.yaml"),
     );
     const codes = (id: string) => {
       const p = `/blocks/${CHECKS.findIndex((b) => b.id === id)}`;
