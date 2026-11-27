@@ -1,4 +1,4 @@
-import type { KpiData } from "../compiler/dashboard-data.js";
+import type { KpiData, LineData } from "../compiler/dashboard-data.js";
 import { fraction, isNumber, metricOf, type RenderContext } from "./chart.js";
 import {
   formatBucket,
@@ -7,6 +7,7 @@ import {
   formatSpan,
   formatValue,
 } from "./format.js";
+import { bucketLines, partialPositions } from "./partial.js";
 import { esc, r, scriptJson } from "./svg.js";
 
 /**
@@ -76,14 +77,48 @@ export function renderKpi(block: KpiData, ctx: RenderContext): string {
       pen = true;
     });
     const sparkline = block.sparkline as NonNullable<KpiData["sparkline"]>;
-    const headers = sparkline.buckets.map((b) => formatBucket(b, sparkline.grain, locale));
+    const end = values.findLastIndex(isNumber);
+    const last = values[end];
+    const { pointRadius, pointRing } = ctx.theme.partial;
+    const dot = (color: "c1" | "card", width: number) =>
+      `<path d="M${r(x(end))},${r(y(last as number))}h0"${ctx.paint.attrs("none", color)} stroke-width="${width}" stroke-linecap="round" vector-effect="non-scaling-stroke"/>`;
+    const sparkEnd =
+      isNumber(last) && sparkline.partial?.some((p) => p.index === end)
+        ? dot("c1", 2 * pointRadius + pointRing) + dot("card", 2 * pointRadius - pointRing)
+        : "";
+    const asLine: LineData = {
+      type: "line",
+      id: block.id,
+      span: block.span,
+      axis: {
+        kind: "time",
+        grain: sparkline.grain,
+        buckets: sparkline.buckets,
+        window: { start: sparkline.buckets[0] ?? "", end: sparkline.buckets.at(-1) ?? "" },
+      },
+      series: [
+        {
+          key: block.metric,
+          metric: block.metric,
+          label,
+          values,
+          ...(sparkline.partial ? { partial: sparkline.partial } : {}),
+        },
+      ],
+    };
+    const partial = partialPositions(asLine, ctx);
+    const lines = sparkline.buckets.map((_, i) => bucketLines(asLine, i, ctx, partial));
+    const headers = lines.map((l) => l.date);
+    const named = sparkline.buckets.map((b) => formatBucket(b, sparkline.grain, locale));
+    const partialLine = [...partial.keys()].map((i) => lines[i]?.line).at(-1);
     const text = values.map((v) => formatValue(v, metric, locale, "full"));
-    table = `<div class="hm-sr"><table><caption>${esc(`${label} by ${sparkline.grain}`)}</caption><thead><tr><th scope="col">Period</th><th scope="col">${esc(label)}</th></tr></thead><tbody>${headers.map((h, i) => `<tr><th scope="row">${esc(h)}</th><td>${esc(text[i] as string)}</td></tr>`).join("")}</tbody></table></div>`;
+    table = `<div class="hm-sr"><table><caption>${esc(`${label} by ${sparkline.grain}`)}</caption><thead><tr><th scope="col">Period</th><th scope="col">${esc(label)}</th></tr></thead><tbody>${lines.map((l, i) => `<tr><th scope="row">${esc(l.line)}</th><td>${esc(text[i] as string)}</td></tr>`).join("")}</tbody></table></div>`;
     const geometry = `data-hm-kind="line" data-hm-x="0,100,${values.length}" data-hm-y="${hi === lo ? `${lo},${lo + 1},12,12` : `${lo},${hi},22,2`}" data-hm-plot="0,0,100,24"`;
-    spark = `<svg class="hm-spark" viewBox="0 0 100 24" preserveAspectRatio="none" overflow="visible" tabindex="0" role="img" aria-label="${esc(`${label} by ${sparkline.grain}, ${headers[0]} to ${headers.at(-1)}`)}" ${geometry}><path d="${d}"${ctx.paint.attrs("none", "c1")} stroke-width="1.5" vector-effect="non-scaling-stroke" stroke-linejoin="round"/></svg>`;
+    spark = `<svg class="hm-spark" viewBox="0 0 100 24" preserveAspectRatio="none" overflow="visible" tabindex="0" role="img" aria-label="${esc(`${label} by ${sparkline.grain}, ${named[0]} to ${named.at(-1)}${partialLine ? `; ${partialLine}` : ""}`)}" ${geometry}><path d="${d}"${ctx.paint.attrs("none", "c1")} stroke-width="1.5" vector-effect="non-scaling-stroke" stroke-linejoin="round"/>${sparkEnd}</svg>`;
     runtime = `<script type="application/json">${scriptJson({
       kind: "line",
       headers,
+      ...(partial.size > 0 ? { status: lines.map((l) => l.status ?? "") } : {}),
       series: [
         {
           label,

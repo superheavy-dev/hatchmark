@@ -23,6 +23,7 @@ interface RuntimeSeries {
   short: string[];
   y?: (number | null)[];
   pct?: string[];
+  partial?: number[];
 }
 
 interface RuntimeChart {
@@ -34,6 +35,8 @@ interface RuntimeChart {
   series: RuntimeSeries[];
   total?: string[];
   heads?: string[];
+  status?: string[];
+  totalStatus?: string[];
 }
 
 const SVG_NS = "http://www.w3.org/2000/svg";
@@ -110,9 +113,21 @@ function attach(figure: HTMLElement, chart: RuntimeChart): void {
   const fillReadout = (svg: SVGSVGElement, index: number) => {
     const head = svg.querySelector(".hm-rh");
     if (head) head.textContent = (chart.heads ?? chart.headers)[index] ?? "";
+    const status = svg.querySelector(".hm-rs");
+    if (status) status.textContent = chart.status?.[index] ?? "";
+    const hatched = chart.series.some((s) => s.partial?.includes(index));
+    const show = (node: Element | null, on: boolean) =>
+      node?.setAttribute("visibility", on ? "visible" : "hidden");
+    show(svg.querySelector(".hm-rsw"), hatched && Boolean(chart.status?.[index]));
     chart.series.forEach((s, k) => {
       const value = svg.querySelector(`.hm-rv-${k}`);
       if (value) value.textContent = s.short[index] ?? "";
+      const partial = Boolean(s.partial?.includes(index));
+      const hatch = svg.querySelector(`.hm-rq-${k}`);
+      if (hatch) {
+        show(hatch, partial);
+        show(svg.querySelector(`.hm-rd-${k}`), !partial);
+      }
     });
   };
 
@@ -124,6 +139,14 @@ function attach(figure: HTMLElement, chart: RuntimeChart): void {
     }
     tip.replaceChildren(element("div", "hm-tip-h", chart.headers[index] ?? ""));
     const scatter = chart.kind === "scatter";
+    const status = chart.status?.[index];
+    const hatched = chart.series.some((s) => s.partial?.includes(index));
+    if (status) {
+      const line = element("div", "hm-tip-s");
+      if (hatched) line.append(element("i", "hm-tip-hatch"));
+      line.append(status);
+      tip.append(line);
+    }
     const rows = chart.series.map((s, k) => ({ s, k, v: s.v[index] ?? null }));
     if (rows.length > 1 && !scatter) {
       rows.sort(
@@ -135,7 +158,8 @@ function attach(figure: HTMLElement, chart: RuntimeChart): void {
       const row = element("div", "hm-tip-r");
       const name = element("span", "hm-tip-n");
       const slot = chart.colors ? chart.colors[index] : s.color;
-      if (rows.length > 1 && !scatter)
+      if (s.partial?.includes(index)) name.append(element("i", `hm-tip-hatch hm-h-c${slot}`));
+      else if (rows.length > 1 && !scatter)
         name.append(element("i", slot === 0 ? "hm-b-context" : `hm-b-c${slot}`));
       name.append(s.label);
       const value = element("span", "hm-tip-v", s.text[index] ?? "");
@@ -147,8 +171,13 @@ function attach(figure: HTMLElement, chart: RuntimeChart): void {
       const row = element("div", "hm-tip-r hm-tip-t");
       const value = element("span", "hm-tip-v", chart.total[index] ?? "");
       if (chart.series.some((s) => s.pct)) value.append(element("span", "hm-tip-p"));
-      row.append(element("span", "", "Total"), value);
+      const status = chart.totalStatus?.[index];
+      const marked = Boolean(status) && hatched;
+      const name = element("span", marked ? "hm-tip-n" : "", marked ? "" : "Total");
+      if (marked) name.append(element("i", "hm-tip-hatch"), "Total");
+      row.append(name, value);
       tip.append(row);
+      if (status) tip.append(element("div", "hm-tip-s hm-tip-ts", status));
     }
     tip.style.display = "flex";
     return tip;
@@ -385,8 +414,13 @@ function attach(figure: HTMLElement, chart: RuntimeChart): void {
     show(svg, index);
     live.textContent = [
       chart.headers[index],
+      ...(chart.status?.[index] ? [chart.status[index]] : []),
       ...chart.series.map((s) => `${s.label} ${s.text[index]}${s.pct ? `, ${s.pct[index]}` : ""}`),
-      ...(chart.total ? [`Total ${chart.total[index]}`] : []),
+      ...(chart.total
+        ? [
+            `Total ${chart.total[index]}${chart.totalStatus?.[index] ? `, ${chart.totalStatus[index]}` : ""}`,
+          ]
+        : []),
     ].join(", ");
   });
   figure.addEventListener("focusout", hide);

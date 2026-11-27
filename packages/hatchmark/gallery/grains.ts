@@ -228,9 +228,15 @@ function incompleteSeries(
 export function incompleteLine(
   id: string,
   title: string,
-  options: { clip?: boolean; hide?: boolean },
+  options: { clip?: boolean; hide?: boolean; area?: boolean },
 ): LineData {
-  return { type: "line", id, title, span: 6, ...incompleteSeries(WEEK, options) };
+  return {
+    type: options.area ? "area" : "line",
+    id,
+    title,
+    span: 6,
+    ...incompleteSeries(WEEK, options),
+  };
 }
 
 /** Monthly revenue bars over the partial third quarter, September marked or hidden. */
@@ -243,6 +249,97 @@ export function incompleteBars(id: string, title: string, options: { hide?: bool
     orientation: "vertical",
     stack: false,
     ...incompleteSeries(MONTH, options),
+  };
+}
+
+export function incompleteLaggingArea(id: string, title: string): LineData {
+  const {
+    axis,
+    series: [total],
+  } = incompleteSeries(WEEK, {}) as {
+    axis: LineData["axis"];
+    series: [Series];
+  };
+  const lag = total.values.length - 3;
+  return {
+    type: "area",
+    id,
+    title,
+    span: 6,
+    axis,
+    series: [
+      total,
+      {
+        ...series(
+          "returns",
+          "Returns",
+          total.values.map((v, i) => (v === null || i > lag ? null : Math.round(v * 0.12))),
+        ),
+        partial: [{ index: lag, elapsed: 0.285714, days: 2 }],
+      },
+    ],
+  };
+}
+
+export function incompletePointBars(id: string, title: string): BarData {
+  const {
+    axis,
+    series: [total],
+  } = incompleteSeries(MONTH, {}) as {
+    axis: LineData["axis"];
+    series: [Series];
+  };
+  return {
+    type: "bar",
+    id,
+    title,
+    span: 6,
+    orientation: "vertical",
+    stack: false,
+    axis,
+    series: [
+      {
+        ...series(
+          "active_customers",
+          "Active customers",
+          total.values.map((_, i) => 18_240 + i * 410),
+        ),
+        ...(total.partial ? { partial: total.partial } : {}),
+      },
+    ],
+  };
+}
+
+export function incompleteChannelBars(id: string, title: string): BarData {
+  const {
+    axis,
+    series: [total],
+  } = incompleteSeries(MONTH, {}) as {
+    axis: LineData["axis"];
+    series: [Series];
+  };
+  const channels: [string, number][] = [
+    ["Online store", 0.58],
+    ["Marketplaces", 0.3],
+    ["Retail partners", 0.12],
+  ];
+  return {
+    type: "bar",
+    id,
+    title,
+    span: 6,
+    orientation: "vertical",
+    stack: true,
+    axis,
+    series: channels.map(([name, share]) => ({
+      ...series(
+        "revenue",
+        name,
+        total.values.map((v) => (v === null ? null : Math.round(v * share))),
+        name,
+      ),
+      ...(total.partial ? { partial: total.partial } : {}),
+    })),
   };
 }
 

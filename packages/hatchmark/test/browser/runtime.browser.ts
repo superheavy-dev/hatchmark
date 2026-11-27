@@ -24,6 +24,8 @@ let gapUrl: string;
 let dailyUrl: string;
 let narrowUrl: string;
 let densityUrl: string;
+let partialUrl: string;
+let partialStackUrl: string;
 type Box = { x: number; y: number; width: number; height: number };
 
 beforeAll(async () => {
@@ -55,6 +57,12 @@ beforeAll(async () => {
     );
     return `file://${path.join(dir, `${name}.html`)}`;
   };
+  const partialData = GALLERY.find((v) => v.variant === "line-incomplete-mark")?.data;
+  if (!partialData) throw new Error("line-incomplete-mark gallery variant is missing");
+  partialUrl = await page("partial", partialData);
+  const partialStack = GALLERY.find((v) => v.variant === "bar-incomplete-stacked")?.data;
+  if (!partialStack) throw new Error("bar-incomplete-stacked gallery variant is missing");
+  partialStackUrl = await page("partial-stack", partialStack);
   const longLineData = GALLERY.find((v) => v.variant === "line-long-names")?.data;
   const longLine = longLineData?.blocks[0] as LineData;
   const longLineMetrics = longLineData?.metrics ?? {};
@@ -157,6 +165,75 @@ describe("browser runtime", () => {
     expect(await tip.textContent()).toContain("Brazil");
     await page.keyboard.press("Escape");
     await expect.poll(() => tip.isVisible()).toBe(false);
+  });
+
+  it("puts a partial bucket's status on the tooltip's second line, and in the announcement", async () => {
+    const page = await browser.newPage({ viewport: { width: 1440, height: 900 } });
+    await page.goto(partialUrl);
+    await page.locator(".hm-line svg").filter({ visible: true }).focus();
+    await page.keyboard.press("End");
+    const tip = page.locator(".hm-line .hm-tip");
+    expect(await tip.locator(".hm-tip-h").textContent()).toBe("Sep 21–23");
+    expect(await tip.locator(".hm-tip-s").textContent()).toBe("In progress · 3 of 7 days");
+    await page.keyboard.press("Home");
+    expect(await tip.locator(".hm-tip-s").count()).toBe(0);
+    await page.keyboard.press("End");
+    await expect
+      .poll(() => page.locator(".hm-line [aria-live]").first().textContent())
+      .toContain("In progress · 3 of 7 days");
+  });
+
+  it("gives the pinned readout a status line and hatched swatches on a partial bucket", async () => {
+    const page = await browser.newPage({ viewport: { width: 390, height: 844 } });
+    await page.goto(partialUrl);
+    const svg = page.locator(".hm-line svg").filter({ visible: true });
+    const visible = (selector: string) =>
+      svg
+        .locator(selector)
+        .first()
+        .evaluate((n) => getComputedStyle(n).visibility);
+    expect(await svg.locator(".hm-readout").count()).toBe(1);
+    expect(await svg.locator(".hm-rh").textContent()).toBe("Sep 21\u201323");
+    expect(await svg.locator(".hm-rs").textContent()).toBe("In progress \u00B7 3 of 7 days");
+    expect(await visible(".hm-rsw")).toBe("visible");
+    expect(await visible(".hm-rq-0")).toBe("visible");
+    expect(await visible(".hm-rd-0")).toBe("hidden");
+    await svg.focus();
+    await page.keyboard.press("Home");
+    expect(await svg.locator(".hm-rs").textContent()).toBe("");
+    expect(await visible(".hm-rsw")).toBe("hidden");
+    expect(await visible(".hm-rq-0")).toBe("hidden");
+    expect(await visible(".hm-rd-0")).toBe("visible");
+    await page.keyboard.press("End");
+    expect(await svg.locator(".hm-rs").textContent()).toBe("In progress \u00B7 3 of 7 days");
+    await page.close();
+  });
+
+  it("marks a partial stack's Total row with the hatched swatch and its status, and announces it", async () => {
+    const page = await browser.newPage({ viewport: { width: 1440, height: 900 } });
+    await page.goto(partialStackUrl);
+    await page.locator(".hm-bar svg").filter({ visible: true }).focus();
+    await page.keyboard.press("End");
+    const tip = page.locator(".hm-bar .hm-tip");
+    const total = tip.locator(".hm-tip-t");
+    expect(await total.locator(".hm-tip-n").textContent()).toBe("Total");
+    expect(await total.locator("i.hm-tip-hatch").count()).toBe(1);
+    const swatch = await total
+      .locator("i.hm-tip-hatch")
+      .evaluate((i) => [getComputedStyle(i).backgroundImage, i.getBoundingClientRect().height]);
+    expect(swatch[0]).toContain("repeating-linear-gradient");
+    expect(swatch[1]).toBe(10);
+    expect(await tip.locator(".hm-tip-s").first().locator("i.hm-tip-hatch").count()).toBe(1);
+    expect(await tip.locator(".hm-tip-r:not(.hm-tip-t) i.hm-tip-hatch").count()).toBe(3);
+    expect(await tip.locator(".hm-tip-ts").textContent()).toBe("In progress · 23 of 30 days");
+    await expect
+      .poll(() => page.locator(".hm-bar [aria-live]").first().textContent())
+      .toMatch(/Total \$[\d,]+, In progress · 23 of 30 days$/);
+    await page.keyboard.press("Home");
+    expect(await total.locator("i.hm-tip-hatch").count()).toBe(0);
+    expect(await tip.locator(".hm-tip-ts").count()).toBe(0);
+    expect(await tip.locator("i.hm-tip-hatch").count()).toBe(0);
+    await page.close();
   });
 
   it("lists each part's value and share and the total in a 100% stacked bar's tooltip", async () => {

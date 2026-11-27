@@ -50,6 +50,10 @@ export interface PartialBucket {
    * elapsed is then the share of the bucket inside the window.
    */
   edge?: "start";
+  /** Local calendar days of the bucket that hold data (a day counts once any of it is covered). */
+  days?: number;
+  /** For a bucket the horizon cuts: the horizon as local wall-clock time, "YYYY-MM-DDTHH:MM:SS". */
+  through?: string;
 }
 
 export interface MetricInfo {
@@ -59,6 +63,11 @@ export interface MetricInfo {
   /** The metric's format with the currency resolved (project currency when the metric sets none). */
   format: Format;
   better: "up" | "down" | "neutral";
+  /**
+   * "point" when the metric is point-in-time (RFC 0001 section 6.5): a partial bucket's value is the
+   * state at the horizon, not biased low, so it is labelled "as of" rather than "in progress".
+   */
+  nature?: "point";
 }
 
 export interface BlockCommon {

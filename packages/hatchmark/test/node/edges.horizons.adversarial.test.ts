@@ -18,7 +18,7 @@ type Unit = "day" | "week" | "month" | "quarter" | "year";
 type Grain = { unit: Unit; anchor?: string };
 type Row = { t: number; local: string; date: string; region: string | null; a: number };
 type Src = { rows: Row[]; horizon: number; kind: "ts" | "date" };
-type Partial = { index: number; elapsed: number; edge?: "start" };
+type Partial = { index: number; elapsed: number; edge?: "start"; days?: number; through?: string };
 type S = {
   key: string;
   metric: string;
@@ -472,10 +472,17 @@ function expected(ctx: Ctx, def: Def, g: Grain): Want {
     if (from !== s && midnight(from) >= h) return { value: false };
     const to = midnight(e) > h ? localOf(h) : e;
     if (from === s && to === e) return { value: true };
+    const atRow = src.kind === "ts" && h === src.horizon && to === localOf(h);
     const elapsed = Math.floor(((wall(to) - wall(from)) * 1e6) / (wall(e) - wall(s))) / 1e6;
     return {
       value: true,
-      partial: { index: i, elapsed, ...(from !== s ? { edge: "start" as const } : {}) },
+      partial: {
+        index: i,
+        elapsed,
+        ...(from !== s ? { edge: "start" as const } : {}),
+        days: Math.floor((wall(to) - (atRow ? 0 : 1) - wall(from.slice(0, 10))) / DAY) + 1,
+        ...(to !== e ? { through: to } : {}),
+      },
     };
   };
   const alive = buckets.map((_, i) => parts.some((p) => cell(p.metric, i).value));

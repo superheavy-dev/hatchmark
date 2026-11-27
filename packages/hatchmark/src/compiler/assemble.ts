@@ -10,6 +10,7 @@ import {
   type RangeSpec,
   type ResolvedGrain,
   resolveGrain,
+  timeNature,
 } from "../spec/index.js";
 import {
   type BarData,
@@ -56,6 +57,8 @@ import {
   type WindowBounds,
   windowAt,
 } from "./windows.js";
+
+const DAY_US = 86_400_000_000n;
 
 type Key = string | number | boolean | null;
 
@@ -296,6 +299,8 @@ class Assembler {
           index,
           elapsed: Number(((to - from) * 1_000_000n) / (end - start)) / 1e6,
           ...(from > start ? { edge: "start" as const } : {}),
+          days: Number((to - 1n) / DAY_US - from / DAY_US) + 1,
+          ...(to < end ? { through: formatWall(to).slice(0, 19) } : {}),
         });
       }
       return value;
@@ -1256,6 +1261,8 @@ export function assemble(
   }
 
   const metrics: Record<string, MetricInfo> = {};
+  const specs = new Map<string, Metric>();
+  for (const [name, file] of project.metrics) if (file.spec) specs.set(name, file.spec);
   for (const name of [...shown].sort()) {
     const metric = assembler.metric(name);
     if (metric === undefined) continue;
@@ -1268,6 +1275,7 @@ export function assemble(
           ? { ...metric.format, currency: metric.format.currency ?? config.currency }
           : metric.format,
       better: metric.better,
+      ...(timeNature(name, specs) === "point" ? { nature: "point" as const } : {}),
     };
   }
 

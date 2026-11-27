@@ -158,8 +158,16 @@ describe("partial buckets", () => {
     const line = block<LineData>("weekly");
     expect(line.axis.buckets).toEqual(["2026-06-01", "2026-06-08", "2026-06-15", "2026-06-22"]);
     expect(line.series.map((s) => [s.key, s.values, s.partial])).toEqual([
-      ["fresh", [1, 0, 2, 4], [{ index: 3, elapsed: 0.428571 }]],
-      ["stale", [1, 2, null, null], [{ index: 1, elapsed: 0.285714 }]],
+      [
+        "fresh",
+        [1, 0, 2, 4],
+        [{ index: 3, elapsed: 0.428571, days: 3, through: "2026-06-25T00:00:00" }],
+      ],
+      [
+        "stale",
+        [1, 2, null, null],
+        [{ index: 1, elapsed: 0.285714, days: 2, through: "2026-06-10T00:00:00" }],
+      ],
     ]);
   });
 
