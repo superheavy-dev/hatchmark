@@ -230,14 +230,17 @@ export function wireTable(card: HTMLElement): void {
       event.stopPropagation();
       const open = !box.classList.contains("hm-open");
       close();
-      box.classList.remove("hm-shut");
+      box.classList.toggle("hm-shut", !open);
       box.classList.toggle("hm-open", open);
       show();
     });
     mark.addEventListener("mousemove", () => box.classList.remove("hm-shut"));
     box.addEventListener("mouseenter", show);
     box.addEventListener("mouseleave", () => box.classList.remove("hm-shut"));
-    mark.addEventListener("focus", show);
+    mark.addEventListener("focus", () => {
+      box.classList.remove("hm-shut");
+      show();
+    });
     mark.addEventListener("blur", () => {
       box.classList.remove("hm-shut");
       box.classList.remove("hm-open");
@@ -250,8 +253,12 @@ export function wireTable(card: HTMLElement): void {
     document.addEventListener("click", close);
     document.addEventListener("keydown", (event) => {
       if (event.key !== "Escape") return;
+      for (const mark of marks) {
+        const box = mark.parentElement;
+        const tip = box?.querySelector<HTMLElement>(".hm-win-tip");
+        if (box && tip && getComputedStyle(tip).display !== "none") box.classList.add("hm-shut");
+      }
       close();
-      for (const mark of marks) mark.parentElement?.classList.add("hm-shut");
     });
   }
   const headers = [...(table.tHead?.querySelectorAll<HTMLTableCellElement>("th") ?? [])];

@@ -941,6 +941,10 @@ describe("columns that read another window", () => {
     expect(box && box.x >= 0 && box.x + box.width <= 390).toBe(true);
     await page.locator("h2").first().tap();
     expect(await tip(page).isVisible()).toBe(false);
+    await mark.tap();
+    expect(await tip(page).isVisible()).toBe(true);
+    await mark.tap();
+    expect(await tip(page).isVisible()).toBe(false);
     await context.close();
   });
 
@@ -981,6 +985,16 @@ describe("columns that read another window", () => {
     await page.mouse.move(dot.x + dot.width / 2, (dot.y + dot.height + box.y) / 2);
     expect(await tip(page).isVisible()).toBe(true);
     await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
+    expect(await tip(page).isVisible()).toBe(true);
+    await page.close();
+  });
+
+  it("shows the tooltip on keyboard focus after an Escape pressed with no tooltip open", async () => {
+    const page = await open("windows");
+    await page.keyboard.press("Escape");
+    await page.focus("thead th:last-child button.hm-sort");
+    await page.keyboard.press("Tab");
+    expect(await page.evaluate(() => document.activeElement?.className)).toBe("hm-win");
     expect(await tip(page).isVisible()).toBe(true);
     await page.close();
   });
