@@ -1,5 +1,6 @@
 // Bundles the engine core for a worker and runs it in workerd (Cloudflare's open-source runtime)
-// through Miniflare, to prove the core uses only web-standard APIs. Exits non-zero on failure.
+// through Miniflare, as a smoke test that the modules it reaches use only web-standard APIs; the
+// core-purity unit test scans every core module statically. Exits non-zero on failure.
 import assert from "node:assert/strict";
 import { build } from "esbuild";
 import { Miniflare } from "miniflare";

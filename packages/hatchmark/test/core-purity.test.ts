@@ -1,8 +1,20 @@
 import { readdirSync, readFileSync } from "node:fs";
+import { builtinModules } from "node:module";
 import { describe, expect, it } from "vitest";
 
 const CORE = ["compiler", "diagnostics", "spec"];
-const NODE_ONLY = /\bfrom\s+"node:|\brequire\(|\bprocess\.|\bBuffer\b|\b__dirname\b/;
+const BUILTIN = builtinModules.map((m) => m.replace(/[/]/g, "\\/")).join("|");
+const MODULE = `["'\`](?:node:[^"'\`]+|(?:${BUILTIN})(?:\\/[^"'\`]*)?)["'\`]`;
+const NODE_ONLY = new RegExp(
+  [
+    `\\b(?:from|import)\\s*${MODULE}`,
+    `\\b(?:import|require)\\s*\\(\\s*${MODULE}`,
+    "\\brequire\\s*\\(",
+    "\\bprocess\\s*[.[]",
+    "\\bBuffer\\b",
+    "\\b__(?:dirname|filename)\\b",
+  ].join("|"),
+);
 
 function files(dir: URL): URL[] {
   return readdirSync(dir, { withFileTypes: true }).flatMap((entry) =>

@@ -1,4 +1,4 @@
-import { mkdir, readFile, writeFile } from "node:fs/promises";
+import { lstat, mkdir, readFile, stat, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { CONFIG_FILE } from "../../spec/index.js";
 import { VERSION } from "../../version.js";
@@ -48,6 +48,17 @@ async function readOptional(file: string): Promise<string | undefined> {
   return readFile(file, "utf8").catch(() => undefined);
 }
 
+type Entry = "missing" | "file" | "directory" | "other";
+
+/** What is at a path, following a symlink only when it resolves; a dangling link is "other". */
+async function entry(file: string): Promise<Entry> {
+  const link = await lstat(file).catch(() => undefined);
+  if (link === undefined) return "missing";
+  const target = await stat(file).catch(() => undefined);
+  if (target === undefined) return "other";
+  return target.isFile() ? "file" : target.isDirectory() ? "directory" : "other";
+}
+
 export async function init(
   ctx: CommandContext,
   positionals: string[],
@@ -77,9 +88,28 @@ export async function init(
     owned.set("dashboards/sales.json", json(SAMPLE_DASHBOARD));
   }
 
+  const blocked: string[] = [];
   const existing: string[] = [];
-  for (const file of owned.keys()) {
-    if ((await readOptional(path.join(target, file))) !== undefined) existing.push(file);
+  const dirs = new Set([".", "data", "metrics", "dashboards"]);
+  for (const file of owned.keys()) dirs.add(path.posix.dirname(file));
+  for (const dir of dirs) {
+    const kind = await entry(path.join(target, dir));
+    if (kind !== "missing" && kind !== "directory") blocked.push(dir);
+  }
+  for (const file of [...owned.keys(), "AGENTS.md", ".gitignore"]) {
+    const kind = await entry(path.join(target, file));
+    if (kind === "file" && owned.has(file)) existing.push(file);
+    else if (kind !== "missing" && kind !== "file") blocked.push(file);
+  }
+  if (blocked.length > 0) {
+    return usageError(
+      "HM0004",
+      `init cannot write ${blocked.length} path${blocked.length === 1 ? "" : "s"} in ${target}: something other than a regular file or directory is there`,
+      {
+        expected: blocked,
+        help: "move or remove these paths (directories, dangling symlinks), or choose another directory",
+      },
+    );
   }
   if (existing.length > 0 && flags.force !== true) {
     return usageError(
@@ -118,8 +148,8 @@ export async function init(
   if (agents === undefined) {
     await write("AGENTS.md", `${block}\n`);
   } else {
-    const start = agents.indexOf(AGENTS_START);
-    const end = agents.indexOf(AGENTS_END, start);
+    const end = agents.indexOf(AGENTS_END);
+    const start = end === -1 ? -1 : agents.lastIndexOf(AGENTS_START, end);
     const next =
       start !== -1 && end !== -1
         ? agents.slice(0, start) + block + agents.slice(end + AGENTS_END.length)
@@ -127,9 +157,11 @@ export async function init(
     await write("AGENTS.md", next);
   }
 
-  const claude = await readOptional(path.join(target, "CLAUDE.md"));
-  if (claude === undefined) await write("CLAUDE.md", "@AGENTS.md\n");
-  else if (!claude.includes("@AGENTS.md")) {
+  const claudeKind = await entry(path.join(target, "CLAUDE.md"));
+  const claude =
+    claudeKind === "file" ? await readOptional(path.join(target, "CLAUDE.md")) : undefined;
+  if (claudeKind === "missing") await write("CLAUDE.md", "@AGENTS.md\n");
+  else if (claude === undefined || !claude.includes("@AGENTS.md")) {
     notes.push(
       "CLAUDE.md exists and does not include @AGENTS.md; add that line so Claude Code reads the Hatchmark block",
     );

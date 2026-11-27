@@ -7,7 +7,7 @@ import { explain, explainHelp } from "./commands/explain.js";
 import { init, initHelp } from "./commands/init.js";
 import { schema, schemaHelp } from "./commands/schema.js";
 import { version, versionHelp } from "./commands/version.js";
-import { type CommandHelp, renderCommandHelp, renderTopHelp } from "./help.js";
+import { type CommandHelp, GLOBAL_OPTIONS, renderCommandHelp, renderTopHelp } from "./help.js";
 import {
   type CliIO,
   type CommandContext,
@@ -64,8 +64,42 @@ const COMMANDS: Record<string, Command> = {
 
 const COMMAND_NAMES = Object.keys(COMMANDS);
 
+function lookup(name: string | undefined): Command | undefined {
+  return name !== undefined && Object.hasOwn(COMMANDS, name) ? COMMANDS[name] : undefined;
+}
+
+function helpJson(help: CommandHelp) {
+  return {
+    format_version: "1",
+    command: help.name,
+    summary: help.summary,
+    usage: help.usage,
+    options: help.options,
+    global_options: GLOBAL_OPTIONS,
+    example: help.example,
+  };
+}
+
+function helpResult(help: CommandHelp | undefined): CommandResult {
+  const commands = COMMAND_NAMES.map((n) => COMMANDS[n]?.help as CommandHelp);
+  return {
+    exitCode: EXIT.ok,
+    json:
+      help === undefined
+        ? {
+            format_version: "1",
+            version: VERSION,
+            commands: commands.map((c) => ({ name: c.name, summary: c.summary, usage: c.usage })),
+            global_options: GLOBAL_OPTIONS,
+            exit_codes: { ok: 0, check: 1, usage: 2, environment: 3, internal: 4 },
+          }
+        : helpJson(help),
+    human: help === undefined ? renderTopHelp(commands, VERSION) : renderCommandHelp(help),
+  };
+}
+
 async function outputMode(io: CliIO, flags: Flags): Promise<OutputMode | CommandResult> {
-  if (flags.format !== undefined) {
+  if (flags.format !== undefined && flags.format !== true) {
     if (flags.format === "json" || flags.format === "human") return flags.format;
     return usageError("HM0002", `unknown --format "${String(flags.format)}"`, {
       expected: ["human", "json"],
@@ -100,7 +134,10 @@ export async function run(argv: readonly string[], io: CliIO): Promise<number> {
     strict: false,
   });
   const name = loose.positionals[0];
-  const command = name === undefined ? undefined : COMMANDS[name];
+  const command = lookup(name);
+  const looseMode = await outputMode(io, loose.values as Flags);
+  const fallbackMode: OutputMode =
+    typeof looseMode === "string" ? looseMode : ((await outputMode(io, {})) as OutputMode);
   const options: Options = { ...GLOBAL, ...(command?.options ?? {}) };
   let parsed: ReturnType<typeof parseArgs>;
   try {
@@ -119,17 +156,17 @@ export async function run(argv: readonly string[], io: CliIO): Promise<number> {
         help: `run hatchmark ${name ?? ""} --help`.replace("  ", " "),
       },
     );
-    return print(io, io.stdoutIsTTY ? "human" : "json", result);
+    return print(io, fallbackMode, result);
   }
   const flags = parsed.values as Flags;
   const positionals = parsed.positionals.slice(1);
 
   const mode = await outputMode(io, flags);
-  if (typeof mode !== "string") return print(io, io.stdoutIsTTY ? "human" : "json", mode);
+  if (typeof mode !== "string") return print(io, fallbackMode, mode);
 
   if (name === undefined || name === "help") {
     const topic = name === "help" ? positionals[0] : undefined;
-    const target = topic === undefined ? undefined : COMMANDS[topic];
+    const target = lookup(topic);
     if (topic !== undefined && target === undefined) {
       return print(
         io,
@@ -140,17 +177,7 @@ export async function run(argv: readonly string[], io: CliIO): Promise<number> {
         }),
       );
     }
-    io.stdout(
-      `${
-        target
-          ? renderCommandHelp(target.help)
-          : renderTopHelp(
-              COMMAND_NAMES.map((n) => COMMANDS[n]?.help as CommandHelp),
-              VERSION,
-            )
-      }\n`,
-    );
-    return EXIT.ok;
+    return print(io, mode, helpResult(target?.help));
   }
   if (command === undefined) {
     return print(
@@ -159,10 +186,7 @@ export async function run(argv: readonly string[], io: CliIO): Promise<number> {
       usageError("HM0001", `unknown command "${name}"`, { expected: COMMAND_NAMES, input: name }),
     );
   }
-  if (flags.help === true) {
-    io.stdout(`${renderCommandHelp(command.help)}\n`);
-    return EXIT.ok;
-  }
+  if (flags.help === true) return print(io, mode, helpResult(command.help));
 
   const ctx: CommandContext = {
     io,

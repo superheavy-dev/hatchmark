@@ -1,4 +1,4 @@
-import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, rm, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
@@ -242,17 +242,93 @@ describe("usage errors", () => {
   });
 });
 
+describe("review regressions (HAT-16)", () => {
+  it("keeps the requested output mode for parse errors", async () => {
+    const cwd = await tempDir();
+    const agent = await cli(["check", "--json", "--bogus"], { cwd, tty: true, agent: true });
+    expect(agent.code).toBe(2);
+    expect(agent.json().diagnostics[0].message).toBe("unknown option --bogus");
+    const human = await cli(["check", "--format=human", "--bogus"], { cwd });
+    expect(human.stdout.startsWith("error[HM0002]")).toBe(true);
+    expect(
+      (await cli(["check", "--bogus"], { cwd, tty: true, agent: true })).stdout.startsWith("{"),
+    ).toBe(true);
+  });
+
+  it("resolves check paths against --cwd", async () => {
+    const cwd = await tempDir();
+    await cli(["init", "p"], { cwd });
+    await writeFile(
+      path.join(cwd, "p/dashboards/bad.json"),
+      '{"title":"Broken","blocks":[{"type":"kpi","metric":"revenu"}]}',
+    );
+    const out = await cli(["check", "--cwd", "p", "dashboards/bad.json"], { cwd });
+    expect(out.code).toBe(1);
+    expect(out.json().diagnostics.map((d: { code: string }) => d.code)).toEqual(["HM2003"]);
+  });
+
+  it("writes nothing when a path init owns is a directory, and never follows a dangling CLAUDE.md link", async () => {
+    const cwd = await tempDir();
+    await mkdir(path.join(cwd, "data/orders.csv"), { recursive: true });
+    for (const force of [[], ["--force"]]) {
+      const out = await cli(["init", ...force], { cwd });
+      expect(out.code).toBe(2);
+      expect(out.json().diagnostics[0]).toMatchObject({
+        code: "HM0004",
+        expected: ["data/orders.csv"],
+      });
+      await expect(readFile(path.join(cwd, "hatchmark.json"))).rejects.toThrow();
+    }
+    const other = await tempDir();
+    await symlink("notes", path.join(other, "CLAUDE.md"));
+    const out = await cli(["init", "--template", "minimal"], { cwd: other });
+    expect(out.code).toBe(0);
+    expect(out.json().notes[0]).toContain("CLAUDE.md");
+    await expect(readFile(path.join(other, "notes"))).rejects.toThrow();
+  });
+
+  it("keeps text after an unmatched start marker in AGENTS.md", async () => {
+    const cwd = await tempDir();
+    await writeFile(path.join(cwd, "AGENTS.md"), "<!-- hatchmark:start -->\nKeep me\n");
+    await cli(["init", "--template", "minimal"], { cwd });
+    const once = await readFile(path.join(cwd, "AGENTS.md"), "utf8");
+    await cli(["init", "--template", "minimal", "--force"], { cwd });
+    const twice = await readFile(path.join(cwd, "AGENTS.md"), "utf8");
+    expect(twice).toContain("Keep me");
+    expect(twice).toBe(once);
+  });
+
+  it("exits 2 for a malformed hatchmark.json and for inherited property names as commands", async () => {
+    const cwd = await tempDir();
+    await writeFile(path.join(cwd, "hatchmark.json"), "{");
+    const out = await cli(["check"], { cwd });
+    expect(out.code).toBe(2);
+    expect(out.json().diagnostics[0].code).toBe("HM1002");
+    for (const argv of [["constructor"], ["help", "constructor"], ["toString", "--help"]]) {
+      const bad = await cli(argv, { cwd });
+      expect(bad.code, argv.join(" ")).toBe(2);
+      expect(bad.json().diagnostics[0].code, argv.join(" ")).toBe("HM0001");
+    }
+  });
+});
+
 describe("help", () => {
   it("gives every command its own help with one example", async () => {
     const cwd = await tempDir();
     for (const command of ["init", "check", "schema", "explain", "version", "doctor"]) {
-      const out = await cli([command, "--help"], { cwd });
+      const out = await cli([command, "--help"], { cwd, tty: true });
       expect(out.code, command).toBe(0);
       expect(out.stdout, command).toContain(`Usage: hatchmark ${command}`);
       expect(out.stdout.match(/^Example:$/gm), command).toHaveLength(1);
-      expect((await cli(["help", command], { cwd })).stdout).toBe(out.stdout);
+      expect((await cli(["help", command], { cwd, tty: true })).stdout).toBe(out.stdout);
+      expect((await cli([command, "--help", "--json"], { cwd, tty: true })).json()).toMatchObject({
+        format_version: "1",
+        command,
+        usage: expect.stringContaining(`hatchmark ${command}`),
+      });
     }
-    const top = await cli([], { cwd });
+    expect((await cli(["help"], { cwd })).json().commands).toHaveLength(6);
+    const top = await cli([], { cwd, tty: true });
     expect(top.code).toBe(0);
     expect(top.stdout).toContain("Exit codes: 0 ok");
   });
