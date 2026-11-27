@@ -338,7 +338,7 @@ beforeAll(async () => {
   const fixture = await writeProject({
     "hatchmark.json": {
       version: 1,
-      name: "HAT-56",
+      name: "table oracle",
       dataDir: "data",
       metricsDir: "metrics",
       dashboardsDir: "dashboards",
@@ -603,7 +603,7 @@ function htmlRows(page: string, id: string, width: number) {
   );
 }
 
-describe("HAT-56 harness: tables against a raw-row oracle", () => {
+describe("tables against a raw-row oracle", () => {
   it("builds, warning only where Other cannot fold and leaving the formula table out", () => {
     expect(built.ok).toBe(true);
     const codes = new Set(built.diagnostics.map((d) => d.code));

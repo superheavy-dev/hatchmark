@@ -4,7 +4,7 @@ import type { BarData, DashboardData } from "../../src/compiler/dashboard-data.j
 import { chartRuntimeData, renderChartSvg } from "../../src/render/index.js";
 import { DEFAULT_THEME } from "../../src/render/theme.js";
 
-/** Stacked renders from review (HAT-57 on #22): key height, the horizontal 100% axis, one series. */
+/** Stacked renders: key height, the horizontal 100% axis, one series. */
 
 function variant(name: string): { block: BarData; data: DashboardData } {
   const data = GALLERY.find((v) => v.variant === name)?.data;

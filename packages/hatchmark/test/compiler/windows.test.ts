@@ -5,7 +5,7 @@ import { comparison, DEFAULT_ANCHORS, PERIOD_RANGES } from "../../src/spec/index
 const days = (start: string, end: string) => (Date.parse(end) - Date.parse(start)) / 86_400_000;
 
 describe("resolveRange (named ranges)", () => {
-  it("compares the last complete month with the calendar month before it (HAT-14)", () => {
+  it("compares the last complete month with the calendar month before it", () => {
     expect(resolveRange("last_complete_month", "none", "2026-11-15", DEFAULT_ANCHORS)).toEqual({
       kind: "bounded",
       start: "2026-10-01",
@@ -199,7 +199,7 @@ describe("resolveRange (shorthands, anchors and shifts)", () => {
   });
 });
 
-describe("resolveRange (review of #14)", () => {
+describe("resolveRange (#14)", () => {
   const b = (start: string, end: string) => ({ kind: "bounded", start, end });
   const shift = (unit: "day" | "week" | "month" | "year", by: number) => ({ shift: { unit, by } });
 
@@ -382,7 +382,7 @@ describe("resolveRange (review of #14)", () => {
     }
   });
 
-  it("keeps whole months whole and rolling days exact (review round 3 repros)", () => {
+  it("keeps whole months whole and rolling days exact", () => {
     expect(
       resolveRange("last_complete_month", "previous_year", "2021-03-15", DEFAULT_ANCHORS),
     ).toEqual(b("2020-02-01", "2020-03-01"));

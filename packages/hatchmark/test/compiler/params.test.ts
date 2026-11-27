@@ -15,7 +15,7 @@ const dashboard = (filters: unknown[]) => ({
 });
 
 describe("resolveParams", () => {
-  it("carries the column, operator, default and sources of each select filter (HAT-13)", () => {
+  it("carries the column, operator, default and sources of each select filter", () => {
     const params = (column: string) =>
       resolveParams(
         projectFrom({
@@ -149,7 +149,7 @@ describe("paramsForQuery", () => {
     bindings: {},
   };
 
-  it("carries each filter's default, so West and East defaults give different executor inputs (HAT-13)", () => {
+  it("carries each filter's default, so West and East defaults give different executor inputs", () => {
     const west = regionQuery("West");
     const east = regionQuery("East");
     expect(west.params).toEqual([

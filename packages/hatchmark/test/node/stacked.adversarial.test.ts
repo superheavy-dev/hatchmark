@@ -1,5 +1,4 @@
-// Adopted from the HAT-58 adversarial review of hatchmark#22 (stacked and 100% stacked bar and area):
-// harness.mjs. A hostile orders table (signed amounts, null groups, a category in one month only, parts
+// Stacked and 100% stacked bar and area (#22). A hostile orders table (signed amounts, null groups, a category in one month only, parts
 // that cancel to a zero total, a position with only negative parts, New York boundary rows) runs
 // through the real engine and renderer; totals, parts, shares, tooltips and the screen-reader table
 // are checked against plain SQL on the oracle's own DuckDB connection.
@@ -596,7 +595,7 @@ afterAll(async () => {
 const at = (blocks: { id: string }[], id: string) =>
   `/blocks/${blocks.findIndex((b) => b.id === id)}`;
 
-describe("stacked charts against a SQL oracle (HAT-58 harness)", () => {
+describe("stacked charts against a SQL oracle", () => {
   it("check: non-additive metrics, mixed units and a linear formula", () => {
     expect(project.diagnostics).toEqual([]);
     const diags = checkReferences(project.project).filter((d) => d.file?.endsWith("checks.json"));

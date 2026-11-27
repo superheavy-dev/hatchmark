@@ -42,7 +42,7 @@ it("removes its temporary directory when the copy fails", async () => {
   expect((await readdir(tmpdir())).filter((name) => name.startsWith(prefix))).toEqual([]);
 });
 
-it("keeps the copy's own error when removing a partial copy fails (HAT-84)", async () => {
+it("keeps the copy's own error when removing a partial copy fails", async () => {
   const from = await mkdtemp(path.join(tmpdir(), "hatchmark-fixture-"));
   dirs.push(from);
   const prefix = `hatchmark-fixture-${crypto.randomUUID()}-`;

@@ -167,7 +167,7 @@ beforeAll(async () => {
   const fixture = await writeProject({
     "hatchmark.json": {
       version: 1,
-      name: "HAT-56 windows",
+      name: "table windows",
       dataDir: "data",
       metricsDir: "metrics",
       dashboardsDir: "dashboards",
@@ -411,7 +411,7 @@ function compare(
   return failures;
 }
 
-describe("HAT-56 windows harness: tables at each measure's horizon against a raw-row oracle", () => {
+describe("tables at each measure's horizon against a raw-row oracle", () => {
   it("builds, with each source's horizon where the fixture puts it", () => {
     expect(built.ok).toBe(true);
     expect(horizon).toEqual({

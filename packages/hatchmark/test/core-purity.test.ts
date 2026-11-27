@@ -74,7 +74,7 @@ describe("engine core", () => {
     expect(offenders).toEqual([]);
   });
 
-  it("catches every import form of a built-in (HAT-16 repros)", async () => {
+  it("catches every import form of a built-in", async () => {
     const dir = new URL("./fixtures/purity/", import.meta.url);
     const found = await imports(files(dir).map((f) => fileURLToPath(f)));
     const flagged = found

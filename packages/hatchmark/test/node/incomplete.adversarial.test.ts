@@ -23,7 +23,7 @@ async function dashboard(options: {
   const fixture = await writeProject({
     "hatchmark.json": {
       ...PROJECT_DEFAULTS,
-      name: "HAT-51",
+      name: "incomplete",
       timezone: options.timezone ?? "UTC",
       sources: Object.fromEntries(
         Object.keys(options.sources).map((n) => [n, { type: "csv", path: `${n}.csv` }]),

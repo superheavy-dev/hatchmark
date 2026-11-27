@@ -684,7 +684,7 @@ For point-in-time metrics "through the horizon" means "at the horizon": ARR now 
 
 Settled readings of the table:
 
-- KPI, table and category windows are whole local days ending at the last complete day: the local midnight at or before the horizon (Gunwoo, 2026-11-27). A horizon at 2:03 p.m. Nov 26 ends them at the end of Nov 25, so the number doesn't drift as rows arrive during the day and no bound falls inside a day. A timestamp source's newest day is therefore left out until a row after it arrives or the as-of is set past it.
+- KPI, table and category windows are whole local days ending at the last complete day: the local midnight at or before the horizon. A horizon at 2:03 p.m. Nov 26 ends them at the end of Nov 25, so the number doesn't drift as rows arrive during the day and no bound falls inside a day. A timestamp source's newest day is therefore left out until a row after it arrives or the as-of is set past it.
 - Every `{ "last": N, "unit": … }` range slides, in days, weeks, months, quarters and years alike. It slides back by whole days and keeps the number of days `resolveRange()` gives it when the data is complete: `last_12_months` as of Oct 31 is Nov 1 to Oct 31 (365 days), and with orders through 6:54 p.m. Oct 31 it is Oct 31 a year earlier through Oct 30, still 365 days. One hour less data never lengthens the window. It then compares like an explicit range of those dates: previous_period is the same number of days just before it, and a shift moves its first and last day (section 6.2). A window that needs no slide keeps section 6.2's comparison (previous_period moves an anchored last N months back N months).
 - A to-date range is the range as of the last complete day, with that day's comparison and section 6.2's day clamp, so the two can differ by a day (year-to-date through Mar 14, 2028 covers 74 days against 73). A last complete unit or explicit `{ start, end }` range ends at the last complete day, and its comparison covers the same number of days from its own start, never past the end of the comparison window as written; a month shift that clamps that window (Mar 28 to 31 shifted a month is Feb 28 alone) bounds it too.
 - A KPI or table whose ended window is empty, such as month-to-date on the 1st, shows no value, never 0: `value` (and the comparison over an empty window) is null, the block carries `empty: "no_complete_day"`, and check notes HM4024. A window that starts after the data ends is `empty: "no_data"` with HM4013.
@@ -1063,10 +1063,10 @@ The script is scratch, not committed; the implementation PRs turn it into tests.
 
 ## 14. Decisions (2026-11-27)
 
-1. `latest_data` uses the newest source and marks lagging ones: approved. `latest_common_data` is the option.
-2. A partial point-in-time value is a solid line with an "as of" label; partial flows are dashed: approved. The look changed to a hatch on 2026-11-27 (option B, section 6.6).
-3. Partial buckets are marked by default: approved.
-4. Time series snap to whole buckets by default: approved. `edges: "clip"` is the option.
+1. `latest_data` uses the newest source and marks lagging ones: decided. `latest_common_data` is the option.
+2. A partial point-in-time value is a solid line with an "as of" label; partial flows are dashed: decided. The look changed to a hatch on 2026-11-27 (option B, section 6.6).
+3. Partial buckets are marked by default: decided.
+4. Time series snap to whole buckets by default: decided. `edges: "clip"` is the option.
 5. Grammar, not business metrics: the RFC adds generic primitives only; ARR and friends are the expressiveness test (section 4). Any business definition is an option with a default that check explains (section 3.11).
 6. Time is two primitives, a date range and an anchored grain; a fiscal year is a year grain with an anchor, a week start is the week anchor, comparisons are shifts (section 6.2).
 7. No change-classification names (new, churn, expansion, …) in the schema. A generic two-instant comparison with user-named buckets is phase 2 at the earliest (section 5).
@@ -1132,7 +1132,7 @@ New or changed codes, all in `src/diagnostics/codes.ts`:
 
 ## 17. Implementation plan
 
-Each PR carries the RFC sections it implements (as `docs/rfcs/0001-metric-and-time-semantics.md`), and each numbers-path PR gets the self-review attacks from CREW.md. Order:
+Each PR carries the RFC sections it implements (as `docs/rfcs/0001-metric-and-time-semantics.md`), and each numbers-path PR tests totals, non-additive metrics, empty and null groups, filter combinations and partial periods against an independent SQL oracle. Order:
 
 1. **Metric layer spec and checks** (no executor needed; the dashboard-side time surface moves to PR 2, where the planner consumes it): metric schema (`over_time`, `entity`, `active`, `trailing`, `value`, `scale`, `formula`, `per_entity`, `segments`, `targets`, `tests`), source options (`snapshot`, `freshness`, `timezone`) and lookup sources (with as-of), segment files, `in_table` filters; formula, row and entity expression parsers with positions; static checks HM2004/2012/2013 generalised, HM1004, HM2018–HM2021, HM2023, HM3007/3010, HM4001/4005/4007/4008/4009/4019, HM4023, HM4040; JSON Schema regeneration, with the shape rules (`column` or `value`, `time` or `active`, `at` or `window`, and so on) encoded in the export so editors reject what check rejects; project and semantic rules (references, columns, time nature, units) stay in check. The planner leaves out a block whose metric uses a primitive it doesn't evaluate yet (HM4023, warning) instead of planning it as a plain sum. Metric files may not be named after an expression keyword (`and`, `or`, `not`, `null`; HM1004).
 2. **Time primitives and plan v2**: ranges and anchored grains in dashboards and hatchmark.json (`resolveRange` replaces `windowBounds`, old range names as aliases, `anchors` replaces `weekStart`), grain options, `incomplete`, `edges`, block targets, segment and grain filters; planner support on top of the first planner; the SQL printer of section 12.1.

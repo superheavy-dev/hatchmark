@@ -40,7 +40,7 @@ const errorsOf = (loaded: Awaited<ReturnType<typeof writeProject>>): string[] =>
     .filter((d) => d.severity === "error")
     .map((d) => d.code);
 
-describe("DuckDB buckets agree with the core's bucketStart (HAT-36 executor.mjs)", SWEEP, () => {
+describe("DuckDB buckets agree with the core's bucketStart", SWEEP, () => {
   it("buckets DATE, naive, -05:00 and +13:00 columns on the core's anchored bucket starts", async () => {
     const days = FULL ? daysBetween(1995, 2045) : daysBetween(2027, 2029);
     const zones = { early: "America/New_York", late: "Pacific/Auckland" } as const;
@@ -139,7 +139,7 @@ describe("DuckDB buckets agree with the core's bucketStart (HAT-36 executor.mjs)
   });
 });
 
-describe("plans and KPIs for anchors and shifts (HAT-36 plan.mjs)", SWEEP, () => {
+describe("plans and KPIs for anchors and shifts", SWEEP, () => {
   let csv = "at,amount\n";
   for (const d of daysBetween(2022, 2027)) csv += `${d},1\n`;
   const dashboard = (period: Record<string, unknown>, grain: unknown = "week") => ({
@@ -368,92 +368,88 @@ describe("plans and KPIs for anchors and shifts (HAT-36 plan.mjs)", SWEEP, () =>
   });
 });
 
-describe(
-  "dates outside 0001-01-01 to 9998-12-31 fail with HM2015 (HAT-36 boundary.mjs and asof.mjs)",
-  SWEEP,
-  () => {
-    const runWith = async (csv: string, period: Record<string, unknown>, grain = "day") => {
-      const loaded = await writeProject({
-        "hatchmark.json": config(),
-        "days.csv": csv,
-        "metrics/n.json": metric({
-          type: "aggregate",
-          table: "days",
-          time: "at",
-          aggregate: "count",
-        }),
-        "dashboards/d.json": {
-          title: "D",
-          period,
-          blocks: [
-            { type: "kpi", id: "k", metric: "n" },
-            { type: "line", id: "l", metrics: ["n"], grain },
-          ],
-        },
-      });
-      const { data, diagnostics } = await run(loaded.root, loaded.project, "d");
-      return {
-        data: data !== undefined,
-        errors: diagnostics.filter((d) => d.severity === "error").map((d) => d.code),
-      };
-    };
-    const failed = { data: false, errors: ["HM2015"] };
-    const ran = { data: true, errors: [] };
-
-    it("an all_time day chart over rows on 9999-12-30 and 9999-12-31: rejected as of latest_data, ignored after a fixed as-of", async () => {
-      const csv = "at\n2026-01-01\n9999-12-30\n9999-12-31\n";
-      const all = { range: "all_time", compare: "none" };
-      expect(await runWith(csv, { ...all, asOf: "latest_data" })).toEqual(failed);
-      expect(await runWith(csv, { ...all, asOf: "2026-03-01" })).toEqual(ran);
-    });
-
-    it("an all_time week chart over a row on 0000-01-01", async () => {
-      expect(
-        await runWith(
-          "at\n0000-01-01\n2026-01-01\n",
-          { asOf: "2026-03-01", range: "all_time", compare: "none" },
-          "week",
-        ),
-      ).toEqual(failed);
-    });
-
-    it("last_7_days shifted back 2026 years", async () => {
-      expect(
-        await runWith("at\n2026-01-01\n", {
-          asOf: "2026-03-01",
-          range: "last_7_days",
-          compare: { shift: { unit: "year", by: -2026 } },
-        }),
-      ).toEqual(failed);
-    });
-
-    it.each(["9999-12-31", "0000-12-31"])("as-of %s", async (asOf) => {
-      expect(
-        await runWith("at\n2026-01-01\n9998-12-31\n", { asOf, range: "all_time", compare: "none" }),
-      ).toEqual(failed);
-    });
-
-    it.each(["9998-12-31", "latest_data"])(
-      "as-of %s, inside the supported dates, runs",
-      async (asOf) => {
-        expect(
-          await runWith("at\n2026-01-01\n9998-12-31\n", {
-            asOf,
-            range: "all_time",
-            compare: "none",
-          }),
-        ).toEqual(ran);
+describe("dates outside 0001-01-01 to 9998-12-31 fail with HM2015", SWEEP, () => {
+  const runWith = async (csv: string, period: Record<string, unknown>, grain = "day") => {
+    const loaded = await writeProject({
+      "hatchmark.json": config(),
+      "days.csv": csv,
+      "metrics/n.json": metric({
+        type: "aggregate",
+        table: "days",
+        time: "at",
+        aggregate: "count",
+      }),
+      "dashboards/d.json": {
+        title: "D",
+        period,
+        blocks: [
+          { type: "kpi", id: "k", metric: "n" },
+          { type: "line", id: "l", metrics: ["n"], grain },
+        ],
       },
-    );
+    });
+    const { data, diagnostics } = await run(loaded.root, loaded.project, "d");
+    return {
+      data: data !== undefined,
+      errors: diagnostics.filter((d) => d.severity === "error").map((d) => d.code),
+    };
+  };
+  const failed = { data: false, errors: ["HM2015"] };
+  const ran = { data: true, errors: [] };
 
-    it("a normal previous_year run next to them still runs", async () => {
+  it("an all_time day chart over rows on 9999-12-30 and 9999-12-31: rejected as of latest_data, ignored after a fixed as-of", async () => {
+    const csv = "at\n2026-01-01\n9999-12-30\n9999-12-31\n";
+    const all = { range: "all_time", compare: "none" };
+    expect(await runWith(csv, { ...all, asOf: "latest_data" })).toEqual(failed);
+    expect(await runWith(csv, { ...all, asOf: "2026-03-01" })).toEqual(ran);
+  });
+
+  it("an all_time week chart over a row on 0000-01-01", async () => {
+    expect(
+      await runWith(
+        "at\n0000-01-01\n2026-01-01\n",
+        { asOf: "2026-03-01", range: "all_time", compare: "none" },
+        "week",
+      ),
+    ).toEqual(failed);
+  });
+
+  it("last_7_days shifted back 2026 years", async () => {
+    expect(
+      await runWith("at\n2026-01-01\n", {
+        asOf: "2026-03-01",
+        range: "last_7_days",
+        compare: { shift: { unit: "year", by: -2026 } },
+      }),
+    ).toEqual(failed);
+  });
+
+  it.each(["9999-12-31", "0000-12-31"])("as-of %s", async (asOf) => {
+    expect(
+      await runWith("at\n2026-01-01\n9998-12-31\n", { asOf, range: "all_time", compare: "none" }),
+    ).toEqual(failed);
+  });
+
+  it.each(["9998-12-31", "latest_data"])(
+    "as-of %s, inside the supported dates, runs",
+    async (asOf) => {
       expect(
-        await runWith("at\n2026-01-01\n2026-02-27\n", {
-          asOf: "2026-03-01",
-          range: "last_7_days",
-          compare: "previous_year",
+        await runWith("at\n2026-01-01\n9998-12-31\n", {
+          asOf,
+          range: "all_time",
+          compare: "none",
         }),
       ).toEqual(ran);
-    });
-  },
-);
+    },
+  );
+
+  it("a normal previous_year run next to them still runs", async () => {
+    expect(
+      await runWith("at\n2026-01-01\n2026-02-27\n", {
+        asOf: "2026-03-01",
+        range: "last_7_days",
+        compare: "previous_year",
+      }),
+    ).toEqual(ran);
+  });
+});

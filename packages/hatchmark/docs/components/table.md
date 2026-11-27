@@ -125,7 +125,7 @@ other cards in the row stretch to the table's height, so check warns with HM2026
 follows the 12-column grid as the spec lays it out: a run of KPIs counts as one card, a chart is
 counted at its drawn width (at least 3 columns), and a block that does not fit in what is left of
 a row starts the next one. Below 1024 px every block takes the full width, but the mode stays the
-one the spec's layout gives. When card height presets arrive (GUN-1822), the scroll height will
+one the spec's layout gives. When card height presets arrive, the scroll height will
 follow the preset instead of the fixed 16 rows.
 
 Printing shows every row.

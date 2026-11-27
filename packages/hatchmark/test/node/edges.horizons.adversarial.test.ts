@@ -1,5 +1,4 @@
-// Adopted from the HAT-67 adversarial review of hatchmark#29 (RFC 0001 section 6.5: edges,
-// incomplete, HM4014). CI runs one project and periods P0, P4, P7 and P9; HM_SWEEP=full runs all.
+// Edges, incomplete and HM4014 (#29, RFC 0001 section 6.5). CI runs one project and periods P0, P4, P7 and P9; HM_SWEEP=full runs all.
 // Hostile data in America/New_York (DST days, local-midnight rows, a lagging date source, a horizon
 // exactly on a Monday midnight, a horizon inside the repeated fall-back hour) runs through the real
 // engine and renderer. The oracle never calls windows.ts, the planner or the executor: rows come from
@@ -281,7 +280,7 @@ beforeAll(async () => {
       const fixture = await writeProject({
         "hatchmark.json": {
           ...PROJECT_DEFAULTS,
-          name: `HAT-67 ${p.name}`,
+          name: `horizons ${p.name}`,
           timezone: TZ,
           sources: {
             orders: { type: "csv", path: "orders.csv" },
@@ -721,10 +720,10 @@ for (const p of PROJECTS) {
   });
 }
 
-// The blocker repro: a realistic latest_data dashboard where one source lags past the window start.
+// A realistic latest_data dashboard where one source lags past the window start.
 // Orders run through Dec 2, 2026 and refunds through Nov 25, so month_to_date is Dec 1 to Dec 2 and
 // refunds' own horizon (end of Nov 25) is before the window starts.
-describe("a source whose horizon is before the window start (HAT-67 blockers)", () => {
+describe("a source whose horizon is before the window start", () => {
   const days = (from: string, to: string) => {
     const out: string[] = [];
     for (let d = from; d <= to; d = addDays(d, 1)) out.push(d);

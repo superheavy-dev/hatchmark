@@ -124,7 +124,7 @@ describe("explain", () => {
     connection.closeSync();
   });
 
-  it("filters adjacent BIGINT values exactly, and prints what runs (HAT-41)", async () => {
+  it("filters adjacent BIGINT values exactly, and prints what runs", async () => {
     const { root, project } = await writeProject({
       "hatchmark.json": {
         ...PROJECT_DEFAULTS,
@@ -163,7 +163,7 @@ describe("explain", () => {
     connection.closeSync();
   });
 
-  it("builds and prints a whole-number filter past int64 as HUGEINT (HAT-41)", async () => {
+  it("builds and prints a whole-number filter past int64 as HUGEINT", async () => {
     const { root, project } = await writeProject({
       "hatchmark.json": {
         ...PROJECT_DEFAULTS,

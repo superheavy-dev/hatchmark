@@ -24,7 +24,7 @@ describe("checkComments", () => {
         [
           "// TODO: later",
           "// FIXME",
-          "/* HACK(gunwoo): until DuckDB 2 */",
+          "/* HACK(alex): until DuckDB 2 */",
           "// Don't remove this (TODO: wait until it's deployed).",
         ].join("\n"),
       ),

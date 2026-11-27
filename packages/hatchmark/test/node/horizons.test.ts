@@ -309,7 +309,7 @@ async function sources(
   });
 }
 
-describe("horizon edges (HAT-44 and HAT-45 on #19)", () => {
+describe("horizon edges", () => {
   it("keeps a timestamp exactly at local midnight on its own day", async () => {
     const one = await build(
       await sources(
