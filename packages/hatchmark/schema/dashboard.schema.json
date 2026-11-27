@@ -118,13 +118,7 @@
           "type": "object",
           "properties": {
             "to_date": {
-              "type": "string",
-              "enum": [
-                "week",
-                "month",
-                "quarter",
-                "year"
-              ]
+              "$ref": "#/$defs/TimeGrain"
             }
           },
           "required": [
@@ -194,8 +188,8 @@
                 },
                 "by": {
                   "type": "integer",
-                  "minimum": -9007199254740991,
-                  "maximum": 9007199254740991,
+                  "minimum": -3660,
+                  "maximum": 3660,
                   "description": "Units to move both ends by; negative is earlier.",
                   "not": {
                     "const": 0

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { resolveRange } from "../../src/compiler/index.js";
+import { bucketStart, resolveRange, timeBuckets } from "../../src/compiler/index.js";
 import { DEFAULT_ANCHORS } from "../../src/spec/index.js";
 
 const days = (start: string, end: string) => (Date.parse(end) - Date.parse(start)) / 86_400_000;
@@ -196,5 +196,59 @@ describe("resolveRange (shorthands, anchors and shifts)", () => {
     expect(
       resolveRange("all_time", { shift: { unit: "year", by: -1 } }, "2026-11-27", FISCAL),
     ).toBe(undefined);
+  });
+});
+
+describe("resolveRange (review of #14)", () => {
+  const b = (start: string, end: string) => ({ kind: "bounded", start, end });
+  const shift = (unit: "day" | "week" | "month" | "year", by: number) => ({ shift: { unit, by } });
+
+  it("moves both ends of a non-to-date range by an explicit shift", () => {
+    expect(
+      resolveRange({ last_complete: "month" }, shift("week", -1), "2026-03-15", DEFAULT_ANCHORS),
+    ).toEqual(b("2026-01-25", "2026-02-22"));
+    expect(
+      resolveRange({ last: 2, unit: "month" }, shift("month", -1), "2026-03-30", DEFAULT_ANCHORS),
+    ).toEqual(b("2026-01-01", "2026-02-28"));
+    expect(
+      resolveRange({ last_complete: "quarter" }, "previous_year", "2026-11-15", DEFAULT_ANCHORS),
+    ).toEqual(b("2025-07-01", "2025-10-01"));
+  });
+
+  it("reads to_date day as the as-of day", () => {
+    expect(resolveRange({ to_date: "day" }, "none", "2026-03-01", DEFAULT_ANCHORS)).toEqual(
+      b("2026-03-01", "2026-03-02"),
+    );
+    expect(
+      resolveRange({ to_date: "day" }, "previous_period", "2026-03-01", DEFAULT_ANCHORS),
+    ).toEqual(b("2026-02-28", "2026-03-01"));
+  });
+
+  it("keeps years 0 to 99 as themselves", () => {
+    expect(timeBuckets("0099-12-30", "0100-01-02", { unit: "day" })).toEqual([
+      "0099-12-30",
+      "0099-12-31",
+      "0100-01-01",
+    ]);
+    expect(bucketStart("0004-03-03", { unit: "week", anchor: "monday" })).toBe("0004-03-01");
+    expect(bucketStart("0004-02-29", { unit: "week", anchor: "monday" })).toBe("0004-02-23");
+  });
+
+  it("clamps windows to years 0000 to 9999, and has none beyond them", () => {
+    const range = { start: "2026-02-01", end: "2026-03-01" };
+    expect(resolveRange(range, shift("year", -3000), "2026-03-15", DEFAULT_ANCHORS)).toBe(
+      undefined,
+    );
+    expect(
+      resolveRange(
+        { start: "9000-01-01", end: "9000-02-01" },
+        shift("year", 1000),
+        "9000-03-15",
+        DEFAULT_ANCHORS,
+      ),
+    ).toBe(undefined);
+    expect(
+      resolveRange({ last: 3000, unit: "year" }, "none", "2026-03-15", DEFAULT_ANCHORS),
+    ).toEqual(b("0000-01-01", "2026-03-16"));
   });
 });

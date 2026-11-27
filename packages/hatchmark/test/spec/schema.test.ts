@@ -225,7 +225,8 @@ describe("spec schemas", () => {
     expect(range({ start: "2026-04-01", end: "2026-04-01" }).map((d) => d.code)).toEqual([
       "HM3005",
     ]);
-    expect(range({ to_date: "day" }).map((d) => d.code)).not.toEqual([]);
+    expect(range({ to_date: "hour" }).map((d) => d.code)).not.toEqual([]);
+    expect(range({ to_date: "day" })).toEqual([]);
     expect(range({ last: 0, unit: "day" }).map((d) => d.code)).not.toEqual([]);
   });
 

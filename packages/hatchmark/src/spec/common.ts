@@ -167,7 +167,7 @@ export const rangeSchema = z
       last: z.number().int().min(1).max(3660),
       unit: timeGrain,
     }),
-    z.strictObject({ to_date: timeGrain.exclude(["day"]) }),
+    z.strictObject({ to_date: timeGrain }),
     z.strictObject({ last_complete: timeGrain }),
   ])
   .meta({
@@ -187,6 +187,8 @@ export const comparison = z
         by: z
           .number()
           .int()
+          .min(-3660)
+          .max(3660)
           .refine((n) => n !== 0, { error: "must not be 0" })
           .meta({
             description: "Units to move both ends by; negative is earlier.",

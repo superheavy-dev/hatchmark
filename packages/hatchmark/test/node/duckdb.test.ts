@@ -617,6 +617,26 @@ describe("DuckDB executor queries", () => {
     }
   });
 
+  it("runs a comparison shifted before year 0000 without a previous value", async () => {
+    const ancient = await writeProject({
+      ...files(),
+      "dashboards/ancient.json": {
+        title: "Ancient",
+        period: {
+          asOf: "2026-04-30",
+          range: { start: "2026-01-01", end: "2026-05-01" },
+          compare: { shift: { unit: "year", by: -3000 } },
+        },
+        blocks: [{ type: "kpi", id: "orders", metric: "orders" }],
+      },
+    });
+    const { data, diagnostics } = await run(ancient.root, ancient.project, "ancient");
+    expect(diagnostics).toEqual([]);
+    const kpi = block<KpiData>(data, "orders");
+    expect(kpi.value).toBeTypeOf("number");
+    expect(kpi.previousValue).toBeUndefined();
+  });
+
   it("reports a missing column as HM2015 with the cause", async () => {
     const broken = await writeProject({
       ...files(),

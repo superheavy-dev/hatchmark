@@ -31,12 +31,19 @@ function format({ y, m, d }: Ymd): string {
   return `${String(y).padStart(4, "0")}-${String(m).padStart(2, "0")}-${String(d).padStart(2, "0")}`;
 }
 
+/** A UTC instant for a date; unlike Date.UTC, years 0 to 99 stay themselves instead of 1900 to 1999. */
+function utc(y: number, monthIndex: number, d: number): Date {
+  const t = new Date(0);
+  t.setUTCFullYear(y, monthIndex, d);
+  return t;
+}
+
 function daysInMonth(y: number, m: number): number {
-  return new Date(Date.UTC(y, m, 0)).getUTCDate();
+  return utc(y, m, 0).getUTCDate();
 }
 
 function addDays(date: Ymd, days: number): Ymd {
-  const t = new Date(Date.UTC(date.y, date.m - 1, date.d + days));
+  const t = utc(date.y, date.m - 1, date.d + days);
   return { y: t.getUTCFullYear(), m: t.getUTCMonth() + 1, d: t.getUTCDate() };
 }
 
@@ -74,7 +81,7 @@ function startOf(date: Ymd, grain: ResolvedGrain): Ymd {
     case "month":
       return { y: date.y, m: date.m, d: 1 };
     case "week": {
-      const weekday = (new Date(Date.UTC(date.y, date.m - 1, date.d)).getUTCDay() + 6) % 7;
+      const weekday = (utc(date.y, date.m - 1, date.d).getUTCDay() + 6) % 7;
       return addDays(date, -((weekday - WEEKDAYS.indexOf(grain.anchor) + 7) % 7));
     }
     default: {
@@ -87,6 +94,10 @@ function startOf(date: Ymd, grain: ResolvedGrain): Ymd {
     }
   }
 }
+
+/** Dates outside years 0000 to 9999 have no YYYY-MM-DD form: windows are clamped to them, or have none. */
+const FIRST_DAY: Ymd = { y: 0, m: 1, d: 1 };
+const PAST_LAST_DAY: Ymd = { y: 10000, m: 1, d: 1 };
 
 const NAMED: Record<Exclude<PeriodRange, "all_time">, Exclude<RangeSpec, PeriodRange>> = {
   last_7_days: { last: 7, unit: "day" },
@@ -122,10 +133,13 @@ function anchored(unit: TimeGrain, anchors: Anchors): ResolvedGrain {
  *   previous bucket through the same elapsed day, clamped to its length.
  * - {last_complete: unit} is the last bucket that has ended by the end of asOf. previous_period is
  *   the bucket before it.
- * - previous_year and {shift: {unit, by}} move the range by whole units. Ranges that end inside a
- *   bucket (to-date and coarser "last") move their start and asOf, so both spans have the same
- *   elapsed length; a whole bucket moves its start and keeps its length.
+ * - {shift: {unit, by}} moves both ends of the range by whole units, clamping days to the target
+ *   month. A to-date range moves its start and asOf instead, so both spans cover the same elapsed
+ *   days. previous_year is a shift by -1 year, except that coarser "last" ranges keep their v1 rule
+ *   and move their start and asOf.
  * - all_time is unbounded and has no comparison: undefined for any shift but "none".
+ * - Windows are clamped to start no earlier than 0000-01-01. A window ending outside years 0000 to
+ *   9999 is undefined, like a comparison that doesn't exist.
  */
 export function resolveRange(
   range: RangeSpec,
@@ -136,11 +150,12 @@ export function resolveRange(
   if (range === "all_time") return shift === "none" ? { kind: "unbounded" } : undefined;
   const spec = typeof range === "string" ? NAMED[range] : range;
   const day = parse(asOf);
-  const result = (start: Ymd, end: Ymd): WindowBounds => ({
-    kind: "bounded",
-    start: format(start),
-    end: format(end),
-  });
+  const key = ({ y, m, d }: Ymd) => y * 10000 + m * 100 + d;
+  const result = (start: Ymd, end: Ymd): WindowBounds | undefined => {
+    if (key(end) <= key(FIRST_DAY) || key(end) > key(PAST_LAST_DAY)) return undefined;
+    const from = key(start) < key(FIRST_DAY) ? FIRST_DAY : start;
+    return { kind: "bounded", start: format(from), end: format(end) };
+  };
   const moved = (unit: TimeGrain, n: number) => ({ unit, n });
   const by =
     shift === "none"
@@ -157,7 +172,8 @@ export function resolveRange(
     if (shift === "none") return result(start, end);
     if (by === undefined) {
       const days = Math.round(
-        (Date.UTC(end.y, end.m - 1, end.d) - Date.UTC(start.y, start.m - 1, start.d)) / 86400000,
+        (utc(end.y, end.m - 1, end.d).getTime() - utc(start.y, start.m - 1, start.d).getTime()) /
+          86400000,
       );
       return result(addDays(start, -days), start);
     }
@@ -171,8 +187,11 @@ export function resolveRange(
     const own = startOf(day, grain);
     const current = format(addUnits(own, unit, 1)) === format(next) ? own : addUnits(own, unit, -1);
     if (shift === "none") return result(current, addUnits(current, unit, 1));
-    const start = by === undefined ? addUnits(current, unit, -1) : addUnits(current, by.unit, by.n);
-    return result(start, addUnits(start, unit, 1));
+    if (by === undefined) return result(addUnits(current, unit, -1), current);
+    return result(
+      addUnits(current, by.unit, by.n),
+      addUnits(addUnits(current, unit, 1), by.unit, by.n),
+    );
   }
 
   if ("last" in spec && spec.unit === "day") {
@@ -187,6 +206,9 @@ export function resolveRange(
   const count = "last" in spec ? spec.last : 1;
   const start = addUnits(startOf(day, anchored(unit, anchors)), unit, -(count - 1));
   if (shift === "none") return result(start, addDays(day, 1));
+  if (typeof shift === "object" && by !== undefined && "last" in spec) {
+    return result(addUnits(start, by.unit, by.n), addUnits(addDays(day, 1), by.unit, by.n));
+  }
   const step = by ?? moved(unit, -count);
   return result(addUnits(start, step.unit, step.n), addDays(addUnits(day, step.unit, step.n), 1));
 }
