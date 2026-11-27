@@ -46,8 +46,43 @@ export function renderTable(block: TableData, ctx: RenderContext): string {
   const shareFormat = { format: { type: "percent", decimals: 1 } } as const;
   const bars = new Set(block.bars ?? []);
   const scaled = block.rows.filter((row) => row.kind !== "subtotal");
+  const grouped = width > 1;
   const keyClass = (i: number) =>
-    `hm-key${i === 0 ? "" : " hm-key2"}${i === width - 1 ? " hm-fill" : ""}`;
+    `hm-key${i === 0 ? "" : " hm-key2"}${i === width - 1 ? " hm-fill" : grouped ? " hm-outer" : ""}`;
+  const levelOf = (row: TableRow) => row.level ?? 1;
+  const years = block.by.map((b) =>
+    /\byears?\b/i.test(`${b.column.replaceAll("_", " ")} ${b.label}`),
+  );
+  /** A key as shown: a year column reads 2026, never 2,026. */
+  const keyText = (i: number, key: TableRow["keys"][number]) =>
+    years[i] && typeof key === "number" && Number.isInteger(key)
+      ? String(key)
+      : formatKey(key, locale);
+  const solo = new Set<number>();
+  block.rows.forEach((row, index) => {
+    if (row.kind !== "subtotal") return;
+    const level = levelOf(row);
+    let children = 0;
+    for (let j = index + 1; j < block.rows.length; j++) {
+      const next = block.rows[j] as TableRow;
+      const nested = next.kind === "subtotal";
+      if (nested && levelOf(next) <= level) break;
+      if (level === width - 1 ? !nested : nested && levelOf(next) === level + 1) children++;
+    }
+    if (children === 1) solo.add(index);
+  });
+  const revealed: Set<number>[] = [];
+  const stack: { level: number; solo: boolean }[] = [];
+  block.rows.forEach((row, index) => {
+    if (row.kind === "subtotal") stack.length = Math.min(stack.length, levelOf(row) - 1);
+    revealed.push(new Set(stack.filter((a) => a.solo).map((a) => a.level - 1)));
+    if (row.kind === "subtotal") stack.push({ level: levelOf(row), solo: solo.has(index) });
+  });
+  /** Text only the narrow layout shows; in body rows it repeats key cells, so screen readers skip it. */
+  const mobile = (text: string, sub = false, spoken = false) =>
+    text === ""
+      ? ""
+      : `<span class="hm-m${sub ? " hm-msub" : ""}"${spoken ? "" : ' aria-hidden="true"'}>${esc(text)}</span>`;
   const maxShare = Object.fromEntries(
     block.percentOfTotal.map((m) => [
       m,
@@ -64,14 +99,34 @@ export function renderTable(block: TableData, ctx: RenderContext): string {
   );
   const sortState = (by: string) =>
     block.sort?.by === by ? (block.sort.order === "asc" ? "ascending" : "descending") : "none";
-  const header = (label: string, by: string, cls: string, numeric: boolean, csv = label) => {
+  const header = (
+    label: string,
+    by: string,
+    cls: string,
+    numeric: boolean,
+    csv = label,
+    extra = "",
+  ) => {
     const text = esc(label);
     const content = numeric ? `${CARET}${text}` : `${text}${CARET}`;
     const csvAttr = csv === label ? "" : ` data-csv="${esc(csv)}"`;
-    return `<th scope="col"${cls ? ` class="${cls}"` : ""} aria-sort="${sortState(by)}" data-hm-num="${numeric ? 1 : 0}"${csvAttr}><button type="button" class="hm-sort">${content}</button></th>`;
+    return `<th scope="col"${cls ? ` class="${cls}"` : ""} aria-sort="${sortState(by)}" data-hm-num="${numeric ? 1 : 0}"${csvAttr}><button type="button" class="hm-sort">${content}</button>${extra}</th>`;
   };
+  const outerLabels = block.by
+    .slice(0, -1)
+    .map((b) => b.label)
+    .join(" · ");
   const head = [
-    ...block.by.map((b, i) => header(b.label, b.column, keyClass(i), false)),
+    ...block.by.map((b, i) =>
+      header(
+        b.label,
+        b.column,
+        keyClass(i),
+        false,
+        b.label,
+        i === width - 1 && grouped && !block.subtotals ? mobile(outerLabels, true, true) : "",
+      ),
+    ),
     ...metrics.flatMap((m) => [
       header(m.label, m.name, "", true),
       ...(block.percentOfTotal.includes(m.name)
@@ -125,40 +180,51 @@ export function renderTable(block: TableData, ctx: RenderContext): string {
     cls: string,
     hidden: boolean,
     value: string | number | boolean | null = text,
+    extra = "",
   ) => {
     const tag = i === 0 ? 'th scope="row"' : "td";
-    const content = text === "" ? "" : `<span${hidden ? ' class="hm-sr"' : ""}>${esc(text)}</span>`;
+    const content = `${text === "" ? "" : `<span${hidden ? ' class="hm-sr"' : ""}>${esc(text)}</span>`}${extra}`;
     const title = text === "" || hidden ? "" : ` title="${esc(text)}"`;
     return `<${tag} class="${keyClass(i)}${cls}"${title}${typeof value === "number" ? ' data-t="n"' : ""} data-v="${attr(value === null ? "" : String(value))}">${content}</${tag.split(" ")[0]}>`;
   };
-  const keysOf = (row: TableRow, previous: TableRow | undefined): string[] => {
+  const keysOf = (row: TableRow, previous: TableRow | undefined, shown: Set<number>): string[] => {
     const level = row.kind === "subtotal" ? (row.level ?? 1) : undefined;
     const otherAt = row.kind === "other" ? (block.subtotals ? width - 1 : 0) : undefined;
+    const other = `Other (${(row.count ?? 0).toLocaleString(locale)})`;
+    const outer = (indices: number[]) =>
+      indices.map((i) => keyText(i, row.keys[i] ?? null)).join(" · ");
+    const inner = width - 1;
+    const extra = !grouped
+      ? ""
+      : level !== undefined
+        ? mobile(keyText(level - 1, row.keys[level - 1] ?? null))
+        : otherAt !== undefined
+          ? otherAt < inner
+            ? mobile(other)
+            : ""
+          : block.subtotals
+            ? mobile(outer([...shown].sort()), true)
+            : mobile(outer(Array.from({ length: inner }, (_, i) => i)), true);
     return row.keys.map((key, i) => {
-      const text = formatKey(key, locale);
+      const text = keyText(i, key);
       const nullCls = key === null ? " hm-null" : "";
+      const tail = i === inner ? extra : "";
       if (level !== undefined) {
-        if (i >= level) return keyCell(i, "", "", false, i === level ? "Subtotal" : "");
-        return keyCell(i, text, nullCls, i < level - 1, key);
+        if (i >= level) return keyCell(i, "", "", false, i === level ? "Subtotal" : "", tail);
+        return keyCell(i, text, nullCls, i < level - 1 && !shown.has(i), key, tail);
       }
       if (otherAt !== undefined) {
-        if (i > otherAt) return keyCell(i, "", "", false);
-        if (i < otherAt) return keyCell(i, text, nullCls, true, key);
-        return keyCell(
-          i,
-          `Other (${(row.count ?? 0).toLocaleString(locale)})`,
-          " hm-other",
-          false,
-          "Other",
-        );
+        if (i > otherAt) return keyCell(i, "", "", false, "", tail);
+        if (i < otherAt) return keyCell(i, text, nullCls, !shown.has(i), key);
+        return keyCell(i, other, " hm-other", false, "Other");
       }
       const repeat = block.subtotals
-        ? i < width - 1
+        ? i < width - 1 && !shown.has(i)
         : i < width - 1 &&
           previous !== undefined &&
           previous.kind === undefined &&
           previous.keys.slice(0, i + 1).every((k, j) => k === row.keys[j]);
-      return keyCell(i, text, nullCls, repeat, key);
+      return keyCell(i, text, nullCls, repeat, key, tail);
     });
   };
   const rows = block.rows
@@ -166,13 +232,15 @@ export function renderTable(block: TableData, ctx: RenderContext): string {
       const kind = row.kind ?? "row";
       const level = row.kind === "subtotal" ? ` data-hm-level="${row.level ?? 1}"` : "";
       const cls = row.kind === undefined ? "" : ` class="hm-${row.kind}"`;
-      const keys = keysOf(row, block.rows[index - 1]).join("");
+      const keys = keysOf(row, block.rows[index - 1], revealed[index] ?? new Set()).join("");
+      const lead = row.kind !== "subtotal" && solo.has(index - 1) ? " data-hm-lead" : "";
+      const single = solo.has(index) ? " data-hm-solo" : lead;
       const cells = values(
         (m) => row.values[m],
         (m) => row.share?.[m],
         row.kind !== "subtotal",
       );
-      return `<tr${cls} data-hm-kind="${kind}"${level}>${keys}${cells}</tr>`;
+      return `<tr${cls} data-hm-kind="${kind}"${level}${single}>${keys}${cells}</tr>`;
     })
     .join("");
   const total = block.total
@@ -196,5 +264,5 @@ export function renderTable(block: TableData, ctx: RenderContext): string {
   const empty =
     block.rows.length === 0 ? `<p class="hm-table-note">No rows in this period.</p>` : "";
   const tall = block.rows.length > TALL_TABLE_ROWS ? " hm-tall" : "";
-  return `<div class="hm-table-wrap${tall}" tabindex="0" role="region" aria-labelledby="hm-${esc(block.id)}-t"><table class="hm-table"><thead><tr>${head}</tr></thead><tbody>${rows}</tbody>${total}</table></div>${empty}${note}`;
+  return `<div class="hm-table-wrap${tall}" tabindex="0" role="region" aria-labelledby="hm-${esc(block.id)}-t"><table class="hm-table${grouped ? (block.subtotals ? " hm-ma" : " hm-mb") : ""}${grouped && block.subtotals && width > 2 ? " hm-deep" : ""}"><thead><tr>${head}</tr></thead><tbody>${rows}</tbody>${total}</table></div>${empty}${note}`;
 }

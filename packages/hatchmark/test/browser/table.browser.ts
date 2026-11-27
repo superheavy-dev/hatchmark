@@ -68,6 +68,26 @@ beforeAll(async () => {
     subtotals: variant("table-subtotals-other"),
     two: variant("table-two-columns"),
     tall: variant("table-tall"),
+    teams: variant("table-group-teams"),
+    cities: variant("table-group-cities"),
+    products: variant("table-group-products"),
+    deep: dashboard("deep", "Deep", [
+      {
+        ...TRICKY,
+        id: "deep",
+        by: [
+          { column: "region", label: "Region" },
+          { column: "country", label: "Country" },
+          { column: "city", label: "City" },
+        ],
+        rows: [
+          { keys: ["Europe", "Germany", "Berlin"], values: { revenue: 30 } },
+          { keys: ["North America", "Canada", "Toronto"], values: { revenue: 20 } },
+          { keys: ["Europe", "France", "Paris"], values: { revenue: 10 } },
+        ],
+        rowCount: 3,
+      },
+    ]),
     bars: variant("table-bars-negative"),
     tricky: dashboard("tricky", "Tricky", [TRICKY]),
     numeric: keyed("numeric", [2, -2, 1000, -10]),
@@ -465,4 +485,209 @@ describe("in-cell bar and scrollbar layout", () => {
     expect(Math.abs(box.foot.text - box.body.text)).toBeLessThan(0.5);
     await classic.close();
   });
+});
+
+describe("narrow layouts of grouped tables", () => {
+  /** Visible text of the narrow-only labels in each body row, with the row's outer key values. */
+  const labels = (page: Page) =>
+    page.$$eval(".hm-table tbody tr", (trs) =>
+      trs
+        .filter((tr) => getComputedStyle(tr).display !== "none")
+        .map((tr) => {
+          const fill = tr.querySelector(".hm-fill");
+          const mobile = [...(fill?.querySelectorAll<HTMLElement>(".hm-m") ?? [])];
+          return {
+            kind: (tr as HTMLElement).dataset.hmKind,
+            outer: [...tr.querySelectorAll(".hm-outer")].map((c) => c.getAttribute("data-v")),
+            label: mobile.filter((m) => m.offsetHeight > 0).map((m) => m.textContent),
+            hidden: mobile.every((m) => m.getAttribute("aria-hidden") === "true"),
+          };
+        }),
+    );
+  const columns = (page: Page) =>
+    page.$$eval(".hm-table thead th.hm-key", (ths) =>
+      ths.map((th) => ({
+        width: th.getBoundingClientRect().width,
+        position: getComputedStyle(th).position,
+        left: getComputedStyle(th).left,
+      })),
+    );
+
+  it("with subtotals, names each group in a full-width row and pins only the innermost key column (390px)", async () => {
+    const page = await open("subtotals", 390);
+    const [outer, inner] = await columns(page);
+    expect(outer?.width).toBeLessThan(1);
+    expect(inner?.left).toBe("0px");
+    const before = await labels(page);
+    for (const row of before.filter((r) => r.kind === "subtotal"))
+      expect(row.label).toEqual(row.outer);
+    const leaves = await page.$$eval("tbody tr[data-hm-kind=row]", (trs) =>
+      trs.map((tr) => tr.hasAttribute("data-hm-lead")),
+    );
+    before
+      .filter((r) => r.kind === "row")
+      .forEach((row, i) => {
+        expect(row.label).toEqual(leaves[i] ? row.outer : []);
+      });
+    expect(before.every((r) => r.hidden)).toBe(true);
+    const wrap = page.locator(".hm-table-wrap");
+    await wrap.evaluate((n) => {
+      n.scrollLeft = 400;
+    });
+    const edges = await page.evaluate(() => ({
+      wrap: document.querySelector(".hm-table-wrap")?.getBoundingClientRect().left,
+      fill: document.querySelector("tbody .hm-fill")?.getBoundingClientRect().left,
+    }));
+    expect(Math.abs((edges.fill ?? 0) - (edges.wrap ?? 0))).toBeLessThan(1);
+    await page.locator("thead th").nth(2).locator("button").click();
+    expect(await labels(page)).toHaveLength(before.length);
+    for (const row of (await labels(page)).filter((r) => r.kind === "subtotal"))
+      expect(row.label).toEqual(row.outer);
+    await page.close();
+  });
+
+  it("without subtotals, shows the outer value under the inner one, also after a sort by a metric (390px)", async () => {
+    const page = await open("two", 390);
+    const header = await page.$eval("thead th.hm-fill", (th) => th.textContent);
+    expect(header).toBe("CountryRegion");
+    const check = async () => {
+      for (const row of (await labels(page)).filter((r) => r.kind === "row"))
+        expect(row.label).toEqual(row.outer);
+    };
+    await check();
+    await page.locator("thead th").last().locator("button").click();
+    await check();
+    await page.close();
+    const deep = await open("deep", 390);
+    expect((await labels(deep)).map((r) => r.label)).toEqual([
+      ["Europe · Germany"],
+      ["North America · Canada"],
+      ["Europe · France"],
+    ]);
+    await deep.close();
+  });
+
+  it("keeps the desktop layout unchanged above the narrow breakpoint", async () => {
+    for (const name of ["subtotals", "two"]) {
+      const page = await open(name);
+      const [outer] = await columns(page);
+      expect(outer?.width).toBeGreaterThan(100);
+      expect((await labels(page)).every((r) => r.label.length === 0)).toBe(true);
+      await page.close();
+    }
+  });
+
+  it("indents the three levels of a deep subtotal table", async () => {
+    const page = await open("cities", 390);
+    const x = (selector: string) =>
+      page.$eval(selector, (n) => {
+        const range = document.createRange();
+        range.selectNodeContents(n);
+        return (
+          range.getBoundingClientRect().left -
+          (n.closest("td,th")?.getBoundingClientRect().left ?? 0)
+        );
+      });
+    const one = await x('tr[data-hm-level="1"] .hm-fill .hm-m');
+    const two = await x('tr[data-hm-level="2"] .hm-fill .hm-m');
+    const leaf = await x('tr[data-hm-kind="row"] .hm-fill span');
+    expect(two).toBeGreaterThan(one);
+    expect(leaf).toBeGreaterThan(two);
+    await page.close();
+  });
+
+  for (const width of [1280, 390]) {
+    it(`folds a one-row group into its row instead of repeating its numbers (${width}px)`, async () => {
+      const page = await open("teams", width);
+      const visible = await page.$$eval(".hm-table tbody tr", (trs) =>
+        trs
+          .filter((tr) => getComputedStyle(tr).display !== "none")
+          .map((tr) => tr.querySelector("td[data-v]:not(.hm-key)")?.getAttribute("data-v")),
+      );
+      expect(visible.filter((v) => v === "74900")).toHaveLength(1);
+      const row = page.locator("tbody tr[data-hm-lead]");
+      if (width === 1280) {
+        expect(
+          await row.locator(".hm-outer span").evaluate((s) => s.classList.contains("hm-sr")),
+        ).toBe(false);
+      } else {
+        expect(await row.locator(".hm-fill .hm-msub").textContent()).toBe("Partnerships");
+      }
+      await page.close();
+    });
+  }
+
+  it("keeps each row's group readable to screen readers on a phone", async () => {
+    const page = await open("two", 390);
+    const outer = await page.$$eval("tbody .hm-outer > span", (spans) =>
+      spans.map((s) => ({ display: getComputedStyle(s).display, text: s.textContent })),
+    );
+    expect(outer.length).toBeGreaterThan(0);
+    for (const span of outer) {
+      expect(span.display).not.toBe("none");
+      expect(span.text).not.toBe("");
+    }
+    await page.close();
+  });
+
+  it("skips hidden outer headers in keyboard order and keeps a focused header clear of the pinned column", async () => {
+    const page = await open("subtotals", 390);
+    await page.locator(".hm-table-wrap").evaluate((n) => {
+      n.scrollLeft = n.scrollWidth;
+    });
+    await page.locator("button[data-hm-csv]").focus();
+    const order: string[] = [];
+    for (let i = 0; i < 3; i++) {
+      await page.keyboard.press("Tab");
+      const th = await page.evaluate(
+        () => document.activeElement?.closest("th")?.textContent ?? "",
+      );
+      if (th !== "") order.push(th);
+    }
+    expect(order[0]).toBe("Country");
+    expect(order[1]).toBe("Revenue");
+    const [fill, focused] = await page.evaluate(() => [
+      document.querySelector("thead .hm-fill")?.getBoundingClientRect().right ?? 0,
+      (document.activeElement as HTMLElement).getBoundingClientRect().left,
+    ]);
+    expect(focused).toBeGreaterThanOrEqual(fill);
+    await page.close();
+  });
+});
+
+describe("preview-only scrollbar options", () => {
+  it("draws a thin themed scrollbar with ?scroll=thin", async () => {
+    const page = await browser.newPage({ viewport: { width: 1280, height: 900 } });
+    await page.goto(`${urls.tall}?scroll=thin`);
+    const style = await page.$eval(".hm-table-wrap", (n) => ({
+      width: getComputedStyle(n).scrollbarWidth,
+      color: getComputedStyle(n).scrollbarColor,
+    }));
+    expect(style.width).toBe("thin");
+    expect(style.color).not.toBe("auto");
+    await page.close();
+  });
+
+  for (const width of [1280, 390]) {
+    it(`lets a tall table grow with the page and pins its header and total to the viewport with ?scroll=page (${width}px)`, async () => {
+      const page = await browser.newPage({ viewport: { width, height: 700 } });
+      await page.goto(`${urls.tall}?scroll=page`);
+      const wrap = page.locator(".hm-table-wrap");
+      expect(await wrap.evaluate((n) => n.scrollHeight - n.clientHeight)).toBeLessThan(2);
+      const top = await wrap.evaluate((n) => n.getBoundingClientRect().top + window.scrollY);
+      await page.evaluate((y) => window.scrollTo(0, y), top + 500);
+      await page.waitForTimeout(100);
+      const box = await page.evaluate(() => ({
+        head: document.querySelector("thead th")?.getBoundingClientRect().top ?? -1,
+        foot: document.querySelector("tfoot th")?.getBoundingClientRect().bottom ?? -1,
+        cells: [...document.querySelectorAll("tfoot tr > *")].map(
+          (c) => c.getBoundingClientRect().bottom,
+        ),
+      }));
+      expect(Math.abs(box.head)).toBeLessThan(1);
+      expect(Math.abs(box.foot - 700)).toBeLessThan(1);
+      for (const bottom of box.cells) expect(Math.abs(bottom - box.foot)).toBeLessThan(1);
+      await page.close();
+    });
+  }
 });

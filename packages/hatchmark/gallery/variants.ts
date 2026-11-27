@@ -33,6 +33,15 @@ import {
 } from "./fixtures.js";
 import { FISCAL_BARS, MONTH, QUARTER_BARS, REGION_SWITCH, revenueSwitch, WEEK } from "./grains.js";
 import {
+  TABLE_GROUP_CAMPAIGNS,
+  TABLE_GROUP_CITIES,
+  TABLE_GROUP_EMPTY,
+  TABLE_GROUP_PRODUCTS,
+  TABLE_GROUP_SEATS,
+  TABLE_GROUP_TEAMS,
+  TABLE_GROUP_YEARS,
+} from "./table-groups.js";
+import {
   TABLE_BARS,
   TABLE_BARS_NEGATIVE,
   TABLE_OTHER_DISTINCT,
@@ -612,6 +621,23 @@ const TABLES: GalleryVariant[] = [
   one("table", "table-bars", "In-cell bars on two metrics", TABLE_BARS),
   one("table", "table-bars-negative", "In-cell bars across zero", TABLE_BARS_NEGATIVE),
   one("table", "table-tall", "50 rows: sticky header and total row", TABLE_TALL),
+  one(
+    "table",
+    "table-group-products",
+    "Category and product, long product names",
+    TABLE_GROUP_PRODUCTS,
+  ),
+  one(
+    "table",
+    "table-group-campaigns",
+    "Channel and campaign with subtotals, long names, top 3 plus Other",
+    TABLE_GROUP_CAMPAIGNS,
+  ),
+  one("table", "table-group-teams", "Subtotals with a one-person team", TABLE_GROUP_TEAMS),
+  one("table", "table-group-cities", "Three levels: region, country, city", TABLE_GROUP_CITIES),
+  one("table", "table-group-years", "Year and quarter with subtotals", TABLE_GROUP_YEARS),
+  one("table", "table-group-seats", "Plan tier and a numeric seat count", TABLE_GROUP_SEATS),
+  one("table", "table-group-empty", "An empty group value", TABLE_GROUP_EMPTY),
 ];
 
 /** Every gallery variant, by component. */

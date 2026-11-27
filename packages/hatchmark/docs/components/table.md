@@ -37,7 +37,7 @@ What it draws:
   ratios divide the totals (an average order value total is revenue ÷ orders, never an average of
   averages). When rows were cut the table says "Showing 15 of 21 rows. The total covers all 21."
 - Long names wrap to at most two lines and keep the full text in a tooltip. On narrow screens the
-  table scrolls sideways with the first column pinned, and bars are hidden.
+  table scrolls sideways with its key column pinned, and bars are hidden (see Narrow screens).
 - Undefined values show `—`; a null group shows "(empty)".
 
 ## Sorting
@@ -73,6 +73,25 @@ outer column. Subtotals come from the query (SQL `ROLLUP`), never from adding th
 distinct count or an average is right at every level. Groups are ordered among themselves by their
 subtotal in `sort` order, rows within each group likewise. `limit` and `other` then apply inside
 each innermost group: "the top 3 countries of every region, the rest of each region as Other".
+
+A group with a single row would repeat that row's numbers in its subtotal, so the subtotal row is
+left out and the row shows its group name instead. The CSV still lists the subtotal.
+
+## Narrow screens
+
+On a phone-sized card (under 600 px), a table with two or three `by` columns keeps one key column
+pinned at the left edge, and how it names the groups depends on the spec, never on the current
+sort, so the layout stays put when someone sorts by a column:
+
+- With `"subtotals": true`, rows always stay in their groups. Each subtotal row becomes the group's
+  header row, its name in bold in the pinned column, and only the innermost key column is shown
+  (with three columns, the middle level is indented under the outer one).
+- Without subtotals, a sort by a metric interleaves the groups. Each row shows its innermost value
+  with the outer values below it in muted text ("United States" over "North America"), and the
+  header reads the same way.
+
+Screen readers still hear every key cell of each row, in order, so the group is announced with each
+row.
 
 ## In-cell bars
 

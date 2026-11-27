@@ -102,11 +102,14 @@ function context(data: DashboardData, theme: Theme): RenderContext {
 
 const humanize = (column: string) => column.replaceAll("_", " ");
 
-function metricLabels(ctx: RenderContext, names: string[]): string {
-  const labels = [...new Set(names)].map((n) => ctx.data.metrics[n]?.label ?? n);
-  return labels.length <= 2
+/** "A", "A and B", "A, B and C". */
+const listOf = (labels: string[]) =>
+  labels.length <= 2
     ? labels.join(" and ")
     : `${labels.slice(0, -1).join(", ")} and ${labels.at(-1)}`;
+
+function metricLabels(ctx: RenderContext, names: string[]): string {
+  return listOf([...new Set(names)].map((n) => ctx.data.metrics[n]?.label ?? n));
 }
 
 /** The card title (the block's, else what it measures) and a subtitle saying what is measured. */
@@ -136,7 +139,7 @@ export function blockHeading(
   let by: string;
   let span: string | undefined;
   if (block.type === "table") {
-    by = block.by.map((b) => b.label).join(" and ");
+    by = listOf(block.by.map((b) => b.label));
     span = block.window ? formatSpan(block.window, locale) : undefined;
   } else if (block.axis.kind === "time") {
     by = block.axis.grain;
@@ -412,7 +415,7 @@ export function pageStyles(assets: PageAssets, theme: Theme = DEFAULT_THEME): st
       ? ""
       : `.hm-grid>*{grid-column:1/-1}.hm-strip{--cols:2}.hm-kpi{grid-column:span 1}`;
     const mobile = layout.mobile
-      ? `.hm-header{flex-direction:column;align-items:flex-start}.hm-header-side{align-items:flex-start}.hm-kpi-value{font-size:20px;line-height:28px;letter-spacing:-0.01em}.hm-kpi-figure{gap:6px}.hm-track{display:none}.hm-table td.hm-cellbar,.hm-table td.hm-share{padding-left:16px}`
+      ? `.hm-header{flex-direction:column;align-items:flex-start}.hm-header-side{align-items:flex-start}.hm-kpi-value{font-size:20px;line-height:28px;letter-spacing:-0.01em}.hm-kpi-figure{gap:6px}.hm-track{display:none}.hm-table td.hm-cellbar,.hm-table td.hm-share{padding-left:16px}.hm-table:is(.hm-ma,.hm-mb) tr>.hm-outer{width:0;min-width:0;max-width:0;padding:0;border-left:0;overflow:hidden}.hm-table:is(.hm-ma,.hm-mb) tr>.hm-outer>*{position:absolute;width:1px;height:1px;margin:-1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap}.hm-table:is(.hm-ma,.hm-mb) thead tr>.hm-outer>*{display:none}.hm-table:is(.hm-ma,.hm-mb) tr>.hm-fill{position:sticky;left:0;z-index:1;padding-left:0;padding-right:12px;background:var(--hm-card);box-shadow:inset -1px 0 0 var(--hm-border)}.hm-table:is(.hm-ma,.hm-mb) thead tr>.hm-fill{z-index:3}.hm-tall .hm-table:is(.hm-ma,.hm-mb) thead tr>.hm-fill{box-shadow:inset -1px 0 0 var(--hm-border),inset 0 -1px 0 var(--hm-border-strong)}.hm-table:is(.hm-ma,.hm-mb) .hm-fill span{max-width:176px}.hm-table:is(.hm-ma,.hm-mb) tr>.hm-fill+*{padding-left:12px}.hm-table:is(.hm-ma,.hm-mb) .hm-key span.hm-m{display:-webkit-box}.hm-table .hm-key span.hm-msub{-webkit-line-clamp:1;font-size:12px;line-height:16px;font-weight:400;color:var(--hm-text-muted)}.hm-table.hm-deep tr[data-hm-level="2"] .hm-m{padding-left:12px}.hm-table.hm-deep tr:not(.hm-subtotal)>.hm-fill>span{padding-left:24px}.hm-table:is(.hm-ma,.hm-mb) tfoot tr>:first-child{box-shadow:inset -1px 0 0 var(--hm-border)}.hm-tall .hm-table:is(.hm-ma,.hm-mb) tfoot tr>:first-child{box-shadow:inset -1px 0 0 var(--hm-border),inset 0 1px 0 var(--hm-border-strong)}`
       : "";
     return `@container hm ${query}{.hm-page{${width};padding:${layout.page}px 0}.hm-l${i}{display:block}${column}${mobile}}`;
   }).join("");
@@ -450,7 +453,7 @@ export function pageStyles(assets: PageAssets, theme: Theme = DEFAULT_THEME): st
     `.hm-table-note{font-size:12px;line-height:16px;color:var(--hm-text-subtle)}`,
     `.hm-table thead th{position:sticky;top:0;z-index:2;background:var(--hm-card)}.hm-table thead tr>:first-child{z-index:3}.hm-tall{max-height:${d.tableRow - 4 + Math.round(15.5 * d.tableRow) + d.tableRow}px;overflow:auto;margin-right:-16px;padding-right:16px}.hm-tall thead th{border-bottom:0;box-shadow:inset 0 -1px 0 var(--hm-border-strong)}.hm-tall tfoot th,.hm-tall tfoot td{position:sticky;bottom:0;z-index:2;background:var(--hm-card);border-top:0;box-shadow:inset 0 1px 0 var(--hm-border-strong)}.hm-tall tfoot tr>:first-child{z-index:3}`,
     `.hm-sort{font:inherit;color:inherit;background:none;border:0;padding:0;margin:0;cursor:pointer;display:inline-flex;align-items:center;gap:4px;text-align:inherit;white-space:nowrap}.hm-sort:hover,.hm-table th[aria-sort=ascending],.hm-table th[aria-sort=descending]{color:var(--hm-text)}.hm-sort:focus-visible{outline:2px solid var(--hm-focus);outline-offset:2px;border-radius:2px}.hm-caret{flex:none;visibility:hidden}.hm-sort:hover .hm-caret{visibility:visible;opacity:.5}[aria-sort=ascending] .hm-caret,[aria-sort=descending] .hm-caret{visibility:visible;opacity:1}[aria-sort=ascending] .hm-caret{transform:rotate(180deg)}`,
-    `.hm-table .hm-subtotal>*{font-weight:500;border-top:1px solid var(--hm-border)}.hm-table .hm-other{color:var(--hm-text-muted)}.hm-track{position:relative}.hm-zero{position:absolute;top:-2px;bottom:-2px;width:1px;background:var(--hm-baseline)}`,
+    `:root[data-hm-scroll=thin] .hm-table-wrap{scrollbar-width:thin;scrollbar-color:var(--hm-border-strong) transparent}:root[data-hm-scroll=page] .hm-tall{max-height:none;margin-right:0;padding-right:0}.hm-table .hm-key span.hm-m{display:none}.hm-table tr[data-hm-solo]{display:none}.hm-table .hm-subtotal>*,.hm-table tr[data-hm-lead]>*{border-top:1px solid var(--hm-border)}.hm-table .hm-subtotal>*{font-weight:500}.hm-table .hm-other{color:var(--hm-text-muted)}.hm-track{position:relative}.hm-zero{position:absolute;top:-2px;bottom:-2px;width:1px;background:var(--hm-baseline)}`,
     `.hm-csv{flex:none;font:inherit;font-size:12px;line-height:16px;font-weight:500;padding:3px 10px;border:1px solid var(--hm-border);border-radius:${theme.radius.control}px;background:var(--hm-card-alt);color:var(--hm-text-muted);cursor:pointer}.hm-csv:hover{color:var(--hm-text)}.hm-csv:focus-visible{outline:2px solid var(--hm-focus);outline-offset:1px}.hm-csv[hidden]{display:none}`,
     `@media print{.hm-tall{max-height:none;overflow:visible}.hm-csv{display:none}}`,
     `.hm-footer{display:flex;justify-content:space-between;gap:2px 12px;flex-wrap:wrap;padding-top:4px}`,
@@ -466,7 +469,7 @@ export function pageStyles(assets: PageAssets, theme: Theme = DEFAULT_THEME): st
 }
 
 const THEME_SCRIPT =
-  'var t=new URLSearchParams(location.search).get("theme");if(t==="dark"||t==="light")document.documentElement.dataset.theme=t';
+  'var q=new URLSearchParams(location.search),t=q.get("theme"),s=q.get("scroll");if(t==="dark"||t==="light")document.documentElement.dataset.theme=t;if(s==="thin"||s==="page")document.documentElement.dataset.hmScroll=s';
 
 /** Everything a page's head needs: fonts preload, styles, the theme switch and the runtime. */
 export function pageHead(assets: PageAssets, theme: Theme = DEFAULT_THEME): string {
