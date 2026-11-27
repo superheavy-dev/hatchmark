@@ -44,7 +44,10 @@ const timeZones = supported("timeZone");
 
 function isLocale(tag: string): boolean {
   try {
-    return Intl.getCanonicalLocales(tag)[0] === tag;
+    return (
+      Intl.getCanonicalLocales(tag)[0] === tag &&
+      Intl.NumberFormat.supportedLocalesOf(tag).length === 1
+    );
   } catch {
     return false;
   }
@@ -83,7 +86,9 @@ export const projectConfigSchema = z
     outDir: relativePath.meta({ description: "Build output directory." }),
     locale: z
       .string()
-      .refine(isLocale, { error: "must be a canonical BCP 47 locale tag, such as en-US" })
+      .refine(isLocale, {
+        error: "must be a supported BCP 47 locale tag in canonical form, such as en-US",
+      })
       .meta({ description: "Locale for number and date formatting." }),
     currency: z
       .string()
