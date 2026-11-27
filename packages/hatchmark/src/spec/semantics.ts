@@ -1,5 +1,6 @@
 import { type Expr, parseExpr } from "./expr.js";
-import { type Metric, ownTimeNature, type TimeNature } from "./metric.js";
+import type { Metric } from "./metric.js";
+import { ownTimeNature, type TimeNature } from "./units.js";
 
 /** The metrics a metric refers to: ratio sides, formula names, or a per_entity metric's of. */
 export function metricDeps(metric: Metric): string[] {

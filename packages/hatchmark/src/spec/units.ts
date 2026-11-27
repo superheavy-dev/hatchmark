@@ -1,5 +1,6 @@
 import type { Anchors, Grain, RangeSpec, ResolvedGrain, TimeGrain, Weekday } from "./common.js";
 import type { Block } from "./dashboard.js";
+import type { TableMetric } from "./metric.js";
 
 /**
  * Spec constants and helpers without the schemas, so code that runs in the browser (assembly and
@@ -81,3 +82,15 @@ export function rangeKey(range: RangeSpec): string {
 
 /** Slices a pie or donut shows before grouping the rest into "Other". */
 export const PIE_DEFAULT_LIMIT = 5;
+
+/** How a metric relates to time: summed over a bucket, read at an instant, or not placed in time. */
+export type TimeNature = "flow" | "point" | "static";
+
+/** The time nature of an aggregate or sql metric; formulas, ratios and per_entity derive theirs. */
+export function ownTimeNature(metric: TableMetric): TimeNature {
+  if (metric.type === "aggregate") {
+    if (metric.active !== undefined || metric.trailing !== undefined) return "point";
+    if (metric.over_time !== undefined && metric.over_time !== "sum") return "point";
+  }
+  return metric.time === undefined ? "static" : "flow";
+}
