@@ -71,7 +71,7 @@ const timeSeriesFields = {
 function grainsField() {
   return grainOptions.optional().meta({
     description:
-      'Grains the card switches between, such as ["week", "month", "quarter"]. grain is the default and must be one of them. A grain filter drives every block that lists its chosen grain.',
+      "Grains the card switches between, such as [week, month, quarter]. grain is the default and must be one of them. A grain filter drives every block that lists its chosen grain.",
   });
 }
 
@@ -368,7 +368,7 @@ export const dashboardFilterSchema = z
       label: z.string().optional(),
       options: z.array(rangeSchema).min(1).max(12).meta({
         description:
-          'Presets the reader picks from, such as [{"last": 7, "unit": "day"}, {"to_date": "month"}, {"last_complete": "month"}, "last_12_months"]. Each is computed exactly at build time.',
+          "Presets the reader picks from, such as [{last: 7, unit: day}, {to_date: month}, {last_complete: month}, last_12_months]. Each is computed exactly at build time.",
       }),
       default: rangeSchema.meta({
         description: "The preset the page shows first; one of options.",
@@ -404,7 +404,7 @@ export const periodSchema = z
   .meta({
     id: "Period",
     description:
-      'Defaults to {"asOf": "latest_data", "range": "last_12_months", "compare": "previous_period"}.',
+      "Defaults to {asOf: latest_data, range: last_12_months, compare: previous_period}.",
   });
 export type Period = z.infer<typeof periodSchema>;
 

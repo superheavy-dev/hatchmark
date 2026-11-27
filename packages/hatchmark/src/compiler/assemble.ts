@@ -531,7 +531,7 @@ class Assembler {
       severity: "warning",
       message,
       ...(file ? { file: file.file, pointer, ...file.document.locationOf(pointer) } : {}),
-      help: 'show the parts as "stack": true or grouped bars, or filter the metric to values that cannot be negative',
+      help: "show the parts as stack: true or grouped bars, or filter the metric to values that cannot be negative",
       docs: docsCommand("HM4061"),
     });
   }
@@ -1140,7 +1140,7 @@ class Assembler {
         file: file.file,
         pointer,
         ...file.document.locationOf(pointer),
-        help: 'set "additive": false unless the SQL is a sum or a count',
+        help: "set additive: false unless the SQL is a sum or a count",
         docs: docsCommand("HM4003"),
       });
     }

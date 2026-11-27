@@ -264,6 +264,6 @@ describe("pageWeight (HM5002)", () => {
     const heavy = pageWeight(project, "sales", text, periods);
     expect(heavy?.pointer).toBe("/filters/0");
     expect(heavy?.message).toContain("day-grain data for custom ranges 1.0 MB");
-    expect(heavy?.help).toContain('"custom": false');
+    expect(heavy?.help).toContain("custom: false");
   });
 });

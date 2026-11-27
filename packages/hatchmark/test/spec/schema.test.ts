@@ -31,7 +31,7 @@ describe("spec schemas", () => {
     });
     const fixed = applyFix(toYaml(rest), d?.fix);
     expect(fromYaml(fixed)).toEqual({ ...rest, locale: PROJECT_DEFAULTS.locale });
-    expect(fixed).toContain('\n"locale": "en-US"');
+    expect(fixed).toContain("\nlocale: en-US");
     expect(diagnose("project", fixed)).toEqual([]);
     const compact = JSON.stringify(rest);
     expect(fromYaml(applyFix(compact, diagnose("project", compact)[0]?.fix))).toEqual({
@@ -65,7 +65,7 @@ describe("spec schemas", () => {
       message: 'unknown property "metirc"',
       pointer: "/blocks/0/metirc",
       help: 'did you mean "metric"?',
-      fix: { text: '"metric"', applicability: "unsafe" },
+      fix: { text: "metric", applicability: "unsafe" },
     });
     expect(unknown?.expected).toContain("sparkline");
     expect(ds.find((d) => d.code === "HM3001")?.pointer).toBe("/blocks/0/metric");
@@ -91,7 +91,7 @@ describe("spec schemas", () => {
         "scatter",
         "text",
       ],
-      fix: { text: '"line"', applicability: "unsafe" },
+      fix: { text: "line", applicability: "unsafe" },
     });
   });
 
@@ -100,7 +100,7 @@ describe("spec schemas", () => {
       ...DASHBOARD,
       blocks: [{ type: "line", metrics: ["revenue"], grain: "Week" }],
     });
-    expect(d).toMatchObject({ code: "HM3004", fix: { text: '"week"', applicability: "safe" } });
+    expect(d).toMatchObject({ code: "HM3004", fix: { text: "week", applicability: "safe" } });
   });
 
   it("report a missing type with the allowed values", () => {

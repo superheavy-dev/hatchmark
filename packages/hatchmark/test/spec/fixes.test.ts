@@ -55,7 +55,7 @@ describe("text fixes", () => {
     }
     const nested = "a:\n  b: 1\nz: 2\n";
     expect(applyFix(nested, addPropertyFix(doc(nested), "/a", "k", "v", "safe", "add"))).toBe(
-      'a:\n  b: 1\n  "k": "v"\nz: 2\n',
+      "a:\n  b: 1\n  k: v\nz: 2\n",
     );
   });
 
@@ -69,15 +69,42 @@ describe("text fixes", () => {
         '{\n    "a": 1\n}',
         addPropertyFix(doc('{\n    "a": 1\n}'), "", "k", 2, "safe", "add"),
       ),
-    ).toBe('{\n    "a": 1, "k": 2\n}');
+    ).toBe('{\n    "a": 1, k: 2\n}');
     expect(addPropertyFix(doc("[]"), "", "k", 1, "safe", "add")).toBeUndefined();
   });
 
-  it("replace a value with escaped JSON text", () => {
-    const text = '{"a": "📈x"}';
-    const fix = replaceValueFix(doc(text), "/a", 'say "hi"', "unsafe", "r");
-    expect(fix?.text).toBe('"say \\"hi\\""');
-    expect(fromYaml(applyFix(text, fix))).toEqual({ a: 'say "hi"' });
-    expect(replaceValueFix(doc(text), "/missing", 1, "unsafe", "r")).toBeUndefined();
+  it("replace a value with YAML text that reads back as the same value", () => {
+    const cases: [unknown, string][] = [
+      ['say "hi"', 'say "hi"'],
+      ["week", "week"],
+      ["0123", '"0123"'],
+      ["yes", "yes"],
+      ["true", '"true"'],
+      ["a: b", '"a: b"'],
+      ["Store #12", '"Store #12"'],
+      ["a, b", '"a, b"'],
+      ["[x]", '"[x]"'],
+      ["two\nlines", '"two\\nlines"'],
+      [{ unit: "year", anchor: "07-01" }, "{unit: year, anchor: 07-01}"],
+      [["day", "week"], "[day, week]"],
+      [12, "12"],
+      [false, "false"],
+    ];
+    for (const text of ['{"a": "📈x"}', "a: x\n", "b: [1, {a: x}]\n"]) {
+      const pointer = text.startsWith("b") ? "/b/1/a" : "/a";
+      for (const [value, written] of cases) {
+        const fix = replaceValueFix(doc(text), pointer, value, "unsafe", "r");
+        expect(fix?.text, String(value)).toBe(written);
+        const fixed = new SpecDocument("x.yaml", applyFix(text, fix));
+        expect(fixed.errors, `${text} ${String(value)}`).toEqual([]);
+        expect(fixed.locate(pointer)?.node, `${text} ${String(value)}`).toBeDefined();
+        const read = pointer
+          .split("/")
+          .slice(1)
+          .reduce<unknown>((v, k) => (v as Record<string, unknown> | undefined)?.[k], fixed.value);
+        expect(read, `${text} ${String(value)}`).toEqual(value);
+      }
+    }
+    expect(replaceValueFix(doc("a: x\n"), "/missing", 1, "unsafe", "r")).toBeUndefined();
   });
 });

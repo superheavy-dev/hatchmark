@@ -72,9 +72,9 @@ export const CODES = {
       "Spec files are YAML with the .yaml extension: hatchmark.yaml, metrics/<name>.yaml, dashboards/<name>.yaml and segments/<name>.yaml. A .json or .yml file in their place is not read, so the diagnostic names the .yaml file Hatchmark expects. Write the spec as YAML in that file and delete the old one.",
   },
   HM1008: {
-    title: "comment after an unquoted filter value",
+    title: "comment after an unquoted value",
     explanation:
-      'In YAML, a # after a space starts a comment, so value: Store #12 is read as Store. A filter value or a select default followed by a comment on the same line gets this warning, because a value such as a store or order number often contains #. Quote the value to keep the #, such as value: "Store #12", or move the comment to its own line.',
+      'In YAML, a # after a space or tab starts a comment, so value: Store #12 is read as Store. A filter value, a select default or a one-line sql followed by a comment on the same line gets this warning, because a store or order number, or a SQL expression, can contain #. Quote the value to keep the #, such as value: "Store #12", write SQL as a literal block (sql: |), or move the comment to its own line.',
   },
   HM2001: {
     title: "unknown source",
@@ -94,7 +94,7 @@ export const CODES = {
   HM2005: {
     title: "metric has no time column",
     explanation:
-      'This block needs to place rows in time (a time series, a time-bucketed bar chart, or a KPI comparison), but the metric has no time field. Add "time": "<date column>" to the metric, or set compare to "none" on a KPI. A ratio metric uses the time columns of its numerator and denominator.',
+      'This block needs to place rows in time (a time series, a time-bucketed bar chart, or a KPI comparison), but the metric has no time field. Add time: <date column> to the metric, or set compare to "none" on a KPI. A ratio metric uses the time columns of its numerator and denominator.',
   },
   HM2006: {
     title: "table option names a metric the table does not show",
@@ -138,7 +138,7 @@ export const CODES = {
   HM2014: {
     title: "CSV header too long",
     explanation:
-      'The first record of a CSV source is longer than 16 MiB, so Hatchmark does not read it as column names rather than guess from part of it. This usually means the delimiter or quoting is wrong. Fix the file, set the source\'s delimiter, or set "header": false.',
+      "The first record of a CSV source is longer than 16 MiB, so Hatchmark does not read it as column names rather than guess from part of it. This usually means the delimiter or quoting is wrong. Fix the file, set the source's delimiter, or set header: false.",
   },
   HM2015: {
     title: "data cannot be queried",
@@ -183,12 +183,12 @@ export const CODES = {
   HM2024: {
     title: "chart narrower than 3 columns",
     explanation:
-      'A line, area, bar, pie, donut or scatter block has "span" 1 or 2. At that width the axis labels, the key and the plot cannot all fit, so Hatchmark draws the chart 3 columns wide anyway and the grid row reflows around it. Set "span" to 3 or more to say what the page will show; the fix sets it to 3 and is safe. Use a kpi block (with "sparkline": true for a trend) when the space is meant for one number.',
+      'A line, area, bar, pie, donut or scatter block has "span" 1 or 2. At that width the axis labels, the key and the plot cannot all fit, so Hatchmark draws the chart 3 columns wide anyway and the grid row reflows around it. Set "span" to 3 or more to say what the page will show; the fix sets it to 3 and is safe. Use a kpi block (with sparkline: true for a trend) when the space is meant for one number.',
   },
   HM2026: {
     title: "table grows with the page in a shared row",
     explanation:
-      'A table with "overflow": "page" grows as tall as its rows, but this one shares its grid row with other blocks, and a grid row is as tall as its tallest card. Its neighbours stretch to the table\'s height with empty space below their content. Remove "overflow" (a table in a shared row scrolls inside its card by default), or give the table its own row with "span": 12.',
+      'A table with overflow: page grows as tall as its rows, but this one shares its grid row with other blocks, and a grid row is as tall as its tallest card. Its neighbours stretch to the table\'s height with empty space below their content. Remove "overflow" (a table in a shared row scrolls inside its card by default), or give the table its own row with span: 12.',
   },
   HM2025: {
     title: "grain no block switches to",
@@ -228,7 +228,7 @@ export const CODES = {
   HM3008: {
     title: "list default on a single-value select",
     explanation:
-      'A select filter without "multiple": true picks one value, but its default is a list, so the page would open on a state the filter cannot show. Write the one value without brackets, set "multiple": true to allow several values, or remove the default to show everything. A one-item list has a safe fix that unwraps it.',
+      "A select filter without multiple: true picks one value, but its default is a list, so the page would open on a state the filter cannot show. Write the one value without brackets, set multiple: true to allow several values, or remove the default to show everything. A one-item list has a safe fix that unwraps it.",
   },
   HM3009: {
     title: "invalid date or time in a filter",
@@ -243,7 +243,7 @@ export const CODES = {
   HM4001: {
     title: "percent of total on a non-additive metric",
     explanation:
-      'A share of the total only makes sense when the parts add up to the total. This covers percentOfTotal in a table, bar or area charts stacked to 100% ("stack": "percent"), and pie and donut blocks. Averages, distinct counts, medians, ratios, non-linear formulas and SQL metrics declared additive: false do not; neither does a formula with a constant term (a + 1000 adds 1,000 to every group but once to the total), nor a sum read with over_time min or max (each group can peak on a different date). Point-in-time sums such as balances do, at one instant. Remove the metric from percentOfTotal, stack it with "stack": true or not at all, show it in a bar chart instead of a pie or donut, or show the additive metric it is built from.',
+      "A share of the total only makes sense when the parts add up to the total. This covers percentOfTotal in a table, bar or area charts stacked to 100% (stack: percent), and pie and donut blocks. Averages, distinct counts, medians, ratios, non-linear formulas and SQL metrics declared additive: false do not; neither does a formula with a constant term (a + 1000 adds 1,000 to every group but once to the total), nor a sum read with over_time min or max (each group can peak on a different date). Point-in-time sums such as balances do, at one instant. Remove the metric from percentOfTotal, stack it with stack: true or not at all, show it in a bar chart instead of a pie or donut, or show the additive metric it is built from.",
   },
   HM4002: {
     title: "block type not built yet",
@@ -253,7 +253,7 @@ export const CODES = {
   HM4003: {
     title: "additive metric does not add up",
     explanation:
-      'A SQL metric declares "additive": true, but in a table the rows add up to a different number than the total, which Hatchmark recomputes from all rows. The total is still right; a percent of total or an in-browser filter that sums rows would not be. Distinct counts, averages and ratios are not additive: set "additive": false, or rewrite the SQL as a sum or count.',
+      "A SQL metric declares additive: true, but in a table the rows add up to a different number than the total, which Hatchmark recomputes from all rows. The total is still right; a percent of total or an in-browser filter that sums rows would not be. Distinct counts, averages and ratios are not additive: set additive: false, or rewrite the SQL as a sum or count.",
   },
   HM4004: {
     title: "float values beyond the accuracy limit",
@@ -283,12 +283,12 @@ export const CODES = {
   HM4010: {
     title: "source behind the as-of date",
     explanation:
-      'A source is complete only through a moment more than a day before the dashboard\'s as-of instant, so its metrics end early or look like a drop. A source\'s horizon is the latest value of the time column its metrics use, over all rows, ignoring filters; a date column is complete through the end of its latest date. Check that the export is current, or set "freshness" on the source: {"lag": {"days": 1}} when the newest day is still filling, {"column": "exported_at"} to measure another column, or {"through": "as_of"} for a sparse source that is complete whenever the build runs.',
+      "A source is complete only through a moment more than a day before the dashboard's as-of instant, so its metrics end early or look like a drop. A source's horizon is the latest value of the time column its metrics use, over all rows, ignoring filters; a date column is complete through the end of its latest date. Check that the export is current, or set \"freshness\" on the source: {lag: {days: 1}} when the newest day is still filling, {column: exported_at} to measure another column, or {through: as_of} for a sparse source that is complete whenever the build runs.",
   },
   HM4011: {
     title: "nothing to resolve latest_data from",
     explanation:
-      'period.asOf is "latest_data" or "latest_common_data", which resolve to the newest or the oldest source horizon, but no source can vote: the dashboard\'s metrics have no time column, their time columns are empty, or every source says {"through": "as_of"}. Set period.asOf to a date, or give a source a freshness rule with a column or a date.',
+      'period.asOf is "latest_data" or "latest_common_data", which resolve to the newest or the oldest source horizon, but no source can vote: the dashboard\'s metrics have no time column, their time columns are empty, or every source says {through: as_of}. Set period.asOf to a date, or give a source a freshness rule with a column or a date.',
   },
   HM4012: {
     title: "data after the build machine's clock",
@@ -308,7 +308,7 @@ export const CODES = {
   HM4014: {
     title: "partial bucket shown as complete",
     explanation:
-      'A time series with "incomplete": "show" draws its last bucket like the others, but the data covers only part of it, so a flow metric (a sum or count over the bucket) reads low there. Leave incomplete at "mark" to show it as in progress, or set "hide" to leave the bucket out.',
+      'A time series with incomplete: show draws its last bucket like the others, but the data covers only part of it, so a flow metric (a sum or count over the bucket) reads low there. Leave incomplete at "mark" to show it as in progress, or set "hide" to leave the bucket out.',
   },
   HM4016: {
     title: "timestamps without an offset",
@@ -318,7 +318,7 @@ export const CODES = {
   HM4019: {
     title: "evaluation-time lookup on a metric that is not point-in-time",
     explanation:
-      'An as-of lookup with "at": "$evaluation" picks each key\'s row at the instant a point-in-time metric is read, such as the exchange rate on the last day of a month for a balance. A flow sums rows over a period and a static metric has no instant, so there is no single evaluation instant to pick the row at. Join at each row\'s own time instead ("at": "<time column>"), or read the metric at an instant (over_time, active or trailing).',
+      "An as-of lookup with at: $evaluation picks each key's row at the instant a point-in-time metric is read, such as the exchange rate on the last day of a month for a balance. A flow sums rows over a period and a static metric has no instant, so there is no single evaluation instant to pick the row at. Join at each row's own time instead (at: <time column>), or read the metric at an instant (over_time, active or trailing).",
   },
   HM4023: {
     title: "metric primitive not evaluated yet",
@@ -338,12 +338,12 @@ export const CODES = {
   HM4062: {
     title: "stacked metrics in different units",
     explanation:
-      'A stacked or 100% stacked chart adds its series into one total, so every series must be in the same unit: revenue in dollars and order counts, or revenue in USD and in EUR, cannot be added, and a share of such a total means nothing. Set "stack": false to draw the metrics side by side, show them in separate charts, or stack metrics of one unit (convert currencies in the metric first).',
+      "A stacked or 100% stacked chart adds its series into one total, so every series must be in the same unit: revenue in dollars and order counts, or revenue in USD and in EUR, cannot be added, and a share of such a total means nothing. Set stack: false to draw the metrics side by side, show them in separate charts, or stack metrics of one unit (convert currencies in the metric first).",
   },
   HM4061: {
     title: "negative values in a part-of-whole chart",
     explanation:
-      'A chart stacked to 100%, a pie or a donut shows each value as a share of a whole, which only works when every part is zero or more: a negative part makes the others add up to more than 100%. A 100% stack is still drawn, with negative shares below zero, and the warning names the series. A pie or donut leaves negative and zero categories out, takes shares of the positive values, lists what it left out under the chart and still states the real total. Use "stack": true, grouped bars or a bar chart, which show negative values honestly, or filter the metric to values that cannot be negative (such as gross revenue instead of net).',
+      "A chart stacked to 100%, a pie or a donut shows each value as a share of a whole, which only works when every part is zero or more: a negative part makes the others add up to more than 100%. A 100% stack is still drawn, with negative shares below zero, and the warning names the series. A pie or donut leaves negative and zero categories out, takes shares of the positive values, lists what it left out under the chart and still states the real total. Use stack: true, grouped bars or a bar chart, which show negative values honestly, or filter the metric to values that cannot be negative (such as gross revenue instead of net).",
   },
   HM5010: {
     title: "too many slices",
@@ -358,7 +358,7 @@ export const CODES = {
   HM4063: {
     title: "Other row cannot be computed for a metric",
     explanation:
-      'A table with "other": true folds the rows past its limit into one Other row, recomputed from the parts of those rows: sums and counts add up, min and max take the extreme, averages divide the summed sum by the summed count, and ratios divide two such metrics. Distinct counts, medians, SQL metrics declared additive: false and sums read with over_time min or max cannot be folded without the rows themselves (two rows can share a customer), so the Other row shows "—" for the metric. The total and subtotals are still recomputed from all rows and stay right. Remove "other" to show the rows past the limit as a count in the note instead, or show a foldable metric in this table.',
+      'A table with other: true folds the rows past its limit into one Other row, recomputed from the parts of those rows: sums and counts add up, min and max take the extreme, averages divide the summed sum by the summed count, and ratios divide two such metrics. Distinct counts, medians, SQL metrics declared additive: false and sums read with over_time min or max cannot be folded without the rows themselves (two rows can share a customer), so the Other row shows "—" for the metric. The total and subtotals are still recomputed from all rows and stay right. Remove "other" to show the rows past the limit as a count in the note instead, or show a foldable metric in this table.',
   },
   HM4070: {
     title: "scatter points left out for a missing value",
@@ -373,7 +373,7 @@ export const CODES = {
   HM4041: {
     title: "metric needs a preset",
     explanation:
-      'Informational. A period filter offers custom ranges, which a static page computes in the browser by adding up day-grain aggregates. Distinct counts, medians and SQL metrics not declared additive cannot be added up that way, so for a custom range the page shows them as "—" and says to pick a preset; every preset is computed exactly at build time. Live custom ranges come with hatchmark serve. Set "custom": false on the filter to offer presets only.',
+      'Informational. A period filter offers custom ranges, which a static page computes in the browser by adding up day-grain aggregates. Distinct counts, medians and SQL metrics not declared additive cannot be added up that way, so for a custom range the page shows them as "—" and says to pick a preset; every preset is computed exactly at build time. Live custom ranges come with hatchmark serve. Set custom: false on the filter to offer presets only.',
   },
   HM5001: {
     title: "too many points per series",
@@ -398,7 +398,7 @@ export const CODES = {
   HM5002: {
     title: "page over the size budget",
     explanation:
-      'A built dashboard page weighs more than 3 MB of HTML, counting everything it carries: every chart drawn ahead at each layout and grain, the data of each period preset, and the day-grain data a custom range is computed from. Such a page is slow on a phone. The warning splits the size into those parts. When the day-grain data is the largest, set "custom": false on the period filter so readers pick from the presets only; otherwise list fewer grains or presets, split by fewer values, or move blocks to another dashboard.',
+      "A built dashboard page weighs more than 3 MB of HTML, counting everything it carries: every chart drawn ahead at each layout and grain, the data of each period preset, and the day-grain data a custom range is computed from. Such a page is slow on a phone. The warning splits the size into those parts. When the day-grain data is the largest, set custom: false on the period filter so readers pick from the presets only; otherwise list fewer grains or presets, split by fewer values, or move blocks to another dashboard.",
   },
   HM9001: {
     title: "internal error",

@@ -71,7 +71,7 @@
         "compare"
       ],
       "additionalProperties": false,
-      "description": "Defaults to {\"asOf\": \"latest_data\", \"range\": \"last_12_months\", \"compare\": \"previous_period\"}."
+      "description": "Defaults to {asOf: latest_data, range: last_12_months, compare: previous_period}."
     },
     "Range": {
       "anyOf": [
@@ -143,7 +143,7 @@
           "additionalProperties": false
         }
       ],
-      "description": "A date range [start, end) in the project time zone: {\"start\": \"2026-02-01\", \"end\": \"2026-11-01\"}, or a shorthand resolved at the as-of date: {\"last\": 30, \"unit\": \"day\"}, {\"to_date\": \"quarter\"}, {\"last_complete\": \"month\"}, or a named range such as \"last_12_months\"."
+      "description": "A date range [start, end) in the project time zone: {start: 2026-02-01, end: 2026-11-01}, or a shorthand resolved at the as-of date: {last: 30, unit: day}, {to_date: quarter}, {last_complete: month}, or a named range such as \"last_12_months\"."
     },
     "PeriodRange": {
       "type": "string",
@@ -213,7 +213,7 @@
           "additionalProperties": false
         }
       ],
-      "description": "previous_period: the previous calendar unit for calendar ranges (October vs September; to-date ranges compare the same elapsed span), or the same length just before for rolling ranges (last N days, last 12 months). previous_year: the same span one year earlier. {\"shift\": {\"unit\": \"week\", \"by\": -1}}: the range moved by whole units. none: no comparison."
+      "description": "previous_period: the previous calendar unit for calendar ranges (October vs September; to-date ranges compare the same elapsed span), or the same length just before for rolling ranges (last N days, last 12 months). previous_year: the same span one year earlier. {shift: {unit: week, by: -1}}: the range moved by whole units. none: no comparison."
     },
     "DashboardFilter": {
       "oneOf": [
@@ -290,7 +290,7 @@
               "items": {
                 "$ref": "#/$defs/Range"
               },
-              "description": "Presets the reader picks from, such as [{\"last\": 7, \"unit\": \"day\"}, {\"to_date\": \"month\"}, {\"last_complete\": \"month\"}, \"last_12_months\"]. Each is computed exactly at build time."
+              "description": "Presets the reader picks from, such as [{last: 7, unit: day}, {to_date: month}, {last_complete: month}, last_12_months]. Each is computed exactly at build time."
             },
             "default": {
               "description": "The preset the page shows first; one of options.",
@@ -377,7 +377,7 @@
           "additionalProperties": false
         }
       ],
-      "description": "A bucket unit, such as \"month\", or {\"unit\": \"year\", \"anchor\": \"02-01\"} to override the project anchors."
+      "description": "A bucket unit, such as \"month\", or {unit: year, anchor: 02-01} to override the project anchors."
     },
     "Weekday": {
       "type": "string",
@@ -498,7 +498,7 @@
           "$ref": "#/$defs/Grain"
         },
         "grains": {
-          "description": "Grains the card switches between, such as [\"week\", \"month\", \"quarter\"]. grain is the default and must be one of them. A grain filter drives every block that lists its chosen grain.",
+          "description": "Grains the card switches between, such as [week, month, quarter]. grain is the default and must be one of them. A grain filter drives every block that lists its chosen grain.",
           "minItems": 2,
           "maxItems": 6,
           "type": "array",
@@ -572,7 +572,7 @@
           "$ref": "#/$defs/Grain"
         },
         "grains": {
-          "description": "Grains the card switches between, such as [\"week\", \"month\", \"quarter\"]. grain is the default and must be one of them. A grain filter drives every block that lists its chosen grain.",
+          "description": "Grains the card switches between, such as [week, month, quarter]. grain is the default and must be one of them. A grain filter drives every block that lists its chosen grain.",
           "minItems": 2,
           "maxItems": 6,
           "type": "array",
@@ -668,7 +668,7 @@
           "$ref": "#/$defs/Grain"
         },
         "grains": {
-          "description": "Grains the card switches between, such as [\"week\", \"month\", \"quarter\"]. grain is the default and must be one of them. A grain filter drives every block that lists its chosen grain.",
+          "description": "Grains the card switches between, such as [week, month, quarter]. grain is the default and must be one of them. A grain filter drives every block that lists its chosen grain.",
           "minItems": 2,
           "maxItems": 6,
           "type": "array",

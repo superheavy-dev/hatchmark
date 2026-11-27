@@ -121,10 +121,10 @@ apart from a chart's own grain switch. A grain option that no block lists switch
 warning (`HM2025`).
 
 A `period` filter draws a date control in the page header. `options` lists up to 12 presets, using
-the same range values as `period.range` (`"last_30_days"`, `{ "to_date": "month" }`,
-`{ "last_complete": "quarter" }`, ...). Each preset is listed once, even under another spelling, and
+the same range values as `period.range` (`last_30_days`, `{ to_date: month }`,
+`{ last_complete: quarter }`, ...). Each preset is listed once, even under another spelling, and
 `default` must be one of them (`HM3007`). The `default` is what the page shows first, and it
-replaces `period.range`. Unless `"custom": false` is set, the control also offers a calendar where
+replaces `period.range`. Unless `custom: false` is set, the control also offers a calendar where
 a reader picks any start and end day within the data.
 
 The built page stays static. Every preset is computed exactly at build time. Custom ranges are
@@ -132,7 +132,7 @@ added up in the browser from day-level totals embedded in the page. Metrics that
 from days (`count_distinct`, `median`, SQL metrics that are not `additive`) show "—" on a custom
 range and ask the reader to pick a preset; check notes each one (`HM4041`). The day-level data makes
 the page bigger. Above 3 MB, build warns (`HM5002`) and names what weighs the most. Set
-`"custom": false` to embed only the presets.
+`custom: false` to embed only the presets.
 
 The chosen period and grain are kept in the page's URL query under each filter's `id`
 (`?period=last_7_days`, `?period=2026-03-01..2026-05-15` with the last day included, `?grain=week`;

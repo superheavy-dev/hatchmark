@@ -86,7 +86,7 @@ export const durationSchema = z
   ])
   .meta({
     id: "Duration",
-    description: 'A length of time, such as {"days": 30} or {"months": 12}.',
+    description: "A length of time, such as {days: 30} or {months: 12}.",
   });
 export type Duration = z.infer<typeof durationSchema>;
 
@@ -351,9 +351,7 @@ const aggregateMetric = z
       );
     }
     if (m.entity !== undefined && m.over_time !== "last" && m.over_time !== "first") {
-      ctx.addIssue(
-        customIssue("HM3007", ["entity"], '"entity" needs "over_time": "last" or "first"'),
-      );
+      ctx.addIssue(customIssue("HM3007", ["entity"], "entity needs over_time: last or first"));
     }
   })
   .meta({ id: "AggregateMetric" });
@@ -446,7 +444,7 @@ const perEntityMetric = z
   .superRefine((m, ctx) => {
     if (m.aggregate === "count" && m.expr !== undefined) {
       ctx.addIssue(
-        customIssue("HM3007", ["expr"], '"aggregate": "count" counts entities; remove "expr"'),
+        customIssue("HM3007", ["expr"], 'aggregate: count counts entities; remove "expr"'),
       );
     }
   });

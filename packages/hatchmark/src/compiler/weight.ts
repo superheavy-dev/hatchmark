@@ -42,7 +42,7 @@ export function pageWeight(
     ...(file ? { file: file.file, pointer, ...file.document.locationOf(pointer) } : {}),
     help:
       custom > 0
-        ? 'set "custom": false on the period filter to offer presets only, or shorten the data'
+        ? "set custom: false on the period filter to offer presets only, or shorten the data"
         : "list fewer grains or presets, split by fewer values, or move blocks to another dashboard",
     docs: docsCommand("HM5002"),
   };
