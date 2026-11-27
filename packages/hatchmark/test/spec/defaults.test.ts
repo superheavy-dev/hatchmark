@@ -305,4 +305,20 @@ describe("check explains the defaults it applies (HM4040)", () => {
       "uses edges: snap: the first week starts on Mon Dec 8, 2025, before the range starts on Dec 12, 2025",
     );
   });
+
+  it("offers a block anchor only when no range relies on the project anchor", () => {
+    const ds = notes(
+      [{ type: "line", metrics: ["revenue"], grain: "year", edges: "snap", incomplete: "mark" }],
+      {
+        period: { asOf: "2026-11-27", range: "year_to_date", compare: "none" },
+        config: { ...noAnchors, anchors: { quarter: "02-01" } },
+      },
+    );
+    expect(ds.map((d) => [d.message, d.help])).toEqual([
+      [
+        "uses the default year anchor: years start on Jan 1",
+        "set anchors: {year: 02-01} for a year from Feb 1, or another quarter start",
+      ],
+    ]);
+  });
 });

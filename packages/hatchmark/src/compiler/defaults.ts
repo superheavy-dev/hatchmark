@@ -24,6 +24,7 @@ export function explainDefaults(project: Project): Diagnostic[] {
   const out: Diagnostic[] = [];
   const anchored = new Set<AnchorUnit>();
   const blockAnchored = new Set<AnchorUnit>();
+  const rangeAnchored = new Set<AnchorUnit>();
   for (const file of project.dashboards.values()) {
     const dashboard = file.spec;
     if (dashboard === undefined) continue;
@@ -43,7 +44,10 @@ export function explainDefaults(project: Project): Diagnostic[] {
     const bounded = ranges(dashboard).some((r) => r !== "all_time");
     for (const range of [...ranges(dashboard), (dashboard.period ?? DEFAULT_PERIOD).range]) {
       const unit = rangeUnit(range);
-      if (unit === "week" || unit === "quarter" || unit === "year") anchored.add(unit);
+      if (unit === "week" || unit === "quarter" || unit === "year") {
+        anchored.add(unit);
+        rangeAnchored.add(unit);
+      }
     }
     dashboard.blocks.forEach((block, index) => {
       const grains = timeGrains(block);
@@ -93,8 +97,9 @@ export function explainDefaults(project: Project): Diagnostic[] {
   const config = project.config.spec;
   const quarter = config?.anchors?.quarter;
   const year = config?.anchors?.year;
+  const onlyBlocks = (unit: AnchorUnit) => blockAnchored.has(unit) && !rangeAnchored.has(unit);
   const blockOption = (unit: AnchorUnit, anchor: string) =>
-    blockAnchored.has(unit) ? `, or a block's grain: {unit: ${unit}, anchor: ${anchor}}` : "";
+    onlyBlocks(unit) ? `, or a block's grain: {unit: ${unit}, anchor: ${anchor}}` : "";
   if (
     anchored.has("week") &&
     config?.anchors?.week === undefined &&
@@ -128,7 +133,7 @@ export function explainDefaults(project: Project): Diagnostic[] {
         "uses the default year anchor: years start on Jan 1",
         quarter === undefined
           ? `set anchors: {year: ${example}} for a year from ${monthDay(example)}${blockOption("year", example)}; anchors: {year: 01-01} keeps the default and silences this note`
-          : `set anchors: {year: ${example}} for a year from ${monthDay(example)}, or another quarter start${blockAnchored.has("year") ? "; a block's grain: {unit: year, anchor: 01-01} keeps years from Jan 1 and silences this note" : ""}`,
+          : `set anchors: {year: ${example}} for a year from ${monthDay(example)}, or another quarter start${onlyBlocks("year") ? "; a block's grain: {unit: year, anchor: 01-01} keeps years from Jan 1 and silences this note" : ""}`,
       ),
     );
   }
