@@ -2,7 +2,8 @@
 
 `hatchmark <command> [options]`. Every command runs without prompts, so scripts and AI agents can
 run it the same way a person does. `hatchmark <command> --help` shows a command's options and one
-example.
+example. [README.md](README.md) lists every docs page; the files a project holds are described in
+[project.md](project.md), [metrics.md](metrics.md) and [dashboards.md](dashboards.md).
 
 | Command                               | What it does                                                                                                                                                                   |
 | ------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
