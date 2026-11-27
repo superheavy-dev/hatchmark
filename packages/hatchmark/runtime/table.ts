@@ -207,24 +207,48 @@ export function wireTable(card: HTMLElement): void {
   const close = () => {
     for (const mark of marks) mark.parentElement?.classList.remove("hm-open");
   };
+  const place = (box: HTMLElement) => {
+    const tip = box.querySelector<HTMLElement>(".hm-win-tip");
+    if (!tip || !wrap) return;
+    const clip = wrap.getBoundingClientRect();
+    const left = Math.max(clip.left, 0) + 4;
+    const right = Math.min(clip.right, window.innerWidth) - 4;
+    tip.style.translate = "";
+    tip.style.maxWidth = `${Math.max(120, Math.min(260, right - left))}px`;
+    const rect = tip.getBoundingClientRect();
+    const shift = rect.left < left ? left - rect.left : rect.right > right ? right - rect.right : 0;
+    if (shift !== 0) tip.style.translate = `${shift}px 0`;
+  };
   for (const mark of marks) {
     const box = mark.parentElement;
+    if (!box) continue;
+    const show = () => {
+      place(box);
+      requestAnimationFrame(() => place(box));
+    };
     mark.addEventListener("click", (event) => {
       event.stopPropagation();
-      const open = !box?.classList.contains("hm-open");
+      const open = !box.classList.contains("hm-open");
       close();
-      box?.classList.remove("hm-shut");
-      box?.classList.toggle("hm-open", open);
+      box.classList.remove("hm-shut");
+      box.classList.toggle("hm-open", open);
+      show();
     });
-    box?.addEventListener("mouseleave", () => box.classList.remove("hm-shut"));
+    mark.addEventListener("mousemove", () => box.classList.remove("hm-shut"));
+    box.addEventListener("mouseenter", show);
+    box.addEventListener("mouseleave", () => box.classList.remove("hm-shut"));
+    mark.addEventListener("focus", show);
     mark.addEventListener("blur", () => {
-      box?.classList.remove("hm-shut");
-      box?.classList.remove("hm-open");
+      box.classList.remove("hm-shut");
+      box.classList.remove("hm-open");
     });
   }
   if (marks.length > 0) {
+    wrap?.addEventListener("scroll", () => {
+      for (const mark of marks) if (mark.parentElement) place(mark.parentElement);
+    });
     document.addEventListener("click", close);
-    table.addEventListener("keydown", (event) => {
+    document.addEventListener("keydown", (event) => {
       if (event.key !== "Escape") return;
       close();
       for (const mark of marks) mark.parentElement?.classList.add("hm-shut");

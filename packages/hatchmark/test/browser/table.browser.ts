@@ -72,6 +72,11 @@ beforeAll(async () => {
     tallShared: variant("table-tall-shared"),
     tallSharedPage: variant("table-tall-shared-page"),
     windows: variant("table-windows"),
+    windowsFirst: (() => {
+      const data = variant("table-windows");
+      const table = data.blocks[0] as TableData;
+      return { ...data, blocks: [{ ...table, metrics: ["customers", "revenue", "orders"] }] };
+    })(),
     cut: dashboard("cut", "Cut", [
       {
         ...TRICKY,
@@ -885,7 +890,13 @@ describe("columns that read another window", () => {
       "Revenue, Orders and Customers by Country, Oct 2026",
     );
     expect(await page.locator("table").getAttribute("aria-describedby")).toBe("hm-windows-s");
-    const described = await page.$$eval("thead [aria-describedby]", (nodes) =>
+    expect(
+      await page.$eval("thead th[aria-describedby]", (th) => [
+        th.querySelector(".hm-sort")?.textContent?.trim(),
+        document.getElementById(th.getAttribute("aria-describedby") ?? "")?.textContent,
+      ]),
+    ).toEqual(["Customers", text]);
+    const described = await page.$$eval("thead button[aria-describedby]", (nodes) =>
       nodes.map((n) => [
         n.textContent?.trim() || n.getAttribute("aria-label"),
         document.getElementById(n.getAttribute("aria-describedby") ?? "")?.textContent,
@@ -931,6 +942,56 @@ describe("columns that read another window", () => {
     await page.locator("h2").first().tap();
     expect(await tip(page).isVisible()).toBe(false);
     await context.close();
+  });
+
+  it("keeps the tooltip inside the scrolled table on a phone, even for the first metric column", async () => {
+    const context = await browser.newContext({
+      viewport: { width: 390, height: 800 },
+      hasTouch: true,
+    });
+    const page = await context.newPage();
+    await page.goto(urls.windowsFirst ?? "");
+    await page.locator(".hm-table-wrap").evaluate((el) => {
+      el.scrollLeft = 76;
+    });
+    await page.locator("button.hm-win").tap();
+    await page.waitForTimeout(50);
+    const [tipBox, wrapBox] = await Promise.all([
+      tip(page).boundingBox(),
+      page.locator(".hm-table-wrap").boundingBox(),
+    ]);
+    expect(tipBox && wrapBox).toBeTruthy();
+    if (!tipBox || !wrapBox) return;
+    expect(tipBox.x).toBeGreaterThanOrEqual(wrapBox.x);
+    expect(tipBox.x + tipBox.width).toBeLessThanOrEqual(wrapBox.x + wrapBox.width);
+    await context.close();
+  });
+
+  it("dismisses a hovered tooltip with Escape and keeps it open on the way from the dot", async () => {
+    const page = await open("windows");
+    await page.hover("button.hm-win");
+    await page.keyboard.press("Escape");
+    expect(await page.evaluate(() => document.activeElement?.tagName)).toBe("BODY");
+    expect(await tip(page).isVisible()).toBe(false);
+    await page.mouse.move(0, 0);
+    await page.hover("button.hm-win");
+    const dot = await page.locator("button.hm-win").boundingBox();
+    const box = await tip(page).boundingBox();
+    if (!dot || !box) throw new Error("no marker or tooltip");
+    await page.mouse.move(dot.x + dot.width / 2, (dot.y + dot.height + box.y) / 2);
+    expect(await tip(page).isVisible()).toBe(true);
+    await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
+    expect(await tip(page).isVisible()).toBe(true);
+    await page.close();
+  });
+
+  it("prints each column's own window under its header", async () => {
+    const page = await open("windows");
+    await page.emulateMedia({ media: "print" });
+    expect(await page.locator("button.hm-win").isVisible()).toBe(false);
+    expect(await page.locator(".hm-win-print").isVisible()).toBe(true);
+    expect(await page.locator(".hm-win-print").textContent()).toBe(text);
+    await page.close();
   });
 
   it("keeps CSV headers to the column labels", async () => {

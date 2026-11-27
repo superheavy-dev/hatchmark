@@ -104,7 +104,7 @@ export function renderTable(
     const content = numeric ? `${CARET}${text}` : `${text}${CARET}`;
     const csvAttr = csv === label && extra === "" ? "" : ` data-csv="${esc(csv)}"`;
     const described = describedBy ? ` aria-describedby="${describedBy}"` : "";
-    return `<th scope="col"${cls ? ` class="${cls}"` : ""} aria-sort="${sortState(by)}" data-hm-num="${numeric ? 1 : 0}"${csvAttr}><button type="button" class="hm-sort"${described}>${content}</button>${extra}</th>`;
+    return `<th scope="col"${cls ? ` class="${cls}"` : ""}${described} aria-sort="${sortState(by)}" data-hm-num="${numeric ? 1 : 0}"${csvAttr}><button type="button" class="hm-sort"${described}>${content}</button>${extra}</th>`;
   };
   const day = 86_400_000;
   const lastDay = (end: string) =>
@@ -142,7 +142,7 @@ export function renderTable(
     const note = noteOf(m.name);
     if (note === undefined) return header(m.label, m.name, "", true);
     const id = `hm-${esc(block.id)}-w${index}`;
-    const marker = `<span class="hm-winw"><button type="button" class="hm-win" aria-label="Window of ${esc(m.label)}" aria-describedby="${id}"><span aria-hidden="true"></span></button><span class="hm-win-tip" role="tooltip" id="${id}">${esc(note)}</span></span>`;
+    const marker = `<span class="hm-winw"><button type="button" class="hm-win" aria-label="Window of ${esc(m.label)}" aria-describedby="${id}"><span aria-hidden="true"></span></button><span class="hm-win-tip" role="tooltip" id="${id}">${esc(note)}</span></span><span class="hm-win-print" aria-hidden="true">${esc(note)}</span>`;
     return header(m.label, m.name, "", true, m.label, marker, id);
   };
   const outerLabels = block.by
