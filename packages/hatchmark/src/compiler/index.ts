@@ -1,5 +1,6 @@
 export * from "./assemble.js";
 export * from "./dashboard-data.js";
+export * from "./defaults.js";
 export * from "./explain.js";
 export * from "./hash.js";
 export * from "./horizons.js";

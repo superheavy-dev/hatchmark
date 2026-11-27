@@ -21,6 +21,37 @@ failed: 1 error, 0 warnings
 
 The layout may change between releases. Do not parse it; use the JSON form.
 
+### Default notes (HM4040)
+
+Some choices differ between companies, such as where a week starts or whether a time series starts
+at the start of the bucket that holds the range start. Each one has a documented default and an
+option that changes it. When a project relies on such a default, check reports an HM4040 note per
+definition, naming the default and the option. The human form folds them into one line per file:
+
+```
+note[HM4040]: dashboards/sales.yaml: 3 default definitions, run hatchmark check --explain-defaults
+```
+
+`hatchmark check --explain-defaults` prints every note in full. The JSON form always lists every
+note. Notes don't change `ok`, the counts or the exit code, `--strict` included, and check leaves
+them out while the project has errors. Setting an option explicitly, even to its default value,
+silences its note.
+
+| Default                                               | Reported on                                                                                                          | Option                                                                                                     |
+| ----------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------- |
+| A time series starts at the start of its first bucket | each `line`, `area` or time `bar` that can show a grain above day, unless every period the page offers is `all_time` | block `edges: clip`                                                                                        |
+| Buckets the data doesn't fully cover are marked       | each `line`, `area` or time `bar`                                                                                    | block `incomplete: hide` or `show`                                                                         |
+| Charts end at the newest source's horizon             | each dashboard without `period`                                                                                      | `period: {asOf: latest_common_data, range: last_12_months, compare: previous_period}`, or a date as `asOf` |
+| Weeks start on Monday                                 | `hatchmark.yaml`, when a week block or a week range such as `{last: 4, unit: week}` relies on it                     | `anchors.week`, or a block's grain anchor                                                                  |
+| Quarters start on Jan 1, Apr 1, Jul 1 and Oct 1       | `hatchmark.yaml`, when a quarter block or range relies on it and neither `anchors.quarter` nor `anchors.year` is set | `anchors.quarter`, or a block's grain anchor                                                               |
+| Years start on Jan 1                                  | `hatchmark.yaml`, when a year block or a range such as `year_to_date` relies on it                                   | `anchors.year` (a quarter start when `anchors.quarter` is set), or a block's grain anchor                  |
+| An interval ending at a bucket end counts in it       | metrics with `active`                                                                                                | `active.ends`                                                                                              |
+| A split entity takes its current group                | `per_entity` metrics                                                                                                 | `group_at`                                                                                                 |
+
+The edges note names the first bucket's start and the range start when the page's first period is
+fixed (a date as `asOf`), using the period filter's and grain filter's defaults when the dashboard
+has them. A date outside the as-of year includes its year.
+
 ## JSON form, format_version "1"
 
 A report is one line of JSON on stdout:

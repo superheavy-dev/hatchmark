@@ -71,13 +71,56 @@ describe("hatchmark init and check", () => {
     });
     const check = await cli(["check", "--cwd", "shop"], { cwd });
     expect(check.code).toBe(0);
-    expect(check.json()).toEqual({
+    expect(check.json()).toMatchObject({
       format_version: "1",
       ok: true,
       error_count: 0,
       warning_count: 0,
-      diagnostics: [],
     });
+    expect(
+      check
+        .json()
+        .diagnostics.map((d: { code: string; severity: string; file: string; pointer: string }) => [
+          d.code,
+          d.severity,
+          d.file,
+          d.pointer,
+        ]),
+    ).toEqual([
+      ["HM4040", "note", "dashboards/sales.yaml", "/blocks/4/grain"],
+      ["HM4040", "note", "dashboards/sales.yaml", "/blocks/4/grain"],
+      ["HM4040", "note", "hatchmark.yaml", "/name"],
+    ]);
+    const human = await cli(["check", "--cwd", "shop", "--format", "human"], { cwd });
+    expect(human.code).toBe(0);
+    expect(human.stdout.trim().split("\n\n")).toEqual([
+      "note[HM4040]: dashboards/sales.yaml: 2 default definitions, run hatchmark check --explain-defaults",
+      "note[HM4040]: hatchmark.yaml: 1 default definition, run hatchmark check --explain-defaults",
+      "ok: 0 errors, 0 warnings",
+    ]);
+    expect((await cli(["check", "--cwd", "shop", "--strict"], { cwd })).code).toBe(0);
+    const explained = await cli(
+      ["check", "--cwd", "shop", "--format", "human", "--explain-defaults"],
+      { cwd },
+    );
+    expect(explained.code).toBe(0);
+    expect(explained.stdout.match(/^note\[HM4040\]: uses /gm)).toHaveLength(3);
+    const csv = await readFile(path.join(cwd, "shop/data/orders.csv"), "utf8");
+    await writeFile(path.join(cwd, "shop/data/orders.csv"), `${csv.split("\n")[0]}\n`);
+    const failed = await cli(["check", "--cwd", "shop", "--sql", "--json"], { cwd });
+    const codes = failed.json().diagnostics.map((d: { code: string }) => d.code);
+    expect(codes).toContain("HM4011");
+    expect(codes).not.toContain("HM4040");
+    await writeFile(path.join(cwd, "shop/data/orders.csv"), csv);
+    await writeFile(
+      path.join(cwd, "shop/dashboards/broken.yaml"),
+      "title: Broken\nblocks:\n  - type: kpi\n    metric: nope\n",
+    );
+    const scoped = await cli(["check", "--cwd", "shop", "dashboards/sales.yaml", "--json"], {
+      cwd,
+    });
+    expect(scoped.code).toBe(0);
+    expect(scoped.json().diagnostics.map((d: { code: string }) => d.code)).not.toContain("HM4040");
   });
 
   it("writes the same bytes every time", async () => {

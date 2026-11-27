@@ -1,5 +1,5 @@
 import path from "node:path";
-import { type ExplainedQuery, explainDashboard } from "../../compiler/index.js";
+import { type ExplainedQuery, explainDashboard, explainDefaults } from "../../compiler/index.js";
 import {
   createReport,
   type Diagnostic,
@@ -16,7 +16,7 @@ import { type CreateSqlExecutor, renderQueries } from "./explain.js";
 export const checkHelp: CommandHelp = {
   name: "check",
   summary: "Check the project's files: YAML syntax, spec shape, and references between files.",
-  usage: "hatchmark check [paths...] [--strict] [--sql]",
+  usage: "hatchmark check [paths...] [--strict] [--sql] [--explain-defaults]",
   options: [
     {
       flag: "[paths...]",
@@ -27,6 +27,11 @@ export const checkHelp: CommandHelp = {
       flag: "--sql",
       description:
         "Also print the SQL every block runs, as build runs it with the filter defaults (JSON: sql).",
+    },
+    {
+      flag: "--explain-defaults",
+      description:
+        "Print every HM4040 note on the business-definition defaults the project relies on, instead of one line per file (JSON always lists them all).",
     },
   ],
   example: {
@@ -51,7 +56,7 @@ export function exitCodeFor(diagnostics: readonly Diagnostic[], strict: boolean)
 export async function check(
   ctx: CommandContext,
   positionals: string[],
-  flags: { strict?: boolean; sql?: boolean },
+  flags: { strict?: boolean; sql?: boolean; explainDefaults?: boolean },
   createExecutor: CreateSqlExecutor = createDuckDbExecutor,
 ): Promise<CommandResult> {
   const { project, diagnostics: loadDiagnostics } = await loadProject(nodeProjectHost(ctx.root));
@@ -68,6 +73,8 @@ export async function check(
     file === CONFIG_FILE ||
     prefixes.some((p) => p === "" || file === p || file.startsWith(`${p}/`));
   let diagnostics = [...parseDiagnostics(project), ...loadDiagnostics, ...checkReferences(project)];
+  const projectErrors = diagnostics.some((d) => d.severity === "error");
+  diagnostics.push(...explainDefaults(project));
   diagnostics = diagnostics.filter((d) => selected(d.file));
 
   const sql: { dashboard: string; block: string; queries: ExplainedQuery[] }[] = [];
@@ -108,12 +115,16 @@ export async function check(
       await executor.close();
     }
   }
+  if (projectErrors || diagnostics.some((d) => d.severity === "error"))
+    diagnostics = diagnostics.filter((d) => d.code !== "HM4040");
   const report = createReport(diagnostics);
   const quietOk = ctx.quiet && report.ok && report.warning_count === 0;
   const printed = sql.map(
     (b) => `-- block "${b.block}" of dashboard "${b.dashboard}"\n${renderQueries(b.queries)}`,
   );
-  const human = quietOk ? "" : renderHuman(report, { color: ctx.color });
+  const human = quietOk
+    ? ""
+    : renderHuman(report, { color: ctx.color, explainDefaults: flags.explainDefaults === true });
   return {
     exitCode: exitCodeFor(report.diagnostics, flags.strict === true),
     json: flags.sql === true ? { ...report, sql } : report,

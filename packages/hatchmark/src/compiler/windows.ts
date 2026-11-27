@@ -108,7 +108,7 @@ export const SUPPORTED_DATES = { first: "0001-01-01", last: "9998-12-31" } as co
 const FIRST_DAY: Ymd = { y: 1, m: 1, d: 1 };
 const PAST_LAST_DAY: Ymd = { y: 9999, m: 1, d: 1 };
 
-const NAMED: Record<Exclude<PeriodRange, "all_time">, Exclude<RangeSpec, PeriodRange>> = {
+export const NAMED: Record<Exclude<PeriodRange, "all_time">, Exclude<RangeSpec, PeriodRange>> = {
   last_7_days: { last: 7, unit: "day" },
   last_30_days: { last: 30, unit: "day" },
   last_90_days: { last: 90, unit: "day" },

@@ -4,6 +4,8 @@ export interface HumanRenderOptions {
   color?: boolean;
   /** Longest expected list printed before it is cut short. Defaults to 12. */
   maxExpected?: number;
+  /** Print each HM4040 default note instead of one line per file. Defaults to false. */
+  explainDefaults?: boolean;
 }
 
 const ANSI = { red: 31, yellow: 33, cyan: 36, blue: 34, bold: 1 } as const;
@@ -100,7 +102,19 @@ function plural(count: number, word: string): string {
 
 /** Renders a whole report: every diagnostic, then one summary line. */
 export function renderHuman(report: DiagnosticReport, options: HumanRenderOptions = {}): string {
-  const blocks = report.diagnostics.map((d) => renderDiagnostic(d, options));
+  const folded = (d: Diagnostic) => d.code === "HM4040" && options.explainDefaults !== true;
+  const blocks = report.diagnostics
+    .filter((d) => !folded(d))
+    .map((d) => renderDiagnostic(d, options));
+  const perFile = new Map<string, number>();
+  for (const d of report.diagnostics.filter(folded)) {
+    perFile.set(d.file ?? "the project", (perFile.get(d.file ?? "the project") ?? 0) + 1);
+  }
+  for (const [file, count] of perFile) {
+    blocks.push(
+      `${paint(options.color ?? false, "cyan", "note[HM4040]")}: ${file}: ${plural(count, "default definition")}, run hatchmark check --explain-defaults`,
+    );
+  }
   const counts = `${plural(report.error_count, "error")}, ${plural(report.warning_count, "warning")}`;
   const summary = report.ok
     ? paint(options.color ?? false, "bold", `ok: ${counts}`)
