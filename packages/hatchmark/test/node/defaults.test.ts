@@ -68,8 +68,9 @@ describe("the edges note names the window the engine compiles (HM4040)", () => {
         d.message.startsWith("uses edges"),
       );
       const { data } = await run(fixture.root, fixture.project, "d");
+      if (data === undefined) throw new Error("the dashboard did not build");
       const axis = (id: string) => {
-        const a = (data?.blocks.find((b) => b.id === id) as LineData).axis;
+        const a = (data.blocks.find((b) => b.id === id) as LineData).axis;
         if (a.kind !== "time") throw new Error("expected a time axis");
         return a;
       };
