@@ -186,6 +186,24 @@ describe("partial buckets: review cases (HAT-80)", () => {
     );
   });
 
+  it("keeps a complete Total complete when only a null part is partial", () => {
+    const data = find("bar-incomplete-stacked");
+    const block = data.blocks[0] as LineData;
+    const last = (block.totals ?? []).length - 1;
+    const absent = {
+      ...block,
+      series: block.series.map((s, k) =>
+        k === 0
+          ? { ...s, values: s.values.map((v, i) => (i === last ? null : v)) }
+          : { ...s, partial: [] },
+      ),
+    };
+    expect(chartRuntimeData(absent, ctx(data)).totalStatus?.[last] ?? "").toBe("");
+    const rows = chartTable(absent, ctx(data), "t").match(/<tr>.*?<\/tr>/g) ?? [];
+    expect(rows.at(-1)).toMatch(/in progress/);
+    expect(rows.at(-1)).not.toMatch(/\u00B7 in progress[^<]*<\/td><\/tr>$/);
+  });
+
   it("names a partial sparkline bucket in its table, accessible name and runtime, and marks the last drawn point", () => {
     const html = renderFragment(find("kpi-sparkline-partial"));
     expect(html).toMatch(/aria-label="[^"]*in progress \(\d+ of \d+ days\)"/);

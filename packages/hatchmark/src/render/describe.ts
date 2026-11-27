@@ -154,7 +154,7 @@ export function chartTable(
   const partial = partialPositions(block, ctx);
   const total = (i: number) => {
     const text = full(ctx, metric, totals?.[i] ?? null);
-    const { note } = isNumber(totals?.[i]) ? bucketLines(block, i, ctx, partial) : {};
+    const { note } = totalPartial(block, i) ? bucketLines(block, i, ctx, partial) : {};
     return note ? `${text} \u00B7 ${note}` : text;
   };
   const cell = (s: ChartBlock["series"][number], i: number) =>
@@ -169,6 +169,13 @@ export function chartTable(
     )
     .join("");
   return `<div class="hm-sr"><table><caption>${esc(caption)}</caption><thead>${head}</thead><tbody>${rows}</tbody></table></div>`;
+}
+
+function totalPartial(block: ChartBlock, i: number): boolean {
+  return (
+    (block.totals === undefined || isNumber(block.totals[i])) &&
+    block.series.some((s) => isNumber(s.values[i]) && (s.partial ?? []).some((p) => p.index === i))
+  );
 }
 
 /** What the browser runtime needs for tooltips and the readout: labels and formatted values. */
@@ -269,14 +276,7 @@ export function chartRuntimeData(
       : {}),
     ...(lines && stacked && partial.size > 0
       ? {
-          totalStatus: lines.map((l, i) =>
-            block.series.some(
-              (s) => isNumber(s.values[i]) && (s.partial ?? []).some((p) => p.index === i),
-            ) &&
-            (block.totals === undefined || isNumber(block.totals[i]))
-              ? (l.status ?? "")
-              : "",
-          ),
+          totalStatus: lines.map((l, i) => (totalPartial(block, i) ? (l.status ?? "") : "")),
         }
       : {}),
   };
