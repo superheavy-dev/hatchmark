@@ -27,7 +27,7 @@ import {
 import { ENTITY_NAMES, type Expr, exprRefs, parseExpr, shapeError } from "./expr.js";
 import { addPropertyFix, removeItemFix, replaceValueFix } from "./fixes.js";
 import { filterTables, metricSources, readSources, sourceTables } from "./graph.js";
-import { MIN_CHART_SPAN } from "./layout.js";
+import { aloneInRow, MIN_CHART_SPAN } from "./layout.js";
 import type { Filter, Metric, TableMetric } from "./metric.js";
 import type { Project, SpecFile } from "./project.js";
 import {
@@ -1106,9 +1106,41 @@ function checkDashboard(project: Project, file: SpecFile<"dashboard">, out: Diag
     return false;
   };
 
+  const items: { index: number; span: number }[] = [];
+  let strip: { index: number; span: number } | undefined;
+  dashboard.blocks.forEach((block, index) => {
+    if (block.type === "text") return;
+    if (block.type === "kpi") {
+      if (strip) {
+        strip.span = Math.min(12, strip.span + (block.span ?? 3));
+        return;
+      }
+      strip = { index, span: block.span ?? 3 };
+      items.push(strip);
+      return;
+    }
+    strip = undefined;
+    const span = block.span ?? 12;
+    items.push({ index, span: block.type === "table" ? span : Math.max(MIN_CHART_SPAN, span) });
+  });
+  const alone = aloneInRow(items.map((item) => item.span));
+  const shared = new Set(items.filter((_, i) => !alone[i]).map((item) => item.index));
+
   const blockIds = new Map<string, number>();
   dashboard.blocks.forEach((block, index) => {
     const base = `/blocks/${index}`;
+    if (block.type === "table" && block.overflow === "page" && shared.has(index)) {
+      r.report(
+        "HM2026",
+        `${base}/overflow`,
+        'a table with "overflow": "page" shares its grid row, so the other cards in the row stretch to its height',
+        {
+          severity: "warning",
+          label: "the row grows with the table",
+          help: 'remove "overflow" to scroll inside the card, or give the table its own row with "span": 12',
+        },
+      );
+    }
     const id = blockId(block, index);
     const first = blockIds.get(id);
     if (first !== undefined) {

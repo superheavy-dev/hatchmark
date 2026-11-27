@@ -28,6 +28,7 @@ rows as CSV.
 | `other`          | With `limit`: fold the rows past the limit into one "Other" row.                                          |
 | `subtotals`      | A subtotal row for every group of each outer `by` column. Needs two or more `by` columns.                 |
 | `bars`           | Metrics that draw a bar in their cells, scaled across the rows shown. Must also be in `metrics` (HM2006). |
+| `overflow`       | How a table past 15 rows fits: `"page"` or `"scroll"`. Default from the layout; see Long tables.          |
 
 What it draws:
 
@@ -37,7 +38,7 @@ What it draws:
   ratios divide the totals (an average order value total is revenue ÷ orders, never an average of
   averages). When rows were cut the table says "Showing 15 of 21 rows. The total covers all 21."
 - Long names wrap to at most two lines and keep the full text in a tooltip. On narrow screens the
-  table scrolls sideways with the first column pinned, and bars are hidden.
+  table scrolls sideways with its key column pinned, and bars are hidden (see Narrow screens).
 - Undefined values show `—`; a null group shows "(empty)".
 
 ## Sorting
@@ -74,6 +75,25 @@ distinct count or an average is right at every level. Groups are ordered among t
 subtotal in `sort` order, rows within each group likewise. `limit` and `other` then apply inside
 each innermost group: "the top 3 countries of every region, the rest of each region as Other".
 
+A group with a single row would repeat that row's numbers in its subtotal, so the subtotal row is
+left out and the row shows its group name instead. The CSV still lists the subtotal.
+
+## Narrow screens
+
+On a phone-sized card (under 600 px), a table with two or three `by` columns keeps one key column
+pinned at the left edge, and how it names the groups depends on the spec, never on the current
+sort, so the layout stays put when someone sorts by a column:
+
+- With `"subtotals": true`, rows always stay in their groups. Each subtotal row becomes the group's
+  header row, its name in bold in the pinned column, and only the innermost key column is shown
+  (with three columns, the middle level is indented under the outer one).
+- Without subtotals, a sort by a metric interleaves the groups. Each row shows its innermost value
+  with the outer values below it in muted text ("United States" over "North America"), and the
+  header reads the same way.
+
+Screen readers still hear every key cell of each row, in order, so the group is announced with each
+row.
+
 ## In-cell bars
 
 `bars` draws a bar behind each value of the listed metrics, scaled to the largest value among the
@@ -83,8 +103,24 @@ a share bar; `bars` is for metrics that are not shares, such as orders or a marg
 
 ## Long tables
 
-A table with more than 15 rows scrolls inside its card, with the header row and the total row kept
-in view. Printing shows every row.
+A table with more than 15 rows keeps its header row and total row in view, in one of two ways:
+
+- **Page** (the default for a table alone in its grid row): the card grows as tall as its rows and
+  the page scrolls. While the table is on screen, its header row stays at the top of the window
+  and its total row at the bottom.
+- **Scroll** (the default for a table that shares its row with other blocks): the card keeps the
+  height of about 16 rows and the rows scroll inside it under a pinned header and total, with a
+  thin scrollbar in the theme's colours. The row's cards stay the same height.
+
+`"overflow": "page"` or `"scroll"` overrides the default. `"page"` in a shared row makes the
+other cards in the row stretch to the table's height, so check warns with HM2026. "Alone in its row"
+follows the 12-column grid as the spec lays it out: a run of KPIs counts as one card, a chart is
+counted at its drawn width (at least 3 columns), and a block that does not fit in what is left of
+a row starts the next one. Below 1024 px every block takes the full width, but the mode stays the
+one the spec's layout gives. When card height presets arrive (GUN-1822), the scroll height will
+follow the preset instead of the fixed 16 rows.
+
+Printing shows every row.
 
 Tables do not paginate. A dashboard is read at a glance, and rows on a later page are easy to miss
 and break the "these N rows plus the rest" reading. Use `limit` with `other`, or subtotals; check

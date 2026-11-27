@@ -841,6 +841,7 @@ class Assembler {
           subtotal: row(pad(g.keys), (m) => value(m, set, pad(g.keys)), {
             kind: "subtotal",
             level,
+            count: g.members.length,
           }),
         }))
         .sort((a, b) => order(a.subtotal, b.subtotal))
@@ -857,6 +858,7 @@ class Assembler {
       percentOfTotal: percent,
       sort,
       ...(block.bars !== undefined && block.bars.length > 0 ? { bars: block.bars } : {}),
+      ...(block.overflow !== undefined ? { overflow: block.overflow } : {}),
       rows,
       rowCount: leaves.length,
       ...(subtotals ? { subtotals: true } : {}),

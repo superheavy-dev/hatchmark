@@ -68,6 +68,105 @@ beforeAll(async () => {
     subtotals: variant("table-subtotals-other"),
     two: variant("table-two-columns"),
     tall: variant("table-tall"),
+    tallScroll: variant("table-tall-scroll"),
+    tallShared: variant("table-tall-shared"),
+    tallSharedPage: variant("table-tall-shared-page"),
+    cut: dashboard("cut", "Cut", [
+      {
+        ...TRICKY,
+        id: "cut",
+        by: [
+          { column: "region", label: "Region" },
+          { column: "store", label: "Store" },
+        ],
+        subtotals: true,
+        rows: [
+          { keys: ["East", null], kind: "subtotal", level: 1, count: 2, values: { revenue: 30 } },
+          { keys: ["East", "Boston"], values: { revenue: 20 } },
+          { keys: ["West", null], kind: "subtotal", level: 1, count: 1, values: { revenue: 5 } },
+          { keys: ["West", "Denver"], values: { revenue: 5 } },
+        ],
+        rowCount: 3,
+        total: { values: { revenue: 35 } },
+      },
+      {
+        ...TRICKY,
+        id: "folded",
+        by: [
+          { column: "region", label: "Region" },
+          { column: "channel", label: "Channel" },
+          { column: "store", label: "Store" },
+        ],
+        subtotals: true,
+        rows: [
+          {
+            keys: ["West", null, null],
+            kind: "subtotal",
+            level: 1,
+            count: 1,
+            values: { revenue: 50 },
+          },
+          {
+            keys: ["West", "Online", null],
+            kind: "subtotal",
+            level: 2,
+            count: 1,
+            values: { revenue: 50 },
+          },
+          { keys: ["West", "Online", "Denver"], values: { revenue: 50 } },
+          {
+            keys: ["East", null, null],
+            kind: "subtotal",
+            level: 1,
+            count: 2,
+            values: { revenue: 30 },
+          },
+          {
+            keys: ["East", "Retail", null],
+            kind: "subtotal",
+            level: 2,
+            count: 2,
+            values: { revenue: 30 },
+          },
+          { keys: ["East", "Retail", "Boston"], values: { revenue: 20 } },
+          { keys: ["East", "Retail", null], kind: "other", count: 1, values: { revenue: 10 } },
+        ],
+        rowCount: 3,
+        total: { values: { revenue: 80 } },
+      },
+    ]),
+    stores: dashboard("stores", "Stores", [
+      {
+        ...TRICKY,
+        id: "stores",
+        by: [{ column: "store_id", label: "Store" }],
+        rows: [10432, 2025, 1200].map((key, i) => ({
+          keys: [key],
+          values: { revenue: 12500 - i },
+        })),
+        rowCount: 3,
+      },
+    ]),
+    teams: variant("table-group-teams"),
+    cities: variant("table-group-cities"),
+    products: variant("table-group-products"),
+    deep: dashboard("deep", "Deep", [
+      {
+        ...TRICKY,
+        id: "deep",
+        by: [
+          { column: "region", label: "Region" },
+          { column: "country", label: "Country" },
+          { column: "city", label: "City" },
+        ],
+        rows: [
+          { keys: ["Europe", "Germany", "Berlin"], values: { revenue: 30 } },
+          { keys: ["North America", "Canada", "Toronto"], values: { revenue: 20 } },
+          { keys: ["Europe", "France", "Paris"], values: { revenue: 10 } },
+        ],
+        rowCount: 3,
+      },
+    ]),
     bars: variant("table-bars-negative"),
     tricky: dashboard("tricky", "Tricky", [TRICKY]),
     numeric: keyed("numeric", [2, -2, 1000, -10]),
@@ -241,7 +340,7 @@ describe("review regressions (HAT-55)", () => {
       "−10",
       "−2",
       "2",
-      "1.000",
+      "1000",
     ]);
     await page.close();
   });
@@ -253,7 +352,7 @@ describe("review regressions (HAT-55)", () => {
         .locator("tbody th span")
         .evaluateAll((spans) => spans.map((s) => [s.textContent, s.classList.contains("hm-sr")]));
     const expected = [
-      ["1,000", false],
+      ["1000", false],
       ["1000", false],
       ["zzz", false],
     ];
@@ -353,7 +452,7 @@ describe("CSV download", () => {
 describe("tall tables", () => {
   for (const width of [1280, 390]) {
     it(`keeps the header and total row in view while the rows scroll (${width}px)`, async () => {
-      const page = await open("tall", width);
+      const page = await open("tallScroll", width);
       const wrap = page.locator(".hm-table-wrap");
       expect(await wrap.evaluate((n) => n.classList.contains("hm-tall"))).toBe(true);
       const box = await wrap.evaluate((n) => {
@@ -434,8 +533,7 @@ describe("in-cell bar and scrollbar layout", () => {
   it("keeps the last column a cell padding clear of the scrollbar, with header, body and total aligned", async () => {
     const classic = await chromium.launch({ ignoreDefaultArgs: ["--hide-scrollbars"] });
     const page = await classic.newPage({ viewport: { width: 1280, height: 900 } });
-    await page.goto(urls.tall ?? "");
-    await page.addStyleTag({ content: ".hm-tall::-webkit-scrollbar{width:15px;background:#888}" });
+    await page.goto(urls.tallScroll ?? "");
     const box = await page.$eval(".hm-table-wrap", (node) => {
       const wrap = node as HTMLElement;
       const last = (selector: string) => {
@@ -464,5 +562,314 @@ describe("in-cell bar and scrollbar layout", () => {
     expect(Math.abs(box.foot.cell - box.body.cell)).toBeLessThan(0.5);
     expect(Math.abs(box.foot.text - box.body.text)).toBeLessThan(0.5);
     await classic.close();
+  });
+});
+
+describe("narrow layouts of grouped tables", () => {
+  /** Visible text of the narrow-only labels in each body row, with the row's outer key values. */
+  const labels = (page: Page) =>
+    page.$$eval(".hm-table tbody tr", (trs) =>
+      trs
+        .filter((tr) => getComputedStyle(tr).display !== "none")
+        .map((tr) => {
+          const fill = tr.querySelector(".hm-fill");
+          const mobile = [...(fill?.querySelectorAll<HTMLElement>(".hm-m") ?? [])];
+          return {
+            kind: (tr as HTMLElement).dataset.hmKind,
+            outer: [...tr.querySelectorAll(".hm-outer")].map((c) => c.getAttribute("data-v")),
+            label: mobile.filter((m) => m.offsetHeight > 0).map((m) => m.textContent),
+            hidden: mobile.every((m) => m.getAttribute("aria-hidden") === "true"),
+          };
+        }),
+    );
+  const columns = (page: Page) =>
+    page.$$eval(".hm-table thead th.hm-key", (ths) =>
+      ths.map((th) => ({
+        width: th.getBoundingClientRect().width,
+        position: getComputedStyle(th).position,
+        left: getComputedStyle(th).left,
+      })),
+    );
+
+  it("with subtotals, names each group in a full-width row and pins only the innermost key column (390px)", async () => {
+    const page = await open("subtotals", 390);
+    const [outer, inner] = await columns(page);
+    expect(outer?.width).toBeLessThan(1);
+    expect(inner?.left).toBe("0px");
+    const before = await labels(page);
+    for (const row of before.filter((r) => r.kind === "subtotal"))
+      expect(row.label).toEqual(row.outer);
+    const leaves = await page.$$eval("tbody tr[data-hm-kind=row]", (trs) =>
+      trs.map((tr) => tr.hasAttribute("data-hm-lead")),
+    );
+    before
+      .filter((r) => r.kind === "row")
+      .forEach((row, i) => {
+        expect(row.label).toEqual(leaves[i] ? row.outer : []);
+      });
+    expect(before.every((r) => r.hidden)).toBe(true);
+    const wrap = page.locator(".hm-table-wrap");
+    await wrap.evaluate((n) => {
+      n.scrollLeft = 400;
+    });
+    const edges = await page.evaluate(() => ({
+      wrap: document.querySelector(".hm-table-wrap")?.getBoundingClientRect().left,
+      fill: document.querySelector("tbody .hm-fill")?.getBoundingClientRect().left,
+    }));
+    expect(Math.abs((edges.fill ?? 0) - (edges.wrap ?? 0))).toBeLessThan(1);
+    await page.locator("thead th").nth(2).locator("button").click();
+    expect(await labels(page)).toHaveLength(before.length);
+    for (const row of (await labels(page)).filter((r) => r.kind === "subtotal"))
+      expect(row.label).toEqual(row.outer);
+    await page.close();
+  });
+
+  it("without subtotals, shows the outer value under the inner one, also after a sort by a metric (390px)", async () => {
+    const page = await open("two", 390);
+    const header = await page.$eval("thead th.hm-fill", (th) => th.textContent);
+    expect(header).toBe("CountryRegion");
+    const check = async () => {
+      for (const row of (await labels(page)).filter((r) => r.kind === "row"))
+        expect(row.label).toEqual(row.outer);
+    };
+    await check();
+    await page.locator("thead th").last().locator("button").click();
+    await check();
+    await page.close();
+    const deep = await open("deep", 390);
+    expect((await labels(deep)).map((r) => r.label)).toEqual([
+      ["Europe · Germany"],
+      ["North America · Canada"],
+      ["Europe · France"],
+    ]);
+    await deep.close();
+  });
+
+  it("keeps the desktop layout unchanged above the narrow breakpoint", async () => {
+    for (const name of ["subtotals", "two"]) {
+      const page = await open(name);
+      const [outer] = await columns(page);
+      expect(outer?.width).toBeGreaterThan(100);
+      expect((await labels(page)).every((r) => r.label.length === 0)).toBe(true);
+      await page.close();
+    }
+  });
+
+  it("indents the three levels of a deep subtotal table", async () => {
+    const page = await open("cities", 390);
+    const x = (selector: string) =>
+      page.$eval(selector, (n) => {
+        const range = document.createRange();
+        range.selectNodeContents(n);
+        return (
+          range.getBoundingClientRect().left -
+          (n.closest("td,th")?.getBoundingClientRect().left ?? 0)
+        );
+      });
+    const one = await x('tr[data-hm-level="1"] .hm-fill .hm-m');
+    const two = await x('tr[data-hm-level="2"] .hm-fill .hm-m');
+    const leaf = await x('tr[data-hm-kind="row"] .hm-fill span');
+    expect(two).toBeGreaterThan(one);
+    expect(leaf).toBeGreaterThan(two);
+    await page.close();
+  });
+
+  for (const width of [1280, 390]) {
+    it(`folds a one-row group into its row instead of repeating its numbers (${width}px)`, async () => {
+      const page = await open("teams", width);
+      const visible = await page.$$eval(".hm-table tbody tr", (trs) =>
+        trs
+          .filter((tr) => getComputedStyle(tr).display !== "none")
+          .map((tr) => tr.querySelector("td[data-v]:not(.hm-key)")?.getAttribute("data-v")),
+      );
+      expect(visible.filter((v) => v === "74900")).toHaveLength(1);
+      const row = page.locator("tbody tr[data-hm-lead]");
+      if (width === 1280) {
+        expect(
+          await row.locator(".hm-outer span").evaluate((s) => s.classList.contains("hm-sr")),
+        ).toBe(false);
+      } else {
+        expect(await row.locator(".hm-fill .hm-msub").textContent()).toBe("Partnerships");
+      }
+      await page.close();
+    });
+  }
+
+  it("shows numeric group values as labels, without thousands separators, whatever the column is called", async () => {
+    const page = await open("stores");
+    expect(await page.locator("tbody .hm-key span:not(.hm-m)").allTextContents()).toEqual([
+      "10432",
+      "2025",
+      "1200",
+    ]);
+    expect(await page.locator("tbody td:not(.hm-key)").first().textContent()).toBe("$12,500");
+    await page.close();
+  });
+
+  for (const width of [1280, 390]) {
+    it(`hides a subtotal only when its group had one row before the limit, also with Other and three levels (${width}px)`, async () => {
+      const visible = async (id: string) => {
+        const page = await open("cut", width);
+        const rows = await page.$$eval(`[aria-labelledby="hm-${id}-t"] tbody tr`, (trs) =>
+          trs
+            .filter((tr) => getComputedStyle(tr).display !== "none")
+            .map((tr) => [
+              (tr as HTMLElement).dataset.hmKind,
+              tr.querySelector("td:not(.hm-key)")?.getAttribute("data-v"),
+            ]),
+        );
+        await page.close();
+        return rows;
+      };
+      expect(await visible("cut")).toEqual([
+        ["subtotal", "30"],
+        ["row", "20"],
+        ["row", "5"],
+      ]);
+      expect(await visible("folded")).toEqual([
+        ["row", "50"],
+        ["subtotal", "30"],
+        ["subtotal", "30"],
+        ["row", "20"],
+        ["other", "10"],
+      ]);
+    });
+  }
+
+  it("downloads the plain column names from a two-line header", async () => {
+    for (const width of [1280, 390]) {
+      const page = await open("two", width);
+      expect((await download(page)).slice(1).split("\r\n")[0]).toBe(
+        "Region,Country,Revenue,Orders",
+      );
+      await page.close();
+    }
+  });
+
+  it("keeps each row's group readable to screen readers on a phone", async () => {
+    const page = await open("two", 390);
+    const outer = await page.$$eval("tbody .hm-outer > span", (spans) =>
+      spans.map((s) => ({ display: getComputedStyle(s).display, text: s.textContent })),
+    );
+    expect(outer.length).toBeGreaterThan(0);
+    for (const span of outer) {
+      expect(span.display).not.toBe("none");
+      expect(span.text).not.toBe("");
+    }
+    await page.close();
+  });
+
+  it("skips hidden outer headers in keyboard order and keeps a focused header clear of the pinned column", async () => {
+    const page = await open("subtotals", 390);
+    await page.locator(".hm-table-wrap").evaluate((n) => {
+      n.scrollLeft = n.scrollWidth;
+    });
+    await page.locator("button[data-hm-csv]").focus();
+    const order: string[] = [];
+    for (let i = 0; i < 3; i++) {
+      await page.keyboard.press("Tab");
+      const th = await page.evaluate(
+        () => document.activeElement?.closest("th")?.textContent ?? "",
+      );
+      if (th !== "") order.push(th);
+    }
+    expect(order[0]).toBe("Country");
+    expect(order[1]).toBe("Revenue");
+    const [fill, focused] = await page.evaluate(() => [
+      document.querySelector("thead .hm-fill")?.getBoundingClientRect().right ?? 0,
+      (document.activeElement as HTMLElement).getBoundingClientRect().left,
+    ]);
+    expect(focused).toBeGreaterThanOrEqual(fill);
+    await page.close();
+  });
+});
+
+describe("overflow: page or scroll, by layout", () => {
+  /** After scrolling the page into the table: inner scroll, thin scrollbar, and where the header and total sit. */
+  const probe = async (page: Page, height: number) => {
+    const wrap = page.locator(".hm-table-wrap").first();
+    const inner = await wrap.evaluate((n) => n.scrollHeight - n.clientHeight);
+    const thin = await wrap.evaluate((n) => getComputedStyle(n).scrollbarWidth);
+    const top = await wrap.evaluate((n) => n.getBoundingClientRect().top + window.scrollY);
+    await page.evaluate((y) => window.scrollTo(0, y), top + 500);
+    await page.waitForTimeout(100);
+    const box = await page.evaluate(() => ({
+      head: document.querySelector("thead th")?.getBoundingClientRect().top ?? -1,
+      foot: [...document.querySelectorAll("tfoot tr > *")].map(
+        (c) => c.getBoundingClientRect().bottom,
+      ),
+    }));
+    return { inner, thin, head: box.head, foot: box.foot, height };
+  };
+  const pinned = (p: Awaited<ReturnType<typeof probe>>) => {
+    expect(p.inner).toBeLessThan(2);
+    expect(Math.abs(p.head)).toBeLessThan(1);
+    for (const bottom of p.foot) expect(Math.abs(bottom - p.height)).toBeLessThan(1);
+  };
+
+  for (const width of [1280, 390]) {
+    it(`grows a table alone in its row with the page, header and total pinned to the screen (${width}px)`, async () => {
+      const page = await browser.newPage({ viewport: { width, height: 700 } });
+      await page.goto(urls.tall ?? "");
+      pinned(await probe(page, 700));
+      await page.close();
+    });
+  }
+
+  it("prints a scrolled page-mode table with the header and total in place", async () => {
+    const page = await browser.newPage({ viewport: { width: 1280, height: 600 } });
+    await page.goto(urls.tall ?? "");
+    await probe(page, 600);
+    await page.waitForFunction(
+      () => getComputedStyle(document.querySelector("thead th") as Element).transform !== "none",
+    );
+    await page.emulateMedia({ media: "print" });
+    const moved = await page.$$eval("thead th, tfoot th, tfoot td", (cells) =>
+      cells.map((c) => getComputedStyle(c).transform).filter((t) => t !== "none"),
+    );
+    expect(moved).toEqual([]);
+    await page.close();
+  });
+
+  it("pins the total above a classic horizontal scrollbar in page mode (390x430)", async () => {
+    const classic = await chromium.launch({ ignoreDefaultArgs: ["--hide-scrollbars"] });
+    const page = await classic.newPage({ viewport: { width: 390, height: 430 } });
+    await page.goto(urls.subtotals ?? "");
+    const wrap = page.locator(".hm-table-wrap");
+    expect(
+      await wrap.evaluate((n) => (n as HTMLElement).offsetHeight - n.clientHeight),
+    ).toBeGreaterThan(0);
+    const top = await wrap.evaluate((n) => n.getBoundingClientRect().top + window.scrollY);
+    await page.evaluate((y) => window.scrollTo(0, y), top + 80);
+    await page.waitForTimeout(100);
+    const bottom = await page.$eval("tfoot th", (n) => n.getBoundingClientRect().bottom);
+    expect(Math.abs(bottom - 430)).toBeLessThan(1);
+    await classic.close();
+  });
+
+  for (const [name, why] of [
+    ["tallShared", "sharing a row"],
+    ["tallScroll", 'alone with "overflow": "scroll"'],
+  ] as const) {
+    it(`scrolls inside its card with a thin themed scrollbar when ${why}`, async () => {
+      const page = await browser.newPage({ viewport: { width: 1280, height: 700 } });
+      await page.goto(urls[name] ?? "");
+      const p = await probe(page, 700);
+      expect(p.inner).toBeGreaterThan(100);
+      expect(p.thin).toBe("thin");
+      await page.close();
+    });
+  }
+
+  it('grows with "overflow": "page" in a shared row, and the card beside it stretches to its height', async () => {
+    const page = await browser.newPage({ viewport: { width: 1280, height: 700 } });
+    await page.goto(urls.tallSharedPage ?? "");
+    const heights = await page.$$eval(".hm-grid > section", (cards) =>
+      cards.map((c) => c.getBoundingClientRect().height),
+    );
+    expect(heights).toHaveLength(2);
+    expect(Math.abs((heights[0] ?? 0) - (heights[1] ?? 0))).toBeLessThan(1);
+    pinned(await probe(page, 700));
+    await page.close();
   });
 });

@@ -91,7 +91,11 @@ function build(
         .map((region) => ({ region, group: parts.filter((p) => p.keys[0] === region) }))
         .sort((a, b) => sum(b.group, by) - sum(a.group, by))
         .flatMap(({ region, group }) => [
-          row([region, null], group, distinctCustomers(group), { kind: "subtotal", level: 1 }),
+          row([region, null], group, distinctCustomers(group), {
+            kind: "subtotal",
+            level: 1,
+            count: group.length,
+          }),
           ...cut(group, [region]),
         ])
     : cut(parts, []);

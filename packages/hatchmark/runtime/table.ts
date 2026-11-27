@@ -140,17 +140,56 @@ function download(name: string, text: string): void {
 }
 
 /**
- * Scrolls a focused header button out from under the pinned first column, which the browser's own
- * focus scrolling does not know about.
+ * Scrolls a focused header button out from under the pinned key column, which the browser's own
+ * focus scrolling does not know about. The pinned column is the first one, or on a narrow screen
+ * the innermost key column of a grouped table: whichever header cells stick to the left edge.
  */
 function revealFocus(wrap: HTMLElement, table: HTMLTableElement): void {
   wrap.addEventListener("focusin", (event) => {
     const target = event.target as HTMLElement;
-    const pinned = table.tHead?.rows[0]?.cells[0];
-    if (!pinned || target === wrap || pinned.contains(target)) return;
-    const covered = pinned.getBoundingClientRect().right - target.getBoundingClientRect().left;
+    const pinned = [...(table.tHead?.rows[0]?.cells ?? [])].filter(
+      (cell) => getComputedStyle(cell).left !== "auto",
+    );
+    if (target === wrap || pinned.length === 0 || pinned.some((cell) => cell.contains(target)))
+      return;
+    const edge = Math.max(...pinned.map((cell) => cell.getBoundingClientRect().right));
+    const covered = edge - target.getBoundingClientRect().left;
     if (covered > 0) wrap.scrollLeft -= covered + 8;
   });
+}
+
+/**
+ * A tall table in page mode (overflow "page", the default alone in its grid row) grows with the page
+ * instead of scrolling inside its card, so its header row follows the viewport top and its total row
+ * the viewport bottom while the table is on screen. CSS sticky cannot do this, because the card
+ * scrolls sideways on a phone and so becomes the sticky container.
+ */
+function pinToViewport(table: HTMLTableElement): void {
+  const head = [...(table.tHead?.rows[0]?.cells ?? [])];
+  const foot = [...(table.tFoot?.rows[0]?.cells ?? [])];
+  let queued = false;
+  const update = () => {
+    queued = false;
+    const box = table.getBoundingClientRect();
+    const room = Math.max(
+      0,
+      box.height -
+        (table.tHead?.getBoundingClientRect().height ?? 0) -
+        (table.tFoot?.getBoundingClientRect().height ?? 0),
+    );
+    const down = Math.min(room, Math.max(0, -box.top));
+    const up = Math.min(room, Math.max(0, box.bottom - window.innerHeight));
+    for (const cell of head) cell.style.transform = down > 0 ? `translateY(${down}px)` : "";
+    for (const cell of foot) cell.style.transform = up > 0 ? `translateY(${-up}px)` : "";
+  };
+  const queue = () => {
+    if (queued) return;
+    queued = true;
+    requestAnimationFrame(update);
+  };
+  addEventListener("scroll", queue, { passive: true, capture: true });
+  addEventListener("resize", queue);
+  update();
 }
 
 /** Wires one table card: sortable headers, a polite announcement, and the CSV button. */
@@ -159,6 +198,7 @@ export function wireTable(card: HTMLElement): void {
   if (!table) return;
   const wrap = table.closest<HTMLElement>(".hm-table-wrap");
   if (wrap) revealFocus(wrap, table);
+  if (wrap?.classList.contains("hm-grow")) pinToViewport(table);
   const live = document.createElement("div");
   live.className = "hm-sr";
   live.setAttribute("aria-live", "polite");
