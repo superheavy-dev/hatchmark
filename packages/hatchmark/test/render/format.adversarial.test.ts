@@ -389,7 +389,7 @@ function formats(locale: string): Format[] {
 
 const STYLES: NumberStyle[] = ["compact", "headline", "full", "axis"];
 
-describe(`formatValue against an independent decimal oracle (HM_SWEEP=full for ${FULL ? "" : "more "}random values and 83 locales)`, () => {
+describe(`formatValue against an independent decimal oracle (HM_SWEEP=full for ${FULL ? "" : "more "}random values and 75 more locales)`, () => {
   const sample = values(FULL ? 400 : 40);
   for (const locale of Object.keys(L)) {
     it(`prints exact unit-less values and in-step units in ${locale}`, () => {
@@ -451,7 +451,7 @@ describe(`formatValue against an independent decimal oracle (HM_SWEEP=full for $
   });
 
   it.runIf(FULL)(
-    "never prints a unit-less rounded value in 83 more locales",
+    "never prints a unit-less rounded value in 75 more locales",
     () => {
       const locales = [
         "en-IN",
