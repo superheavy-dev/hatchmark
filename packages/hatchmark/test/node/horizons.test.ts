@@ -221,7 +221,7 @@ describe("source horizons", () => {
   });
 
   it("warns with HM4013 when a block's window starts after the data it reads ends", async () => {
-    const { codes, value } = await build(
+    const { codes, value, data } = await build(
       await project({ asOf: "2026-05-31", range: { start: "2026-05-10", end: "2026-05-20" } }),
     );
     expect(codes).toEqual([
@@ -230,7 +230,9 @@ describe("source horizons", () => {
       ["HM4013", "warning", "/blocks/0"],
       ["HM4013", "warning", "/blocks/1"],
     ]);
-    expect(value("revenue")).toBe(0);
+    // An empty window is a gap, not 0.
+    expect(value("revenue")).toBeNull();
+    expect(data?.blocks[0]).toMatchObject({ empty: "no_data" });
   });
 });
 
@@ -335,6 +337,36 @@ describe("horizon edges (HAT-44 and HAT-45 on #19)", () => {
     );
     expect(week.data?.asOf).toBe("2026-04-30");
     expect(week.value("orders")).toBe(3);
+  });
+
+  // HAT-45's two newest-day cases, moved to whole days (RFC 0001 section 6.4): the newest row is at
+  // midnight on Apr 30, so Apr 30 has begun but isn't complete and last 7 days ends with Apr 29.
+  it("leaves the newest, begun day out of last 7 days, with latest_data or a fixed as-of", async () => {
+    const text = "at,v\n2026-04-28T00:00:00Z,1\n2026-04-29T00:00:00Z,2\n2026-04-30T00:00:00Z,4\n";
+    for (const asOf of ["latest_data", "2026-04-30"]) {
+      const r = await build(
+        await sources({ orders: { text } }, { asOf, range: { last: 7, unit: "day" } }),
+      );
+      expect(r.data?.asOf).toBe("2026-04-30");
+      expect(r.value("orders")).toBe(3);
+    }
+  });
+
+  it("leaves the newest day out for naive midnight timestamps in a source time zone", async () => {
+    const r = await build(
+      await sources(
+        {
+          orders: {
+            text: "at,v\n2026-04-29 00:00:00,2\n2026-04-30 00:00:00,4\n",
+            options: { timezone: "America/Los_Angeles" },
+          },
+        },
+        { asOf: "latest_data", range: { last: 7, unit: "day" } },
+        { timezone: "America/Los_Angeles" },
+      ),
+    );
+    expect(r.data?.asOf).toBe("2026-04-30");
+    expect(r.value("orders")).toBe(2);
   });
 
   it("orders horizons by instant across a fall-back hour, not by wall-clock time", async () => {

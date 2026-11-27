@@ -17,6 +17,7 @@ import {
   DASHBOARD_DATA_VERSION,
   type DashboardData,
   type DateSpan,
+  type EmptyWindow,
   type GrainOption,
   type KpiData,
   type LineData,
@@ -28,7 +29,7 @@ import {
   type TimeAxis,
   type Value,
 } from "./dashboard-data.js";
-import { formatWall, parseInstant, toLocal } from "./instants.js";
+import { formatWall, fromLocal, parseInstant, toLocal } from "./instants.js";
 import type {
   BlockPlan,
   ExecutionContext,
@@ -208,6 +209,18 @@ class Assembler {
     return query && queryBounds(query, this.context);
   }
 
+  /**
+   * Why an expression's window is empty, or undefined when it isn't: no_complete_day when its
+   * horizon is after the window's start, else no_data.
+   */
+  empty(expression: MeasureExpression | undefined): EmptyWindow | undefined {
+    const bounds = this.bounds(expression);
+    if (bounds?.kind !== "bounded" || bounds.start !== bounds.end) return undefined;
+    const horizon = this.horizon(expression);
+    const start = fromLocal(parseInstant(bounds.start), this.context.timezone);
+    return horizon !== undefined && horizon > start ? "no_complete_day" : "no_data";
+  }
+
   /** A measure's horizon (UTC microseconds): the earliest of its queries'. */
   horizon(expression: MeasureExpression | undefined): bigint | undefined {
     let earliest: bigint | undefined;
@@ -346,15 +359,25 @@ class Assembler {
   kpi(block: Block & { type: "kpi" }, plan: BlockPlan, common: Common): KpiData {
     const name = block.metric;
     const compare = block.compare ?? this.plan.period.compare;
-    const current = this.evaluate(plan.measures[name], 0, []);
-    const data: KpiData = { ...common, type: "kpi", metric: name, value: current, compare };
+    const empty = this.empty(plan.measures[name]);
+    const current = empty ? null : this.evaluate(plan.measures[name], 0, []);
+    const data: KpiData = {
+      ...common,
+      type: "kpi",
+      metric: name,
+      value: current,
+      ...(empty ? { empty } : {}),
+      compare,
+    };
     const currentSpan = span(this.bounds(plan.measures[name]), this.context.timezone);
     if (currentSpan) data.current = currentSpan;
     const previousExpression = plan.previous?.[name];
     if (previousExpression && this.bounds(previousExpression) !== undefined) {
       const previousSpan = span(this.bounds(previousExpression), this.context.timezone);
       if (previousSpan) data.previous = previousSpan;
-      const previous = this.evaluate(previousExpression, 0, []);
+      const previous = this.empty(previousExpression)
+        ? null
+        : this.evaluate(previousExpression, 0, []);
       const change = current === null || previous === null ? null : current - previous;
       const points = this.metric(name)?.format.type === "percent";
       data.previousValue = previous;
@@ -510,12 +533,14 @@ class Assembler {
     const percent = block.percentOfTotal ?? [];
     const hasTotal = block.totals !== false || percent.length > 0;
     const blank: Key[] = block.by.map(() => null);
+    const empty = this.empty(expressions[0]);
     const totals: Record<string, Value> = {};
     if (hasTotal)
-      for (const m of block.metrics) totals[m] = this.evaluate(plan.measures[m], 1, blank);
+      for (const m of block.metrics)
+        totals[m] = empty ? null : this.evaluate(plan.measures[m], 1, blank);
     const shares = (values: Record<string, Value>): Record<string, Value> =>
       Object.fromEntries(percent.map((m) => [m, divide(values[m] ?? null, totals[m] ?? null)]));
-    const rows: TableRow[] = this.keys(expressions, 0).map((keys) => {
+    const rows: TableRow[] = (empty ? [] : this.keys(expressions, 0)).map((keys) => {
       const values: Record<string, Value> = {};
       for (const m of block.metrics) values[m] = this.evaluate(plan.measures[m], 0, keys);
       return { keys, values, ...(percent.length > 0 ? { share: shares(values) } : {}) };
@@ -547,6 +572,7 @@ class Assembler {
         ? { total: { values: totals, ...(percent.length > 0 ? { share: shares(totals) } : {}) } }
         : {}),
       ...(window ? { window } : {}),
+      ...(empty ? { empty } : {}),
     };
   }
 

@@ -1,6 +1,6 @@
 import path from "node:path";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import type { KpiData, LineData } from "../../src/compiler/index.js";
+import type { KpiData, LineData, TableData } from "../../src/compiler/index.js";
 import { PROJECT_DEFAULTS } from "../../src/spec/index.js";
 import { metric, Oracle, removeProjects, run, writeProject } from "./fixture.js";
 
@@ -265,14 +265,47 @@ describe("whole days in KPIs, instants in series", () => {
       ],
     });
     // Complete through 1:45 a.m. EST (06:45Z): the series includes the EDT 1:50 row and leaves out
-    // the EST 1:50 row; no day of November is complete, so the KPI reads none.
+    // the EST 1:50 row; no day of November is complete, so the KPI shows no value.
     const expected = between(pairs, "2026-11-01T04:00:00Z", "2026-11-01T06:45:00.001Z");
     expect(expected).toBe(11);
     expect(block<LineData>("l").series[0]?.values[0]).toBe(expected);
     expect(block<KpiData>("k")).toMatchObject({
-      value: 0,
+      value: null,
+      empty: "no_complete_day",
       current: { start: "2026-11-01", end: "2026-11-01" },
     });
+  });
+
+  it("shows no value, never 0, for a KPI or table with no complete day yet", async () => {
+    const { block, diagnostics } = await dashboard({
+      sources: { orders: rows(["2026-10-31T12:00:00Z", 1], ["2026-11-01T09:00:00Z", 2]) },
+      period: { asOf: "latest_data", range: "month_to_date", compare: "previous_period" },
+      blocks: [
+        { type: "kpi", id: "k", metric: "orders" },
+        { type: "table", id: "t", by: ["v"], metrics: ["orders"] },
+        { type: "line", id: "l", metrics: ["orders"], grain: "day" },
+      ],
+    });
+    expect(block<KpiData>("k")).toMatchObject({
+      value: null,
+      empty: "no_complete_day",
+      previousValue: null,
+      change: null,
+      changePct: null,
+      current: { start: "2026-11-01", end: "2026-11-01" },
+    });
+    expect(block<TableData>("t")).toMatchObject({
+      rows: [],
+      rowCount: 0,
+      total: { values: { orders: null } },
+      empty: "no_complete_day",
+    });
+    expect(block<LineData>("l").series[0]?.values).toEqual([2]);
+    expect(diagnostics.map((d) => [d.code, d.severity, d.pointer])).toEqual([
+      ["HM4024", "note", "/blocks/0"],
+      ["HM4024", "note", "/blocks/1"],
+    ]);
+    expect(diagnostics[0]?.message).toContain("no complete day yet");
   });
 
   it("shifts a slid window a month back from March 31 by its first and last day", async () => {
@@ -299,7 +332,7 @@ describe("whole days in KPIs, instants in series", () => {
     });
   });
 
-  it("slides last N months back to end at the last complete day, keeping its length", async () => {
+  it("slides last N months back by whole days to the last complete day, keeping its day count", async () => {
     const pairs: [string, number][] = [
       ["2026-04-08T12:00:00Z", 32],
       ["2026-05-10T12:00:00Z", 1],
@@ -317,12 +350,13 @@ describe("whole days in KPIs, instants in series", () => {
       },
       blocks: [{ type: "kpi", id: "k", metric: "orders" }],
     });
-    // Jul 10 to Oct 10 is 92 days; previous_period is the 92 days before it.
+    // As of Oct 10, last 3 months is Aug 1 to Oct 10, 71 days. Oct 10 isn't complete, so it slides
+    // back a day to Jul 31 to Oct 9, and previous_period is the 71 days before it.
     expect(block<KpiData>("k")).toMatchObject({
-      value: between(pairs, "2026-07-10T00:00:00Z", "2026-10-10T00:00:00Z"),
-      previousValue: between(pairs, "2026-04-09T00:00:00Z", "2026-07-10T00:00:00Z"),
-      current: { start: "2026-07-10", end: "2026-10-10" },
-      previous: { start: "2026-04-09", end: "2026-07-10" },
+      value: between(pairs, "2026-07-31T00:00:00Z", "2026-10-10T00:00:00Z"),
+      previousValue: between(pairs, "2026-05-21T00:00:00Z", "2026-07-31T00:00:00Z"),
+      current: { start: "2026-07-31", end: "2026-10-10" },
+      previous: { start: "2026-05-21", end: "2026-07-31" },
     });
   });
 

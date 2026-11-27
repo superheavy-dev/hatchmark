@@ -263,15 +263,20 @@ export function boundInstant(value: string, timezone: string): bigint {
   return value.endsWith("Z") ? parseInstant(value) : fromLocal(parseInstant(value), timezone);
 }
 
+/** Whole local days from one date to another. */
+function daysBetween(from: string, to: string): number {
+  return Math.round(Number(parseInstant(to) - parseInstant(from)) / Number(DAY_US));
+}
+
 /**
  * A query's window ended at a horizon (UTC microseconds; none keeps the window as written), when
  * the horizon is before the end of the range as written (RFC 0001 section 6.4).
  *
  * KPIs and tables read whole local days ending at the last complete day: the window ends at the
  * local midnight at or before the horizon (day D).
- * - {last: N, unit} slides back to the N units ending at D, and compares like an explicit
- *   {start, end} range of those dates: previous_period is the same number of days just before,
- *   a shift moves its first and last day (resolveRange);
+ * - {last: N, unit} slides back by whole days to end at D, keeping the day count of the window
+ *   resolveRange gives it, and compares like an explicit {start, end} range of those dates:
+ *   previous_period is the same number of days just before, a shift moves its first and last day;
  * - a to-date range is the range as of the day before D, with its comparison;
  * - a complete unit or explicit range ends at D, and its comparison covers the same number of
  *   days from its own start, never past its own end;
@@ -312,8 +317,7 @@ export function windowAt(
   if (timeAxis) {
     const start = parseInstant(base.start);
     if (hw <= start) return window.shift === "none" ? empty : { ...target, end: target.start };
-    if (window.shift === "none")
-      return { kind: "bounded", start: base.start, end: formatInstant(horizon) };
+    if (window.shift === "none") return { kind: "bounded", start: base.start, end: exact };
     const from = parseInstant(target.start);
     const cut = from + (hw - start);
     if (cut >= parseInstant(target.end)) return target;
@@ -325,14 +329,16 @@ export function windowAt(
   }
 
   if ("last" in spec) {
-    const slid = { start: format(addUnits(parse(day), spec.unit, -spec.last)), end: day };
+    const slid = {
+      start: format(addDays(parse(day), -daysBetween(base.start, base.end))),
+      end: day,
+    };
     return resolveRange(slid, window.shift, context.asOf, anchors);
   }
   if (day <= base.start) return window.shift === "none" ? empty : { ...target, end: target.start };
   if ("to_date" in spec) return resolveRange(range, window.shift, previousDay(day), anchors);
   if (window.shift === "none") return { kind: "bounded", start: base.start, end: day };
-  const days = Math.round(Number(parseInstant(day) - parseInstant(base.start)) / Number(DAY_US));
-  const end = format(addDays(parse(target.start), days));
+  const end = format(addDays(parse(target.start), daysBetween(base.start, day)));
   return end < target.end ? { kind: "bounded", start: target.start, end } : target;
 }
 

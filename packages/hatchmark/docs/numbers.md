@@ -35,11 +35,12 @@ ZONE` value is converted to it. A timestamp without an offset (`2026-01-31 18:30
   that is before the end of its window, a KPI, table or category chart reads whole local days
   ending at the last complete day, the local midnight at or before the horizon: data through
   2:03 p.m. Nov 26 counts through Nov 25. `last N` days, weeks, months, quarters or years slides
-  back to end there, keeping its length, and compares with the same number of days before it (a
+  back by whole days to end there, keeping the number of days it has when the data is complete, and compares with the same number of days before it (a
   shift moves its first and last day); every other range ends there, and its comparison covers the
   same days (Nov 1 to Nov 25 against Oct 1 to Oct 25). An `all_time` window ends there too, so
   rows after a fixed as-of are ignored. With timestamp data the newest day is left out until it is
-  complete.
+  complete. A window with no complete day yet, such as month-to-date on the 1st, shows no value
+  rather than 0 (`empty: "no_complete_day"`, note HM4024).
 - **Buckets.** Time series bucket by local date; weeks start on the week anchor, and quarters and
   years on their `MM-DD` anchors (hatchmark.json `anchors`, or a block's `{"unit", "anchor"}`
   grain). The axis lists every

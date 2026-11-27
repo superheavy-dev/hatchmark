@@ -34,6 +34,14 @@ export interface DateSpan {
  * A bucket the horizon cuts: its index on the axis and the share of it elapsed in local wall-clock
  * time, to six decimals rounded down.
  */
+/**
+ * Why a KPI or table shows no value although its range has dates: its window, ended at the
+ * measure's horizon, is empty (RFC 0001 section 6.4). no_complete_day: the data has begun in the
+ * window but no day of it is complete yet (month-to-date on the 1st); no_data: the data ends before
+ * the window starts. An empty window is a gap, never 0.
+ */
+export type EmptyWindow = "no_complete_day" | "no_data";
+
 export interface PartialBucket {
   index: number;
   elapsed: number;
@@ -59,6 +67,8 @@ export interface KpiData extends BlockCommon {
   type: "kpi";
   metric: string;
   value: Value;
+  /** Set when the current window is empty: value, change and changePct are then null. */
+  empty?: EmptyWindow;
   /** Resolved compare: the block's override or the dashboard period's compare. */
   compare: Comparison;
   /** The windows read; previous is absent when compare is "none" or the range is all_time. */
@@ -179,6 +189,8 @@ export interface TableData extends BlockCommon {
    */
   total?: { values: Record<string, Value>; share?: Record<string, Value> };
   window?: DateSpan;
+  /** Set when the window is empty: no rows, and every total is null. */
+  empty?: EmptyWindow;
 }
 
 export type BlockData = KpiData | LineData | BarData | TableData;

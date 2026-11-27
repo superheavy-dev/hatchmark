@@ -142,7 +142,7 @@ describe("B: comparisons over the same whole days (RFC 6.4, day clamp as today)"
     );
   });
 
-  it("B2b last_12_months slides to the last complete day; previous_year moves its first and last day", async () => {
+  it("B2b last_12_months slides to the last complete day, keeping its 362 days; previous_year moves its first and last day", async () => {
     const { block, root } = await dashboard({
       sources: { orders: csv(hourly("2026-11-01T00:00:00Z", "2028-11-26T14:00:00Z")) },
       period: { asOf: "latest_data", range: "last_12_months", compare: "previous_year" },
@@ -150,10 +150,10 @@ describe("B: comparisons over the same whole days (RFC 6.4, day clamp as today)"
     });
     const kpi = block<KpiData>("k");
     expect(kpi.value).toBe(
-      await sumInstants(root, "orders", "2027-11-26 00:00:00Z", "2028-11-26 00:00:00Z"),
+      await sumInstants(root, "orders", "2027-11-30 00:00:00Z", "2028-11-26 00:00:00Z"),
     );
     expect(kpi.previousValue).toBe(
-      await sumInstants(root, "orders", "2026-11-26 00:00:00Z", "2027-11-26 00:00:00Z"),
+      await sumInstants(root, "orders", "2026-11-30 00:00:00Z", "2027-11-26 00:00:00Z"),
     );
   });
 });
@@ -256,7 +256,7 @@ describe("C: controls (expected to hold)", () => {
     });
     const kpi = block<KpiData>("k");
     expect(kpi.value).toBe(
-      await sumInstants(root, "stale", "2025-11-03 00:00:00Z", "2026-11-03 00:00:00Z"),
+      await sumInstants(root, "stale", "2025-11-30 00:00:00Z", "2026-11-03 00:00:00Z"),
     );
     const spark = kpi.sparkline?.values ?? [];
     expect(spark.reduce<number>((s, v) => s + (v ?? 0), 0)).toBe(

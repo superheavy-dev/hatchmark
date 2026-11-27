@@ -17,7 +17,6 @@ const ROOT = fileURLToPath(new URL("../../examples/global-sales/", import.meta.u
 const CSV = `${ROOT}data/orders.csv`;
 const LOCAL = "(ordered_at AT TIME ZONE 'America/New_York')";
 const CURRENT = `${LOCAL} >= TIMESTAMP '2025-11-01' AND ${LOCAL} < TIMESTAMP '2026-11-01'`;
-const PREVIOUS = `${LOCAL} >= TIMESTAMP '2024-11-01' AND ${LOCAL} < TIMESTAMP '2025-11-01'`;
 // KPIs, the table and the bar read whole local days through Oct 30, the last complete day (the
 // newest order is on Oct 31): last 12 months slides back to Oct 31, 2025, and previous_period is
 // the same 365 days before it. Time series keep the dashboard's months.

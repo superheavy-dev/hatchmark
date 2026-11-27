@@ -685,8 +685,9 @@ For point-in-time metrics "through the horizon" means "at the horizon": ARR now 
 Settled readings of the table:
 
 - KPI, table and category windows are whole local days ending at the last complete day: the local midnight at or before the horizon (Gunwoo, 2026-11-27). A horizon at 2:03 p.m. Nov 26 ends them at the end of Nov 25, so the number doesn't drift as rows arrive during the day and no bound falls inside a day. A timestamp source's newest day is therefore left out until a row after it arrives or the as-of is set past it.
-- Every `{ "last": N, "unit": … }` range slides, in days, weeks, months, quarters and years alike: `last_12_months` with orders through 6:54 p.m. Oct 31 is Oct 31 a year earlier through Oct 30. It then compares like an explicit range of those dates: previous_period is the same number of days just before it, and a shift moves its first and last day (section 6.2).
-- A to-date range is the range as of the last complete day, with that day's comparison. A last complete unit or explicit `{ start, end }` range ends at the last complete day, and its comparison covers the same number of days from its own start.
+- Every `{ "last": N, "unit": … }` range slides, in days, weeks, months, quarters and years alike. It slides back by whole days and keeps the number of days `resolveRange()` gives it when the data is complete: `last_12_months` as of Oct 31 is Nov 1 to Oct 31 (365 days), and with orders through 6:54 p.m. Oct 31 it is Oct 31 a year earlier through Oct 30, still 365 days. One hour less data never lengthens the window. It then compares like an explicit range of those dates: previous_period is the same number of days just before it, and a shift moves its first and last day (section 6.2). A window that needs no slide keeps section 6.2's comparison (previous_period moves an anchored last N months back N months).
+- A to-date range is the range as of the last complete day, with that day's comparison and section 6.2's day clamp, so the two can differ by a day (year-to-date through Mar 14, 2028 covers 74 days against 73). A last complete unit or explicit `{ start, end }` range ends at the last complete day, and its comparison covers the same number of days from its own start, never past the end of the comparison window as written; a month shift that clamps that window (Mar 28 to 31 shifted a month is Feb 28 alone) bounds it too.
+- A KPI or table whose ended window is empty, such as month-to-date on the 1st, shows no value, never 0: `value` (and the comparison over an empty window) is null, the block carries `empty: "no_complete_day"`, and check notes HM4024. A window that starts after the data ends is `empty: "no_data"` with HM4013.
 - A measure's horizon is the earliest of T and the horizons of every time column it reads, so a ratio ends at its laggiest operand.
 - Time-series blocks never slide: the axis is the dashboard's window, ending at T, and each series ends at its own measure horizon instant (no value at or after it, its cut bucket partial, with the share elapsed in local wall-clock time). A sparkline is a time series, so its sum can differ from its KPI. That horizon is compared as a UTC instant, so a cutoff inside a repeated fall-back hour stays exact.
 
@@ -728,6 +729,7 @@ Accessibility: the dash or hollow point is never the only signal; the tooltip, t
 | HM4014 | warning  | `incomplete: "show"` on a flow whose last bucket is partial                                                                    |
 | HM4015 | warning  | a snapshot source has a bucket with no snapshot, or its last snapshot in a complete bucket isn't on the bucket's last day      |
 | HM4016 | note     | naive timestamps in a project whose timezone isn't UTC                                                                         |
+| HM4024 | note     | a KPI or table window with no complete day yet (month-to-date on the 1st): it shows no value until a day is complete           |
 
 ## 7. Goals and targets
 

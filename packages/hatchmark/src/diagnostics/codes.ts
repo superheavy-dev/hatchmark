@@ -268,6 +268,11 @@ export const CODES = {
     explanation:
       "A block's window starts at or after the horizon of every source it reads, so it has no data to show: a KPI would be empty and a chart would have no points. Pick a range that ends after the data does, or set period.asOf to a date the data covers.",
   },
+  HM4024: {
+    title: "no complete day yet",
+    explanation:
+      "A KPI, table or category chart reads whole days ending at the last complete day of its data. Its window has begun, but no day of it is complete yet, such as month-to-date on the 1st, so it shows no value rather than 0. It fills in once a day is complete. Set period.asOf to an earlier date to show a complete day instead.",
+  },
   HM4016: {
     title: "timestamps without an offset",
     explanation:
