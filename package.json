@@ -14,7 +14,9 @@
     "format": "biome check --write .",
     "test": "vitest run",
     "gen:schema": "pnpm --filter hatchmark gen:schema",
-    "test:workerd": "node scripts/workerd-smoke.ts"
+    "test:workerd": "node scripts/workerd-smoke.ts",
+    "test:update-goldens": "HATCHMARK_UPDATE_GOLDENS=1 vitest run packages/hatchmark/test/render/golden.test.ts",
+    "test:browser": "vitest run --config vitest.browser.config.ts"
   },
   "devDependencies": {
     "@biomejs/biome": "2.6.9",

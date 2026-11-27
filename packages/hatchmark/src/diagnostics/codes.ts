@@ -24,7 +24,7 @@ export const CODES = {
   HM0004: {
     title: "would overwrite existing files",
     explanation:
-      "hatchmark init found files it would write already in the target directory, and wrote nothing. The diagnostic lists them. Pass --force to overwrite them, or choose another directory. AGENTS.md and .gitignore are always merged, never overwritten.",
+      "hatchmark init found files it would write already in the target directory, and wrote nothing. The diagnostic lists them. Pass --force to overwrite them, or choose another directory. AGENTS.md and .gitignore are always merged, never overwritten. hatchmark build replaces its output directory on every run, so it refuses one that is not empty and holds no _hatchmark/ folder (it did not write it), or one that contains the project. Empty the directory or pass another --out.",
   },
   HM0005: {
     title: "unbalanced AGENTS.md markers",
@@ -158,6 +158,11 @@ export const CODES = {
     title: "test data for a source the metric does not read",
     explanation:
       "A test's data swaps a source for a fixture file, but the metric does not read that source, directly or through a lookup, ratio, formula, per_entity, segment or in_table filter. The swap would have no effect, so the test would not test what it says. Remove the entry, or name the source the metric reads.",
+  },
+  HM2024: {
+    title: "chart narrower than 3 columns",
+    explanation:
+      'A line, area or bar block has "span" 1 or 2. At that width the axis labels, the key and the plot cannot all fit, so Hatchmark draws the chart 3 columns wide anyway and the grid row reflows around it. Set "span" to 3 or more to say what the page will show; the fix sets it to 3 and is safe. Use a kpi block (with "sparkline": true for a trend) when the space is meant for one number.',
   },
   HM3001: {
     title: "missing required property",

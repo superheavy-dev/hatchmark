@@ -10,7 +10,10 @@
     "includes": [
       "**",
       "!packages/hatchmark/schema",
-      "!packages/hatchmark/test/fixtures/global-sales"
+      "!packages/hatchmark/test/fixtures/global-sales",
+      "!packages/hatchmark/src/render/text-metrics.ts",
+      "!packages/hatchmark/src/render/themes",
+      "!packages/hatchmark/test/render/goldens"
     ]
   },
   "formatter": {

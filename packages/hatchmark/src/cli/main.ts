@@ -1,6 +1,7 @@
 import path from "node:path";
 import { type ParseArgsConfig, parseArgs } from "node:util";
 import { VERSION } from "../version.js";
+import { build, buildHelp } from "./commands/build.js";
 import { check, checkHelp } from "./commands/check.js";
 import { doctor, doctorHelp } from "./commands/doctor.js";
 import { explain, explainHelp } from "./commands/explain.js";
@@ -55,6 +56,16 @@ const COMMANDS: Record<string, Command> = {
     help: checkHelp,
     options: { strict: { type: "boolean" } },
     run: (ctx, positionals, flags) => check(ctx, positionals, { strict: flags.strict === true }),
+  },
+  build: {
+    help: buildHelp,
+    options: { out: { type: "string" } },
+    run: (ctx, positionals, flags) =>
+      positionals.length > 0
+        ? usageError("HM0002", `unexpected argument "${positionals[0]}"`, {
+            help: "run hatchmark build --help",
+          })
+        : build(ctx, typeof flags.out === "string" ? { out: flags.out } : {}),
   },
   schema: { help: schemaHelp, options: {}, run: (ctx, positionals) => schema(ctx, positionals) },
   explain: { help: explainHelp, options: {}, run: (ctx, positionals) => explain(ctx, positionals) },

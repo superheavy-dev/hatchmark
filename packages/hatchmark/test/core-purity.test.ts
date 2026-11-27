@@ -4,7 +4,7 @@ import { fileURLToPath } from "node:url";
 import { build, transform } from "esbuild";
 import { describe, expect, it } from "vitest";
 
-const CORE = ["compiler", "diagnostics", "spec"];
+const CORE = ["compiler", "diagnostics", "render", "spec"];
 const BUILTINS = new Set(builtinModules.flatMap((m) => [m, `node:${m}`]));
 const GLOBALS = /\brequire\s*\(|\bprocess\s*[.[]|\bBuffer\b|\b__(?:dirname|filename)\b/;
 

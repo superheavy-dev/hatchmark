@@ -75,6 +75,12 @@ updated afterwards. After applying one fix, the other ranges may no longer match
 fixes from the end of the file backwards, or run `check` again for fresh diagnostics after
 each edit.
 
+## Chart width
+
+Line, area and bar charts need at least 3 of the 12 grid columns for their axis labels, readout
+and plot. A smaller `span` is a warning, HM2024: the chart is drawn 3 columns wide anyway, and
+the grid row reflows around it. The safe fix sets `"span": 3`. `check` and `build` both report it.
+
 ## JSON syntax
 
 Spec files are strict JSON (RFC 8259): exactly what `JSON.parse` accepts, with the same value. Two

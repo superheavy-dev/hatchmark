@@ -109,7 +109,9 @@ iframe { width: 100%; height: 100%; border: 0; background: var(--bg); }
 body[data-width="mobile"] iframe { width: 390px; border-inline: 1px solid var(--line); }`;
 
 const SHELL_SCRIPT = `const frame = document.getElementById("frame");
+const VIEWS = { components: "components/", dashboard: "dashboard/sales/" };
 const state = {
+  view: "components",
   theme: matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light",
   width: "desktop",
 };
@@ -121,6 +123,8 @@ function themeFrame() {
   if (root) root.dataset.theme = state.theme;
 }
 function apply() {
+  const src = VIEWS[state.view] ?? VIEWS.components;
+  if (frame.getAttribute("src") !== src) frame.setAttribute("src", src);
   document.documentElement.dataset.theme = state.theme;
   document.body.dataset.width = state.width;
   for (const button of document.querySelectorAll("button[data-key]")) {
@@ -151,6 +155,10 @@ function shell(input: SiteInput): string {
   const body = `<header>
 <strong>Hatchmark preview</strong>
 <span class="info" title="${escapeHtml(input.build.sha ?? "")}">${escapeHtml(label)}</span>
+${toggle("view", "View", [
+  ["components", "Components"],
+  ["dashboard", "Example dashboard"],
+])}
 ${toggle("theme", "Theme", [
   ["light", "Light"],
   ["dark", "Dark"],

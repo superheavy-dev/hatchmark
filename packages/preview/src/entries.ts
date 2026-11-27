@@ -1,3 +1,5 @@
+import { galleryEntries, galleryHead } from "../../hatchmark/gallery/entries.js";
+
 /** One rendered variant of a component: one tile in the preview gallery. */
 export interface GalleryEntry {
   /** Component id such as `kpi` or `line`; entries with the same id are grouped. Lowercase letters, digits and dashes. */
@@ -11,10 +13,11 @@ export interface GalleryEntry {
 }
 
 /**
- * The plug-in point for the renderer: every gallery entry, in display order. Empty until
- * `src/render` exists in the hatchmark package; see README.md next to this package.
+ * The plug-in point for the renderer: every gallery entry, in display order, rendered by the
+ * hatchmark package's own render functions from its gallery fixtures (compiled from source, so the
+ * fixtures never enter the published package).
  */
-export const entries: readonly GalleryEntry[] = [];
+export const entries: readonly GalleryEntry[] = galleryEntries();
 
-/** Markup added once to the gallery's `<head>`, such as the theme stylesheet and runtime script the entries need. */
-export const head = "";
+/** Markup added once to the gallery's `<head>`: the theme styles, fonts and runtime script, served from `_hatchmark/` at the site root. */
+export const head = galleryHead("../_hatchmark/");

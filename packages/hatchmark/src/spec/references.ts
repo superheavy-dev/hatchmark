@@ -14,6 +14,7 @@ import { type Block, blockId, type Dashboard, DEFAULT_PERIOD } from "./dashboard
 import { ENTITY_NAMES, type Expr, exprRefs, parseExpr, shapeError } from "./expr.js";
 import { addPropertyFix, removeItemFix, replaceValueFix } from "./fixes.js";
 import { filterTables, metricSources, readSources, sourceTables } from "./graph.js";
+import { MIN_CHART_SPAN } from "./layout.js";
 import type { Filter, Metric, TableMetric } from "./metric.js";
 import type { Project, SpecFile } from "./project.js";
 import {
@@ -931,6 +932,33 @@ function checkDashboard(project: Project, file: SpecFile<"dashboard">, out: Diag
       });
     } else {
       blockIds.set(id, index);
+    }
+
+    if (
+      (block.type === "line" || block.type === "area" || block.type === "bar") &&
+      block.span !== undefined &&
+      block.span < MIN_CHART_SPAN
+    ) {
+      r.report(
+        "HM2024",
+        `${base}/span`,
+        `a ${block.type} chart needs at least ${MIN_CHART_SPAN} of the 12 columns, but this one has span ${block.span}`,
+        {
+          severity: "warning",
+          label: `drawn ${MIN_CHART_SPAN} columns wide`,
+          help: `set "span": ${MIN_CHART_SPAN} or more, or use a kpi block with "sparkline": true for one number`,
+          ...optional(
+            "fix",
+            replaceValueFix(
+              file.document,
+              `${base}/span`,
+              MIN_CHART_SPAN,
+              "safe",
+              `set "span": ${MIN_CHART_SPAN}`,
+            ),
+          ),
+        },
+      );
     }
 
     for (const ref of blockMetricRefs(block)) {
