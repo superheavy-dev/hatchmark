@@ -1,0 +1,199 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "$schema": {
+      "type": "string",
+      "description": "Path or URL of the JSON Schema for this file, for editor completion."
+    },
+    "label": {
+      "type": "string",
+      "minLength": 1,
+      "description": "Human name, such as External customers."
+    },
+    "description": {
+      "type": "string"
+    },
+    "filters": {
+      "minItems": 1,
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/Filter"
+      },
+      "description": "Row filters, all of which must hold. Applied to every source with the columns."
+    }
+  },
+  "required": [
+    "label",
+    "filters"
+  ],
+  "additionalProperties": false,
+  "title": "Hatchmark segment (segments/<name>.json)",
+  "$defs": {
+    "Filter": {
+      "oneOf": [
+        {
+          "type": "object",
+          "properties": {
+            "column": {
+              "type": "string",
+              "minLength": 1,
+              "description": "A column name in the source data."
+            },
+            "op": {
+              "type": "string",
+              "enum": [
+                "eq",
+                "neq",
+                "gt",
+                "gte",
+                "lt",
+                "lte"
+              ]
+            },
+            "value": {
+              "type": [
+                "string",
+                "number",
+                "boolean"
+              ]
+            }
+          },
+          "required": [
+            "column",
+            "op",
+            "value"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "column": {
+              "type": "string",
+              "minLength": 1,
+              "description": "A column name in the source data."
+            },
+            "op": {
+              "type": "string",
+              "enum": [
+                "in",
+                "not_in"
+              ]
+            },
+            "values": {
+              "minItems": 1,
+              "type": "array",
+              "items": {
+                "type": [
+                  "string",
+                  "number",
+                  "boolean"
+                ]
+              }
+            }
+          },
+          "required": [
+            "column",
+            "op",
+            "values"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "column": {
+              "type": "string",
+              "minLength": 1,
+              "description": "A column name in the source data."
+            },
+            "op": {
+              "type": "string",
+              "enum": [
+                "is_null",
+                "not_null"
+              ]
+            }
+          },
+          "required": [
+            "column",
+            "op"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "column": {
+              "type": "string",
+              "minLength": 1,
+              "description": "A column name in the source data."
+            },
+            "op": {
+              "type": "string",
+              "const": "between"
+            },
+            "from": {
+              "type": [
+                "string",
+                "number",
+                "boolean"
+              ]
+            },
+            "to": {
+              "type": [
+                "string",
+                "number",
+                "boolean"
+              ]
+            }
+          },
+          "required": [
+            "column",
+            "op",
+            "from",
+            "to"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "column": {
+              "type": "string",
+              "minLength": 1,
+              "description": "A column name in the source data."
+            },
+            "op": {
+              "type": "string",
+              "enum": [
+                "in_table",
+                "not_in_table"
+              ]
+            },
+            "table": {
+              "type": "string",
+              "pattern": "^[a-z][a-z0-9_]*$",
+              "description": "A source name from hatchmark.json."
+            },
+            "key": {
+              "type": "string",
+              "minLength": 1,
+              "description": "The column of that source to match against."
+            }
+          },
+          "required": [
+            "column",
+            "op",
+            "table",
+            "key"
+          ],
+          "additionalProperties": false,
+          "description": "Keeps rows whose column value appears (in_table) or does not appear (not_in_table) in another source's key column. A null value passes not_in_table and fails in_table."
+        }
+      ],
+      "description": "A row filter. between is inclusive at both ends. A date (YYYY-MM-DD) compared with a timestamp column compares the row's calendar date in the project time zone, so eq matches the whole day and between includes all of its last day. neq and not_in keep rows whose column is null; the other operators never match null."
+    }
+  }
+}

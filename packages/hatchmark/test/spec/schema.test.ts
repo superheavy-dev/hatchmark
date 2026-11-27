@@ -149,7 +149,7 @@ describe("spec schemas", () => {
       {
         code: "HM3001",
         pointer: "/column",
-        message: 'missing required property "column" for aggregate "sum"',
+        message: 'missing required property "column" (or "value") for aggregate "sum"',
       },
     ]);
   });

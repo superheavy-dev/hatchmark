@@ -125,6 +125,7 @@ export function projectFrom(files: {
   config?: unknown;
   metrics?: Record<string, unknown>;
   dashboards?: Record<string, unknown>;
+  segments?: Record<string, unknown>;
   columns?: Record<string, string[]>;
 }): Project {
   const text = (v: unknown): string =>
@@ -133,11 +134,15 @@ export function projectFrom(files: {
     config: parseSpecFile("project", "hatchmark.json", text(files.config ?? CONFIG)),
     metrics: new Map(),
     dashboards: new Map(),
+    segments: new Map(),
     missingData: new Set(),
     columns: new Map(Object.entries(files.columns ?? {})),
   };
   for (const [name, value] of Object.entries(files.metrics ?? METRICS)) {
     project.metrics.set(name, parseSpecFile("metric", `metrics/${name}.json`, text(value)));
+  }
+  for (const [name, value] of Object.entries(files.segments ?? {})) {
+    project.segments.set(name, parseSpecFile("segment", `segments/${name}.json`, text(value)));
   }
   for (const [name, value] of Object.entries(files.dashboards ?? { sales: DASHBOARD })) {
     project.dashboards.set(

@@ -5,6 +5,7 @@ export const SCHEMA_FILES: Record<SpecKind, string> = {
   project: "project.schema.json",
   metric: "metric.schema.json",
   dashboard: "dashboard.schema.json",
+  segment: "segment.schema.json",
 };
 
 /**

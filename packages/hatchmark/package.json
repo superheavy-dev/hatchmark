@@ -38,5 +38,8 @@
   },
   "bin": {
     "hatchmark": "./dist/cli/bin.js"
+  },
+  "devDependencies": {
+    "ajv": "^8.20.0"
   }
 }

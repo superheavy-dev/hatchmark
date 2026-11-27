@@ -9,6 +9,12 @@
     },
     {
       "$ref": "#/$defs/SqlMetric"
+    },
+    {
+      "$ref": "#/$defs/FormulaMetric"
+    },
+    {
+      "$ref": "#/$defs/PerEntityMetric"
     }
   ],
   "title": "Hatchmark metric (metrics/<name>.json)",
@@ -40,6 +46,57 @@
           ],
           "description": "Which direction of change is good; colours the KPI delta."
         },
+        "targets": {
+          "description": "Goals for this metric.",
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/Target"
+          }
+        },
+        "tests": {
+          "description": "Pinned values that check verifies against the data.",
+          "type": "array",
+          "items": {
+            "allOf": [
+              {
+                "oneOf": [
+                  {
+                    "required": [
+                      "at"
+                    ]
+                  },
+                  {
+                    "required": [
+                      "window"
+                    ]
+                  }
+                ]
+              },
+              {
+                "if": {
+                  "required": [
+                    "by"
+                  ]
+                },
+                "then": {
+                  "properties": {
+                    "expect": {
+                      "type": "object"
+                    }
+                  }
+                },
+                "else": {
+                  "properties": {
+                    "expect": {
+                      "type": "number"
+                    }
+                  }
+                }
+              }
+            ],
+            "$ref": "#/$defs/MetricTest"
+          }
+        },
         "type": {
           "type": "string",
           "const": "aggregate"
@@ -66,16 +123,86 @@
           "type": "string",
           "minLength": 1
         },
+        "value": {
+          "description": "Row expression to aggregate instead of a column, such as price * quantity.",
+          "type": "string",
+          "minLength": 1
+        },
         "filters": {
           "type": "array",
           "items": {
             "$ref": "#/$defs/Filter"
           }
         },
+        "segments": {
+          "description": "Segments always applied: names of files under segments/.",
+          "type": "array",
+          "items": {
+            "type": "string",
+            "pattern": "^[a-z][a-z0-9_]*$"
+          }
+        },
         "time": {
           "description": "Date or timestamp column that places rows in time. Needed for time series and period comparison.",
           "type": "string",
           "minLength": 1
+        },
+        "over_time": {
+          "description": "sum (default) adds rows over a bucket. last, first, avg, min, max make the metric point-in-time: read a snapshot, or each entity's latest row when entity is set.",
+          "type": "string",
+          "enum": [
+            "sum",
+            "last",
+            "first",
+            "avg",
+            "min",
+            "max"
+          ]
+        },
+        "entity": {
+          "description": "With over_time last or first: the key whose state each row describes; its latest row carries forward.",
+          "type": "string",
+          "minLength": 1
+        },
+        "active": {
+          "type": "object",
+          "properties": {
+            "from": {
+              "type": "string",
+              "minLength": 1,
+              "description": "Row expression: the instant the row starts counting."
+            },
+            "to": {
+              "type": "string",
+              "minLength": 1,
+              "description": "Row expression: the instant it stops counting; null means it never stops."
+            },
+            "ends": {
+              "description": "Whether a row whose interval ends exactly at a bucket end still counts in that bucket. Default inclusive.",
+              "type": "string",
+              "enum": [
+                "inclusive",
+                "exclusive"
+              ]
+            }
+          },
+          "required": [
+            "from",
+            "to"
+          ],
+          "additionalProperties": false,
+          "description": "Makes the metric point-in-time: a row counts at every instant in [from, to). Replaces time."
+        },
+        "trailing": {
+          "description": "Makes the metric point-in-time: at each instant, aggregate the rows of this length before it.",
+          "$ref": "#/$defs/Duration"
+        },
+        "scale": {
+          "type": "number",
+          "description": "Constant multiplier applied after aggregation, such as 0.01 or 12.",
+          "not": {
+            "const": 0
+          }
         }
       },
       "required": [
@@ -86,7 +213,138 @@
         "table",
         "aggregate"
       ],
-      "additionalProperties": false
+      "additionalProperties": false,
+      "allOf": [
+        {
+          "not": {
+            "required": [
+              "column",
+              "value"
+            ]
+          }
+        },
+        {
+          "if": {
+            "not": {
+              "properties": {
+                "aggregate": {
+                  "const": "count"
+                }
+              }
+            }
+          },
+          "then": {
+            "anyOf": [
+              {
+                "required": [
+                  "column"
+                ]
+              },
+              {
+                "required": [
+                  "value"
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "not": {
+            "required": [
+              "time",
+              "active"
+            ]
+          }
+        },
+        {
+          "if": {
+            "required": [
+              "active"
+            ]
+          },
+          "then": {
+            "not": {
+              "anyOf": [
+                {
+                  "required": [
+                    "over_time"
+                  ]
+                },
+                {
+                  "required": [
+                    "trailing"
+                  ]
+                }
+              ]
+            }
+          }
+        },
+        {
+          "if": {
+            "anyOf": [
+              {
+                "required": [
+                  "over_time"
+                ]
+              },
+              {
+                "required": [
+                  "trailing"
+                ]
+              }
+            ]
+          },
+          "then": {
+            "anyOf": [
+              {
+                "required": [
+                  "time"
+                ]
+              },
+              {
+                "required": [
+                  "active"
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "if": {
+            "required": [
+              "trailing",
+              "over_time"
+            ]
+          },
+          "then": {
+            "properties": {
+              "over_time": {
+                "const": "sum"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "required": [
+              "entity"
+            ]
+          },
+          "then": {
+            "required": [
+              "over_time"
+            ],
+            "properties": {
+              "over_time": {
+                "enum": [
+                  "last",
+                  "first"
+                ]
+              }
+            }
+          }
+        }
+      ]
     },
     "Format": {
       "oneOf": [
@@ -157,6 +415,124 @@
         }
       ],
       "description": "How values of this metric are shown."
+    },
+    "Target": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string",
+          "pattern": "^[a-z][a-z0-9_]*$"
+        },
+        "label": {
+          "type": "string",
+          "minLength": 1
+        },
+        "grain": {
+          "type": "string",
+          "enum": [
+            "day",
+            "week",
+            "month",
+            "quarter",
+            "year"
+          ],
+          "description": "The grain the target values are stated at; each key or date is a bucket start."
+        },
+        "values": {
+          "description": "Inline values by bucket start date, such as {\"2027-01-01\": 9000000}.",
+          "type": "object",
+          "propertyNames": {
+            "type": "string",
+            "format": "date",
+            "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))$"
+          },
+          "additionalProperties": {
+            "type": "number"
+          }
+        },
+        "table": {
+          "description": "A source holding the target values.",
+          "type": "string",
+          "pattern": "^[a-z][a-z0-9_]*$"
+        },
+        "date": {
+          "description": "Column with each bucket's start date.",
+          "type": "string",
+          "minLength": 1
+        },
+        "value": {
+          "description": "Column with the target value.",
+          "type": "string",
+          "minLength": 1
+        },
+        "path": {
+          "description": "Point-in-time targets only: how the target moves between values. Default linear.",
+          "type": "string",
+          "enum": [
+            "linear",
+            "compound"
+          ]
+        },
+        "prorate": {
+          "description": "Flow targets only: at a finer grain, split by days (default) or hide the target.",
+          "type": "string",
+          "enum": [
+            "days",
+            "none"
+          ]
+        },
+        "segments": {
+          "description": "Segments the target was set for; it hides when other segments are toggled.",
+          "type": "array",
+          "items": {
+            "type": "string",
+            "pattern": "^[a-z][a-z0-9_]*$"
+          }
+        }
+      },
+      "required": [
+        "id",
+        "grain"
+      ],
+      "additionalProperties": false,
+      "oneOf": [
+        {
+          "required": [
+            "values"
+          ],
+          "not": {
+            "anyOf": [
+              {
+                "required": [
+                  "table"
+                ]
+              },
+              {
+                "required": [
+                  "date"
+                ]
+              },
+              {
+                "required": [
+                  "value"
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "required": [
+            "table",
+            "date",
+            "value"
+          ],
+          "not": {
+            "required": [
+              "values"
+            ]
+          }
+        }
+      ]
     },
     "Filter": {
       "oneOf": [
@@ -284,9 +660,203 @@
             "to"
           ],
           "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "column": {
+              "type": "string",
+              "minLength": 1,
+              "description": "A column name in the source data."
+            },
+            "op": {
+              "type": "string",
+              "enum": [
+                "in_table",
+                "not_in_table"
+              ]
+            },
+            "table": {
+              "type": "string",
+              "pattern": "^[a-z][a-z0-9_]*$",
+              "description": "A source name from hatchmark.json."
+            },
+            "key": {
+              "type": "string",
+              "minLength": 1,
+              "description": "The column of that source to match against."
+            }
+          },
+          "required": [
+            "column",
+            "op",
+            "table",
+            "key"
+          ],
+          "additionalProperties": false,
+          "description": "Keeps rows whose column value appears (in_table) or does not appear (not_in_table) in another source's key column. A null value passes not_in_table and fails in_table."
         }
       ],
       "description": "A row filter. between is inclusive at both ends. A date (YYYY-MM-DD) compared with a timestamp column compares the row's calendar date in the project time zone, so eq matches the whole day and between includes all of its last day. neq and not_in keep rows whose column is null; the other operators never match null."
+    },
+    "MetricTest": {
+      "type": "object",
+      "properties": {
+        "name": {
+          "type": "string",
+          "minLength": 1
+        },
+        "at": {
+          "description": "Point-in-time metrics: the value at the end of this local date.",
+          "type": "string",
+          "format": "date",
+          "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))$"
+        },
+        "window": {
+          "description": "Flow metrics: an inclusive pair of local dates.",
+          "type": "array",
+          "prefixItems": [
+            {
+              "type": "string",
+              "format": "date",
+              "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))$"
+            },
+            {
+              "type": "string",
+              "format": "date",
+              "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))$"
+            }
+          ],
+          "items": false,
+          "minItems": 2,
+          "maxItems": 2
+        },
+        "where": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/Filter"
+          }
+        },
+        "segments": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "pattern": "^[a-z][a-z0-9_]*$"
+          }
+        },
+        "by": {
+          "description": "Check a breakdown; expect is then an object.",
+          "type": "string",
+          "minLength": 1
+        },
+        "expect": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "object",
+              "propertyNames": {
+                "type": "string"
+              },
+              "additionalProperties": {
+                "type": "number"
+              }
+            }
+          ]
+        },
+        "tolerance": {
+          "description": "Absolute, in display units. Default: equal after rounding to 6 decimals.",
+          "type": "number",
+          "minimum": 0
+        },
+        "data": {
+          "description": "Swap sources for fixture files, by source name.",
+          "type": "object",
+          "propertyNames": {
+            "type": "string",
+            "pattern": "^[a-z][a-z0-9_]*$"
+          },
+          "additionalProperties": {
+            "type": "string",
+            "minLength": 1
+          }
+        }
+      },
+      "required": [
+        "expect"
+      ],
+      "additionalProperties": false,
+      "allOf": [
+        {
+          "oneOf": [
+            {
+              "required": [
+                "at"
+              ]
+            },
+            {
+              "required": [
+                "window"
+              ]
+            }
+          ]
+        },
+        {
+          "if": {
+            "required": [
+              "by"
+            ]
+          },
+          "then": {
+            "properties": {
+              "expect": {
+                "type": "object"
+              }
+            }
+          },
+          "else": {
+            "properties": {
+              "expect": {
+                "type": "number"
+              }
+            }
+          }
+        }
+      ]
+    },
+    "Duration": {
+      "anyOf": [
+        {
+          "type": "object",
+          "properties": {
+            "days": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 3660
+            }
+          },
+          "required": [
+            "days"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "months": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 120
+            }
+          },
+          "required": [
+            "months"
+          ],
+          "additionalProperties": false
+        }
+      ],
+      "description": "A length of time, such as {\"days\": 30} or {\"months\": 12}."
     },
     "RatioMetric": {
       "type": "object",
@@ -314,6 +884,57 @@
             "neutral"
           ],
           "description": "Which direction of change is good; colours the KPI delta."
+        },
+        "targets": {
+          "description": "Goals for this metric.",
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/Target"
+          }
+        },
+        "tests": {
+          "description": "Pinned values that check verifies against the data.",
+          "type": "array",
+          "items": {
+            "allOf": [
+              {
+                "oneOf": [
+                  {
+                    "required": [
+                      "at"
+                    ]
+                  },
+                  {
+                    "required": [
+                      "window"
+                    ]
+                  }
+                ]
+              },
+              {
+                "if": {
+                  "required": [
+                    "by"
+                  ]
+                },
+                "then": {
+                  "properties": {
+                    "expect": {
+                      "type": "object"
+                    }
+                  }
+                },
+                "else": {
+                  "properties": {
+                    "expect": {
+                      "type": "number"
+                    }
+                  }
+                }
+              }
+            ],
+            "$ref": "#/$defs/MetricTest"
+          }
         },
         "type": {
           "type": "string",
@@ -367,6 +988,57 @@
           ],
           "description": "Which direction of change is good; colours the KPI delta."
         },
+        "targets": {
+          "description": "Goals for this metric.",
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/Target"
+          }
+        },
+        "tests": {
+          "description": "Pinned values that check verifies against the data.",
+          "type": "array",
+          "items": {
+            "allOf": [
+              {
+                "oneOf": [
+                  {
+                    "required": [
+                      "at"
+                    ]
+                  },
+                  {
+                    "required": [
+                      "window"
+                    ]
+                  }
+                ]
+              },
+              {
+                "if": {
+                  "required": [
+                    "by"
+                  ]
+                },
+                "then": {
+                  "properties": {
+                    "expect": {
+                      "type": "object"
+                    }
+                  }
+                },
+                "else": {
+                  "properties": {
+                    "expect": {
+                      "type": "number"
+                    }
+                  }
+                }
+              }
+            ],
+            "$ref": "#/$defs/MetricTest"
+          }
+        },
         "type": {
           "type": "string",
           "const": "sql"
@@ -390,6 +1062,13 @@
             "$ref": "#/$defs/Filter"
           }
         },
+        "segments": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "pattern": "^[a-z][a-z0-9_]*$"
+          }
+        },
         "time": {
           "description": "Date or timestamp column that places rows in time. Needed for time series and period comparison.",
           "type": "string",
@@ -406,6 +1085,254 @@
         "additive"
       ],
       "additionalProperties": false
+    },
+    "FormulaMetric": {
+      "type": "object",
+      "properties": {
+        "$schema": {
+          "type": "string",
+          "description": "Path or URL of the JSON Schema for this file, for editor completion."
+        },
+        "label": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Human name, such as Net revenue."
+        },
+        "description": {
+          "type": "string"
+        },
+        "format": {
+          "$ref": "#/$defs/Format"
+        },
+        "better": {
+          "type": "string",
+          "enum": [
+            "up",
+            "down",
+            "neutral"
+          ],
+          "description": "Which direction of change is good; colours the KPI delta."
+        },
+        "targets": {
+          "description": "Goals for this metric.",
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/Target"
+          }
+        },
+        "tests": {
+          "description": "Pinned values that check verifies against the data.",
+          "type": "array",
+          "items": {
+            "allOf": [
+              {
+                "oneOf": [
+                  {
+                    "required": [
+                      "at"
+                    ]
+                  },
+                  {
+                    "required": [
+                      "window"
+                    ]
+                  }
+                ]
+              },
+              {
+                "if": {
+                  "required": [
+                    "by"
+                  ]
+                },
+                "then": {
+                  "properties": {
+                    "expect": {
+                      "type": "object"
+                    }
+                  }
+                },
+                "else": {
+                  "properties": {
+                    "expect": {
+                      "type": "number"
+                    }
+                  }
+                }
+              }
+            ],
+            "$ref": "#/$defs/MetricTest"
+          }
+        },
+        "type": {
+          "type": "string",
+          "const": "formula"
+        },
+        "expr": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Arithmetic over metric names: + - * /, parentheses, numbers, coalesce, min, max, abs. Such as subscription_arr + credit_run_rate * 0.6."
+        }
+      },
+      "required": [
+        "label",
+        "format",
+        "better",
+        "type",
+        "expr"
+      ],
+      "additionalProperties": false
+    },
+    "PerEntityMetric": {
+      "type": "object",
+      "properties": {
+        "$schema": {
+          "type": "string",
+          "description": "Path or URL of the JSON Schema for this file, for editor completion."
+        },
+        "label": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Human name, such as Net revenue."
+        },
+        "description": {
+          "type": "string"
+        },
+        "format": {
+          "$ref": "#/$defs/Format"
+        },
+        "better": {
+          "type": "string",
+          "enum": [
+            "up",
+            "down",
+            "neutral"
+          ],
+          "description": "Which direction of change is good; colours the KPI delta."
+        },
+        "targets": {
+          "description": "Goals for this metric.",
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/Target"
+          }
+        },
+        "tests": {
+          "description": "Pinned values that check verifies against the data.",
+          "type": "array",
+          "items": {
+            "allOf": [
+              {
+                "oneOf": [
+                  {
+                    "required": [
+                      "at"
+                    ]
+                  },
+                  {
+                    "required": [
+                      "window"
+                    ]
+                  }
+                ]
+              },
+              {
+                "if": {
+                  "required": [
+                    "by"
+                  ]
+                },
+                "then": {
+                  "properties": {
+                    "expect": {
+                      "type": "object"
+                    }
+                  }
+                },
+                "else": {
+                  "properties": {
+                    "expect": {
+                      "type": "number"
+                    }
+                  }
+                }
+              }
+            ],
+            "$ref": "#/$defs/MetricTest"
+          }
+        },
+        "type": {
+          "type": "string",
+          "const": "per_entity"
+        },
+        "of": {
+          "type": "string",
+          "pattern": "^[a-z][a-z0-9_]*$",
+          "description": "A point-in-time sum or count metric, evaluated per entity at two instants."
+        },
+        "key": {
+          "type": "string",
+          "minLength": 1,
+          "description": "The entity column in that metric's source."
+        },
+        "prior": {
+          "description": "The reference instant: this long before the evaluation instant.",
+          "$ref": "#/$defs/Duration"
+        },
+        "where": {
+          "description": "Condition over current and prior that fixes the entities, such as prior > 0. Default: every entity.",
+          "type": "string",
+          "minLength": 1
+        },
+        "expr": {
+          "description": "Combines one entity's two values before aggregating, such as least(current, prior). Default current. An entity missing at an instant counts as 0.",
+          "type": "string",
+          "minLength": 1
+        },
+        "aggregate": {
+          "description": "sum (default) of expr, or count of entities that pass where.",
+          "type": "string",
+          "enum": [
+            "sum",
+            "count"
+          ]
+        },
+        "group_at": {
+          "description": "When a block splits by a column, which instant gives an entity its group. Default current, falling back to prior.",
+          "type": "string",
+          "enum": [
+            "current",
+            "prior"
+          ]
+        }
+      },
+      "required": [
+        "label",
+        "format",
+        "better",
+        "type",
+        "of",
+        "key",
+        "prior"
+      ],
+      "additionalProperties": false,
+      "if": {
+        "required": [
+          "aggregate"
+        ],
+        "properties": {
+          "aggregate": {
+            "const": "count"
+          }
+        }
+      },
+      "then": {
+        "not": {
+          "required": [
+            "expr"
+          ]
+        }
+      }
     }
   }
 }

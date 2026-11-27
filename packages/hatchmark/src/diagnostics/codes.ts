@@ -49,7 +49,7 @@ export const CODES = {
   HM1004: {
     title: "invalid file name",
     explanation:
-      "Metric and dashboard names come from their file names, so a file name must be lowercase snake_case (metrics/net_revenue.json). Dashboard names may also contain hyphens, since they become URL paths. Rename the file.",
+      "Metric and dashboard names come from their file names, so a file name must be lowercase snake_case (metrics/net_revenue.json), and a metric may not be named and, or, not or null, which are operators in formulas. Dashboard names may also contain hyphens, since they become URL paths. Rename the file.",
   },
   HM1005: {
     title: "project config not found",
@@ -69,7 +69,7 @@ export const CODES = {
   HM2004: {
     title: "circular metric reference",
     explanation:
-      "Ratio metrics refer to other metrics, and the chain of references loops back to where it started. Point one of them at an aggregate metric instead.",
+      "Ratio, formula and per_entity metrics refer to other metrics, and the chain of references loops back to where it started. Point one of them at an aggregate metric instead.",
   },
   HM2005: {
     title: "metric has no time column",
@@ -105,14 +105,14 @@ export const CODES = {
       'A text reference asks for {{metric.previous}}, {{metric.change}} or {{metric.change_pct}}, but the dashboard\'s period.compare is "none", so there is no comparison period to read. Set period.compare, or insert only {{metric}}.',
   },
   HM2012: {
-    title: "ratio sides placed in time differently",
+    title: "ratio or formula operands placed in time differently",
     explanation:
-      "One side of a ratio has a time column and the other does not, so a dashboard period would window the numerator and the denominator differently and the ratio would mix periods. Give both sides a time column, or neither.",
+      "One operand of a ratio or formula is placed in time (it has a time column, or is read at an instant) and another is not, so a dashboard period would window them differently and the result would mix periods. Give every operand a time column, or none.",
   },
   HM2013: {
     title: "filter applies to only some sources of a block",
     explanation:
-      "A dashboard select filter must apply to every source a block reads. If a ratio's numerator comes from a source with the filter column and its denominator from one without, the block would divide filtered rows by unfiltered rows. Hatchmark reads column names from CSV headers and, when the host can read the file (the CLI uses DuckDB), from Parquet and JSON files; when it cannot read them it reports this too. Column names match case-insensitively, as DuckDB resolves them. Keep such metrics in separate blocks, or drop the filter.",
+      "A dashboard select filter must apply to every source a block reads, including every source a ratio, formula or lookup reaches. If a ratio's numerator comes from a source with the filter column and its denominator from one without, the block would divide filtered rows by unfiltered rows. Hatchmark reads column names from CSV headers and, when the host can read the file (the CLI uses DuckDB), from Parquet and JSON files; when it cannot read them it reports this too. Column names match case-insensitively, as DuckDB resolves them. Keep such metrics in separate blocks, or drop the filter.",
   },
   HM2014: {
     title: "CSV header too long",
@@ -133,6 +133,31 @@ export const CODES = {
     title: "reserved column name",
     explanation:
       "A column of a source's data file has a name starting with __hm_ (in any case). Hatchmark adds columns with that prefix when it loads a source, such as the row's place in the file, which keeps sums of floating-point values in a fixed order, so a source column may not use it. Rename the column in the data file.",
+  },
+  HM2018: {
+    title: "column not in source",
+    explanation:
+      "A metric, lookup, target or segment names a column the source does not have. Hatchmark knows the columns of a file source when it can read them (see HM2013), and of lookup sources from their parts (lookup columns read as <table>.<column>); names match case-insensitively for ASCII letters, as in DuckDB.",
+  },
+  HM2019: {
+    title: "lookup of a lookup",
+    explanation:
+      "A lookup source's from or lookup table is itself a lookup source. Lookups join file sources only, one level deep: point from at the base file source and list every table to join in one lookup source.",
+  },
+  HM2020: {
+    title: "unknown name in an expression",
+    explanation:
+      "A formula refers to a metric that has no file under metrics/, or a per_entity where or expr uses a name other than current and prior. The diagnostic points at the name and suggests the closest one.",
+  },
+  HM2021: {
+    title: "unknown segment",
+    explanation:
+      "A metric, target or test names a segment with no file under segments/. The name is the file name without .json.",
+  },
+  HM2023: {
+    title: "test data for a source the metric does not read",
+    explanation:
+      "A test's data swaps a source for a fixture file, but the metric does not read that source, directly or through a lookup, ratio, formula, per_entity, segment or in_table filter. The swap would have no effect, so the test would not test what it says. Remove the entry, or name the source the metric reads.",
   },
   HM3001: {
     title: "missing required property",
@@ -173,10 +198,15 @@ export const CODES = {
     explanation:
       'A filter on a metric\'s time column compares with a date or a time, written in strict ISO 8601 so it means the same everywhere. A day is YYYY-MM-DD, zero-padded ("2026-02-01", not "2026-2-1"), and means that whole day in the project time zone. A time is YYYY-MM-DDTHH:MM or YYYY-MM-DDTHH:MM:SS with up to 6 decimals: with Z or an offset such as -05:00 it is that exact moment, without one it is wall-clock time in the project time zone. The fix rewrites a near miss (unpadded parts, a space instead of T) into the strict form; read it before applying.',
   },
+  HM3010: {
+    title: "expression syntax error",
+    explanation:
+      "A formula, row expression or per_entity expression cannot be parsed, uses something its kind does not allow (strings and comparisons are row and per_entity only), or puts a condition where a value belongs. Formulas: + - * /, parentheses, numbers, metric names, coalesce, min, max, abs. Row expressions add columns, 'strings', null, comparisons, and, or, not, greatest, least, if, is_null, date_diff and match. per_entity expressions use current and prior. The diagnostic points at the offending characters.",
+  },
   HM4001: {
     title: "percent of total on a non-additive metric",
     explanation:
-      "A share of the total only makes sense when the parts add up to the total. Averages, distinct counts, medians, ratios and SQL metrics declared additive: false do not. Remove the metric from percentOfTotal, or show the additive metric it is built from.",
+      "A share of the total only makes sense when the parts add up to the total. Averages, distinct counts, medians, ratios, non-linear formulas and SQL metrics declared additive: false do not; neither does a formula with a constant term (a + 1000 adds 1,000 to every group but once to the total), nor a sum read with over_time min or max (each group can peak on a different date). Point-in-time sums such as balances do, at one instant. Remove the metric from percentOfTotal, or show the additive metric it is built from.",
   },
   HM4002: {
     title: "block type not built yet",
@@ -192,6 +222,41 @@ export const CODES = {
     title: "float values beyond the accuracy limit",
     explanation:
       "Floating-point columns (DOUBLE or FLOAT, such as CSV numbers with a decimal point) are added in a fixed order with compensated summation, and every result keeps 15 significant digits. That is accurate within limits, and this warning names where they are crossed; NaN and infinite values are left out of both checks. Input: a metric sums or averages a column that holds a value larger than 1e15 in magnitude, so small values next to very large ones can be lost; the result is still the same on every run. Store the values in a smaller unit, as DECIMAL (Parquet), or keep very large and very small values in separate columns. Result: the value a block shows for a float sum or average (the average itself, not the sum behind it) reaches 1e13 in magnitude in some row, time bucket or total, where 15 significant digits no longer hold cents (10,000,000,000,000.00 needs 16). The warning names the metric and the block. Store the values in a larger unit, such as thousands, or as DECIMAL (Parquet), which stays exact.",
+  },
+  HM4005: {
+    title: "different currencies added",
+    explanation:
+      "A formula adds, subtracts or chooses between (coalesce, min, max) metrics whose formats name different currencies; multiplying by a number, unary minus and abs keep a metric's currency. A formula whose format names another currency than its operands is reported too, since a format changes the label, not the amounts. Convert one of them first, with an as-of lookup on a rates table and a row expression such as amount * fx_rates.rate, so both are in one currency.",
+  },
+  HM4007: {
+    title: "snapshot summed over time",
+    explanation:
+      'The source is declared a snapshot table ("snapshot" in hatchmark.json): each date holds the full state, so adding rows over a period counts every snapshot again (thirty daily snapshots make a month thirty times too large). Every aggregate on it, or on a lookup source whose base it is, must read one snapshot date at a time: "time" is the snapshot column and "over_time" is "last" (the value at the end of each period), "first", "avg", "min" or "max". No time, another time column, trailing or active would add snapshots too, and entity would carry a key missing from a snapshot forward. A SQL metric gets a warning, since it cannot set over_time yet.',
+  },
+  HM4008: {
+    title: "per_entity needs a point-in-time sum or count",
+    explanation:
+      "per_entity reads one metric for each entity at two instants. That metric must be an aggregate with sum or count that is read at an instant (over_time last or first, active, or trailing), so each entity has one value at each instant; over_time avg, min and max summarise many dates and have none.",
+  },
+  HM4009: {
+    title: "flow combined with a point-in-time value",
+    explanation:
+      'A ratio or formula combines a metric summed over each period (a flow, such as revenue) with one read at an instant (such as a balance, an active count or a trailing window). The result would change meaning with the grain: a month of revenue is not comparable with a balance, and a week of it even less. Give the flow a "trailing" window so it is read at an instant too.',
+  },
+  HM4019: {
+    title: "evaluation-time lookup on a metric that is not point-in-time",
+    explanation:
+      'An as-of lookup with "at": "$evaluation" picks each key\'s row at the instant a point-in-time metric is read, such as the exchange rate on the last day of a month for a balance. A flow sums rows over a period and a static metric has no instant, so there is no single evaluation instant to pick the row at. Join at each row\'s own time instead ("at": "<time column>"), or read the metric at an instant (over_time, active or trailing).',
+  },
+  HM4023: {
+    title: "metric primitive not evaluated yet",
+    explanation:
+      "check validates the metric-layer primitives of RFC 0001 (formula, per_entity, lookup sources, segments, in_table filters, value, over_time, entity, active, trailing, scale, and the snapshot, freshness and timezone source options), but the planner does not evaluate them yet. A block that shows such a metric is left out of the build with this warning rather than computed as a plain sum, which would show a wrong number. The block appears once the planner evaluates the primitive.",
+  },
+  HM4040: {
+    title: "default business definition",
+    explanation:
+      "Informational. The file relies on a default for a choice that differs between companies, such as whether an interval ending exactly at a bucket end still counts in that bucket. The note names the default and the option that changes it. Setting the option explicitly, even to its default value, silences the note.",
   },
   HM9001: {
     title: "internal error",

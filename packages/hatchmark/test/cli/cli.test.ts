@@ -469,6 +469,7 @@ describe("schema, explain, version, doctor", () => {
       "project",
       "metric",
       "dashboard",
+      "segment",
     ]);
   });
 

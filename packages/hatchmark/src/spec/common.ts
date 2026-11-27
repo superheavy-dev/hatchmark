@@ -8,7 +8,7 @@ export const identifier = z
   .regex(IDENTIFIER_PATTERN, { error: "must be lowercase snake_case, such as net_revenue" });
 
 /** Folds ASCII letters to lowercase, as DuckDB does when it matches identifiers. */
-function foldColumn(name: string): string {
+export function foldColumn(name: string): string {
   return name.replace(/[A-Z]/g, (ch) => ch.toLowerCase());
 }
 
@@ -90,7 +90,7 @@ export function normalizePath(file: string): string {
 
 /** Records a Hatchmark diagnostic code on a custom Zod issue, read back by the issue mapper. */
 export function customIssue(
-  code: "HM3001" | "HM3007",
+  code: "HM3001" | "HM3005" | "HM3007",
   path: (string | number)[],
   message: string,
 ): { code: "custom"; path: (string | number)[]; message: string; params: { hatchmark: string } } {

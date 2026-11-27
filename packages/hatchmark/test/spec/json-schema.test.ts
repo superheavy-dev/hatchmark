@@ -8,7 +8,19 @@ import { jsonSchema, SCHEMA_FILES, type SpecKind } from "../../src/spec/index.js
  */
 const DEFINITIONS: Record<SpecKind, string[]> = {
   project: ["Source"],
-  metric: ["AggregateMetric", "Filter", "Format", "RatioMetric", "SqlMetric"],
+  metric: [
+    "AggregateMetric",
+    "Duration",
+    "Filter",
+    "Format",
+    "FormulaMetric",
+    "MetricTest",
+    "PerEntityMetric",
+    "RatioMetric",
+    "SqlMetric",
+    "Target",
+  ],
+  segment: ["Filter"],
   dashboard: [
     "AreaBlock",
     "BarBlock",
