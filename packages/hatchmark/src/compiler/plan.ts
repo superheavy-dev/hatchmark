@@ -307,3 +307,10 @@ export interface QueryExecutor {
    */
   executeMany?(query: PlannedQuery, contexts: ExecutionContext[]): Promise<QueryResult[]>;
 }
+
+/** True when a measure of the query runs raw SQL, which may read the statement it runs in. */
+export function readsRawSql(query: PlannedQuery): boolean {
+  return query.measures.some((m) =>
+    m.components.some((c) => c.aggregate === "sql" || c.sql !== undefined),
+  );
+}

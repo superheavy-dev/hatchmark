@@ -131,13 +131,16 @@ export async function runPeriodData(
     const key = rangeKey(option);
     if (key !== base.periodFilter?.selected && !pending.has(key)) pending.set(key, option);
   }
-  const presetRuns = await runDashboardBindings(
-    project,
-    dashboard,
-    executor,
-    [...pending.values()].map((option) => ({ [filter.id]: option })),
-    now,
-  );
+  const presetRuns =
+    pending.size === 0
+      ? []
+      : await runDashboardBindings(
+          project,
+          dashboard,
+          executor,
+          [...pending.values()].map((option) => ({ [filter.id]: option })),
+          now,
+        );
   const ran = new Map([...pending.keys()].map((key, i) => [key, presetRuns[i]]));
   const presets: Record<string, DashboardData> = {};
   for (const option of filter.options) {

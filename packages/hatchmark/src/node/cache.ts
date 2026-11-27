@@ -20,6 +20,7 @@ import {
   type ExecutionContext,
   type PlannedQuery,
   type QueryResult,
+  readsRawSql,
   type SqlExecutor,
   type TimeColumn,
 } from "../compiler/index.js";
@@ -498,7 +499,7 @@ export async function createCachedExecutor(options: {
   return {
     async execute(query, context) {
       const parts =
-        plannedInput(query) && !rawSql(query)
+        plannedInput(query) && !readsRawSql(query)
           ? await keyParts("query", query.source, query, context)
           : undefined;
       if (parts === undefined || !stats.enabled) {
@@ -544,7 +545,7 @@ export async function createCachedExecutor(options: {
         for (const context of batch) out.push(await executor.execute(query, context));
         return out;
       };
-      const cacheable = plannedInput(query) && !rawSql(query);
+      const cacheable = plannedInput(query) && !readsRawSql(query);
       const keys = await Promise.all(
         contexts.map(async (context) => {
           const parts = cacheable
@@ -647,7 +648,7 @@ export async function createCachedExecutor(options: {
       const { query, context } = seen;
       if (!stats.enabled)
         return { status: "off", ...(stats.reason ? { reason: stats.reason } : {}) };
-      if (rawSql(query)) {
+      if (readsRawSql(query)) {
         return {
           status: "off",
           reason: "raw SQL metrics are never cached; this query always runs",
@@ -724,12 +725,6 @@ export async function createCachedExecutor(options: {
 }
 
 /** Whether a query computes a raw SQL metric, whose result no key can capture. */
-function rawSql(query: PlannedQuery): boolean {
-  return query.measures.some((m) =>
-    m.components.some((c) => c.aggregate === "sql" || c.sql !== undefined),
-  );
-}
-
 function decode(storage: Storage, value: unknown): unknown {
   if (value === null) return null;
   switch (storage) {

@@ -26,14 +26,16 @@ import {
   parseInstant,
   toLocal,
 } from "./instants.js";
-import type {
-  ExecutionContext,
-  MeasureExpression,
-  ParamBindings,
-  PlannedQuery,
-  QueryExecutor,
-  QueryPlan,
-  QueryResult,
+import { selectValues } from "./params.js";
+import {
+  type ExecutionContext,
+  type MeasureExpression,
+  type ParamBindings,
+  type PlannedQuery,
+  type QueryExecutor,
+  type QueryPlan,
+  type QueryResult,
+  readsRawSql,
 } from "./plan.js";
 import { planDashboard } from "./planner.js";
 import {
@@ -483,14 +485,20 @@ async function runQuery(
   query: PlannedQuery,
   contexts: (ExecutionContext | undefined)[],
 ): Promise<(QueryOutcome | undefined)[]> {
-  const keys = contexts.map((context) => {
+  const raw = readsRawSql(query);
+  const keys = contexts.map((context, at) => {
     if (context === undefined) return undefined;
     const bounds = queryBounds(query, context);
     if (bounds === undefined) return undefined;
-    const selects = query.params.flatMap((p) =>
-      p.kind === "select" ? [context.bindings[p.id] ?? null] : [],
-    );
-    return canonicalJson([bounds, selects]);
+    if (raw) return `context ${at}`;
+    try {
+      const selects = query.params.flatMap((p) =>
+        p.kind === "select" ? [selectValues(p, context.bindings)] : [],
+      );
+      return canonicalJson([bounds, selects]);
+    } catch {
+      return `context ${at}`;
+    }
   });
   const distinct = [...new Set(keys.filter((key) => key !== undefined))];
   const runs = distinct.map((key) => contexts[keys.indexOf(key)] as ExecutionContext);
@@ -513,7 +521,7 @@ async function runQuery(
     return out;
   };
   let settled: QueryOutcome[];
-  if (runs.length > 1 && executor.executeMany !== undefined) {
+  if (runs.length > 1 && !raw && executor.executeMany !== undefined) {
     try {
       settled = (await executor.executeMany(query, runs)).map(settle);
     } catch {

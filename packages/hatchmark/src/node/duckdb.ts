@@ -29,6 +29,7 @@ import {
   type QueryResult,
   querySql,
   quote,
+  readsRawSql,
   type SqlExecutor,
   type SqlSource,
   type SqlValue,
@@ -340,6 +341,11 @@ async function executeMany(
   query: PlannedQuery,
   contexts: ExecutionContext[],
 ): Promise<QueryResult[]> {
+  if (contexts.length < 2 || readsRawSql(query)) {
+    const out: QueryResult[] = [];
+    for (const context of contexts) out.push(await execute(connection, source, query, context));
+    return out;
+  }
   const built = batchQuerySql(source, query, contexts);
   const reader = await run(connection, built);
   const types = reader.columnTypes().map(String).slice(1);
