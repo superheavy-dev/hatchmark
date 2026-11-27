@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { textWidth, truncateMiddle } from "../../src/render/index.js";
+import { textWidth, truncateEnd, wrapLines } from "../../src/render/index.js";
 
 describe("textWidth", () => {
   it("measures IBM Plex Sans advances with kerning, scaled by size", () => {
@@ -21,13 +21,27 @@ describe("textWidth", () => {
   });
 });
 
-describe("truncateMiddle", () => {
+describe("truncateEnd", () => {
   const style = { size: 13 };
-  it("keeps text that fits and shortens the middle of text that does not", () => {
-    expect(truncateMiddle("Canada", 200, style)).toBe("Canada");
-    const short = truncateMiddle("Technical shells and insulated outerwear", 120, style);
-    expect(short).toMatch(/^Techn.+\u2026.+wear$/);
+  it("keeps text that fits and cuts the end of text that does not", () => {
+    expect(truncateEnd("Canada", 200, style)).toBe("Canada");
+    const short = truncateEnd("Technical shells and insulated outerwear", 120, style);
+    expect(short).toMatch(/^Technical.+\u2026$/);
     expect(textWidth(short, style)).toBeLessThanOrEqual(120);
-    expect(truncateMiddle("Outerwear", 5, style)).toBe("\u2026");
+    expect(truncateEnd("Outerwear", 5, style)).toBe("\u2026");
+  });
+});
+
+describe("wrapLines", () => {
+  const style = { size: 13 };
+  it("wraps at spaces and cuts the end only when the lines run out", () => {
+    expect(wrapLines("Base layers", 200, style, 2)).toEqual({ lines: ["Base layers"], cut: false });
+    const two = wrapLines("Technical shells & outerwear", 120, style, 2);
+    expect(two).toEqual({ lines: ["Technical shells &", "outerwear"], cut: false });
+    const cut = wrapLines("Technical shells and insulated outerwear", 100, style, 2);
+    expect(cut.cut).toBe(true);
+    expect(cut.lines).toHaveLength(2);
+    expect(cut.lines[1]).toMatch(/\u2026$/);
+    for (const line of cut.lines) expect(textWidth(line, style)).toBeLessThanOrEqual(100);
   });
 });

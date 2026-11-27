@@ -16,7 +16,7 @@ import {
 } from "./chart.js";
 import { formatBucket, formatKey, formatValue } from "./format.js";
 import { thinTicks } from "./labels.js";
-import { textWidth, truncateEnd, truncateMiddle } from "./measure.js";
+import { textWidth, truncateEnd, wrapLines } from "./measure.js";
 import { r, svgLine, svgText } from "./svg.js";
 import { type Paint, seriesColor } from "./theme.js";
 
@@ -94,6 +94,16 @@ function drawKey(
   return { svg: `<g class="hm-key">${parts.join("")}</g>`, height: (row + 1) * LABEL_LINE + 8 };
 }
 
+const NAME_STYLE = { size: BODY };
+const NAME_LINES = 2;
+const NAME_LINE = 17;
+
+/** Category names of a horizontal bar chart: a column as wide as they need up to 40% of the chart, wrapped to two lines. */
+function rowNames(names: string[], width: number) {
+  const column = Math.min(width * 0.4, Math.max(0, ...names.map((t) => textWidth(t, NAME_STYLE))));
+  return { column, wrapped: names.map((t) => wrapLines(t, column, NAME_STYLE, NAME_LINES)) };
+}
+
 /** Row height of a horizontal bar chart: rows stretch to fill the chart height, within limits. */
 export function barRowHeight(block: BarData, ctx: RenderContext, chartHeight: number): number {
   const n = Math.max(1, barCategories(block, ctx.data.locale).length);
@@ -113,13 +123,17 @@ export function barHeight(
   chartHeight: number,
 ): number {
   if (block.orientation === "vertical") return chartHeight;
-  const n = Math.max(1, barCategories(block, ctx.data.locale).length);
+  const names = barCategories(block, ctx.data.locale);
   const key = drawKey(
     cssLessPaint,
     block.series.map((s) => s.label),
     width,
   ).height;
-  return key + n * barRowHeight(block, ctx, chartHeight);
+  const wraps = rowNames(names, width).wrapped.some((w) => w.lines.length > 1);
+  const row = barRowHeight(block, ctx, chartHeight);
+  return (
+    key + Math.max(1, names.length) * (wraps ? Math.max(row, NAME_LINES * NAME_LINE + 6) : row)
+  );
 }
 
 const cssLessPaint: Paint = { attrs: () => "" };
@@ -161,11 +175,7 @@ export function renderBar(
   if (block.orientation === "horizontal") {
     const top = key.height;
     const rowH = (size.height - top) / Math.max(1, n);
-    const nameStyle = { size: BODY };
-    const labelWidth = Math.min(
-      size.width * 0.4,
-      Math.max(0, ...names.map((t) => textWidth(t, nameStyle))),
-    );
+    const { column: labelWidth, wrapped } = rowNames(names, size.width);
     const grouped = multi && !stacked;
     const valueStyle = { size: grouped ? CAPTION : BODY, weight: 500 } as const;
     const valueTexts = grouped
@@ -184,12 +194,16 @@ export function renderBar(
     const zero = scale(0);
     names.forEach((name, i) => {
       const cy = top + i * rowH + rowH / 2;
-      parts.push(
-        svgText(paint, 0, cy, truncateMiddle(name, labelWidth, nameStyle), {
-          ...nameStyle,
-          color: "textMuted",
-        }),
-      );
+      const { lines, cut } = wrapped[i] as { lines: string[]; cut: boolean };
+      lines.forEach((line, j) => {
+        parts.push(
+          svgText(paint, 0, cy + (j - (lines.length - 1) / 2) * NAME_LINE, line, {
+            ...NAME_STYLE,
+            color: "textMuted",
+            ...(cut ? { title: name } : {}),
+          }),
+        );
+      });
       series.forEach((_, k) => {
         const [a, b] = (ext[k] as [number, number][])[i] as [number, number];
         if (a === b) return;
@@ -326,27 +340,28 @@ export function renderBar(
     );
   } else {
     const tick = { size: CAPTION };
-    const fitted = names.map((t) => truncateMiddle(t, step - 4, tick));
+    const fitted = names.map((t) => truncateEnd(t, step - 4, tick));
     const readable = fitted.every((t, i) => t === names[i] || Array.from(t).length >= 4);
     const placed = readable
       ? fitted.map((t, i) => ({ index: i, centre: centre(i), text: t }))
       : thinTicks(
           names.map((t, i) => ({
             pos: centre(i),
-            width: textWidth(truncateMiddle(t, 120, tick), tick),
+            width: textWidth(truncateEnd(t, 120, tick), tick),
             phase: i,
           })),
           [1, 2, 3, 4, 5, 10, 20],
           8,
           0,
           size.width,
-        ).map((p) => ({ ...p, text: truncateMiddle(names[p.index] as string, 120, tick) }));
+        ).map((p) => ({ ...p, text: truncateEnd(names[p.index] as string, 120, tick) }));
     parts.push(
       ...placed.map((p) =>
         svgText(paint, p.centre, plotBottom + 16, p.text, {
           ...tick,
           anchor: "middle",
           color: "textSubtle",
+          ...(p.text === names[p.index] ? {} : { title: names[p.index] as string }),
         }),
       ),
     );

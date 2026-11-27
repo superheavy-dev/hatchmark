@@ -6,7 +6,7 @@
   "status": "final",
   "finalized": "2026-11-27 (HAT-8, approved by Gunwoo: good/bad variant A, brand rule warn-not-replace)",
   "changelog": {
-    "1.0.1": "HAT-19: series names are never middle-truncated (legends, keys and direct labels reflow), KPI sparklines get the line tooltip, KPI note to sparkline gap 8 to 12 px."
+    "1.0.1": "HAT-19: names are never middle-truncated (legends, keys and direct labels reflow, bar categories wrap), KPI sparklines get the line tooltip, KPI note to sparkline gap 8 to 12 px."
   },
   "license": "Apache-2.0",
   "origin": "Exported from Paper file 01M8DTB9YYV2B57MQKB6B0M0G2 (Paper tokens are the source of truth for values; rules and metadata carried from the HAT-8 builder).",
@@ -65,7 +65,7 @@
     },
     "minimum": 12,
     "numbers": "tabular-nums everywhere",
-    "truncation": "series names (legend, key, direct labels, readout) are never cut: they reflow, and only a name wider than the whole card ends in an ellipsis with the full name in its tooltip; other labels: middle ellipsis, full text in tooltip",
+    "truncation": "names are never cut in the middle. Series names (legend, key, direct labels, readout) reflow, and only a name wider than the whole card ends in an ellipsis; horizontal bar categories wrap to tableMaxLines in a column up to 40% of the chart; vertical bar ticks thin, then end in an ellipsis. The full name is always in the tooltip.",
     "tableMaxLines": 2
   },
   "color": {

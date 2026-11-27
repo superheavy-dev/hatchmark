@@ -79,24 +79,32 @@ export function truncateEnd(text: string, maxWidth: number, style: TextStyle): s
 }
 
 /**
- * Shortens text to fit maxWidth by replacing its middle with an ellipsis, keeping at least one
- * character on each side ("Health & … outdoors"). Text that fits is returned unchanged; when not
- * even "a…z" fits, the result is "…".
+ * Wraps text at spaces into at most maxLines lines of maxWidth. Text that still does not fit ends
+ * in an ellipsis on the last line, and `cut` says so, so the caller can add the full text as a title.
  */
-export function truncateMiddle(text: string, maxWidth: number, style: TextStyle): string {
-  if (textWidth(text, style) <= maxWidth) return text;
-  const chars = Array.from(text);
-  let left = Math.ceil(chars.length / 2);
-  let right = Math.floor(chars.length / 2);
-  const build = () =>
-    `${chars.slice(0, left).join("").trimEnd()}\u2026${chars
-      .slice(chars.length - right)
-      .join("")
-      .trimStart()}`;
-  while (left + right > 2 && textWidth(build(), style) > maxWidth) {
-    if (left >= right) left--;
-    else right--;
+export function wrapLines(
+  text: string,
+  maxWidth: number,
+  style: TextStyle,
+  maxLines: number,
+): { lines: string[]; cut: boolean } {
+  const words = text.split(" ");
+  const lines: string[] = [];
+  while (words.length > 0 && lines.length < maxLines - 1) {
+    let count = 1;
+    while (
+      count < words.length &&
+      textWidth(words.slice(0, count + 1).join(" "), style) <= maxWidth
+    ) {
+      count++;
+    }
+    const line = words.slice(0, count).join(" ");
+    if (textWidth(line, style) > maxWidth) break;
+    lines.push(line);
+    words.splice(0, count);
   }
-  const result = build();
-  return textWidth(result, style) <= maxWidth ? result : "\u2026";
+  if (words.length === 0) return { lines, cut: false };
+  const rest = words.join(" ");
+  lines.push(truncateEnd(rest, maxWidth, style));
+  return { lines, cut: textWidth(rest, style) > maxWidth };
 }

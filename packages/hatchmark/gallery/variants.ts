@@ -483,6 +483,28 @@ const BARS: GalleryVariant[] = [
   ),
   one(
     "bar",
+    "bar-long-categories",
+    "Long category names: rows wrap to two lines, nothing is cut in the middle",
+    bar("long_rows", "Technical shells lead the product lines", {
+      orientation: "horizontal",
+      span: 6,
+      axis: {
+        kind: "category",
+        column: "product_line",
+        categories: [
+          "Technical shells & outerwear",
+          "Trail running footwear",
+          "Base layers & midlayers",
+          "Travel bags & organisers",
+          "Climbing hardware, ropes, harnesses and protection",
+          "Camp kitchen",
+        ],
+      },
+      series: [series("revenue", "Revenue", [512_300, 401_220, 288_000, 203_410, 151_900, 98_500])],
+    }),
+  ),
+  one(
+    "bar",
     "bar-empty",
     "No data",
     bar("empty_bar", "Revenue by region", {
