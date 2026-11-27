@@ -101,16 +101,20 @@ changed. `hatchmark init` adds `.hatchmark/` to `.gitignore`.
 - Data files are compared by the SHA-256 of their contents, never by size or modification time,
   so any changed byte runs the query again. A file that changes while a build runs is read again
   at the end, and results read from it are not stored.
+- Queries of raw SQL metrics (`"type": "sql"`) always run and are never cached: their SQL can
+  read the clock or other files, which no cache key can see.
 - A cached build writes the same bytes as `hatchmark build --no-cache`. A damaged or unreadable
   entry is ignored and rewritten.
 - Each build removes the entries it did not use, so the cache holds the last build's results.
   Deleting `.hatchmark/cache/` is always safe.
 - The cache turns itself off (and says why in `cache.reason`) when `.hatchmark` or a directory
-  under it is a symbolic link.
+  under it is a symbolic link. When an entry cannot be written or removed (a read-only directory,
+  a full disk), build still succeeds and simply keeps fewer entries.
 
 `hatchmark explain --dashboard <name> --block <id>` lists each query's cache status after its SQL:
 `hit` with the time the entry was stored, `stale` with what changed since (`data` with the file,
-`context`, `query` or `engine`), or `miss`.
+`context` such as the as-of date, or `engine`), `miss`, or `off` for raw SQL metrics. Editing a
+query itself (a metric's filters, a block's grain) gives it a new id, so it shows as a `miss`.
 
 ## Exit codes
 

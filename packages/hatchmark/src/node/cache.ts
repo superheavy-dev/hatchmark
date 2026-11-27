@@ -43,8 +43,12 @@ import { VERSION } from "../version.js";
  * column of mixed or unusual values as JSON text. A cached build is byte-identical to an uncached
  * one (test/node/cache.test.ts).
  *
+ * Raw SQL metrics (type "sql") are never cached: their SQL can read the clock, other files or
+ * anything else DuckDB reaches, which no key can fingerprint, so their queries always run.
+ *
  * The cache is skipped (every query runs) when its directory or any directory above it inside the
- * project is a symbolic link, or a data file cannot be read.
+ * project is a symbolic link, or a data file cannot be read. Failing to write or sweep entries
+ * (a read-only directory, a full disk) never fails the build; those entries are just not kept.
  */
 
 /** Bumped whenever the entry layout or the key changes. */
@@ -67,7 +71,7 @@ export interface CacheProbe {
   /** When the entry used (hit) or the older entry (stale) was written, ISO 8601 UTC. */
   stored_at?: string;
   /** For stale: what differs from the older entry. */
-  changed?: ("data" | "engine" | "context" | "query")[];
+  changed?: ("data" | "engine" | "context")[];
   /** For stale with changed data: the files whose contents differ. */
   changed_files?: string[];
   /** The data files the key covers, with their current fingerprints. */
@@ -405,9 +409,10 @@ export async function createCachedExecutor(options: {
 
   return {
     async execute(query, context) {
-      const parts = plannedInput(query)
-        ? await keyParts("query", query.source, query, context)
-        : undefined;
+      const parts =
+        plannedInput(query) && !rawSql(query)
+          ? await keyParts("query", query.source, query, context)
+          : undefined;
       if (parts === undefined || !stats.enabled) {
         stats.misses++;
         return inner.execute(query, context);
@@ -466,6 +471,12 @@ export async function createCachedExecutor(options: {
       const { query, context } = seen;
       if (!stats.enabled)
         return { status: "off", ...(stats.reason ? { reason: stats.reason } : {}) };
+      if (rawSql(query)) {
+        return {
+          status: "off",
+          reason: "raw SQL metrics are never cached; this query always runs",
+        };
+      }
       const parts = await keyParts("query", query.source, query, context);
       if (parts === undefined) {
         return { status: "off", reason: "a data file of this query cannot be read" };
@@ -484,7 +495,6 @@ export async function createCachedExecutor(options: {
         const changed: NonNullable<CacheProbe["changed"]> = [];
         if (older.parts.engine !== parts.engine) changed.push("engine");
         if (older.parts.context !== parts.context) changed.push("context");
-        if (older.parts.subject !== parts.subject) changed.push("query");
         const before = new Map(older.parts.data.map((d) => [d.file, d.sha256]));
         const files = data.filter((d) => before.get(d.file) !== d.sha256).map((d) => d.file);
         if (files.length > 0 || older.parts.data.length !== data.length) changed.unshift("data");
@@ -522,7 +532,9 @@ export async function createCachedExecutor(options: {
             const target = entryDir(kind);
             for (const name of await readdir(target).catch(() => [] as string[])) {
               const file = path.join(target, name);
-              if (name.endsWith(".parquet") && !used.has(file)) await rm(file, { force: true });
+              if (name.endsWith(".parquet") && !used.has(file)) {
+                await rm(file, { force: true }).catch(() => {});
+              }
             }
           }
         }
@@ -533,6 +545,13 @@ export async function createCachedExecutor(options: {
       }
     },
   };
+}
+
+/** Whether a query computes a raw SQL metric, whose result no key can capture. */
+function rawSql(query: PlannedQuery): boolean {
+  return query.measures.some((m) =>
+    m.components.some((c) => c.aggregate === "sql" || c.sql !== undefined),
+  );
 }
 
 function decode(storage: Storage, value: unknown): unknown {

@@ -1,6 +1,7 @@
 import { createHash } from "node:crypto";
 import {
   appendFile,
+  chmod,
   cp,
   mkdir,
   mkdtemp,
@@ -232,6 +233,51 @@ describe("build cache", () => {
     }
   });
 
+  it("never caches raw SQL metrics, which can read the clock or files no key covers (HAT-52)", async () => {
+    const root = await example();
+    await writeFile(path.join(root, "data", "adjustment.csv"), "adjustment\n7\n");
+    const file = path.join(root, "metrics", "orders.json");
+    const { aggregate: _, column: __, ...metric } = JSON.parse(await readFile(file, "utf8"));
+    const adjustment = path.join(root, "data", "adjustment.csv").replaceAll("'", "''");
+    await writeFile(
+      file,
+      JSON.stringify({
+        ...metric,
+        type: "sql",
+        additive: false,
+        sql: `count(*) * 0 + (SELECT sum(adjustment) FROM read_csv_auto('${adjustment}'))`,
+      }),
+    );
+    const cold = await build(root, true);
+    expect(cold.code).toBe(0);
+    await writeFile(path.join(root, "data", "adjustment.csv"), "adjustment\n9\n");
+    const oracle = await build(root, false);
+    expect(oracle.files).not.toEqual(cold.files);
+    const warm = await build(root, true);
+    expect(warm.files).toEqual(oracle.files);
+    expect(warm.report.cache?.misses).toBeGreaterThan(0);
+    expect(warm.report.cache?.hits).toBeGreaterThan(0);
+  });
+
+  it("still builds when the cache directory is read-only (HAT-52)", async () => {
+    const root = await example();
+    await build(root, true);
+    const q = path.join(root, ".hatchmark", "cache", "v1", "q");
+    await appendFile(
+      path.join(root, "data", "orders.csv"),
+      "999999,2026-11-03T10:00:00Z,C00001,Canada,Americas,Direct,Home,paid,10.00\n",
+    );
+    await chmod(q, 0o555);
+    try {
+      const oracle = await build(root, false);
+      const cached = await build(root, true);
+      expect(cached.code).toBe(0);
+      expect(cached.files).toEqual(oracle.files);
+    } finally {
+      await chmod(q, 0o755);
+    }
+  });
+
   it("treats corrupted, truncated and swapped entries as misses and rewrites them", async () => {
     const root = await example();
     const oracle = await build(root, false);
@@ -327,6 +373,7 @@ describe("cached executor", () => {
     id: "q_test",
     source: "t",
     input: { type: "csv", path: "data/t.csv" },
+    measures: [],
   } as unknown as PlannedQuery;
   const context = {
     asOf: "2026-10-31",

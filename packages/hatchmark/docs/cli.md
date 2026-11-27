@@ -43,7 +43,7 @@ default. A grain switch prints one query per grain. A comparison window that doe
 
 `explain` also says whether the next build would reuse each query's result from the
 [build cache](build.md#build-cache): human output ends with one `-- build cache` line per query
-(`hit`, `stale` and what changed, or `miss`), and JSON gives each query a `cache` object with
+(`hit`, `stale` and what changed, `miss`, or `off` for raw SQL metrics), and JSON gives each query a `cache` object with
 `status`, `stored_at`, `changed`, `changed_files` and the `data` files with their SHA-256. Explain
 only reads the cache, never writes it.
 
