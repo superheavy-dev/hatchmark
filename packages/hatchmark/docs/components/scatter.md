@@ -15,18 +15,20 @@ optionally a third as the point's area (a bubble chart).
 }
 ```
 
-| Field   | Meaning                                                                                                                    |
-| ------- | -------------------------------------------------------------------------------------------------------------------------- |
-| `x`     | The metric on the horizontal axis.                                                                                         |
-| `y`     | The metric on the vertical axis. Use a different metric from `x` (HM5020).                                                 |
-| `by`    | The category column: one point per value. A null value is a real point, shown as "(empty)".                                |
-| `size`  | Optional. A metric drawn as each point's area. Use a third metric that is zero or more (HM5021, HM4071). Omit it for dots. |
-| `limit` | Optional, 1 to 500. Points kept, largest first: by `size`, else by `y`. Without it every category is drawn, up to 500.     |
+| Field   | Meaning                                                                                                                              |
+| ------- | ------------------------------------------------------------------------------------------------------------------------------------ |
+| `x`     | The metric on the horizontal axis.                                                                                                   |
+| `y`     | The metric on the vertical axis. Use a different metric from `x` (HM5020).                                                           |
+| `by`    | The category column: one point per value. A null value is a real point, shown as "(empty)".                                          |
+| `size`  | Optional. A metric drawn as each point's area. Use a third metric that is zero or more (HM5021, HM4071). Omit it for dots.           |
+| `limit` | Optional, 1 to 500. Points kept, largest first: by `size`, else by `y`, ties by name. Without it every category is drawn, up to 500. |
 
 Every metric is computed per category from that category's rows, as in a table: a ratio such as
 average order value divides the category's revenue by its orders, never averages the orders'
-values. The dashboard period and select filters apply to all three metrics. A scatter needs no
-time column.
+values. The dashboard period and select filters apply to all three metrics, over one window: x, y
+and size all end at the earliest horizon among their sources, so a point never pairs days one
+metric has with days another lacks. The subtitle states that window. A scatter needs no time
+column.
 
 What it draws:
 
@@ -48,7 +50,8 @@ What it draws:
   $131,800"). Screen readers also get a summary and every point in a hidden table.
 - The subtitle says "top 50 of 212" when `limit` cut points, and how many categories have no value
   to place them at.
-- An empty period keeps the axes' titles and says "No data in this period".
+- An empty period keeps the axes' titles and says "No data in this period" (HM4013), or "No complete
+  day yet" when a metric's source has no complete day in the period (HM4024).
 
 ## Checks
 

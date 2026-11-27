@@ -179,11 +179,17 @@ export function renderScatter(
   if (empty) {
     parts.push(
       svgLine(paint, plotLeft, plotBottom, plotRight, plotBottom, "baseline"),
-      svgText(paint, plotLeft + plotWidth / 2, (top + plotBottom) / 2, "No data in this period", {
-        size: BODY,
-        anchor: "middle",
-        color: "textMuted",
-      }),
+      svgText(
+        paint,
+        plotLeft + plotWidth / 2,
+        (top + plotBottom) / 2,
+        block.empty === "no_complete_day" ? "No complete day yet" : "No data in this period",
+        {
+          size: BODY,
+          anchor: "middle",
+          color: "textMuted",
+        },
+      ),
     );
   } else {
     parts.push(drawYAxis(paint, yAxis, y, plotLeft, plotRight));
