@@ -19,7 +19,7 @@ import { formatDate, formatSpan, recordRanges } from "./format.js";
 import { renderKpi } from "./kpi.js";
 import { renderLine } from "./line.js";
 import { timeOf } from "./partial.js";
-import { PERIOD_MOBILE, periodCaption, periodControl, periodStyles } from "./period.js";
+import { PERIOD_MOBILE, periodCaption, periodControl, periodStyles, periodText } from "./period.js";
 import { isPie, pieHeight, renderPie } from "./pie.js";
 import { renderScatter } from "./scatter.js";
 import { esc, scriptJson } from "./svg.js";
@@ -569,17 +569,24 @@ export function renderFragment(data: DashboardData, theme: Theme = DEFAULT_THEME
  * element (or ?theme=dark) overrides it.
  */
 export function renderDashboardPage(data: DashboardData, options: PageOptions): string {
-  const { result: html, ranges } = recordRanges(() => dashboardPage(data, options));
   const { periods } = options;
+  const { result: html, ranges } = recordRanges(() => {
+    const page = dashboardPage(data, options);
+    for (const preset of Object.values(periods?.presets ?? {})) {
+      renderDashboardBlocks(preset, options.theme);
+      periodCaption(preset);
+      if (preset.periodFilter) periodText(preset.periodFilter, preset.locale);
+    }
+    return page;
+  });
   if (!periods) return html;
   return html.replace(
-    PERIODS_SLOT,
-    () =>
-      `<script type="application/json" data-hm-periods>${scriptJson({ ...periods, ranges })}</script>`,
+    RANGES_SLOT,
+    () => `<script type="application/json" data-hm-ranges>${scriptJson(ranges)}</script>`,
   );
 }
 
-const PERIODS_SLOT = "<!--hm-periods-->";
+const RANGES_SLOT = "<!--hm-ranges-->";
 
 function dashboardPage(data: DashboardData, options: PageOptions): string {
   const theme = options.theme ?? DEFAULT_THEME;
@@ -607,7 +614,9 @@ function dashboardPage(data: DashboardData, options: PageOptions): string {
     ? `<p class="hm-period-note" data-hm-period-note aria-live="polite" hidden></p>`
     : "";
   const header = `<header class="hm-header"><div class="hm-titles"><div class="hm-brand"><span class="hm-logo" aria-hidden="true"></span>${esc(data.project)}</div><div class="hm-title"><h1>${esc(data.title)}</h1><p class="hm-caption" data-hm-caption>${esc(periodCaption(data))}</p>${note}${data.description ? `<p class="hm-description">${esc(data.description)}</p>` : ""}</div></div>${controls ? `<div class="hm-header-side">${controls}${asOf}</div>` : asOf}</header>`;
-  const embedded = options.periods ? PERIODS_SLOT : "";
+  const embedded = options.periods
+    ? `<script type="application/json" data-hm-periods>${scriptJson(options.periods)}</script>${RANGES_SLOT}`
+    : "";
   const sources = options.sources?.length
     ? `Source: ${options.sources.join(", ")}`
     : `Source: ${data.project}`;

@@ -23,8 +23,12 @@ export interface PeriodView {
   presetOnly: string[];
 }
 
-function view(payload: PeriodData, requested: string): PeriodView | undefined {
-  useRanges(payload.ranges ?? {});
+function view(
+  payload: PeriodData,
+  requested: string,
+  ranges: Record<string, string> = {},
+): PeriodView | undefined {
+  useRanges(ranges);
   const days = parseDaysKey(requested);
   const key = requested;
   let data: DashboardData | undefined = payload.presets[key];
