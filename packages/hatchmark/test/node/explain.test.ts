@@ -1,14 +1,5 @@
 import { fileURLToPath } from "node:url";
-import {
-  BIGINT,
-  BOOLEAN,
-  DOUBLE,
-  type DuckDBConnection,
-  DuckDBInstance,
-  HUGEINT,
-  INTEGER,
-  VARCHAR,
-} from "@duckdb/node-api";
+import { type DuckDBConnection, DuckDBInstance } from "@duckdb/node-api";
 import { afterAll, describe, expect, it } from "vitest";
 import {
   explainDashboard,
@@ -17,8 +8,8 @@ import {
   planDashboard,
   printSql,
   type SqlValue,
-  sqlType,
 } from "../../src/compiler/index.js";
+import { boundParams } from "../../src/node/duckdb.js";
 import { createDuckDbExecutor } from "../../src/node/index.js";
 import { PROJECT_DEFAULTS } from "../../src/spec/index.js";
 import { loadAt, metric, removeProjects, run, writeProject } from "./fixture.js";
@@ -27,25 +18,17 @@ const ROOT = fileURLToPath(new URL("../../examples/global-sales/", import.meta.u
 
 afterAll(removeProjects);
 
-const TYPES = { VARCHAR, BOOLEAN, INTEGER, BIGINT, HUGEINT, DOUBLE };
-
-/** The rows of a query run with typed parameters as the executor binds them, and as printed. */
 async function bothWays(
   connection: DuckDBConnection,
   query: { sql: string; params: Record<string, SqlValue> },
 ): Promise<[string, string]> {
-  const rows = async (text: string, params?: Record<string, SqlValue>) =>
-    JSON.stringify(
-      (
-        await connection.runAndReadAll(
-          text,
-          params,
-          params &&
-            Object.fromEntries(Object.entries(params).map(([k, v]) => [k, TYPES[sqlType(v)]])),
-        )
-      ).getRows(),
+  const rows = async (text: string, params?: Record<string, SqlValue>) => {
+    const bound = params && boundParams(params);
+    return JSON.stringify(
+      (await connection.runAndReadAll(text, bound?.values, bound?.types)).getRows(),
       (_, v) => (typeof v === "bigint" ? v.toString() : v),
     );
+  };
   return [
     await rows(query.sql, query.params),
     await rows(printSql({ text: query.sql, params: query.params })),
@@ -177,6 +160,45 @@ describe("explain", () => {
     const [bound, printed] = await bothWays(connection, query);
     expect(printed).toBe(bound);
     expect(JSON.parse(bound)[0][1]).toBe("1");
+    connection.closeSync();
+  });
+
+  it("builds and prints a whole-number filter past int64 as HUGEINT (HAT-41)", async () => {
+    const { root, project } = await writeProject({
+      "hatchmark.json": {
+        ...PROJECT_DEFAULTS,
+        name: "t",
+        sources: { t: { type: "csv", path: "data/t.csv" } },
+      },
+      "data/t.csv": "d,x\n2026-01-15,5\n",
+      "metrics/huge.json": metric({
+        type: "aggregate",
+        table: "t",
+        aggregate: "count",
+        time: "d",
+        filters: [{ column: "x", op: "lt", value: 1e19 }],
+      }),
+      "dashboards/d.json": {
+        title: "D",
+        period: { asOf: "2026-01-31", range: "all_time", compare: "none" },
+        blocks: [{ type: "kpi", metric: "huge" }],
+      },
+    });
+    const built = await run(root, project, "d");
+    expect(built.diagnostics).toEqual([]);
+    expect((built.data?.blocks[0] as KpiData | undefined)?.value).toBe(1);
+    const result = await withExecutor(root, project, (e) => explainMetric(project, "huge", e));
+    const query = result.queries?.[0];
+    if (query === undefined) throw new Error("no query");
+    expect(printSql({ text: query.sql, params: query.params })).toContain(
+      '"x" < CAST(10000000000000000000 AS HUGEINT)',
+    );
+    const connection = await (await DuckDBInstance.create(":memory:")).connect();
+    await connection.run(
+      `CREATE TEMP TABLE "__hm_source_t" AS SELECT *, row_number() OVER () AS "__hm_ord" FROM read_csv('${root}/data/t.csv', sample_size = -1)`,
+    );
+    const [bound, printed] = await bothWays(connection, query);
+    expect(printed).toBe(bound);
     connection.closeSync();
   });
 

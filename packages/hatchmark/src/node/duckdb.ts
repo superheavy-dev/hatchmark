@@ -140,7 +140,8 @@ export async function createDuckDbExecutor(options: {
       let latest: string | undefined;
       for (const { source, column } of columns) {
         const { text, params } = latestDateSql(await load(source), column, timezone);
-        const reader = await connection.runAndReadAll(text, params, typesOf(params));
+        const { values, types } = boundParams(params);
+        const reader = await connection.runAndReadAll(text, values, types);
         const value = reader.getRows()[0]?.[0];
         const date = value instanceof DuckDBDateValue ? value.toString() : undefined;
         if (date !== undefined && (latest === undefined || date > latest)) latest = date;
@@ -178,9 +179,22 @@ export async function describeColumns(
 
 const TYPES = { VARCHAR, BOOLEAN, INTEGER, BIGINT, HUGEINT, DOUBLE };
 
-/** Each parameter's DuckDB type, by sqlType, so printSql's literals have the types that run. */
-function typesOf(params: Record<string, SqlValue>): Record<string, DuckDBType> {
-  return Object.fromEntries(Object.entries(params).map(([k, v]) => [k, TYPES[sqlType(v)]]));
+/**
+ * The parameters as DuckDB binds them: each with its sqlType, so printSql's literals have the
+ * types that run, and BIGINT and HUGEINT values as bigint, which DuckDB needs for HUGEINT.
+ */
+export function boundParams(params: Record<string, SqlValue>): {
+  values: Record<string, DuckDBValue>;
+  types: Record<string, DuckDBType>;
+} {
+  const values: Record<string, DuckDBValue> = {};
+  const types: Record<string, DuckDBType> = {};
+  for (const [name, value] of Object.entries(params)) {
+    const type = sqlType(value);
+    values[name] = type === "BIGINT" || type === "HUGEINT" ? BigInt(value as number) : value;
+    types[name] = TYPES[type];
+  }
+  return { values, types };
 }
 
 /** A source loaded into a temporary table (relation), with ORDINAL. */
@@ -328,8 +342,9 @@ async function execute(
     ? (await connection.runAndReadAll("SELECT current_setting('threads')")).getRows()[0]?.[0]
     : undefined;
   if (serial) await connection.run("SET threads = 1");
+  const bound = boundParams(params);
   const reader = await connection
-    .runAndReadAll(text, params, typesOf(params))
+    .runAndReadAll(text, bound.values, bound.types)
     .finally(() => (serial ? connection.run(`SET threads = ${Number(threads ?? 1)}`) : undefined));
   const types = reader.columnTypes().map(String);
   const imprecise = await impreciseColumns(connection, source, components);
