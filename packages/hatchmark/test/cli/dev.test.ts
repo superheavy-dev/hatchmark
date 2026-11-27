@@ -179,11 +179,10 @@ describe("hatchmark dev", { timeout: 30_000 }, () => {
     await edit("metrics/orders.json", (t) =>
       t.replace('"label": "Orders"', '"label": "Paid orders"'),
     );
-    await hmr.next("hatchmark:update");
+    const update = await hmr.next("hatchmark:update", 15_000, "sales");
     await server.idle();
-    const updates = hmr.messages.filter((m) => m.event === "hatchmark:update");
     expect(custom().every((e) => e === "hatchmark:update")).toBe(true);
-    const sales = updates.find((m) => m.data?.dashboard === "sales")?.data?.cards ?? [];
+    const sales = update.data?.cards ?? [];
     expect(sales.find((c) => c.index === 0)?.kpi).toBe(1);
     expect(sales.find((c) => c.index === 0)?.html).toContain("Paid orders");
     expect(sales.map((c) => c.index).sort()).toEqual([0, 3]);
