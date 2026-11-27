@@ -132,9 +132,12 @@ const state = {
   locale: "en-US",
   section: "",
 };
+const LOCALES = ["en-US", "de-DE", "ja-JP"];
 function read() {
   state.section = "";
+  state.locale = "en-US";
   for (const [key, value] of new URLSearchParams(location.hash.slice(1))) {
+    if (key === "locale" && !LOCALES.includes(value)) continue;
     if (key in state) state[key] = value;
   }
 }

@@ -120,6 +120,30 @@ describe("preview shell deep links", () => {
     await page.close();
   });
 
+  it("reads the locale from every hash change and ignores locales it did not build", async () => {
+    const page = await browser.newPage();
+    await page.goto(`${origin}/#view=dashboard&locale=de-DE`);
+    await expect
+      .poll(() => page.locator("#frame").getAttribute("src"))
+      .toBe("dashboard-de-DE/sales/");
+    await page.evaluate(() => {
+      location.hash = "#view=dashboard";
+    });
+    await expect.poll(() => page.locator("#frame").getAttribute("src")).toBe("dashboard/sales/");
+    expect(hash(page)).not.toHaveProperty("locale");
+    expect(await page.getByRole("button", { name: "en-US" }).getAttribute("aria-pressed")).toBe(
+      "true",
+    );
+
+    await page.goto(`${origin}/#view=dashboard&locale=fr-FR`);
+    await expect.poll(() => page.locator("#frame").getAttribute("src")).toBe("dashboard/sales/");
+    expect(hash(page)).not.toHaveProperty("locale");
+    expect(await page.getByRole("button", { name: "en-US" }).getAttribute("aria-pressed")).toBe(
+      "true",
+    );
+    await page.close();
+  });
+
   it("leaves the section out of the hash when there is none", async () => {
     const page = await browser.newPage();
     await page.goto(`${origin}/#theme=light`);
