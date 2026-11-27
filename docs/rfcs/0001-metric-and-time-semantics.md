@@ -918,14 +918,14 @@ interface ExecutionContext {
   // existing, plus:
   /** Resolved once per plan, before any query: instants in UTC ISO 8601. */
   asOfInstant: string;
-  /** Measured horizons as local wall-clock instants (YYYY-MM-DDTHH:MM:SS.ffffff), exclusive; DashboardData carries the same list. */
+  /** Measured horizons as exclusive UTC instants (YYYY-MM-DDTHH:MM:SS.ffffffZ): just after the latest timestamp, or the start of the day after the latest date; DashboardData carries the same list. */
   horizons: { source: string; column?: string; through: string }[];
   /** Bucket bounds computed by the core (bucketBounds in windows.ts) as local dates; the executor converts them with the plan timezone. */
   buckets?: { start: string; end: string; instant: string }[];
 }
 ```
 
-New pure core functions: `resolveRange(spec, shift, asOf, anchors)`, `bucketBounds(range, grain)`, `bucketStatus(bucket, horizon, timezone)`, `trimWindow(bounds, horizon, rangeKind)`, `targetValue(target, bucket, grain)`, `parseFormula(text)` and `parseRowExpr(text)` with positions. The executor gains one method, `horizon(column, timezone, lag?): Promise<{ through?: string; naive: boolean }>`, which runs `select max(<column>)` with no filters and returns it as local wall-clock time (a date column as the next local midnight), minus the lag, with whether the column holds timestamps without an offset.
+New pure core functions: `resolveRange(spec, shift, asOf, anchors)`, `bucketBounds(range, grain)`, `bucketStatus(bucket, horizon, timezone)`, `trimWindow(bounds, horizon, rangeKind)`, `targetValue(target, bucket, grain)`, `parseFormula(text)` and `parseRowExpr(text)` with positions. The executor gains two methods. `horizon(column): Promise<{ latest?: string; date: boolean; naive: boolean }>` runs `select max(<column>)` with no filters and returns a date, or a UTC instant, with whether the column holds timestamps without an offset; the core turns it into the horizon (the time zone, the lag, DST) and compares horizons as instants. `after(column, timezone, instant, limit)` returns the first values after an instant, for HM4012's example rows.
 
 ## 12. SQL the executor generates
 
