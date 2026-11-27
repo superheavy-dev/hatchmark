@@ -47,7 +47,7 @@ function fallbackAdvance(cp: number): number {
 
 /**
  * Width in px of one line of text in the theme font, from advance widths and kerning generated
- * offline from the bundled font files (scripts/gen-text-metrics.mjs). No canvas or DOM, so it
+ * offline from the bundled font files (scripts/gen-text-metrics.ts). No canvas or DOM, so it
  * runs anywhere the engine core runs and gives the same answer everywhere.
  */
 export function textWidth(text: string, style: TextStyle): number {

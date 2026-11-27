@@ -3,31 +3,68 @@
 // "Desktop · Light · 1440" frame (T-0) and pixel-diffs each region against Paper's export, twice:
 // unmasked, and in scope only, where what T-0 draws beyond DashboardData (event annotations, the
 // pinned tooltip, the bar list, table subtotals and the "vs Sep" column) is masked or cut out.
-// Usage: node scripts/paper-parity.mjs --dataset dataset.json --paper <dir> --out <dir>
+// Usage: node scripts/paper-parity.ts --dataset dataset.json --paper <dir> --out <dir>
 //   <dir> holds Paper's 1x PNG exports: kpi.png (KPI strip), line.png (line chart card),
 //   bar.png (bar list card) and table.png (table card).
+/// <reference lib="dom" />
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { parseArgs } from "node:util";
 import { chromium } from "playwright";
-import { FONT_FILES, renderDashboardPage } from "../dist/render/index.js";
+import type {
+  BarData,
+  DashboardData,
+  KpiData,
+  LineData,
+  MetricInfo,
+  TableData,
+} from "../src/compiler/index.js";
+import type * as render from "../src/render/index.js";
+
+const { FONT_FILES, renderDashboardPage }: typeof render = await import(
+  new URL("../dist/render/index.js", import.meta.url).href
+);
+
+interface Dataset {
+  meta: { description: string };
+  kpis: { id: string; unit: string; current: number; previous: number }[];
+  weekly: { week: string; growth: number; enterprise: number; starter: number }[];
+  plans: { id: string; name: string }[];
+  byIndustry: { name: string; revenue: number }[];
+  byCountry: { name: string; region: string; merchants: number; revenue: number }[];
+}
+
+interface Rect {
+  x: number;
+  y: number;
+  w: number;
+  h: number;
+}
+
+interface Scope {
+  masks: Rect[];
+  shift?: { x0: number; x1: number; y0: number; y1: number; dx: number };
+  cutColumn?: { x0: number; x1: number; insertAt: number };
+  cutRows?: [number, number][];
+}
 
 const THRESHOLD = 48;
 const { values: args } = parseArgs({
   options: { dataset: { type: "string" }, paper: { type: "string" }, out: { type: "string" } },
 });
 if (!args.dataset || !args.paper || !args.out) {
-  console.error("usage: node scripts/paper-parity.mjs --dataset <json> --paper <dir> --out <dir>");
+  console.error("usage: node scripts/paper-parity.ts --dataset <json> --paper <dir> --out <dir>");
   process.exit(2);
 }
-const d = JSON.parse(await readFile(args.dataset, "utf8"));
+const { dataset: datasetPath, paper: paperDir, out: outDir } = args;
+const d: Dataset = JSON.parse(await readFile(datasetPath, "utf8"));
 const pkg = path.dirname(path.dirname(fileURLToPath(import.meta.url)));
 
 const OCT = { start: "2026-10-01", end: "2026-11-01" };
 const SEP = { start: "2026-09-01", end: "2026-10-01" };
-const usd = { type: "currency", currency: "USD" };
-const metrics = {
+const usd: MetricInfo["format"] = { type: "currency", currency: "USD" };
+const metrics: DashboardData["metrics"] = {
   revenue: { name: "revenue", label: "Revenue", format: usd, better: "up" },
   merchants: {
     name: "merchants",
@@ -43,7 +80,7 @@ const metrics = {
     better: "down",
   },
 };
-const kpis = d.kpis.map((k) => {
+const kpis = d.kpis.map((k): KpiData => {
   const points = k.unit === "pct";
   return {
     type: "kpi",
@@ -61,8 +98,8 @@ const kpis = d.kpis.map((k) => {
   };
 });
 const weeks = d.weekly.map((w) => w.week);
-const plans = ["growth", "enterprise", "starter"];
-const line = {
+const plans = ["growth", "enterprise", "starter"] as const;
+const line: LineData = {
   type: "line",
   id: "weekly_by_plan",
   title: "Enterprise revenue stepped up after the March repricing",
@@ -71,17 +108,17 @@ const line = {
     kind: "time",
     grain: "week",
     buckets: weeks,
-    window: { start: weeks[0], end: "2026-11-02" },
+    window: { start: weeks[0] ?? "2025-11-03", end: "2026-11-02" },
   },
   series: plans.map((p) => ({
     key: "revenue:" + p,
     metric: "revenue",
-    label: d.plans.find((x) => x.id === p).name,
+    label: d.plans.find((x) => x.id === p)?.name ?? p,
     splitValue: p,
     values: d.weekly.map((w) => w[p]),
   })),
 };
-const bar = {
+const bar: BarData = {
   type: "bar",
   id: "by_industry",
   title: "Apparel leads with 21.4% of October revenue",
@@ -103,7 +140,7 @@ const countries = regions.flatMap((r) =>
   d.byCountry.filter((c) => c.region === r).sort((a, b) => b.revenue - a.revenue),
 );
 const total = countries.reduce((s, c) => s + c.revenue, 0);
-const table = {
+const table: TableData = {
   type: "table",
   id: "by_country",
   title: "North America is two thirds of revenue",
@@ -123,7 +160,7 @@ const table = {
   },
   window: OCT,
 };
-const data = {
+const data: DashboardData = {
   version: 1,
   name: "parcelwise",
   title: "Revenue overview",
@@ -139,20 +176,25 @@ const data = {
   blocks: [...kpis, line, bar, table],
 };
 
-await mkdir(args.out, { recursive: true });
+await mkdir(outDir, { recursive: true });
 const assets = {
   runtime: pathToFileURL(path.join(pkg, "assets/runtime/hatchmark.js")).href,
   fonts: Object.fromEntries(
     FONT_FILES.map((f) => [f.file, pathToFileURL(path.join(pkg, "assets/fonts", f.file)).href]),
   ),
 };
-const pagePath = path.join(args.out, "paper-parity-page.html");
+const pagePath = path.join(outDir, "paper-parity-page.html");
 await writeFile(pagePath, renderDashboardPage(data, { assets, sources: ["dataset.json"] }));
 
 // Out-of-scope geometry in T-0's 1x exports, read from the Paper frame. The line chart's plot
 // sits at (17, 68) in its card; table rows are 30 px under a 26 px header ending at y 90.
-const plot = (x, y, w, h) => ({ x: 17 + x, y: 68 + y, w, h });
-const REGIONS = [
+const plot = (x: number, y: number, w: number, h: number): Rect => ({
+  x: 17 + x,
+  y: 68 + y,
+  w,
+  h,
+});
+const REGIONS: { name: string; selector: string; scope: Scope; outOfScope: string }[] = [
   { name: "kpi", selector: ".hm-strip", scope: { masks: [] }, outOfScope: "nothing" },
   {
     name: "line",
@@ -198,26 +240,27 @@ const REGIONS = [
 ];
 
 /** In the page: Paper's export brought to scope, then diffed against ours. Returns PNGs as base64. */
-async function compare([a, b, threshold, scope]) {
-  const load = async (b64) => {
+async function compare([a, b, threshold, scope]: [string, string, number, Scope]) {
+  const context = (c: OffscreenCanvas) => c.getContext("2d") as OffscreenCanvasRenderingContext2D;
+  const load = async (b64: string) => {
     const img = new Image();
     img.src = "data:image/png;base64," + b64;
     await img.decode();
     const c = new OffscreenCanvas(img.width, img.height);
-    const g = c.getContext("2d");
+    const g = context(c);
     g.fillStyle = "#fff";
     g.fillRect(0, 0, img.width, img.height);
     g.drawImage(img, 0, 0);
     return c;
   };
-  const blank = (w, h) => {
+  const blank = (w: number, h: number): [OffscreenCanvas, OffscreenCanvasRenderingContext2D] => {
     const c = new OffscreenCanvas(w, h);
-    const g = c.getContext("2d");
+    const g = context(c);
     g.fillStyle = "#fff";
     g.fillRect(0, 0, w, h);
     return [c, g];
   };
-  const png = async (canvas) => {
+  const png = async (canvas: OffscreenCanvas) => {
     const bytes = new Uint8Array(
       await (await canvas.convertToBlob({ type: "image/png" })).arrayBuffer(),
     );
@@ -251,18 +294,19 @@ async function compare([a, b, threshold, scope]) {
     const [c, g] = blank(scoped.width, scoped.height - cut);
     let from = 0;
     let to = 0;
-    for (const [y0, y1] of [...scope.cutRows, [scoped.height, scoped.height]]) {
+    const rows: [number, number][] = [...scope.cutRows, [scoped.height, scoped.height]];
+    for (const [y0, y1] of rows) {
       g.drawImage(scoped, 0, from, scoped.width, y0 - from, 0, to, scoped.width, y0 - from);
       to += y0 - from;
       from = y1;
     }
     scoped = c;
   }
-  const diff = async (left, right, masks) => {
+  const diff = async (left: OffscreenCanvas, right: OffscreenCanvas, masks: Rect[]) => {
     const w = Math.min(left.width, right.width);
     const h = Math.min(left.height, right.height);
-    const p = left.getContext("2d").getImageData(0, 0, w, h).data;
-    const o = right.getContext("2d").getImageData(0, 0, w, h).data;
+    const p = context(left).getImageData(0, 0, w, h).data;
+    const o = context(right).getImageData(0, 0, w, h).data;
     const masked = new Uint8Array(w * h);
     for (const m of masks)
       for (let y = Math.max(0, Math.floor(m.y)); y < Math.min(h, Math.ceil(m.y + m.h)); y++)
@@ -276,17 +320,15 @@ async function compare([a, b, threshold, scope]) {
     let maskedCount = 0;
     for (let i = 0; i < w * h; i++) {
       const k = i * 4;
-      const grey = 255 - (255 - p[k]) * 0.25;
+      const [pr = 0, pg = 0, pb = 0] = p.subarray(k, k + 3);
+      const [or = 0, og = 0, ob = 0] = o.subarray(k, k + 3);
+      const grey = 255 - (255 - pr) * 0.25;
       if (masked[i]) {
         maskedCount++;
         map.data.set([grey * 0.8, grey * 0.88, 255, 255], k);
         continue;
       }
-      const delta = Math.max(
-        Math.abs(p[k] - o[k]),
-        Math.abs(p[k + 1] - o[k + 1]),
-        Math.abs(p[k + 2] - o[k + 2]),
-      );
+      const delta = Math.max(Math.abs(pr - or), Math.abs(pg - og), Math.abs(pb - ob));
       if (delta > threshold) differing++;
       map.data.set(delta > threshold ? [220, 38, 38, 255] : [grey, grey, grey, 255], k);
     }
@@ -299,7 +341,7 @@ async function compare([a, b, threshold, scope]) {
     g.drawImage(ours, paper.width + 16, 0);
     g.fillStyle = "rgba(37, 99, 235, 0.3)";
     g.strokeStyle = "rgb(37, 99, 235)";
-    const mark = (x, y, w, h) => {
+    const mark = (x: number, y: number, w: number, h: number) => {
       g.fillRect(x, y, w, h);
       g.strokeRect(x + 0.5, y + 0.5, w - 1, h - 1);
     };
@@ -326,7 +368,8 @@ async function compare([a, b, threshold, scope]) {
   };
 }
 
-const pct = (r) => Math.round((r.differing / r.compared) * 10000) / 100;
+const pct = (r: { differing: number; compared: number }) =>
+  Math.round((r.differing / r.compared) * 10000) / 100;
 const browser = await chromium.launch();
 const page = await browser.newPage({
   viewport: { width: 1440, height: 900 },
@@ -334,19 +377,19 @@ const page = await browser.newPage({
 });
 await page.goto(pathToFileURL(pagePath).href);
 await page.evaluate(() => document.fonts.ready);
-const results = [];
+const results: unknown[] = [];
 for (const region of REGIONS) {
   const ours = await page.locator(region.selector).screenshot();
-  const paper = await readFile(path.join(args.paper, region.name + ".png"));
+  const paper = await readFile(path.join(paperDir, region.name + ".png"));
   const diff = await page.evaluate(compare, [
     paper.toString("base64"),
     ours.toString("base64"),
     THRESHOLD,
     region.scope,
-  ]);
-  const save = (suffix, b64) =>
+  ] as [string, string, number, Scope]);
+  const save = (suffix: string, b64: string) =>
     writeFile(
-      path.join(args.out, `paper-parity-${region.name}${suffix}.png`),
+      path.join(outDir, `paper-parity-${region.name}${suffix}.png`),
       Buffer.from(b64, "base64"),
     );
   await save("", diff.unmasked.png);
@@ -368,10 +411,10 @@ for (const region of REGIONS) {
     outOfScope: region.outOfScope,
   });
 }
-await page.screenshot({ path: path.join(args.out, "paper-parity-page.png"), fullPage: true });
+await page.screenshot({ path: path.join(outDir, "paper-parity-page.png"), fullPage: true });
 await browser.close();
 await writeFile(
-  path.join(args.out, "paper-parity.json"),
+  path.join(outDir, "paper-parity.json"),
   JSON.stringify({ threshold: THRESHOLD, results }, null, 2) + "\n",
 );
 console.log(JSON.stringify({ threshold: THRESHOLD, results }));
