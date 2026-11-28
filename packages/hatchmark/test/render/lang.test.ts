@@ -76,12 +76,12 @@ describe("lang on locale-formatted values", () => {
   it("marks the period control's dates, never its English names", () => {
     const html = control("de-DE");
     expect(html).toContain(
-      '<span class="hm-period-name" lang="de-DE">1. Sept. \u2013 10. Sept. 2026</span>',
+      '<span class="hm-period-name" lang="de-DE">1.\u201310. Sept. 2026</span>',
     );
     expect(html).toContain(
-      '<span>Last 7 days</span><span class="hm-period-dates" lang="de-DE">25. Okt. \u2013 31. Okt. 2026</span>',
+      '<span>Last 7 days</span><span class="hm-period-dates" lang="de-DE">25.\u201331. Okt. 2026</span>',
     );
-    expect(html).toContain('<span lang="de-DE">1. Okt. \u2013 7. Okt. 2026</span>');
+    expect(html).toContain('<span lang="de-DE">1.\u20137. Okt. 2026</span>');
     expect(html).toContain(
       '<input type="text" inputmode="numeric" autocomplete="off" placeholder="DD.MM.YYYY" data-hm-edge="start" lang="de-DE">',
     );
