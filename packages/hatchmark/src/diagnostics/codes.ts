@@ -355,6 +355,11 @@ export const CODES = {
     explanation:
       'A time series with incomplete: show draws its last bucket like the others, but the data covers only part of it, so a flow metric (a sum or count over the bucket) reads low there. Leave incomplete at "mark" to show it as in progress, or set "hide" to leave the bucket out.',
   },
+  HM4015: {
+    title: "snapshot missing from a period",
+    explanation:
+      "A metric with over_time last, first, avg, min or max reads a snapshot table one snapshot at a time. A complete period of a time series with no snapshot of the source in it shows no value (a gap), never 0, and a period whose latest snapshot is before its last day shows the value as of that earlier snapshot. Both usually mean a nightly load was missed. Load the missing snapshots, or show the series at a coarser grain. The warning comes from the source's snapshots, whatever the dashboard's filters keep.",
+  },
   HM4016: {
     title: "timestamps without an offset",
     explanation:

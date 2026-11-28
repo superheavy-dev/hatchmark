@@ -1,7 +1,7 @@
 import type { Dashboard, Format, Project } from "../spec/index.js";
 import { assembleWith } from "./assemble.js";
 import type { DashboardData, DateSpan, Value } from "./dashboard-data.js";
-import { formatWall, parseInstant, toLocal } from "./instants.js";
+import { formatWall, fromLocal, parseInstant, toLocal } from "./instants.js";
 import type {
   ExecutionContext,
   MeasureComponent,
@@ -139,7 +139,16 @@ export function cubeResult(
   const lo = bounds.kind === "bounded" ? dayOf(bounds.start, false) : -Infinity;
   const hi = bounds.end === undefined ? Infinity : dayOf(bounds.end, true);
   if (query.evaluation !== undefined) {
-    return snapshotCubeResult(query, query.evaluation, cube, origin, lo, hi);
+    const exact = (bound: string | undefined) =>
+      bound?.endsWith("Z") === true ? parseInstant(bound) : undefined;
+    const window = {
+      lo,
+      hi,
+      from: bounds.kind === "bounded" ? exact(bounds.start) : undefined,
+      to: exact(bounds.end),
+      timezone: context.timezone,
+    };
+    return snapshotCubeResult(query, query.evaluation, cube, origin, window);
   }
   const components = query.measures.flatMap((m) => m.components);
   const dims = query.dimensions;
@@ -238,18 +247,31 @@ function snapshotCubeResult(
   evaluation: SnapshotEvaluation,
   cube: DayCube,
   origin: number,
-  lo: number,
-  hi: number,
+  window: {
+    lo: number;
+    hi: number;
+    from: bigint | undefined;
+    to: bigint | undefined;
+    timezone: string;
+  },
 ): QueryResult {
   const components = query.measures.flatMap((m) => m.components);
   const dims = query.dimensions;
   let columns = 0;
   const columnAt = dims.map((d) => (d.kind !== "time" ? columns++ : -1));
-  const inside = (day: number | undefined) => day !== undefined && day >= lo && day < hi;
-  const markers = (cube.snapshots?.days ?? []).flatMap((day, i) =>
-    inside(day) ? [{ day, instant: cube.snapshots?.instants[i] ?? "" }] : [],
-  );
-  const entries = cube.days.flatMap((day, i) => (inside(day) ? [i] : []));
+  const at = (instant: string) =>
+    instant.length === 10
+      ? fromLocal(parseInstant(instant), window.timezone)
+      : parseInstant(instant.slice(0, 26));
+  const inside = (day: number | undefined, instant: string) =>
+    day !== undefined &&
+    (window.from === undefined ? day >= window.lo : at(instant) >= window.from) &&
+    (window.to === undefined ? day < window.hi : at(instant) < window.to);
+  const markers = (cube.snapshots?.days ?? []).flatMap((day, i) => {
+    const instant = cube.snapshots?.instants[i] ?? "";
+    return inside(day, instant) ? [{ day, instant }] : [];
+  });
+  const entries = cube.days.flatMap((day, i) => (inside(day, cube.instants?.[i] ?? "") ? [i] : []));
   const rows: unknown[][] = [];
   const groupingSet: number[] = [];
   query.groupingSets.forEach((set, s) => {

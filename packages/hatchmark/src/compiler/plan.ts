@@ -93,7 +93,8 @@ export type PlannedDimension =
   | { kind: "region"; column: string; geo: GeographyId; unmatched?: "keep" }
   /**
    * The snapshot a row belongs to: its time column's value, as "YYYY-MM-DD" for a DATE column and
-   * as the UTC instant "YYYY-MM-DDTHH:MM:SS.ffffffZ" for a timestamp. Only in a snapshot query's day
+   * as the UTC instant "YYYY-MM-DDTHH:MM:SS.ffffffZ" for a timestamp, with nine fraction digits for
+   * a TIMESTAMP_NS column, so values a nanosecond apart stay apart. Only in a snapshot query's day
    * cube, where it makes each snapshot its own bucket.
    */
   | { kind: "snapshot"; column: string };

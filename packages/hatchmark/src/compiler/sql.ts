@@ -105,6 +105,10 @@ function instant(source: SqlSource, name: string, timezone: string, sql: Sql): s
 function snapshotKey(source: SqlSource, name: string, timezone: string, sql: Sql): string {
   const { name: actual, type } = column(source, name);
   if (type === "DATE") return quote(actual);
+  if (type === "TIMESTAMP_NS") {
+    const q = quote(actual);
+    return `(epoch_ns(${q}) - (epoch_us(CAST(${q} AS TIMESTAMP)) - epoch_us(${instant(source, actual, timezone, sql)})) * 1000)`;
+  }
   if (isTimestamp(type)) return instant(source, actual, timezone, sql);
   throw new Error(
     `time column "${actual}" of source "${source.name}" has type ${type}; it needs DATE or TIMESTAMP`,
@@ -273,9 +277,12 @@ function dimensionSql(
   }
   if (dimension.kind === "snapshot") {
     const key = snapshotKey(source, dimension.column, context.timezone, sql);
-    return column(source, dimension.column).type === "DATE"
-      ? `CAST(${key} AS VARCHAR)`
-      : `strftime(timezone('UTC', ${key}), '%Y-%m-%dT%H:%M:%S.%fZ')`;
+    const { type } = column(source, dimension.column);
+    if (type === "DATE") return `CAST(${key} AS VARCHAR)`;
+    if (type !== "TIMESTAMP_NS")
+      return `strftime(timezone('UTC', ${key}), '%Y-%m-%dT%H:%M:%S.%fZ')`;
+    const rest = `((${key} % 1000) + 1000) % 1000`;
+    return `strftime(make_timestamp((${key} - ${rest}) // 1000), '%Y-%m-%dT%H:%M:%S.%f') || lpad(CAST(${rest} AS VARCHAR), 3, '0') || 'Z'`;
   }
   if (dimension.kind === "time") {
     const local = `CAST(${localTime(source, dimension.column, context.timezone, sql)} AS DATE)`;

@@ -68,9 +68,10 @@ row, "Other (16)", recomputed from those rows' parts rather than looked up:
 - sums and counts add up, min and max take the extreme;
 - an average divides the summed sum by the summed count, and a ratio divides its two folded sides,
   so Other's average order value is Other's revenue ÷ Other's orders;
-- distinct counts, medians, SQL metrics declared `additive: false` and sums read with
-  `over_time` min or max cannot be folded (two rows can share a customer), so Other shows `—` for
-  them and check warns with HM4063.
+- distinct counts, medians, SQL metrics declared `additive: false`, any metric read with
+  `over_time` min or max, and an average, min or max read with `over_time` avg cannot be folded
+  (two rows can share a customer, or peak on different snapshots), so Other shows `—` for them and
+  check warns with HM4063.
 
 A real group named "Other" or a null group stays its own row; the data marks the folded row with
 `kind: "other"`, never by its label. Shares of Other are of the grand total, and the shown rows plus

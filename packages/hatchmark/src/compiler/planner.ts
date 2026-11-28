@@ -1,6 +1,7 @@
 import { type Diagnostic, docsCommand } from "../diagnostics/index.js";
 import {
   type Anchors,
+  aggregateFoldable,
   type Block,
   blockId,
   blockTarget,
@@ -147,14 +148,13 @@ export function plannedMeasure(
   const column = metric.column === undefined ? {} : { column: metric.column };
   const pick = snapshotPick(metric);
   if (pick === "avg" || pick === "min" || pick === "max") {
-    const additive = metric.aggregate === "sum" || metric.aggregate === "count";
     const id = `${name}__${metric.aggregate}`;
     const c = component(
       id,
       metric.aggregate,
       metric,
       column,
-      pick === "avg" && additive ? "sum" : "none",
+      aggregateFoldable(metric) ? "sum" : "none",
     );
     return { metric: name, components: [c], combine: { op: "identity", component: id } };
   }

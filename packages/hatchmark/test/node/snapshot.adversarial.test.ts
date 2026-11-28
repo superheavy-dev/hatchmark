@@ -49,13 +49,15 @@ const ZONES = [
   "Asia/Tokyo",
   "Australia/Sydney",
   "Pacific/Auckland",
+  "America/Havana",
 ];
+const HAVANA_FALL_BACK = ["2024-11-03", "2025-11-02", "2026-11-01"];
 const YEAR_ANCHORS = ["01-01", "02-01", "04-01", "07-01", "10-01", "03-15"];
-const TIMES = ["05:00:00", "09:30:00", "12:00:00", "17:45:00", "23:30:00"];
+const TIMES = ["04:30:00", "05:00:00", "05:30:00", "09:30:00", "12:00:00", "17:45:00", "23:30:00"];
 const REGIONS = ["east", "west", "north", null];
 const PICKS = ["last", "first", "avg", "min", "max"] as const;
 type Pick = (typeof PICKS)[number];
-type Kind = "date" | "local" | "utc";
+type Kind = "date" | "local" | "utc" | "ns";
 const UNITS = { day: 1, week: 7 } as const;
 
 interface Case {
@@ -84,7 +86,7 @@ function pick<T>(rand: () => number, items: readonly T[]): T {
 function generate(seed: number): Case {
   const rand = rng(seed);
   const tz = pick(rand, ZONES);
-  const kind = pick(rand, ["date", "local", "utc"] as const);
+  const kind = pick(rand, ["date", "local", "utc", "ns"] as const);
   const year = pick(rand, YEAR_ANCHORS);
   const start = addDays("2024-03-01", Math.floor(rand() * 500));
   const span = 60 + Math.floor(rand() * 420);
@@ -93,14 +95,28 @@ function generate(seed: number): Case {
     (a, b) => a - b,
   );
   const instants: string[] = [];
-  for (const o of offsets) {
-    const day = addDays(start, o);
+  const days = offsets.map((o) => addDays(start, o));
+  const repeated = tz === "America/Havana" && kind !== "date" && kind !== "local";
+  for (const d of repeated ? HAVANA_FALL_BACK : []) {
+    if (d >= start && d < addDays(start, span) && !days.includes(d)) days.push(d);
+  }
+  for (const day of days.sort()) {
     if (kind === "date") {
       instants.push(day);
       continue;
     }
-    const times = [...new Set([pick(rand, TIMES), ...(rand() < 0.3 ? [pick(rand, TIMES)] : [])])];
-    for (const t of times.sort()) instants.push(`${day} ${t}`);
+    const times =
+      HAVANA_FALL_BACK.includes(day) && repeated
+        ? ["04:30:00", "05:30:00"]
+        : [...new Set([pick(rand, TIMES), ...(rand() < 0.3 ? [pick(rand, TIMES)] : [])])];
+    for (const t of times.sort()) {
+      if (kind !== "ns") {
+        instants.push(`${day} ${t}`);
+        continue;
+      }
+      instants.push(`${day} ${t}.000000100`);
+      if (rand() < 0.5) instants.push(`${day} ${t}.000000200`);
+    }
   }
   const accounts = ["a1", "a2", "a3", "a4", "a5", "a6"];
   const home = new Map(accounts.map((a) => [a, pick(rand, REGIONS)]));
@@ -217,8 +233,8 @@ function project(c: Case) {
       sources: {
         vip: { type: "csv", path: "data/vip.csv" },
         balances: {
-          type: "csv",
-          path: "data/balances.csv",
+          type: c.kind === "ns" ? "parquet" : "csv",
+          path: c.kind === "ns" ? "data/balances.parquet" : "data/balances.csv",
           snapshot: "snapshot_at",
           ...(c.kind === "local" ? { timezone: c.tz } : {}),
         },
@@ -293,28 +309,35 @@ afterAll(async () => {
 const lit = (s: string) => `'${s.replaceAll("'", "''")}'`;
 
 async function load(c: Case, path: string): Promise<void> {
-  const type = c.kind === "date" ? "DATE" : "TIMESTAMP";
+  const type = c.kind === "date" ? "DATE" : c.kind === "ns" ? "TIMESTAMP_NS" : "TIMESTAMP";
   await oracle.run(
     `CREATE OR REPLACE TABLE bal AS SELECT * FROM read_csv(${lit(path)}, header = true, columns = {'snapshot_at': '${type}', 'account': 'VARCHAR', 'region': 'VARCHAR', 'status': 'VARCHAR', 'balance': 'INTEGER'})`,
   );
   await oracle.run(
     `CREATE OR REPLACE TABLE vip_keys AS SELECT * FROM read_csv(${lit(path.replace(/balances\.csv$/, "vip.csv"))}, header = true, columns = {'account': 'VARCHAR'})`,
   );
+  if (c.kind === "ns") {
+    await oracle.run(
+      `COPY (SELECT * FROM bal) TO ${lit(path.replace(/\.csv$/, ".parquet"))} (FORMAT PARQUET)`,
+    );
+  }
   const tz = lit(c.tz);
+  const utc = "timezone('UTC', CAST(snapshot_at AS TIMESTAMP))";
   const instant =
     c.kind === "date"
       ? `timezone(${tz}, CAST(snapshot_at AS TIMESTAMP))`
       : c.kind === "local"
         ? `timezone(${tz}, snapshot_at)`
-        : `timezone('UTC', snapshot_at)`;
+        : utc;
   const day =
     c.kind === "date"
       ? "snapshot_at"
       : c.kind === "local"
         ? "CAST(snapshot_at AS DATE)"
-        : `CAST(timezone(${tz}, timezone('UTC', snapshot_at)) AS DATE)`;
+        : `CAST(timezone(${tz}, ${utc}) AS DATE)`;
+  const key = c.kind === "ns" ? "epoch_ns(snapshot_at)" : instant;
   await oracle.run(
-    `CREATE OR REPLACE VIEW v AS SELECT *, ${instant} AS i, ${day} AS d FROM bal WHERE snapshot_at IS NOT NULL`,
+    `CREATE OR REPLACE VIEW v AS SELECT *, ${instant} AS i, ${key} AS k, ${day} AS d FROM bal WHERE snapshot_at IS NOT NULL`,
   );
 }
 
@@ -340,18 +363,18 @@ async function evaluate(
   const filter = rowFilter(c, m.active, m.vip);
   const chosen =
     m.pick === "last"
-      ? "i = (SELECT max(i) FROM w)"
+      ? "k = (SELECT max(k) FROM w)"
       : m.pick === "first"
-        ? "i = (SELECT min(i) FROM w)"
+        ? "k = (SELECT min(k) FROM w)"
         : "TRUE";
   const outer = m.pick === "avg" ? "avg" : m.pick === "min" ? "min" : "max";
   const agg = m.agg === "sum" ? "coalesce(sum(balance), 0)" : "count(balance)";
   const rows = await oracle.rows(`
     WITH w AS (SELECT * FROM v WHERE ${where}),
-    instants AS (SELECT DISTINCT i FROM w WHERE ${chosen}),
+    instants AS (SELECT DISTINCT k FROM w WHERE ${chosen}),
     groups AS (${group ? `SELECT DISTINCT region AS g FROM v WHERE (${domain}) AND ${rowFilter(c, false)}` : "SELECT NULL AS g"})
     SELECT g, ${outer}(t) AS value FROM (
-      SELECT groups.g, (SELECT ${agg} FROM w x WHERE x.i = instants.i AND ${filter}${group ? " AND x.region IS NOT DISTINCT FROM groups.g" : ""}) AS t
+      SELECT groups.g, (SELECT ${agg} FROM w x WHERE x.k = instants.k AND ${filter}${group ? " AND x.region IS NOT DISTINCT FROM groups.g" : ""}) AS t
       FROM instants, groups
     ) GROUP BY g`);
   return new Map(rows.map((r) => [String(r.g), r.value === null ? null : Number(r.value)]));
@@ -365,7 +388,11 @@ function spanWhere(c: Case, span: DateSpan | undefined, current: boolean): strin
     return `${asOf} AND i < timezone(${lit(c.tz)}, CAST((SELECT max(d) FROM v) AS TIMESTAMP))`;
   }
   const tz = lit(c.tz);
-  const at = (wall: string) => `timezone(${tz}, CAST(${lit(wall.replace("T", " "))} AS TIMESTAMP))`;
+  const at = (wall: string) => {
+    const w = `CAST(${lit(wall.replace("T", " "))} AS TIMESTAMP)`;
+    const later = `timezone(${tz}, ${w} + INTERVAL 1 HOUR)`;
+    return `(CASE WHEN ${later} - timezone(${tz}, ${w}) = INTERVAL 2 HOUR THEN ${later} - INTERVAL 1 HOUR ELSE timezone(${tz}, ${w}) END)`;
+  };
   const start = at(span.startAt ?? span.start);
   const end = span.endAt === undefined ? at(span.end) : current ? undefined : at(span.endAt);
   return `i >= ${start}${end === undefined ? "" : ` AND i < ${end}`}`;
@@ -411,7 +438,7 @@ async function check(c: Case, data: DashboardData | undefined, where: string): P
   const series = blocks.get("series") as LineData | undefined;
   const buckets = series?.axis.buckets ?? [];
   const cut = series?.axis.window
-    ? spanWhere(c, { ...series.axis.window, start: "0001-01-01" }, true)
+    ? spanWhere(c, { ...series.axis.window, start: buckets[0] ?? "0001-01-01" }, true)
     : "FALSE";
   const inBucket = (b: string) =>
     `d >= DATE ${lit(b)} AND d < DATE ${lit(bucketEnd(b, c.grain))} AND ${cut}`;
@@ -547,13 +574,21 @@ describe("snapshot over_time against a DuckDB oracle", () => {
         if (custom !== undefined && base.data !== undefined) {
           const rand = rng(seed * 7 + 3);
           const spanDays = Math.round((ms(custom.span.end) - ms(custom.span.start)) / DAY);
+          const ranges: { start: string; end: string }[] = [];
           for (let n = 0; n < 2 && spanDays > 1; n++) {
             const startAt = Math.floor(rand() * (spanDays - 1));
             const length = 1 + Math.floor(rand() * Math.min(150, spanDays - startAt - 1));
-            const range = {
+            ranges.push({
               start: addDays(custom.span.start, startAt),
               end: addDays(custom.span.start, startAt + length),
-            };
+            });
+          }
+          for (const day of c.tz === "America/Havana" ? HAVANA_FALL_BACK : []) {
+            if (day > custom.span.start && day < custom.span.end) {
+              ranges.push({ start: day, end: custom.span.end });
+            }
+          }
+          for (const range of ranges) {
             const fromCube = customRangeDashboard(custom, "period", range);
             const bound = await runDashboard(loaded, "d", executor, undefined, { period: range });
             failures.push(...sameBlocks(fromCube, bound.data, `custom ${JSON.stringify(range)}`));

@@ -5,6 +5,7 @@ import {
   type Metric,
   type Project,
   parseDiagnostics,
+  type ResolvedGrain,
   resolveGrain,
   timeNature,
 } from "../spec/index.js";
@@ -39,7 +40,7 @@ import {
   type QueryResult,
   readsRawSql,
 } from "./plan.js";
-import { planDashboard } from "./planner.js";
+import { planDashboard, queryId, ROWS_MEASURE } from "./planner.js";
 import {
   boundInstant,
   bucketEnd,
@@ -448,6 +449,7 @@ export async function runDashboardBindings(
     });
     outcomes.push(outcome);
   }
+  const snapshots = await snapshotDays(plan, executor, base);
   const message = (error: unknown) => (error instanceof Error ? error.message : String(error));
   return contexts.map((context, at) => {
     const results = new Map<string, QueryResult>();
@@ -481,6 +483,9 @@ export async function runDashboardBindings(
       diagnostics: [
         ...diagnostics,
         ...(assembled.data && at === 0 ? matchDiagnostics(project, assembled.data) : []),
+        ...(assembled.data && at === 0
+          ? snapshotGaps(project, plan, assembled.data, context, snapshots)
+          : []),
         ...imprecise.values(),
         ...largeResults(project, dashboard, plan, results),
         ...assembled.diagnostics,
@@ -490,6 +495,144 @@ export async function runDashboardBindings(
 }
 
 type QueryOutcome = { result: QueryResult } | { error: unknown };
+
+const snapshotKey = (source: string, column: string) => JSON.stringify([source, column]);
+
+/**
+ * The local dates holding a snapshot of each source and time column a snapshot query buckets in
+ * time, over all rows through the horizon and ignoring filters (RFC 0001 section 6.7, HM4015).
+ * A column whose query fails is left out; the block's own query reports the failure.
+ */
+async function snapshotDays(
+  plan: QueryPlan,
+  executor: DashboardExecutor,
+  context: ExecutionContext,
+): Promise<Map<string, string[]>> {
+  const out = new Map<string, string[]>();
+  for (const query of plan.queries) {
+    const column = query.evaluation?.column;
+    if (column === undefined || !query.dimensions.some((d) => d.kind === "time")) continue;
+    const key = snapshotKey(query.source, column);
+    if (out.has(key)) continue;
+    const shape: Omit<PlannedQuery, "id"> = {
+      source: query.source,
+      input: query.input,
+      measures: [ROWS_MEASURE],
+      dimensions: [{ kind: "time", column, grain: { unit: "day" } }],
+      groupingSets: [[0]],
+      window: {
+        range: "all_time",
+        shift: "none",
+        through: "horizon",
+        column,
+        horizons: [{ source: query.source, column }],
+      },
+      params: [],
+      evaluation: { kind: "snapshot", column, pick: "last" },
+    };
+    try {
+      const result = await executor.execute({ id: queryId(shape), ...shape }, context);
+      out.set(
+        key,
+        result.rows.flatMap((row) => (typeof row[0] === "string" ? [row[0]] : [])).sort(),
+      );
+    } catch {}
+  }
+  return out;
+}
+
+/**
+ * HM4015 for each time series that reads a snapshot query: complete buckets after the source's
+ * first snapshot that hold none (shown as gaps), and complete buckets whose latest snapshot is
+ * before their last day (shown as of that snapshot). A bucket is complete when it ends at or before
+ * the source's horizon and the as-of; a clipped first bucket is not.
+ */
+function snapshotGaps(
+  project: Project,
+  plan: QueryPlan,
+  data: DashboardData,
+  context: ExecutionContext,
+  snapshots: ReadonlyMap<string, string[]>,
+): Diagnostic[] {
+  const file = project.dashboards.get(plan.dashboard);
+  const queries = new Map(plan.queries.map((q) => [q.id, q]));
+  const tz = context.timezone;
+  const asOf = parseInstant(context.asOfInstant ?? "");
+  const ids = (e: MeasureExpression): string[] =>
+    e.op === "ref" ? [e.queryId] : [...ids(e.numerator), ...ids(e.denominator)];
+  const out: Diagnostic[] = [];
+  for (const block of data.blocks) {
+    if (block.type !== "line" && block.type !== "area" && block.type !== "bar") continue;
+    if (block.axis.kind !== "time") continue;
+    const { buckets } = block.axis;
+    const planned = plan.blocks.find((b) => b.blockId === block.id);
+    if (planned === undefined) continue;
+    const clipped = block.series.some((s) => s.partial?.some((p) => p.edge === "start"));
+    const read = new Map<string, { source: string; column: string; grain: ResolvedGrain }>();
+    for (const expression of Object.values(planned.measures)) {
+      for (const id of ids(expression)) {
+        const query = queries.get(id);
+        const column = query?.evaluation?.column;
+        const time = query?.dimensions.find((d) => d.kind === "time");
+        if (query === undefined || column === undefined || time?.kind !== "time") continue;
+        read.set(snapshotKey(query.source, column), {
+          source: query.source,
+          column,
+          grain: time.grain,
+        });
+      }
+    }
+    for (const [key, { source, column, grain }] of read) {
+      const days = snapshots.get(key);
+      const first = days?.[0];
+      if (days === undefined || first === undefined) continue;
+      const through = context.horizons?.find((h) => h.source === source && h.column === column);
+      const horizon = through === undefined ? asOf : parseInstant(through.through);
+      const limit = horizon < asOf ? horizon : asOf;
+      const missing: string[] = [];
+      const early: { bucket: string; last: string }[] = [];
+      buckets.forEach((bucket, i) => {
+        if (i === 0 && clipped) return;
+        const end = bucketEnd(bucket, grain);
+        if (end <= first || fromLocal(parseInstant(end), tz) > limit) return;
+        const inside = days.filter((d) => d >= bucket && d < end);
+        const last = inside[inside.length - 1];
+        if (last === undefined) missing.push(bucket);
+        else if (nextDay(last) !== end) early.push({ bucket, last });
+      });
+      const location = file
+        ? {
+            file: file.file,
+            pointer: planned.pointer,
+            ...file.document.locationOf(planned.pointer),
+          }
+        : {};
+      const unit = grain.unit;
+      if (missing.length > 0) {
+        out.push({
+          code: "HM4015",
+          severity: "warning",
+          message: `block "${block.id}" has ${missing.length} complete ${unit}${missing.length === 1 ? "" : "s"} with no snapshot of source "${source}" (from ${missing[0]}), shown as gaps`,
+          ...location,
+          help: "load the missing snapshots, or show the series at a coarser grain",
+          docs: docsCommand("HM4015"),
+        });
+      }
+      const [firstEarly] = early;
+      if (firstEarly !== undefined) {
+        out.push({
+          code: "HM4015",
+          severity: "warning",
+          message: `block "${block.id}" reads ${early.length} complete ${unit}${early.length === 1 ? "" : "s"} of source "${source}" at a snapshot before the ${unit}'s last day (the ${unit} from ${firstEarly.bucket} at ${firstEarly.last})`,
+          ...location,
+          help: "load a snapshot on each period's last day, or read the value as of the snapshot shown",
+          docs: docsCommand("HM4015"),
+        });
+      }
+    }
+  }
+  return out;
+}
 
 async function runQuery(
   executor: DashboardExecutor,
