@@ -17,7 +17,8 @@ ship with it (`hatchmark docs`) over memory.
 
 - Every command runs without prompts and prints one line of JSON with `--json`. Logs go to stderr.
 - Exit codes: 0 ok (warnings allowed), 1 errors in your files, 2 usage or config error,
-  3 environment problem (such as a missing data file), 4 internal bug.
+  3 only environment problems (such as a missing data file), 4 internal bug. Check's exact rule
+  for mixed errors is in [references/diagnostics.md](references/diagnostics.md).
 - YAML is the only format for specs. One file per thing; the file name is the name, lowercase
   snake_case: `metrics/net_revenue.yaml` is the metric `net_revenue`.
 - Run `hatchmark check --json` after every edit and fix every error before you finish.
