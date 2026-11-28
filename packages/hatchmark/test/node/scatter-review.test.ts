@@ -234,9 +234,7 @@ it("does not advertise one shared date range for a dated metric and an all-time 
   if (data === undefined) throw new Error("no dashboard data");
   const subtitle = renderFragment(data).match(/<\/h2><p>([^<]+)/)?.[1];
   expect(subtitle).not.toMatch(/^Revenue against Units by market, Nov 1.*5, 2026$/i);
-  expect(subtitle).toBe(
-    "Revenue against Units by market, Nov 1 – 2, 2026, Units over all time",
-  );
+  expect(subtitle).toBe("Revenue against Units by market, Nov 1 – 2, 2026, Units over all time");
 });
 
 it("says all time, not the dashboard period, when no scatter metric has a time column", async () => {
