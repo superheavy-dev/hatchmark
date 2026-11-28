@@ -1,0 +1,13 @@
+# yaml-language-server: $schema=../../../../packages/hatchmark/schema/metric.schema.json
+label: Refunded orders
+type: aggregate
+table: orders
+aggregate: count
+filters:
+  - column: status
+    op: eq
+    value: refunded
+time: ordered_at
+format:
+  type: number
+better: down

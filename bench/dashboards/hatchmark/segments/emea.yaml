@@ -1,0 +1,5 @@
+label: EMEA
+filters:
+  - column: region
+    op: eq
+    value: EMEA

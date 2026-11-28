@@ -19,3 +19,6 @@ packages/hatchmark/assets/runtime/
 
 # Build cache (hatchmark build)
 .hatchmark/
+
+# Benchmark scratch: dataset, installs, builds and results
+bench/.work/

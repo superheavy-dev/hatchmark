@@ -197,6 +197,15 @@ importers:
         specifier: ^5.1.2
         version: 5.1.2(@types/node@22.20.7)(vite@8.3.8(@types/node@22.20.7)(esbuild@0.28.2)(yaml@2.9.1))
 
+  bench:
+    devDependencies:
+      '@types/node':
+        specifier: ^22.19.0
+        version: 22.20.7
+      playwright:
+        specifier: ^1.65.1
+        version: 1.65.1
+
   packages/hatchmark:
     dependencies:
       '@duckdb/node-api':

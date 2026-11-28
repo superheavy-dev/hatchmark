@@ -1,0 +1,9 @@
+# yaml-language-server: $schema=../../../../packages/hatchmark/schema/metric.schema.json
+label: Average order value
+type: ratio
+numerator: revenue
+denominator: orders
+format:
+  type: currency
+  decimals: 2
+better: up
