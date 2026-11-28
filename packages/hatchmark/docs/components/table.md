@@ -141,3 +141,5 @@ their current order (Other and subtotal rows included, subtotals labelled "Subto
 total row. Values are the full-precision numbers, not the formatted text, and a share is a fraction
 (0.392 for 39.2%). The file is UTF-8 with a byte order mark so spreadsheets read accents, and a key
 that starts with `=`, `+`, `-` or `@` is prefixed with `'` so it opens as text, never as a formula.
+The file doesn't follow the project's `locale`: it is always comma-separated with `.` as the
+decimal point. See [Locale](../project.md#locale).
