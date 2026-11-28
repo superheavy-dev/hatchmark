@@ -3,6 +3,7 @@ import { fileURLToPath } from "node:url";
 import { type Browser, chromium, type Page } from "playwright";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { GALLERY } from "../../gallery/variants.js";
+import type { DashboardData, MapData } from "../../src/compiler/dashboard-data.js";
 import { usedGeographies } from "../../src/geo/index.js";
 import { DEFAULT_THEME, pageStyles, renderFragment } from "../../src/render/index.js";
 
@@ -22,8 +23,17 @@ afterAll(async () => {
   await browser.close();
 });
 
-async function open(name: string, width: number, touch = false): Promise<Page> {
-  const data = variant(name);
+async function open(
+  name: string,
+  width: number,
+  touch = false,
+  edit: (block: MapData) => MapData = (block) => block,
+): Promise<Page> {
+  const original = variant(name);
+  const data: DashboardData = {
+    ...original,
+    blocks: original.blocks.map((b) => (b.type === "map" ? edit(b) : b)),
+  };
   const page = await browser.newPage({
     viewport: { width, height: 1000 },
     hasTouch: touch,
@@ -167,6 +177,23 @@ describe("map in a browser", () => {
       await page.close();
     },
   );
+
+  it.each(["map-us-tiles-square", "map-us-tiles-hex"])(
+    "%s on the narrowest card, span 3 at 1024 px, keeps every state code",
+    async (name) => {
+      const page = await open(name, 1024, false, (b) => ({ ...b, span: 3 }));
+      expect(await page.locator(".hm-map-tiles text >> visible=true").count()).toBe(52);
+      await page.close();
+    },
+  );
+
+  it("puts a tile map's empty-period message above the grid, not over it", async () => {
+    const page = await open("map-us-tiles-narrow", 390, true, (b) => ({ ...b, regions: [] }));
+    const message = await box(page, ".hm-map-empty");
+    const grid = await box(page, "svg[data-hm-kind=map]");
+    expect(message.y + message.height).toBeLessThanOrEqual(grid.y);
+    await page.close();
+  });
 
   it("keeps the note under the bar list beside the map", async () => {
     const page = await open("map-world-rate", 1440);

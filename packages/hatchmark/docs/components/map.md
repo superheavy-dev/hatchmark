@@ -53,6 +53,8 @@ most room, so labels stay legible down to a narrow card, and the grid is easy to
 `tile: hex` keeps more neighbours touching (each tile has six sides), at the cost of tighter labels
 and a staggered grid. The page carries no boundary data for a tile map, so it is lighter than a boundary map.
 
+## Scale
+
 | Field      | Meaning                                                                                                                                                                                                                                  |
 | ---------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `type`     | `quantile` (default): each class holds about as many regions. `threshold`: classes split at `breaks`. `linear`: equal-width classes from the lowest to the highest value.                                                                |

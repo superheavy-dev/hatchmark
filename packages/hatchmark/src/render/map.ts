@@ -20,6 +20,7 @@ export const MAP_LIST_GAP = 24;
 const MAX_HEIGHT = 520;
 const LEADER_SWATCH = 8;
 const TILE_LABEL_MIN = 8;
+const TILE_LABEL_SHARE = 0.5;
 const TILE_HALO = 2;
 
 /**
@@ -163,7 +164,7 @@ export function mapLayers(
 
 function tileLabels(ctx: RenderContext, geography: Geography, scale: number, box: string): string {
   const pitch = Math.sqrt(geography.regions[0]?.area ?? 0) * scale;
-  const size = Math.min(ctx.theme.leader.size, Math.floor(pitch * 0.4));
+  const size = Math.min(ctx.theme.leader.size, Math.floor(pitch * TILE_LABEL_SHARE));
   if (size < TILE_LABEL_MIN) return "";
   const u = (px: number) => Math.round((px / scale) * 1e3) / 1e3;
   const texts = geography.regions.map(
@@ -230,7 +231,7 @@ export function breakLabels(block: MapData, ctx: RenderContext): string[] {
 export function mapStyles(theme: Theme): string {
   return [
     `.hm-map{display:flex;flex-direction:column;gap:12px}.hm-map-legend{display:flex;flex-wrap:wrap;align-items:flex-start;gap:6px 16px;font-size:12px;line-height:16px;color:var(--hm-text-muted)}.hm-map-classes{display:block;max-width:100%;height:auto}.hm-map-none{display:inline-flex;align-items:center;gap:6px;padding-top:0}.hm-nd-line{stroke-opacity:var(--hm-nodata)}`,
-    `.hm-map-body{display:grid;grid-template-columns:minmax(0,1fr);gap:16px ${MAP_LIST_GAP}px}.hm-map-plot{position:relative;min-width:0}.hm-map-frame{position:relative;margin:0 auto}.hm-map-svg{display:block;width:100%;height:auto;overflow:visible}.hm-map-svg:focus{outline:none}.hm-map-svg:focus-visible{outline:2px solid var(--hm-focus);outline-offset:2px}.hm-map-layers{position:absolute;inset:0;pointer-events:none}.hm-map-layers svg{display:block;width:100%;height:100%;overflow:visible}.hm-map-labels .hm-leader{pointer-events:auto}.hm-map-empty{position:absolute;left:0;right:0;top:45%;text-align:center;color:var(--hm-text-muted)}`,
+    `.hm-map-body{display:grid;grid-template-columns:minmax(0,1fr);gap:16px ${MAP_LIST_GAP}px}.hm-map-plot{position:relative;min-width:0}.hm-map-frame{position:relative;margin:0 auto}.hm-map-svg{display:block;width:100%;height:auto;overflow:visible}.hm-map-svg:focus{outline:none}.hm-map-svg:focus-visible{outline:2px solid var(--hm-focus);outline-offset:2px}.hm-map-layers{position:absolute;inset:0;pointer-events:none}.hm-map-layers svg{display:block;width:100%;height:100%;overflow:visible}.hm-map-labels .hm-leader{pointer-events:auto}.hm-map-empty{position:absolute;left:0;right:0;top:45%;text-align:center;color:var(--hm-text-muted)}.hm-map-empty.hm-tiles{position:static;margin-bottom:12px}`,
     `.hm-map .hm-region,.hm-map .hm-leader{cursor:default}.hm-map .hm-hover path{fill:none;pointer-events:none}.hm-hover .hm-halo{stroke:var(--hm-card)}.hm-hover .hm-outline{stroke:var(--hm-text)}`,
     `.hm-map-side{min-width:0}.hm-map-side-in{display:flex;flex-direction:column;gap:8px}.hm-map-list{display:grid;grid-template-columns:auto fit-content(40%) minmax(48px,1fr) auto;column-gap:8px;align-content:start;list-style:none;margin:0;padding:0 4px 0 0;max-height:320px;overflow-y:auto;scrollbar-width:thin;scrollbar-color:var(--hm-border-strong) transparent}`,
     `.hm-map-list li{grid-column:1/-1;display:grid;grid-template-columns:subgrid;align-items:center;height:24px;font-size:12px;line-height:16px;border-radius:${theme.radius.control}px;padding:0 4px}.hm-ml-k{color:var(--hm-text-subtle);text-align:right}.hm-ml-n{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--hm-text-muted)}.hm-ml-bar{height:8px;background:var(--hm-card-alt)}.hm-ml-bar i{display:block;height:8px;min-width:1px}.hm-ml-v{text-align:right;white-space:nowrap}.hm-ml-v.hm-null{color:var(--hm-text-subtle)}`,
@@ -414,9 +415,10 @@ export function mapBody(
       )
       .join("");
   const plot = `<div class="hm-map-frame" style="max-width:${Math.floor((geography.width * MAX_HEIGHT) / geography.height)}px">${layer("under")}${renderMapSvg(block, ctx, geography)}${layer("over")}</div>`;
+  const tiles = block.shape === "tiles";
   const empty =
     block.regions.length === 0
-      ? `<p class="hm-map-empty">${block.empty === "no_complete_day" ? "No complete day yet" : `No ${esc(lowerFirst(metricOf(ctx, block.metric).label))} in this period`}</p>`
+      ? `<p class="hm-map-empty${tiles ? " hm-tiles" : ""}">${block.empty === "no_complete_day" ? "No complete day yet" : `No ${esc(lowerFirst(metricOf(ctx, block.metric).label))} in this period`}</p>`
       : "";
   const list = block.pair === "bars" ? barList(block, ctx, names) : "";
   const note = matchNote(block, ctx);
@@ -425,7 +427,7 @@ export function mapBody(
     `<figure class="hm-chart hm-map" data-hm-map="${esc(block.id)}">`,
     `<script type="application/json">${scriptJson(runtimeData(block, ctx, names))}</script>`,
     legend(block, ctx),
-    `<div class="hm-map-body${block.pair === "bars" ? sideClass : ""}"><div class="hm-map-plot">${plot}${empty}</div>`,
+    `<div class="hm-map-body${block.pair === "bars" ? sideClass : ""}"><div class="hm-map-plot">${tiles ? empty + plot : plot + empty}</div>`,
     list || note
       ? `<div class="hm-map-side"><div class="hm-map-side-in">${list}${note}</div></div>`
       : "",
