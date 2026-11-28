@@ -179,13 +179,18 @@ export function notBuiltYet(
 function filterTables(
   sources: Record<string, Source>,
   measures: PlannedMeasure[],
-  segmentFilters: Filter[] = [],
+  params: PlanParam[],
+  source: string,
 ): Record<string, FileSource> | undefined {
   const names = [
     ...measures
       .flatMap((m) => m.components)
       .flatMap((c) => [...c.filters, ...(c.anyOf ?? []).flatMap((s) => s.filters)]),
-    ...segmentFilters,
+    ...params.flatMap((param) =>
+      param.kind === "segment"
+        ? param.segments.filter((s) => s.sources.includes(source)).flatMap((s) => s.filters)
+        : [],
+    ),
   ]
     .flatMap((f) => (f.op === "in_table" || f.op === "not_in_table" ? [f.table] : []))
     .sort();
@@ -290,15 +295,7 @@ function planReading(
         );
       return measure ? [measure] : [];
     });
-    const tables = filterTables(
-      ctx.sources,
-      measures,
-      ctx.params.flatMap((param) =>
-        param.kind === "segment"
-          ? param.segments.filter((s) => s.sources.includes(group.source)).flatMap((s) => s.filters)
-          : [],
-      ),
-    );
+    const tables = filterTables(ctx.sources, measures, ctx.params, group.source);
     const shape: Omit<PlannedQuery, "id"> = {
       source: group.source,
       input,
@@ -364,7 +361,7 @@ function planReading(
         ...(only === undefined ? { anyOf: sets } : { filters: only.filters }),
       };
       const measure: PlannedMeasure = { ...ROWS_MEASURE, components: [counted] };
-      const tables = filterTables(ctx.sources, [measure]);
+      const tables = filterTables(ctx.sources, [measure], ctx.params, source);
       const shape: Omit<PlannedQuery, "id"> = {
         source,
         input: ctx.sources[source] as PlannedQuery["input"],

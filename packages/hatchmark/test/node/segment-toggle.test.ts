@@ -616,4 +616,52 @@ describe("segment filter key-table edges", () => {
     expect(code).toBe(0);
     expect(codes).toEqual(["HM2030"]);
   });
+  it("gives a map block's match report the key tables of the toggled segments it binds", async () => {
+    const project = files(
+      {
+        orders: { type: "csv", path: "data/orders.csv" },
+        keys: { type: "csv", path: "data/keys.csv" },
+      },
+      {
+        orders: "customer,state,amount\na,CA,10\nb,NY,20\nc,TX,40\n",
+        keys: "customer\na\nb\n",
+      },
+      {
+        label: "Eligible",
+        filters: [{ column: "customer", op: "in_table", table: "keys", key: "customer" }],
+      },
+      {
+        revenue: {
+          type: "aggregate",
+          aggregate: "sum",
+          table: "orders",
+          column: "amount",
+          label: "Revenue",
+          better: "up",
+          format: { type: "number" },
+        },
+      },
+    );
+    (project["dashboards/d.yaml"] as { blocks: unknown[] }).blocks = [
+      { type: "map", id: "m", geo: "us-states", region: "state", value: "revenue" },
+    ];
+    const { root } = await writeProject(project);
+    const { code, report } = await buildProject(root);
+    const codes = (report as { diagnostics: { code: string }[] }).diagnostics.map((d) => d.code);
+    expect(code).toBe(0);
+    expect(codes).not.toContain("HM2015");
+    expect(codes).not.toContain("HM4023");
+    const html = await readFile(path.join(root, "dist", "d", "index.html"), "utf8");
+    const json = html.match(
+      /<script type="application\/json" data-hm-segments[^>]*>(.*?)<\/script>/s,
+    );
+    const states: Record<string, { data: DashboardData }> = JSON.parse(json?.[1] ?? "{}").states;
+    expect(Object.keys(states).length).toBeGreaterThan(1);
+    for (const [key, state] of Object.entries(states)) {
+      expect(
+        state.data.blocks.map((b) => b.id),
+        key,
+      ).toEqual(["m"]);
+    }
+  });
 });
