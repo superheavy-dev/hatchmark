@@ -12,7 +12,12 @@ import {
   QueryRejected,
   SourceReadError,
 } from "../../node/index.js";
-import { CONFIG_FILE, loadProject, type ProjectConfig } from "../../spec/index.js";
+import {
+  CONFIG_FILE,
+  loadProject,
+  type ProjectConfig,
+  parseDiagnostics,
+} from "../../spec/index.js";
 import type { CommandHelp } from "../help.js";
 import { type CommandContext, type CommandResult, EXIT } from "../io.js";
 import { usageError } from "../usage.js";
@@ -109,7 +114,12 @@ export async function data(
 
   const { project, diagnostics } = await loadProject(nodeProjectHost(ctx.root));
   const config = project?.config.spec;
-  if (config === undefined) return report(ctx, diagnostics);
+  if (config === undefined) {
+    return report(ctx, [
+      ...diagnostics,
+      ...(project === undefined ? [] : parseDiagnostics(project)),
+    ]);
+  }
   const fileSources = Object.entries(config.sources)
     .filter(([, s]) => s.type !== "lookup")
     .map(([name]) => name)

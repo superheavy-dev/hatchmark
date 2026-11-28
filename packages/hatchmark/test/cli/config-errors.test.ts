@@ -96,6 +96,29 @@ describe("an invalid hatchmark.yaml", { timeout: 30_000 }, () => {
     });
   }
 
+  for (const argv of [
+    ["data", "describe", "orders"],
+    ["data", "query", "select 1"],
+    ["explain", "orders"],
+  ]) {
+    it(`reports each case from ${argv.slice(0, 2).join(" ")}`, async () => {
+      for (const c of CASES) {
+        const dir = await project(c.text);
+        const out = await cli([...argv, "--cwd", dir, "--json"]);
+        expect(out.code, c.name).toBe(2);
+        const report = JSON.parse(out.stdout);
+        expect(report, c.name).toMatchObject({ ok: false, error_count: 1 });
+        expect(report.diagnostics, c.name).toEqual([
+          expect.objectContaining({
+            code: c.code,
+            file: "hatchmark.yaml",
+            range: expect.objectContaining({ start: c.at }),
+          }),
+        ]);
+      }
+    });
+  }
+
   it("shows each case in the dev overlay, from startup and after an edit", async () => {
     const [first, ...rest] = CASES;
     const dir = await project(first.text);
