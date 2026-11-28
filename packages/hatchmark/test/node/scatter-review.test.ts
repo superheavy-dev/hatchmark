@@ -204,7 +204,7 @@ it("does not advertise the x reading's date range as if it also applied to y", a
   if (data === undefined) throw new Error("no dashboard data");
   const subtitle = renderFragment(data).match(/<\/h2><p>([^<]+)/)?.[1];
   expect(subtitle).not.toMatch(/^Lagged sales against Current sales by market, Nov 1.*4, 2026$/i);
-  expect(subtitle).toBe("Lagged sales against Current sales by market, Nov 1 – Nov 2, 2026");
+  expect(subtitle).toBe("Lagged sales against Current sales by market, Nov 1 – 2, 2026");
 });
 
 it("does not advertise one shared date range for a dated metric and an all-time metric", async () => {
@@ -235,7 +235,7 @@ it("does not advertise one shared date range for a dated metric and an all-time 
   const subtitle = renderFragment(data).match(/<\/h2><p>([^<]+)/)?.[1];
   expect(subtitle).not.toMatch(/^Revenue against Units by market, Nov 1.*5, 2026$/i);
   expect(subtitle).toBe(
-    "Revenue against Units by market, Nov 1 – Nov 2, 2026, Units over all time",
+    "Revenue against Units by market, Nov 1 – 2, 2026, Units over all time",
   );
 });
 
@@ -312,7 +312,7 @@ it.each(["x", "y", "size"] as const)(
     });
     const subtitle = renderFragment(data ?? fail()).match(/<\/h2><p>([^<]+)/)?.[1];
     expect(subtitle).toBe(
-      `Revenue against Units by market, Nov 1 – Nov 2, 2026, ${labels[untimed]} over all time`,
+      `Revenue against Units by market, Nov 1 – 2, 2026, ${labels[untimed]} over all time`,
     );
   },
 );
