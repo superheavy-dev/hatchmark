@@ -13,6 +13,7 @@ example. [README.md](README.md) lists every docs page; the files a project holds
 | `data query "<sql>"`                      | Runs one read-only SELECT over the project's file sources and prints at most `--limit` rows (default 100). See [data](#data).                                                                                                                                                                            |
 | `build [--out <dir>] [--no-cache]`        | Checks the project, runs every dashboard's queries (reusing unchanged results from `.hatchmark/cache/`) and writes static HTML pages to `outDir`. See [build.md](build.md).                                                                                                                              |
 | `dev [--port <n>] [--host <h>] [--open]`  | Serves every dashboard locally at the URLs `build` writes and updates the page on every save: changed cards swap in place, structural changes reload, errors show over the page. See [dev](#dev).                                                                                                        |
+| `docs [topic[#section]]`                  | Prints the docs bundled with the installed version: the topic list, one page, or one section. `--search "<words>"` finds sections. See [docs](#docs).                                                                                                                                                    |
 | `schema [project\|metric\|dashboard]`     | Prints the JSON Schema for a file kind, or all three keyed by kind.                                                                                                                                                                                                                                      |
 | `explain <code>`                          | Explains a diagnostic code such as `HM2003` and how to fix it.                                                                                                                                                                                                                                           |
 | `explain <metric>`                        | Prints the SQL that build runs for a metric. See [Printing the SQL](#printing-the-sql).                                                                                                                                                                                                                  |
@@ -163,6 +164,23 @@ writes to an existing `CLAUDE.md`. When that file does not include `@AGENTS.md`,
 In `AGENTS.md` it replaces the block between exactly one `<!-- hatchmark:start -->` line and one
 later `<!-- hatchmark:end -->` line, each alone on its line (surrounding spaces are fine), or appends a block when there are no marker lines. With any
 other combination, including marker text that shares a line with anything else, it changes nothing and reports `HM0005` with the marker lines.
+
+## docs
+
+`hatchmark docs` reads the docs that ship inside the installed package (`node_modules/hatchmark/docs/`),
+so what it prints always matches the version that runs your project, offline.
+
+- `hatchmark docs` lists the topics: each page's path without `.md` (`index` for the README), such as
+  `metrics` or `components/table`. A component page also answers to its short name, `table`.
+- `hatchmark docs <topic>` prints a page as it is.
+- `hatchmark docs <topic>#<section>` prints one section, from its heading to the next heading of the
+  same or a higher level. The section is the heading's anchor as GitHub writes it: lower case,
+  punctuation dropped, spaces as `-`, and `-1`, `-2` for repeated headings.
+- `hatchmark docs --search "<words>"` lists the sections whose own text (without their subsections)
+  holds every word, case-insensitive, best first, at most `--limit` (default 10). Each result has the
+  `section` to print it, its `title`, the `line` in the page and a `snippet`.
+
+JSON results carry `version`. A page or section result has `topic`, `path`, `title` and `content`.
 
 ## dev
 
