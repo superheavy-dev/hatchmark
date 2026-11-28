@@ -406,7 +406,7 @@ export interface MapMatch {
   key: string | number | boolean | null;
   /** The drawn region the value matched; null when it matched none or a region the map does not draw. */
   region: string | null;
-  /** Rows in the window with this value (of the value metric's first source). */
+  /** Rows in the window with this value, summed over every source the value metric reads. */
   rows: number;
   value: Value;
 }

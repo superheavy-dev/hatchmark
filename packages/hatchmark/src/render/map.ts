@@ -1,7 +1,8 @@
 import type { MapData, MapRegion, MapScale } from "../compiler/dashboard-data.js";
 import type { Geography } from "../geo/types.js";
+import type { Format } from "../spec/index.js";
 import { CAPTION, isNumber, lowerFirst, metricOf, type RenderContext, SHARE } from "./chart.js";
-import { formatKey, formatSpan, formatValue } from "./format.js";
+import { formatKey, formatSpan, formatValue, type NumberStyle } from "./format.js";
 import { textWidth } from "./measure.js";
 import { esc, langAttr, r, scriptJson, svgText } from "./svg.js";
 import type { MapColor, Theme } from "./theme.js";
@@ -61,7 +62,6 @@ export function mapLayout(block: MapData, width: number) {
   return { side, mapWidth };
 }
 
-/** The scale a map is drawn at in a plot this wide: fit the width, at most MAX_HEIGHT tall. */
 function mapScaleAt(geography: Geography, width: number): number {
   return Math.min(width / geography.width, MAX_HEIGHT / geography.height);
 }
@@ -182,7 +182,16 @@ export function regionTexts(block: MapData, ctx: RenderContext, region: MapRegio
 /** The legend's class edges as text: every break, in the metric's format. */
 export function breakLabels(block: MapData, ctx: RenderContext): string[] {
   const metric = metricOf(ctx, block.metric);
-  return block.scale.breaks.map((b) => formatValue(b, metric, ctx.data.locale, "compact"));
+  const labels = (style: NumberStyle, format: Format) =>
+    block.scale.breaks.map((b) => formatValue(b, { format }, ctx.data.locale, style));
+  const distinct = (texts: string[]) => texts.every((t, i) => i === 0 || t !== texts[i - 1]);
+  const compact = labels("compact", metric.format);
+  if (distinct(compact)) return compact;
+  for (let decimals = 0; decimals <= 6; decimals++) {
+    const full = labels("full", { ...metric.format, decimals } as Format);
+    if (distinct(full)) return full;
+  }
+  return labels("full", metric.format);
 }
 
 /**
@@ -220,11 +229,6 @@ const SWATCH_MIN = 36;
 const SWATCH_MAX = 64;
 const LEGEND_STAGGER = 320;
 
-/**
- * The legend: one swatch per class with every break under the edge it marks, staggered above and
- * below when the row would be wider than a phone, then a crosshatched "No data" swatch, which is
- * always there.
- */
 function legend(block: MapData, ctx: RenderContext): string {
   const { paint } = ctx;
   const colors = classColors(block.scale);
@@ -255,7 +259,6 @@ function legend(block: MapData, ctx: RenderContext): string {
   return `<div class="hm-map-legend" aria-hidden="true">${classes}${none}</div>`;
 }
 
-/** The note under the list: values that joined no drawn region, so rows never vanish silently. */
 function matchNote(block: MapData, ctx: RenderContext): string {
   const left = block.match.filter((m) => m.region === null && m.rows > 0);
   if (left.length === 0) return "";
@@ -268,7 +271,6 @@ function matchNote(block: MapData, ctx: RenderContext): string {
   return `<p class="hm-map-note">Not on the map: ${rows === 1 ? "1 row" : `${rows.toLocaleString("en-US")} rows`} with ${esc(names.join(", "))}${more > 0 ? ` and ${more} more` : ""}.</p>`;
 }
 
-/** The ranked bar list: every region with rows, highest first, bars in the region's class colour. */
 function barList(block: MapData, ctx: RenderContext, names: Map<string, string>): string {
   const colors = classColors(block.scale);
   const peak = Math.max(0, ...block.regions.map((g) => Math.abs(g.value ?? 0)));
@@ -301,7 +303,6 @@ export function describeMap(
   return `Map of ${metric.label.toLowerCase() === metric.label ? metric.label : lowerFirst(metric.label)} for ${ranked.length} ${kind}, from ${names.get(first.id) ?? first.id} (${value(first)}) to ${names.get(last.id) ?? last.id} (${value(last)}).`;
 }
 
-/** The screen-reader table: every region with rows, its value, rank and share. */
 function mapTable(
   block: MapData,
   ctx: RenderContext,
@@ -324,7 +325,6 @@ function mapTable(
   return `<div class="hm-sr"><table><caption>${esc(caption)}</caption><thead>${head}</thead><tbody>${rows}</tbody>${total}</table></div>`;
 }
 
-/** What the runtime needs for hover: each region's name and formatted texts, by id. */
 function runtimeData(block: MapData, ctx: RenderContext, names: Map<string, string>) {
   const regions: Record<string, { n: string; v?: string; k?: string; s?: string }> = {};
   for (const [id, n] of names) regions[id] = { n };
@@ -337,7 +337,12 @@ function runtimeData(block: MapData, ctx: RenderContext, names: Map<string, stri
       ...(t.share ? { s: `${t.share} of total` } : {}),
     };
   }
-  return { label: metricOf(ctx, block.metric).label, regions, none: "No data" };
+  return {
+    label: metricOf(ctx, block.metric).label,
+    regions,
+    none: "No data",
+    order: block.regions.map((g) => g.id),
+  };
 }
 
 /**

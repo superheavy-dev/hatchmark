@@ -1172,10 +1172,6 @@ function checkScatter(r: Reporter, block: Block & { type: "scatter" }, base: str
   }
 }
 
-/**
- * A map block: a sum or count on a filled map mostly shows where people are (HM5040), and a
- * diverging threshold scale must centre its classes on the midpoint (HM2032).
- */
 function checkMap(
   r: Reporter,
   block: Block & { type: "map" },

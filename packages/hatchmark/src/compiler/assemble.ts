@@ -925,7 +925,6 @@ class Assembler {
     };
   }
 
-  /** Whether a metric adds up across groups in this plan: one component that re-aggregates by sum. */
   private additive(expression: MeasureExpression | undefined): boolean {
     if (expression?.op !== "ref") return false;
     const measure = this.queries
@@ -936,11 +935,6 @@ class Assembler {
     return measure.components.find((c) => c.id === id)?.reaggregate === "sum";
   }
 
-  /**
-   * A map: the value per drawn region (grouped by region in SQL, so every value naming a region
-   * counts once), ranked, classed by the block's scale, and the match of every distinct raw value
-   * of the region column from the report reading.
-   */
   map(block: Block & { type: "map" }, plan: BlockPlan, common: Common): MapData {
     const expression = plan.measures[block.value];
     const emptyWindow = this.empty(expression);
@@ -973,10 +967,9 @@ class Assembler {
       };
     });
     const report = plan.report?.measures[block.value];
-    const rowsRef: MeasureExpression | undefined =
-      report === undefined
-        ? undefined
-        : { op: "ref", queryId: refs(report)[0] ?? "", metric: "__rows" };
+    const rowRefs: MeasureExpression[] = [...new Set(report === undefined ? [] : refs(report))].map(
+      (queryId) => ({ op: "ref", queryId, metric: "__rows" }),
+    );
     const drawn = new Set(regions.map((r) => r.id));
     const match: MapMatch[] = (emptyWindow ? [] : this.keys([report], 0)).map((keys) => {
       const key = keys[0] ?? null;
@@ -984,7 +977,7 @@ class Assembler {
       return {
         key,
         region: typeof region === "string" && drawn.has(region) ? region : null,
-        rows: this.evaluate(rowsRef, 0, keys) ?? 0,
+        rows: rowRefs.reduce((sum, ref) => sum + (this.evaluate(ref, 0, keys) ?? 0), 0),
         value: this.evaluate(report, 0, keys),
       };
     });

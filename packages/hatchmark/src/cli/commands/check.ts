@@ -136,7 +136,11 @@ export async function check(
     try {
       for (const [name] of mapped.sort(([a], [b]) => (a < b ? -1 : 1))) {
         const run = await runDashboard(project, name, executor, new Date());
-        if (run.data === undefined) continue;
+        const seen = new Set(diagnostics.map((d) => JSON.stringify(d)));
+        if (run.data === undefined) {
+          diagnostics.push(...run.diagnostics.filter((d) => !seen.has(JSON.stringify(d))));
+          continue;
+        }
         maps.push(...matchReports(run.data));
         diagnostics.push(...matchDiagnostics(project, run.data));
       }

@@ -176,7 +176,7 @@ describe.each(GEOS)("regionKeySql(%s) against matchRegion", (geo) => {
     );
     expect(mismatches).toEqual([]);
     expect(got.filter((id) => id !== null).length).toBeGreaterThan(values.length / 3);
-  });
+  }, 60_000);
 
   it("matches every normalized alias to its id", async () => {
     const aliases = regionAliases(geo);

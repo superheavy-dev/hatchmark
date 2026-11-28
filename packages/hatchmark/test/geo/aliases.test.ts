@@ -46,6 +46,14 @@ describe("normalizeRegionKey", () => {
     expect(normalizeRegionKey(840)).toBe("840");
     expect(normalizeRegionKey(true)).toBe("true");
   });
+
+  it("keeps negative whole numbers out of every code", () => {
+    for (const raw of ["-6", "-06", "-6.0", -6, -840])
+      expect(
+        matchRegion(raw === -840 ? "world-countries" : "us-states", raw).kind,
+        String(raw),
+      ).toBe("unmatched");
+  });
 });
 
 describe.each(["us-states", "world-countries"] as const)("aliases of %s", (geo) => {

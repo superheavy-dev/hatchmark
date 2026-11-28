@@ -1,14 +1,8 @@
-/**
- * Map hover: a region on the map, its leader label and its row in the bar list highlight together,
- * whichever one the pointer is on, and a tooltip names the region with its value, rank and share.
- * The focused map steps through the regions by rank with the arrow keys, announced through a
- * polite live region. Everything else is drawn by the server.
- */
-
 interface RuntimeMap {
   label: string;
   none: string;
   regions: Record<string, { n: string; v?: string; k?: string; s?: string }>;
+  order: string[];
 }
 
 const SVG_NS = "http://www.w3.org/2000/svg";
@@ -31,7 +25,7 @@ export function attachMap(figure: HTMLElement): void {
       li,
     ]),
   );
-  const order = [...rows.keys()];
+  const order = data.order;
   const live = div("hm-sr");
   live.setAttribute("aria-live", "polite");
   figure.append(live);
@@ -123,7 +117,20 @@ export function attachMap(figure: HTMLElement): void {
     tooltip(id);
     place(event.clientX, event.clientY);
   });
-  plot?.addEventListener("pointerleave", () => select(undefined, false));
+  plot?.addEventListener("pointerdown", (event) => {
+    if (event.pointerType !== "touch") return;
+    const id = target(event);
+    select(id, true);
+    if (id === undefined) return;
+    tooltip(id);
+    place(event.clientX, event.clientY);
+  });
+  plot?.addEventListener("pointerleave", (event) => {
+    if (event.pointerType !== "touch") select(undefined, false);
+  });
+  document.addEventListener("pointerdown", (event) => {
+    if (current !== undefined && !figure.contains(event.target as Node)) select(undefined, false);
+  });
   for (const svg of figure.querySelectorAll<SVGSVGElement>("svg[data-hm-kind=map]")) {
     svg.setAttribute("tabindex", "0");
     svg.addEventListener("keydown", (event) => {

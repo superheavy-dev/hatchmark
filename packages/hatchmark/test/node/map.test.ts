@@ -1,4 +1,5 @@
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { run as cli } from "../../src/cli/main.js";
 import type { MapData } from "../../src/compiler/dashboard-data.js";
 import { PROJECT_DEFAULTS } from "../../src/spec/index.js";
 import { metric, Oracle, removeProjects, run, writeProject } from "./fixture.js";
@@ -20,7 +21,7 @@ const SPELLINGS: Record<string, string[]> = {
   PR: ["PR", "Puerto Rico", "72"],
 };
 const NOT_DRAWN = ["GU", "Guam", "VI"];
-const UNMATCHED = ["Narnia", "Atlantis"];
+const UNMATCHED = ["Narnia", "Atlantis", "-06", "-6.0"];
 const WINDOW = "d BETWEEN DATE '2026-06-01' AND DATE '2026-06-30'";
 
 const pad = (n: number) => String(n).padStart(2, "0");
@@ -174,5 +175,108 @@ describe("map numbers against plain SQL", () => {
       const id = Object.entries(SPELLINGS).find(([, keys]) => keys.includes(String(key)))?.[0];
       expect(m?.region, String(key)).toBe(id ?? null);
     }
+  });
+});
+
+describe("map match report across sources", () => {
+  afterAll(removeProjects);
+
+  it("counts the rows of every source a ratio reads", async () => {
+    const { root, project } = await writeProject({
+      "hatchmark.yaml": {
+        ...PROJECT_DEFAULTS,
+        name: "Sources",
+        sources: {
+          orders: { type: "csv", path: "orders.csv" },
+          visits: { type: "csv", path: "visits.csv" },
+        },
+      },
+      "orders.csv": ["d,state", "2026-06-02,CA", "2026-06-03,California", "2026-06-04,TX"].join(
+        "\n",
+      ),
+      "visits.csv": [
+        "d,state,n",
+        "2026-06-02,CA,10",
+        "2026-06-03,Atlantis,4",
+        "2026-06-04,Atlantis,6",
+        "2026-06-04,TX,8",
+      ].join("\n"),
+      "metrics/orders.yaml": metric({
+        type: "aggregate",
+        table: "orders",
+        time: "d",
+        aggregate: "count",
+      }),
+      "metrics/visits.yaml": metric({
+        type: "aggregate",
+        table: "visits",
+        time: "d",
+        aggregate: "sum",
+        column: "n",
+      }),
+      "metrics/conversion.yaml": metric({
+        type: "ratio",
+        numerator: "orders",
+        denominator: "visits",
+      }),
+      "dashboards/m.yaml": {
+        title: "Sources",
+        period: { asOf: "2026-06-30", range: "month_to_date", compare: "none" },
+        blocks: [{ type: "map", id: "c", geo: "us-states", region: "state", value: "conversion" }],
+      },
+    });
+    const out = await run(root, project, "m");
+    const map = out.data?.blocks[0] as MapData;
+    const rows = Object.fromEntries(map.match.map((m) => [String(m.key), [m.rows, m.region]]));
+    expect(rows).toEqual({
+      CA: [2, "CA"],
+      California: [1, "CA"],
+      TX: [2, "TX"],
+      Atlantis: [2, null],
+    });
+  });
+});
+
+describe("hatchmark check on a map block", () => {
+  afterAll(removeProjects);
+
+  it("reports why a map could not be read instead of passing", async () => {
+    const { root } = await writeProject({
+      "hatchmark.yaml": {
+        ...PROJECT_DEFAULTS,
+        name: "Check",
+        sources: { s: { type: "csv", path: "s.csv" } },
+      },
+      "s.csv": ["d,state,amount", "2026-06-02,CA,10"].join("\n"),
+      "metrics/revenue.yaml": metric({
+        type: "aggregate",
+        table: "s",
+        time: "d",
+        aggregate: "sum",
+        column: "amount",
+      }),
+      "dashboards/wrong.yaml": {
+        title: "Wrong",
+        period: { asOf: "2026-06-30", range: "month_to_date", compare: "none" },
+        blocks: [
+          { type: "map", id: "m", geo: "us-states", region: "state_typo", value: "revenue" },
+        ],
+      },
+    });
+    let stdout = "";
+    const code = await cli(["check", "dashboards/wrong.yaml", "--json", "--cwd", root], {
+      stdout: (t) => {
+        stdout += t;
+      },
+      stderr: () => {},
+      cwd: root,
+      env: {},
+      stdoutIsTTY: false,
+      isAgent: async () => false,
+    });
+    const report = JSON.parse(stdout) as { ok: boolean; diagnostics: { severity: string }[] };
+    expect(code).not.toBe(0);
+    expect(report.ok).toBe(false);
+    expect(report.diagnostics.some((d) => d.severity === "error")).toBe(true);
   });
 });

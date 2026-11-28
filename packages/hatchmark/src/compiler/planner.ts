@@ -52,7 +52,6 @@ type AxisDimension =
   | { kind: "time"; grain: ResolvedGrain }
   | Extract<PlannedDimension, { kind: "region" }>;
 
-/** The row count a match report reads beside the value, as one more measure of its queries. */
 export const ROWS_MEASURE: PlannedMeasure = {
   metric: "__rows",
   components: [{ id: "__rows__count", aggregate: "count", filters: [], reaggregate: "sum" }],

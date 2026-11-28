@@ -22,10 +22,14 @@ afterAll(async () => {
   await browser.close();
 });
 
-async function open(name: string, width: number): Promise<Page> {
+async function open(name: string, width: number, touch = false): Promise<Page> {
   const data = variant(name);
-  const page = await browser.newPage({ viewport: { width, height: 1000 } });
-  const styles = pageStyles({ runtime: "", fonts: {} }, DEFAULT_THEME, true);
+  const page = await browser.newPage({
+    viewport: { width, height: 1000 },
+    hasTouch: touch,
+    isMobile: touch,
+  });
+  const styles = pageStyles({ runtime: "", fonts: {} }, DEFAULT_THEME, false, true);
   await page.setContent(
     `<!doctype html><html><head><style>${styles}</style></head><body>${renderFragment(data, DEFAULT_THEME, usedGeographies(data.blocks))}</body></html>`,
   );
@@ -71,6 +75,25 @@ describe("map in a browser", () => {
     await page.locator("svg[data-hm-kind=map]").focus();
     await page.keyboard.press("ArrowDown");
     expect(await page.locator(".hm-map-list li.hm-on").getAttribute("data-hm-r")).toBe(first);
+    expect(await page.locator(".hm-map .hm-sr[aria-live]").textContent()).toContain("#1 of");
+    await page.close();
+  });
+
+  it("opens the tooltip on a tap at 390 px", async () => {
+    const page = await open("map-us-rate", 390, true);
+    const tx = await box(page, 'svg[data-hm-kind=map] [data-hm-r="TX"]');
+    await page.touchscreen.tap(tx.x + tx.width / 2, tx.y + tx.height / 2);
+    expect(await page.locator(".hm-tip-h").textContent()).toBe("Texas");
+    expect(await page.locator(".hm-hover path").count()).toBe(2);
+    await page.close();
+  });
+
+  it("steps through regions from the keyboard without a bar list", async () => {
+    const page = await open("map-us-linear-alone", 1440);
+    expect(await page.locator(".hm-map-list").count()).toBe(0);
+    await page.locator("svg[data-hm-kind=map]").focus();
+    await page.keyboard.press("ArrowDown");
+    expect(await page.locator(".hm-tip-h").textContent()).toBeTruthy();
     expect(await page.locator(".hm-map .hm-sr[aria-live]").textContent()).toContain("#1 of");
     await page.close();
   });

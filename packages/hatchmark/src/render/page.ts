@@ -353,7 +353,6 @@ function tableStyle(block: TableData, ctx: RenderContext, alone: boolean): strin
   );
 }
 
-/** A map card: the heading, then the map body drawn for every layout's card width. */
 function mapCard(block: MapData, ctx: RenderContext): string {
   const { title, subtitle } = mapHeading(block, ctx);
   const id = `hm-${block.id}-t`;
