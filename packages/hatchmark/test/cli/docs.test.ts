@@ -2,7 +2,7 @@ import { mkdtemp, readdir, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
-import { docs } from "../../src/cli/commands/docs.js";
+import { docs, headingAnchor } from "../../src/cli/commands/docs.js";
 import { run } from "../../src/cli/main.js";
 import { VERSION } from "../../src/version.js";
 
@@ -51,10 +51,10 @@ describe("hatchmark docs", () => {
   it("prints one section up to the next heading of its level", async () => {
     const out = (await cli(["docs", "cli#data"])).json();
     expect(out).toMatchObject({ topic: "cli", section: "data", title: "data" });
-    expect(out.content.startsWith("## data\n")).toBe(true);
+    expect(out.content).toMatch(/^## data\r?\n/);
     expect(out.content).not.toContain("## init");
     const cli_md = await readFile(path.join(DOCS, "cli.md"), "utf8");
-    expect(cli_md.split("\n")[out.line - 1]).toBe("## data");
+    expect(cli_md.split(/\r?\n/)[out.line - 1]).toBe("## data");
     expect(cli_md).toContain(out.content);
   });
 
@@ -72,6 +72,16 @@ describe("hatchmark docs", () => {
       (await cli(["docs", "--search", "percent", "--limit", "2"])).json().results,
     ).toHaveLength(2);
     expect((await cli(["docs", "--search", "qqqzzz"])).json()).toMatchObject({ results: [] });
+  });
+
+  it("uses GitHub's anchors for headings with HTML tags, code and links", async () => {
+    expect((await cli(["docs", "metrics#metrics-metricsyaml"])).json().title).toBe(
+      "Metrics (metrics/<name>.yaml)",
+    );
+    expect((await cli(["docs", "dashboards#dashboards-dashboardsyaml"])).code).toBe(0);
+    expect(headingAnchor("The `format` field [docs](x.md) <b>now</b>")).toBe(
+      "the-format-field-docs-now",
+    );
   });
 
   it("numbers repeated headings and skips headings inside code fences", async () => {

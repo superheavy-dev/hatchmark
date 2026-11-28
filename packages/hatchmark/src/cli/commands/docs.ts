@@ -50,6 +50,8 @@ interface Page {
 
 export function headingAnchor(heading: string): string {
   return heading
+    .replace(/<[^>]*>/g, "")
+    .replace(/!?\[([^\]]*)\]\([^)]*\)/g, "$1")
     .trim()
     .toLowerCase()
     .replace(/[^\p{L}\p{N}\s_-]/gu, "")
