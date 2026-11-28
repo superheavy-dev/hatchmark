@@ -41,16 +41,16 @@ export function dayCubeQuery(query: PlannedQuery): PlannedQuery | undefined {
   const column = query.window.column;
   if (column === undefined || !query.params.some((p) => p.kind === "period")) return undefined;
   const sets = query.measures.flatMap((m) => m.components.flatMap((c) => c.anyOf ?? []));
-  if (sets.some((s) => s.time === undefined)) return undefined;
-  const days: PlannedDimension[] =
-    sets.length === 0
-      ? [{ kind: "time", column, grain: { unit: "day" } }]
-      : sets.map((s) => ({
-          kind: "time",
-          column: s.time as string,
-          grain: { unit: "day" },
-          filters: s.filters,
-        }));
+  const split = new Set(sets.map((s) => s.time)).size > 1;
+  if (split && sets.some((s) => s.time === undefined)) return undefined;
+  const days: PlannedDimension[] = !split
+    ? [{ kind: "time", column, grain: { unit: "day" } }]
+    : sets.map((s) => ({
+        kind: "time",
+        column: s.time as string,
+        grain: { unit: "day" },
+        filters: s.filters,
+      }));
   const columns = query.dimensions.filter((d) => d.kind !== "time");
   const shape: Omit<PlannedQuery, "id"> = {
     source: query.source,

@@ -360,6 +360,17 @@ describe("map match report across date columns of one source", () => {
         numerator: "shipped",
         denominator: "paid",
       }),
+      "metrics/orders.yaml": metric({
+        type: "aggregate",
+        table: "o",
+        time: "d",
+        aggregate: "count",
+      }),
+      "metrics/paid_share.yaml": metric({
+        type: "ratio",
+        numerator: "paid",
+        denominator: "orders",
+      }),
       "dashboards/m.yaml": {
         title: "Dates",
         period: { asOf: "2026-06-30", range: "month_to_date", compare: "none" },
@@ -367,6 +378,7 @@ describe("map match report across date columns of one source", () => {
         blocks: [
           { type: "map", id: "rate", geo: "us-states", region: "state", value: "ship_rate" },
           { type: "map", id: "paid", geo: "us-states", region: "state", value: "paid" },
+          { type: "map", id: "share", geo: "us-states", region: "state", value: "paid_share" },
         ],
       },
     });
@@ -403,6 +415,8 @@ describe("map match report across date columns of one source", () => {
     const late = range("2026-06-04", "2026-07-01");
     expect(rows(late[0])).toEqual({ TX: 1, Atlantis: 1 });
     expect(rows(late[1])).toEqual({ TX: 1 });
+    expect(rows(june[2])).toEqual({ CA: 1, California: 1, TX: 1, Narnia: 1 });
+    expect(Object.values(custom.cubes).filter((c) => c.sets !== undefined)).toHaveLength(1);
   });
 });
 
