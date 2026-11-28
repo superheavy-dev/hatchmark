@@ -209,6 +209,47 @@ describe("segment toggle", () => {
     });
   }
 
+  for (const [name, width] of [
+    ["toggles", 1280],
+    ["periods", 1280],
+    ["toggles", 390],
+    ["periods", 390],
+  ] as const) {
+    it(`${name} at ${width}px: toggling moves no chip and nothing in the header`, async () => {
+      const page = await browser.newPage({ viewport: { width, height: 900 } });
+      const errors: string[] = [];
+      page.on("pageerror", (e) => errors.push(String(e)));
+      await page.goto(file(name));
+      const boxes = () =>
+        page.evaluate(() =>
+          [...document.querySelectorAll<HTMLElement>("header.hm-header *")]
+            .filter((el) => !el.closest(".hm-sr") && !el.closest("[hidden]"))
+            .map((el) => {
+              const r = el.getBoundingClientRect();
+              return `${el.tagName}.${el.className}: ${r.x},${r.y},${r.width},${r.height}`;
+            }),
+        );
+      const before = await boxes();
+      expect(before.filter((b) => b.startsWith("BUTTON.hm-chip"))).toHaveLength(2);
+      for (const segment of ["paid_marketing", "americas", "paid_marketing", "americas"]) {
+        await chip(page, segment).click();
+        await settled(page);
+        expect(await boxes()).toEqual(before);
+      }
+      expect(errors).toEqual([]);
+      await page.close();
+    });
+  }
+
+  it("names the toggle group for screen readers without a visible label", async () => {
+    const { page } = await open("toggles");
+    const group = page.locator("[data-hm-segment-filter]");
+    expect(await group.getAttribute("role")).toBe("group");
+    expect(await group.getAttribute("aria-label")).toBe("Segments");
+    expect((await group.innerText()).includes("Segments")).toBe(false);
+    await page.close();
+  });
+
   it("tells none of the segments apart from a segment named none", async () => {
     const { states } = await embedded("named-none");
     const { page, errors } = await open("named-none");

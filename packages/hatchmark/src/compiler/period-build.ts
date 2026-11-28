@@ -135,7 +135,8 @@ function portablePlan(plan: QueryPlan): QueryPlan {
  * Undefined data when the dashboard has no period filter. Errors are HM2015, as in runDashboard;
  * warnings of non-default presets are left out, since the page shows the default first. bindings
  * are the other filters' values (a segment filter's), applied to every preset and to the day cubes;
- * base must have been run with them.
+ * base must have been run with them. spanStart fixes the first day of the custom-range span instead
+ * of the first day with rows, so every segment combination offers the same span.
  */
 export async function runPeriodData(
   project: Project,
@@ -144,6 +145,7 @@ export async function runPeriodData(
   base: DashboardData,
   now?: Date,
   bindings: ParamBindings = {},
+  spanStart?: string,
 ): Promise<{ data?: PeriodData; diagnostics: Diagnostic[] }> {
   const spec = project.dashboards.get(dashboard)?.spec;
   const filter = spec?.filters?.find((f) => f.type === "period");
@@ -235,8 +237,8 @@ export async function runPeriodData(
       ],
     };
   }
-  let first = last + 1;
-  for (const { result } of runs.values()) {
+  let first = spanStart === undefined ? last + 1 : dayNumber(spanStart);
+  for (const { result } of spanStart === undefined ? runs.values() : []) {
     for (const row of result.rows) {
       if (typeof row[0] === "string") first = Math.min(first, dayNumber(row[0]));
     }

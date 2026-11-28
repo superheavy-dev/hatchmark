@@ -417,16 +417,35 @@ export async function periodPage(
     const span = p?.custom?.span;
     return span && d.periodFilter ? { ...d, periodFilter: { ...d.periodFilter, custom: span } } : d;
   };
-  const periods = await runPeriodData(project, name, executor, data, now);
   const segments = await runSegmentData(project, name, executor, data, now);
+  const id = segments.data?.filter ?? "";
+  const all = data.periodFilter === undefined ? undefined : segments.data?.states[""];
+  const widest =
+    all === undefined
+      ? undefined
+      : await runPeriodData(project, name, executor, all.data, now, { [id]: [] });
+  const spanStart = widest?.data?.custom?.span.start;
+  const periods =
+    widest !== undefined && all?.data === data
+      ? widest
+      : await runPeriodData(project, name, executor, data, now, {}, spanStart);
   const diagnostics = [...periods.diagnostics, ...segments.diagnostics];
-  if (segments.data !== undefined && data.periodFilter !== undefined) {
-    const id = segments.data.filter;
+  if (segments.data !== undefined && all !== undefined) {
     for (const state of Object.values(segments.data.states)) {
       const own =
         state.data === data
           ? periods
-          : await runPeriodData(project, name, executor, state.data, now, { [id]: state.selected });
+          : state === all && widest !== undefined
+            ? widest
+            : await runPeriodData(
+                project,
+                name,
+                executor,
+                state.data,
+                now,
+                { [id]: state.selected },
+                spanStart,
+              );
       diagnostics.push(...(state.data === data ? [] : own.diagnostics));
       if (own.data) {
         state.periods = own.data;
