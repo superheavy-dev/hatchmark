@@ -180,7 +180,7 @@ export const MAPS: GalleryVariant[] = [
     scale: { type: "threshold", breaks: [-0.06, -0.02, 0.02, 0.06], midpoint: 0 },
     only: 3,
   }),
-  map("map-us-sum", "A sum on a filled map (warned with HM5040): it mostly shows population", {
+  map("map-us-sum", "A sum on a filled map mostly shows where people live; map a rate instead", {
     id: "map_us_sum",
     title: "Revenue by state",
     geo: "us-states",

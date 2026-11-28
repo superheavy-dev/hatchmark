@@ -122,7 +122,7 @@ function portablePlan(plan: QueryPlan): QueryPlan {
       measures: q.measures.map((m) => ({
         ...m,
         components: m.components.map(
-          ({ sql: _, ...c }): MeasureComponent => ({ ...c, filters: [] }),
+          ({ sql: _, anyOf: __, ...c }): MeasureComponent => ({ ...c, filters: [] }),
         ),
       })),
     })),

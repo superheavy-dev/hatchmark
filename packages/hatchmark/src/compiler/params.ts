@@ -56,9 +56,12 @@ export function resolveParams(project: Project, dashboard: string): PlanParam[] 
       ];
     }
     const fallback = filter.default;
-    const geo = spec.blocks.find(
-      (b) => b.type === "map" && b.region.toLowerCase() === filter.column.toLowerCase(),
+    const geos = new Set(
+      spec.blocks.flatMap((b) =>
+        b.type === "map" && b.region.toLowerCase() === filter.column.toLowerCase() ? [b.geo] : [],
+      ),
     );
+    const geo = geos.size === 1 ? [...geos][0] : undefined;
     return [
       {
         id: filter.id,
@@ -68,7 +71,7 @@ export function resolveParams(project: Project, dashboard: string): PlanParam[] 
         multiple: filter.multiple === true,
         default: fallback === undefined ? [] : Array.isArray(fallback) ? fallback : [fallback],
         sources: sources.filter((s) => hasColumn(project.columns.get(s), filter.column) !== false),
-        ...(geo?.type === "map" ? { geo: geo.geo } : {}),
+        ...(geo === undefined ? {} : { geo }),
       },
     ];
   });

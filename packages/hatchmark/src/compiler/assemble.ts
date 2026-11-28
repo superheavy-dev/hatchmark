@@ -967,19 +967,25 @@ class Assembler {
       };
     });
     const report = plan.report?.measures[block.value];
-    const rowRefs: MeasureExpression[] = [...new Set(report === undefined ? [] : refs(report))].map(
-      (queryId) => ({ op: "ref", queryId, metric: "__rows" }),
-    );
+    const rowRefs: MeasureExpression[] = (plan.report?.rows ?? []).map((queryId) => ({
+      op: "ref",
+      queryId,
+      metric: "__rows",
+    }));
     const drawn = new Set(regions.map((r) => r.id));
-    const match: MapMatch[] = (emptyWindow ? [] : this.keys([report], 0)).map((keys) => {
+    const match: MapMatch[] = (emptyWindow ? [] : this.keys(rowRefs, 0)).flatMap((keys) => {
       const key = keys[0] ?? null;
       const region = keys[1] ?? null;
-      return {
-        key,
-        region: typeof region === "string" && drawn.has(region) ? region : null,
-        rows: rowRefs.reduce((sum, ref) => sum + (this.evaluate(ref, 0, keys) ?? 0), 0),
-        value: this.evaluate(report, 0, keys),
-      };
+      const rows = rowRefs.reduce((sum, ref) => sum + (this.evaluate(ref, 0, keys) ?? 0), 0);
+      if (rows === 0) return [];
+      return [
+        {
+          key,
+          region: typeof region === "string" && drawn.has(region) ? region : null,
+          rows,
+          value: this.evaluate(report, 0, keys),
+        },
+      ];
     });
     const window = span(this.bounds(expression), this.context.timezone);
     return {

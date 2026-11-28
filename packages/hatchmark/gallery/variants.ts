@@ -640,7 +640,7 @@ const TABLES: GalleryVariant[] = [
   one(
     "table",
     "table-other-distinct",
-    "Other row on a distinct count: shown as — (check warns HM4063)",
+    "Other row on a distinct count: shown as —, since distinct counts cannot be added up",
     TABLE_OTHER_DISTINCT,
   ),
   one(
@@ -680,7 +680,7 @@ const TABLES: GalleryVariant[] = [
   one(
     "table",
     "table-tall-shared-page",
-    'Sharing a row with "overflow": "page": grows, and the chart beside it stretches (check warns HM2026)',
+    'Sharing a row with "overflow": "page": grows, and the chart beside it stretches to match',
     { ...TABLE_TALL, id: "tall_shared_page", span: 8, overflow: "page" },
     { ...COUNTRY_BAR, id: "beside_page", span: 4 },
   ),

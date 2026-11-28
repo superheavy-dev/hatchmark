@@ -109,25 +109,26 @@ export function attachMap(figure: HTMLElement): void {
     (event.target as Element | null)?.closest<Element>("[data-hm-r]")?.getAttribute("data-hm-r") ??
     undefined;
 
+  const point = (event: PointerEvent, scroll: boolean) => {
+    const id = target(event);
+    select(id, scroll);
+    if (id === undefined) return;
+    tooltip(id);
+    place(event.clientX, event.clientY);
+  };
   const plot = figure.querySelector<HTMLElement>(".hm-map-frame");
-  plot?.addEventListener("pointermove", (event) => {
-    const id = target(event);
-    select(id, true);
-    if (id === undefined) return;
-    tooltip(id);
-    place(event.clientX, event.clientY);
-  });
-  plot?.addEventListener("pointerdown", (event) => {
-    if (event.pointerType !== "touch") return;
-    const id = target(event);
-    select(id, true);
-    if (id === undefined) return;
-    tooltip(id);
-    place(event.clientX, event.clientY);
-  });
-  plot?.addEventListener("pointerleave", (event) => {
-    if (event.pointerType !== "touch") select(undefined, false);
-  });
+  for (const [area, scroll] of [
+    [plot, true],
+    [list, false],
+  ] as const) {
+    area?.addEventListener("pointermove", (event) => point(event, scroll));
+    area?.addEventListener("pointerdown", (event) => {
+      if (event.pointerType === "touch") point(event, scroll);
+    });
+    area?.addEventListener("pointerleave", (event) => {
+      if (event.pointerType !== "touch") select(undefined, false);
+    });
+  }
   document.addEventListener("pointerdown", (event) => {
     if (current !== undefined && !figure.contains(event.target as Node)) select(undefined, false);
   });
@@ -158,12 +159,4 @@ export function attachMap(figure: HTMLElement): void {
     });
     svg.addEventListener("blur", () => select(undefined, false));
   }
-  list?.addEventListener("pointermove", (event) => {
-    const id = target(event);
-    select(id, false);
-    if (id === undefined) return;
-    tooltip(id);
-    place(event.clientX, event.clientY);
-  });
-  list?.addEventListener("pointerleave", () => select(undefined, false));
 }

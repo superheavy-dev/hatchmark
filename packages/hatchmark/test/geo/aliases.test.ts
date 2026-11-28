@@ -47,8 +47,8 @@ describe("normalizeRegionKey", () => {
     expect(normalizeRegionKey(true)).toBe("true");
   });
 
-  it("keeps negative whole numbers out of every code", () => {
-    for (const raw of ["-6", "-06", "-6.0", -6, -840])
+  it("keeps signed numbers out of every code, padded or not", () => {
+    for (const raw of ["-6", "-06", "-6.0", " -06 ", " -6", "+6", "+06.0", "'-6'", -6, -840])
       expect(
         matchRegion(raw === -840 ? "world-countries" : "us-states", raw).kind,
         String(raw),

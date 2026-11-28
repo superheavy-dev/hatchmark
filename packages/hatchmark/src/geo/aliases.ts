@@ -90,16 +90,16 @@ const FOLD_PATTERN = new RegExp(`[${[...FOLD.keys()].join("")}]`, "gu");
 
 /**
  * The key a raw region value is matched by. A whole number written with a zero fraction ("6.0")
- * reads as that integer, so DOUBLE columns match like integer ones. A negative whole number is
- * kept as it is ("-6"), so it never matches a code. Otherwise: a fixed fold table (ß → ss, ø → o,
+ * reads as that integer, so DOUBLE columns match like integer ones. A signed number, with
+ * or without padding (" -06 ", "+6", "-6.0"), is kept as it is, so it never matches a code. Otherwise: a fixed fold table (ß → ss, ø → o,
  * ligatures, full-width forms; combining marks newer than DuckDB's Unicode tables become a space,
  * as DuckDB's strip_accents keeps them), NFD with combining marks removed, lowercase, "&" → " and ",
  * every run of characters other than [a-z0-9] → one space, trimmed; an all-digit key loses its
  * leading zeros ("006" → "6", "0" stays "0"). normalizeRegionKeySql computes the same key in DuckDB.
  */
 export function normalizeRegionKey(raw: string | number | boolean): string {
-  let s = String(raw).replace(/^([+-]?[0-9]+)\.0+$/, "$1");
-  if (/^-[0-9]+$/.test(s)) return s;
+  if (SIGNED.test(String(raw))) return String(raw);
+  let s = String(raw).replace(/^([0-9]+)\.0+$/, "$1");
   s = s.replace(FOLD_PATTERN, (c) => FOLD.get(c) ?? c);
   s = s
     .normalize("NFD")
@@ -112,15 +112,18 @@ export function normalizeRegionKey(raw: string | number | boolean): string {
 }
 
 const literal = (s: string) => `'${s.replace(/'/g, "''")}'`;
+const SIGNED_PATTERN = "[^0-9A-Za-z]*[+-][0-9]+([.][0-9]*)?[^0-9A-Za-z]*";
+const SIGNED = new RegExp(`^${SIGNED_PATTERN}$`);
 
 /** A DuckDB expression for normalizeRegionKey of a SQL expression of any type; NULL stays NULL. */
 export function normalizeRegionKeySql(expr: string): string {
-  const whole = `regexp_replace(CAST((${expr}) AS VARCHAR), '^([+-]?[0-9]+)\\.0+$', '\\1')`;
+  const text = `CAST((${expr}) AS VARCHAR)`;
+  const whole = `regexp_replace(${text}, '^([0-9]+)\\.0+$', '\\1')`;
   let s = whole;
   for (const [from, to] of MULTI_FOLD) s = `replace(${s}, ${literal(from)}, ${literal(to)})`;
   s = `translate(${s}, ${literal(SINGLE_FOLD.map(([f]) => f).join(""))}, ${literal(SINGLE_FOLD.map(([, t]) => t).join(""))})`;
   s = `trim(regexp_replace(replace(lower(strip_accents(${s})), '&', ' and '), '[^a-z0-9]+', ' ', 'g'))`;
-  return `CASE WHEN regexp_full_match(${whole}, '-[0-9]+') THEN ${whole} ELSE regexp_replace(${s}, '^0+([0-9]+)$', '\\1') END`;
+  return `CASE WHEN regexp_full_match(${text}, ${literal(SIGNED_PATTERN)}) THEN ${text} ELSE regexp_replace(${s}, '^0+([0-9]+)$', '\\1') END`;
 }
 
 interface Alias {

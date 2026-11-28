@@ -44,6 +44,9 @@ const US: Truth = [
   ["Calfornia", "unmatched", null, 1],
   ["Nowhere", "unmatched", null, 1],
   [null, "unmatched", null, 1],
+  [" -06 ", "unmatched", null, 1],
+  ["-6", "unmatched", null, 1],
+  ["+6", "unmatched", null, 1],
 ];
 const SESSIONS_ONLY: Truth = [
   ["Ohio", "matched", "OH", 2],
@@ -250,7 +253,7 @@ const LEAF: Record<string, { table: string; time: string; agg: string; additive:
   revenue: {
     table: "orders",
     time: "ordered_at",
-    agg: `sum(x.amount::DOUBLE) FILTER (WHERE ${PAID})`,
+    agg: `coalesce(sum(x.amount::DOUBLE) FILTER (WHERE ${PAID}), 0)`,
     additive: true,
   },
   orders: {
@@ -272,7 +275,12 @@ const LEAF: Record<string, { table: string; time: string; agg: string; additive:
     additive: false,
   },
   sessions: { table: "sessions", time: "started_at", agg: "count(*)", additive: true },
-  store_sales: { table: "stores", time: "opened", agg: "sum(x.sales::DOUBLE)", additive: true },
+  store_sales: {
+    table: "stores",
+    time: "opened",
+    agg: "coalesce(sum(x.sales::DOUBLE), 0)",
+    additive: true,
+  },
 };
 const RATIO: Record<string, [string, string]> = {
   aov: ["revenue", "orders"],
@@ -564,6 +572,9 @@ async function expected(s: MapSpec, w: Win, d: Dash): Promise<Expected> {
     const leaf = leaves(s.value).find(
       (l) => (LEAF[l] as { table: string }).table === table,
     ) as string;
+    const own = leaves(s.value)
+      .filter((l) => (LEAF[l] as { table: string }).table === table)
+      .map((l) => /FILTER \(WHERE ([^)]*)\)/.exec((LEAF[l] as { agg: string }).agg)?.[1] ?? "TRUE");
     const rows = await db.rows(
       "SELECT x." +
         s.column +
@@ -575,7 +586,9 @@ async function expected(s: MapSpec, w: Win, d: Dash): Promise<Expected> {
         s.column +
         " WHERE " +
         where(s, leaf, w, d) +
-        " GROUP BY ALL",
+        " AND (" +
+        own.join(" OR ") +
+        ") GROUP BY ALL",
     );
     for (const r of rows) {
       const k = (r.k as string | null) ?? null;
@@ -829,7 +842,7 @@ describe("map numbers against an independent DuckDB oracle", () => {
         };
         const list = [
           ...fig.matchAll(
-            /<li data-hm-r="([^"]+)"><span class="hm-ml-k">([^<]*)<\/span><span class="hm-ml-n">[^<]*<\/span><span class="hm-ml-bar">(?:<i class="hm-bg-([^" ]+)"[^>]*><\/i>)?<\/span>/g,
+            /<li data-hm-r="([^"]+)"><span class="hm-ml-k">([^<]*)<\/span><span class="hm-ml-n"[^>]*>[^<]*<\/span><span class="hm-ml-bar">(?:<i class="hm-bg-([^" ]+)"[^>]*><\/i>)?<\/span>/g,
           ),
         ].map((x) => ({ id: x[1] as string, rank: x[2] as string, color: x[3] }));
         const paths = new Map(

@@ -2,7 +2,13 @@ import type { MapData, MapRegion, MapScale } from "../compiler/dashboard-data.js
 import type { Geography } from "../geo/types.js";
 import type { Format } from "../spec/index.js";
 import { CAPTION, isNumber, lowerFirst, metricOf, type RenderContext, SHARE } from "./chart.js";
-import { formatKey, formatSpan, formatValue, type NumberStyle } from "./format.js";
+import {
+  formatKey,
+  formatScientific,
+  formatSpan,
+  formatValue,
+  type NumberStyle,
+} from "./format.js";
 import { textWidth } from "./measure.js";
 import { esc, langAttr, r, scriptJson, svgText } from "./svg.js";
 import type { MapColor, Theme } from "./theme.js";
@@ -191,6 +197,12 @@ export function breakLabels(block: MapData, ctx: RenderContext): string[] {
     const full = labels("full", { ...metric.format, decimals } as Format);
     if (distinct(full)) return full;
   }
+  for (let digits = 1; digits <= 17; digits++) {
+    const scientific = block.scale.breaks.map((b) =>
+      formatScientific(b, metric, ctx.data.locale, digits),
+    );
+    if (distinct(scientific)) return scientific;
+  }
   return labels("full", metric.format);
 }
 
@@ -204,8 +216,8 @@ export function mapStyles(theme: Theme): string {
     `.hm-map{display:flex;flex-direction:column;gap:12px}.hm-map-legend{display:flex;flex-wrap:wrap;align-items:flex-start;gap:6px 16px;font-size:12px;line-height:16px;color:var(--hm-text-muted)}.hm-map-classes{display:block;max-width:100%;height:auto}.hm-map-none{display:inline-flex;align-items:center;gap:6px;padding-top:0}.hm-nd-line{stroke-opacity:var(--hm-nodata)}`,
     `.hm-map-body{display:grid;grid-template-columns:minmax(0,1fr);gap:16px ${MAP_LIST_GAP}px}.hm-map-plot{position:relative;min-width:0}.hm-map-frame{position:relative;margin:0 auto}.hm-map-svg{display:block;width:100%;height:auto;overflow:visible}.hm-map-svg:focus{outline:none}.hm-map-svg:focus-visible{outline:2px solid var(--hm-focus);outline-offset:2px}.hm-map-layers{position:absolute;inset:0;pointer-events:none}.hm-map-layers svg{display:block;width:100%;height:100%;overflow:visible}.hm-map-labels .hm-leader{pointer-events:auto}.hm-map-empty{position:absolute;left:0;right:0;top:45%;text-align:center;color:var(--hm-text-muted)}`,
     `.hm-map .hm-region,.hm-map .hm-leader{cursor:default}.hm-map .hm-hover path{fill:none;pointer-events:none}.hm-hover .hm-halo{stroke:var(--hm-card)}.hm-hover .hm-outline{stroke:var(--hm-text)}`,
-    `.hm-map-side{min-width:0}.hm-map-side-in{display:flex;flex-direction:column;gap:8px}.hm-map-list{list-style:none;margin:0;padding:0 4px 0 0;max-height:320px;overflow-y:auto;scrollbar-width:thin;scrollbar-color:var(--hm-border-strong) transparent}`,
-    `.hm-map-list li{display:grid;grid-template-columns:22px minmax(0,1fr) minmax(40px,30%) auto;align-items:center;gap:8px;height:24px;font-size:12px;line-height:16px;border-radius:${theme.radius.control}px;padding:0 4px}.hm-ml-k{color:var(--hm-text-subtle);text-align:right}.hm-ml-n{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--hm-text-muted)}.hm-ml-bar{height:8px;background:var(--hm-card-alt)}.hm-ml-bar i{display:block;height:8px;min-width:1px}.hm-ml-v{text-align:right;white-space:nowrap}.hm-ml-v.hm-null{color:var(--hm-text-subtle)}`,
+    `.hm-map-side{min-width:0}.hm-map-side-in{display:flex;flex-direction:column;gap:8px}.hm-map-list{display:grid;grid-template-columns:auto fit-content(40%) minmax(48px,1fr) auto;column-gap:8px;align-content:start;list-style:none;margin:0;padding:0 4px 0 0;max-height:320px;overflow-y:auto;scrollbar-width:thin;scrollbar-color:var(--hm-border-strong) transparent}`,
+    `.hm-map-list li{grid-column:1/-1;display:grid;grid-template-columns:subgrid;align-items:center;height:24px;font-size:12px;line-height:16px;border-radius:${theme.radius.control}px;padding:0 4px}.hm-ml-k{color:var(--hm-text-subtle);text-align:right}.hm-ml-n{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--hm-text-muted)}.hm-ml-bar{height:8px;background:var(--hm-card-alt)}.hm-ml-bar i{display:block;height:8px;min-width:1px}.hm-ml-v{text-align:right;white-space:nowrap}.hm-ml-v.hm-null{color:var(--hm-text-subtle)}`,
     `.hm-map-list li.hm-on .hm-ml-n{color:var(--hm-text);font-weight:500}.hm-map-list li.hm-on .hm-ml-bar i{outline:1.5px solid var(--hm-text);outline-offset:-0.75px}.hm-map-note{font-size:12px;line-height:16px;color:var(--hm-text-subtle)}`,
     `.hm-map .hm-tip-k{color:var(--hm-text-muted)}`,
   ].join("");
@@ -282,7 +294,7 @@ function barList(block: MapData, ctx: RenderContext, names: Map<string, string>)
     const bar = color
       ? `<i class="hm-bg-${color}" style="width:${Math.round(share * 10) / 10}%"></i>`
       : "";
-    return `<li data-hm-r="${esc(g.id)}"><span class="hm-ml-k">${g.rank ?? ""}</span><span class="hm-ml-n">${esc(names.get(g.id) ?? g.id)}</span><span class="hm-ml-bar">${bar}</span><span class="hm-ml-v${isNumber(g.value) ? "" : " hm-null"}"${lang}>${esc(texts.short)}</span></li>`;
+    return `<li data-hm-r="${esc(g.id)}"><span class="hm-ml-k">${g.rank ?? ""}</span><span class="hm-ml-n" title="${esc(names.get(g.id) ?? g.id)}">${esc(names.get(g.id) ?? g.id)}</span><span class="hm-ml-bar">${bar}</span><span class="hm-ml-v${isNumber(g.value) ? "" : " hm-null"}"${lang}>${esc(texts.short)}</span></li>`;
   });
   return `<ol class="hm-map-list" aria-label="${esc(metricOf(ctx, block.metric).label)}, ranked">${rows.join("")}</ol>`;
 }

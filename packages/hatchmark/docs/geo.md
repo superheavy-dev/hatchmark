@@ -49,7 +49,7 @@ A map's region column is matched to region ids through an alias table per geogra
 
 Before matching, values are normalized:
 
-1. A whole number written with a zero fraction (`6.0`) reads as that integer, so a DOUBLE column of FIPS or ISO numeric codes matches like an integer one. A negative whole number (`-6`, `-06.0`) never matches a code.
+1. A whole number written with a zero fraction (`6.0`) reads as that integer, so a DOUBLE column of FIPS or ISO numeric codes matches like an integer one. A number with a sign (`-6`, `-06.0`, `+6`), even padded with spaces or quotes (`" -06 "`), never matches a code.
 2. A fixed fold table spells out letters that have no accent to strip: `ß` → `ss`, `æ` → `ae`, `ø` → `o`, `ł` → `l`, ligatures such as `ﬁ`, and full-width letters and digits.
 3. Accents are removed, the text is lowercased, `&` becomes "and", every run of other characters (spaces, punctuation, apostrophes) becomes one space, and the ends are trimmed.
 4. An all-digit value loses its leading zeros (`006` → `6`).

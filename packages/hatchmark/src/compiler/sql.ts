@@ -385,6 +385,10 @@ function builtQuery(
   const measureSql = components.map((c) => {
     const inWhere = shared !== undefined;
     const filters = inWhere ? [] : c.filters.map((f) => filterSql(source, f, context, sql));
+    const any = (c.anyOf ?? []).map(
+      (set) => `(${set.map((f) => filterSql(source, f, context, sql)).join(" AND ")})`,
+    );
+    if (any.length > 0) filters.push(`(${any.join(" OR ")})`);
     const clause = filters.length > 0 ? ` FILTER (WHERE ${filters.join(" AND ")})` : "";
     const aggregate = `${aggregateSql(c, source)}${clause}`;
     return c.aggregate === "sum" ? `coalesce(${aggregate}, 0)` : aggregate;

@@ -21,7 +21,7 @@ const SPELLINGS: Record<string, string[]> = {
   PR: ["PR", "Puerto Rico", "72"],
 };
 const NOT_DRAWN = ["GU", "Guam", "VI"];
-const UNMATCHED = ["Narnia", "Atlantis", "-06", "-6.0"];
+const UNMATCHED = ["Narnia", "Atlantis", "-06", "-6.0", " -06 ", "+6"];
 const WINDOW = "d BETWEEN DATE '2026-06-01' AND DATE '2026-06-30'";
 
 const pad = (n: number) => String(n).padStart(2, "0");
@@ -237,6 +237,88 @@ describe("map match report across sources", () => {
   });
 });
 
+describe("map match report for filtered and same-source metrics", () => {
+  afterAll(removeProjects);
+
+  it("counts each source row once, after the metric's own filters", async () => {
+    const { root, project } = await writeProject({
+      "hatchmark.yaml": {
+        ...PROJECT_DEFAULTS,
+        name: "Shapes",
+        sources: { o: { type: "csv", path: "o.csv" } },
+      },
+      "o.csv": [
+        "d,shipped,state,amount,status",
+        "2026-06-02,2026-06-02,CA,10,paid",
+        "2026-06-03,2026-06-03,California,20,refunded",
+        "2026-06-04,2026-06-04,CA,5,paid",
+        "2026-06-05,2026-06-05,TX,7,paid",
+        "2026-06-06,2026-06-06,Atlantis,3,refunded",
+        "2026-06-07,2026-06-07,Atlantis,4,paid",
+      ].join("\n"),
+      "metrics/net.yaml": metric({
+        type: "sql",
+        table: "o",
+        time: "d",
+        sql: "sum(amount)",
+        additive: true,
+        filters: [{ column: "status", op: "eq", value: "paid" }],
+      }),
+      "metrics/placed.yaml": metric({
+        type: "aggregate",
+        table: "o",
+        time: "d",
+        aggregate: "count",
+      }),
+      "metrics/shipped.yaml": metric({
+        type: "aggregate",
+        table: "o",
+        time: "shipped",
+        aggregate: "count",
+      }),
+      "metrics/ship_rate.yaml": metric({
+        type: "ratio",
+        numerator: "shipped",
+        denominator: "placed",
+      }),
+      "dashboards/m.yaml": {
+        title: "Shapes",
+        period: { asOf: "2026-06-30", range: "month_to_date", compare: "none" },
+        blocks: [
+          { type: "map", id: "net", geo: "us-states", region: "state", value: "net" },
+          { type: "map", id: "rate", geo: "us-states", region: "state", value: "ship_rate" },
+        ],
+      },
+    });
+    const maps = ((await run(root, project, "m")).data?.blocks ?? []) as MapData[];
+    const rows = (i: number) =>
+      Object.fromEntries(
+        (maps[i] as MapData).match.map((m) => [String(m.key), [m.rows, m.region]]),
+      );
+    expect(rows(0)).toEqual({ CA: [2, "CA"], TX: [1, "TX"], Atlantis: [1, null] });
+    expect(rows(1)).toEqual({
+      CA: [2, "CA"],
+      California: [1, "CA"],
+      TX: [1, "TX"],
+      Atlantis: [2, null],
+    });
+    let stdout = "";
+    const code = await cli(["check", "--json", "--cwd", root], {
+      stdout: (t) => {
+        stdout += t;
+      },
+      stderr: () => {},
+      cwd: root,
+      env: {},
+      stdoutIsTTY: false,
+      isAgent: async () => false,
+    });
+    const report = JSON.parse(stdout) as { diagnostics: { code: string; severity: string }[] };
+    expect(report.diagnostics.filter((d) => d.severity === "error")).toEqual([]);
+    expect(code).toBe(0);
+  });
+});
+
 describe("map ranks, classes and region filters", () => {
   afterAll(removeProjects);
 
@@ -302,6 +384,46 @@ describe("map ranks, classes and region filters", () => {
       NY: [2, 2, 1],
     });
     expect(await regions([{ ...filter, default: ["Narnia"] }])).toEqual({});
+  });
+
+  it("matches a region filter exactly when maps of two geographies share its column, in any block order", async () => {
+    const us = { type: "map", id: "us", geo: "us-states", region: "state", value: "orders" };
+    const world = {
+      type: "map",
+      id: "world",
+      geo: "world-countries",
+      region: "state",
+      value: "orders",
+    };
+    const read = async (blocks: unknown[]) => {
+      const { root, project: p } = await writeProject({
+        "hatchmark.yaml": {
+          ...PROJECT_DEFAULTS,
+          name: "Mixed",
+          sources: { s: { type: "csv", path: "s.csv" } },
+        },
+        "s.csv": ["d,state", "2026-06-02,CA", "2026-06-03,California", "2026-06-04,Canada"].join(
+          "\n",
+        ),
+        "metrics/orders.yaml": metric({
+          type: "aggregate",
+          table: "s",
+          time: "d",
+          aggregate: "count",
+        }),
+        "dashboards/m.yaml": {
+          title: "Mixed",
+          period: { asOf: "2026-06-30", range: "month_to_date", compare: "none" },
+          filters: [{ type: "select", id: "state", column: "state", default: "CA" }],
+          blocks,
+        },
+      });
+      const maps = ((await run(root, p, "m")).data?.blocks ?? []) as MapData[];
+      return Object.fromEntries(maps.map((b) => [b.id, b.regions.map((r) => [r.id, r.value])]));
+    };
+    const expected = { us: [["CA", 1]], world: [["CAN", 1]] };
+    expect(await read([us, world])).toEqual(expected);
+    expect(await read([world, us])).toEqual(expected);
   });
 });
 

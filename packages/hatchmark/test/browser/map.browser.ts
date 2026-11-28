@@ -88,6 +88,18 @@ describe("map in a browser", () => {
     await page.close();
   });
 
+  it("opens the tooltip and highlights the region on a bar list tap at 390 px", async () => {
+    const page = await open("map-us-rate", 390, true);
+    const row = page.locator('.hm-map-list li[data-hm-r="TX"]');
+    await row.scrollIntoViewIfNeeded();
+    const b = await box(page, '.hm-map-list li[data-hm-r="TX"]');
+    await page.touchscreen.tap(b.x + b.width / 2, b.y + b.height / 2);
+    expect(await page.locator(".hm-tip-h").textContent()).toBe("Texas");
+    expect(await page.locator(".hm-map-list li.hm-on").getAttribute("data-hm-r")).toBe("TX");
+    expect(await page.locator(".hm-hover path").count()).toBe(2);
+    await page.close();
+  });
+
   it("steps through regions from the keyboard without a bar list", async () => {
     const page = await open("map-us-linear-alone", 1440);
     expect(await page.locator(".hm-map-list").count()).toBe(0);
@@ -97,6 +109,43 @@ describe("map in a browser", () => {
     expect(await page.locator(".hm-map .hm-sr[aria-live]").textContent()).toContain("#1 of");
     await page.close();
   });
+
+  it.each([
+    ["map-us-rate", 1440],
+    ["map-world-rate", 1440],
+    ["map-us-rate", 390],
+    ["map-world-rate", 390],
+  ] as const)(
+    "%s at %i px: every bar starts at the same x and longer bars mean larger values",
+    async (name, width) => {
+      const page = await open(name, width);
+      const rows = await page.$$eval(".hm-map-list li", (items) =>
+        items.map((li) => {
+          const part = (c: string) => li.querySelector(c)?.getBoundingClientRect();
+          const label = li.querySelector(".hm-ml-n") as HTMLElement;
+          return {
+            bar: part(".hm-ml-bar")?.left,
+            track: part(".hm-ml-bar")?.width,
+            fill: part(".hm-ml-bar i")?.width ?? 0,
+            value: part(".hm-ml-v")?.right,
+            rank: Number(li.querySelector(".hm-ml-k")?.textContent),
+            truncated: label.scrollWidth > label.clientWidth,
+            title: label.title === label.textContent,
+          };
+        }),
+      );
+      expect(rows.length).toBeGreaterThan(5);
+      for (const key of ["bar", "track", "value"] as const)
+        expect(new Set(rows.map((r) => Math.round((r[key] as number) * 10))).size, key).toBe(1);
+      for (let i = 1; i < rows.length; i++) {
+        const [a, b] = [rows[i - 1], rows[i]] as [(typeof rows)[number], (typeof rows)[number]];
+        expect(b.fill).toBeLessThanOrEqual(a.fill + 0.5);
+        expect(b.rank).toBeGreaterThanOrEqual(a.rank);
+      }
+      expect(rows.every((r) => r.title)).toBe(true);
+      await page.close();
+    },
+  );
 
   it("keeps the note under the bar list beside the map", async () => {
     const page = await open("map-world-rate", 1440);

@@ -7,6 +7,7 @@ import {
   type Dashboard,
   DEFAULT_PERIOD,
   type FileSource,
+  type Filter,
   type Grain,
   grainKey,
   type Metric,
@@ -72,6 +73,7 @@ interface Context {
 interface Reading {
   queries: PlannedQuery[];
   measures: Record<string, MeasureExpression>;
+  rows?: string[];
 }
 
 function component(
@@ -156,7 +158,7 @@ function filterTables(
 ): Record<string, FileSource> | undefined {
   const names = measures
     .flatMap((m) => m.components)
-    .flatMap((c) => c.filters)
+    .flatMap((c) => [...c.filters, ...(c.anyOf ?? []).flat()])
     .flatMap((f) => (f.op === "in_table" || f.op === "not_in_table" ? [f.table] : []))
     .sort();
   const tables: Record<string, FileSource> = {};
@@ -259,7 +261,7 @@ function planReading(
       source: group.source,
       input,
       ...(tables === undefined ? {} : { tables }),
-      measures: rows ? [...measures, ROWS_MEASURE] : measures,
+      measures,
       dimensions,
       groupingSets,
       window:
@@ -282,6 +284,54 @@ function planReading(
     queries.push({ id, ...shape });
   }
 
+  const rowQueries: string[] = [];
+  if (rows) {
+    const bySource = new Map<
+      string,
+      { group: { time?: string; horizons: TimeColumn[] }; filters: Map<string, Filter[]> }
+    >();
+    for (const group of groups.values()) {
+      const input = ctx.sources[group.source];
+      if (input === undefined || input.type === "lookup") continue;
+      const entry = bySource.get(group.source) ?? { group, filters: new Map<string, Filter[]>() };
+      for (const m of group.metrics) {
+        const metric = ctx.metrics.get(m);
+        const filters = (metric && plannedMeasure(m, metric))?.components[0]?.filters ?? [];
+        entry.filters.set(canonicalJson(filters), filters);
+      }
+      bySource.set(group.source, entry);
+    }
+    for (const [source, { group, filters }] of bySource) {
+      const sets = [...filters.values()];
+      const counted: MeasureComponent = {
+        ...(ROWS_MEASURE.components[0] as MeasureComponent),
+        ...(sets.some((s) => s.length === 0)
+          ? {}
+          : sets.length === 1
+            ? { filters: sets[0] as Filter[] }
+            : { anyOf: sets }),
+      };
+      const measure: PlannedMeasure = { ...ROWS_MEASURE, components: [counted] };
+      const tables = filterTables(ctx.sources, [measure]);
+      const shape: Omit<PlannedQuery, "id"> = {
+        source,
+        input: ctx.sources[source] as PlannedQuery["input"],
+        ...(tables === undefined ? {} : { tables }),
+        measures: [measure],
+        dimensions: axes as PlannedDimension[],
+        groupingSets,
+        window:
+          group.time === undefined
+            ? { range: "all_time", shift: "none" }
+            : { range: ctx.range, shift, column: group.time, horizons: group.horizons },
+        params: paramsForQuery(ctx.params, source, group.time),
+      };
+      const id = queryId(shape);
+      rowQueries.push(id);
+      queries.push({ id, ...shape });
+    }
+  }
+
   const expression = (name: string, horizons: TimeColumn[]): MeasureExpression => {
     const metric = ctx.metrics.get(name);
     if (metric?.type === "ratio") {
@@ -296,7 +346,7 @@ function planReading(
   };
   const measures: Record<string, MeasureExpression> = {};
   for (const name of names) measures[name] = expression(name, horizonsOf(name));
-  return { queries, measures };
+  return rows ? { queries, measures, rows: rowQueries } : { queries, measures };
 }
 
 function seriesReading(
@@ -536,6 +586,7 @@ function planBlockAt(
             report: {
               queryIds: readings.report.queries.map((q) => q.id),
               measures: readings.report.measures,
+              rows: readings.report.rows ?? [],
             },
           }
         : {}),

@@ -37,6 +37,8 @@ export interface MeasureComponent {
   /** Raw SQL aggregate expression, for metrics of type "sql". */
   sql?: string;
   filters: Filter[];
+  /** Counts rows passing any of these filter sets, in place of filters. */
+  anyOf?: Filter[][];
   /**
    * How a browser or a total row may combine this component across groups: "sum" for sum and
    * count, "min"/"max" for those, and "none" when it must be recomputed from rows (count_distinct,
@@ -204,8 +206,9 @@ export type PlanParam =
       /** Sources this filter binds to, sorted. */
       sources: string[];
       /**
-       * Set when a map on the dashboard reads its regions from this column: a value naming a region
-       * keeps every spelling of that region, as the map groups them.
+       * Set when every map on the dashboard that reads its regions from this column uses this
+       * geography: a value naming a region keeps every spelling of that region, as the map groups
+       * them. Maps of different geographies on one column leave it unset, so values match exactly.
        */
       geo?: GeographyId;
     }
@@ -253,9 +256,11 @@ export interface BlockPlan {
   grain?: ResolvedGrain;
   /**
    * A map block's match report reading: its value and a row count by the raw region column and the
-   * region each value matched (null when none), over the same window and filters as measures.
+   * region each value matched (null when none), over the same window and filters as measures. rows
+   * names one query per source the value reads, each counting that source's rows once, after the
+   * metric's own filters (a row passing any operand's filters counts).
    */
-  report?: { queryIds: string[]; measures: Record<string, MeasureExpression> };
+  report?: { queryIds: string[]; measures: Record<string, MeasureExpression>; rows: string[] };
   /** One reading per grain a block switches between (its grains, in spec order), all built ahead. */
   grains?: {
     grain: ResolvedGrain;
