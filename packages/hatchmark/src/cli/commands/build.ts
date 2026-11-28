@@ -20,6 +20,8 @@ import {
   pageWeight,
   runDashboard,
   runPeriodData,
+  runSegmentData,
+  type SegmentData,
 } from "../../compiler/index.js";
 import { createReport, type Diagnostic, renderHuman } from "../../diagnostics/index.js";
 import {
@@ -87,6 +89,7 @@ const defaultDeps: BuildDeps = { createExecutor: createDuckDbExecutor, runDashbo
 export interface Page {
   data: DashboardData;
   periods?: PeriodData;
+  segments?: SegmentData;
 }
 
 function hashedName(file: string, content: Uint8Array): string {
@@ -249,18 +252,21 @@ export async function build(
     };
   }
 
-  const assets = await bundledAssets(pages.some((p) => p.periods !== undefined));
+  const assets = await bundledAssets(
+    pages.some((p) => p.periods !== undefined || p.segments !== undefined),
+  );
   const files = new Map<string, Uint8Array | string>(assets.files);
   const { assetsFrom } = assets;
   const sources = sourceNames(config);
-  for (const { data, periods } of pages) {
+  for (const { data, periods, segments } of pages) {
     const html = renderDashboardPage(data, {
       assets: assetsFrom("../"),
       sources,
       ...(periods ? { periods } : {}),
+      ...(segments ? { segments } : {}),
     });
     files.set(`${data.name}/index.html`, html);
-    const heavy = pageWeight(project, data.name, html, periods);
+    const heavy = pageWeight(project, data.name, html, periods, segments);
     if (heavy) diagnostics.push(heavy);
   }
   if (pages.length > 1) {
@@ -407,15 +413,53 @@ export async function periodPage(
   data: DashboardData,
   now: Date,
 ): Promise<{ page: Page; diagnostics: Diagnostic[] }> {
-  const periods = await runPeriodData(project, name, executor, data, now);
-  const span = periods.data?.custom?.span;
-  const shown =
-    span && data.periodFilter
-      ? { ...data, periodFilter: { ...data.periodFilter, custom: span } }
-      : data;
+  const withSpan = (d: DashboardData, p: PeriodData | undefined) => {
+    const span = p?.custom?.span;
+    return span && d.periodFilter ? { ...d, periodFilter: { ...d.periodFilter, custom: span } } : d;
+  };
+  const segments = await runSegmentData(project, name, executor, data, now);
+  const id = segments.data?.filter ?? "";
+  const all = data.periodFilter === undefined ? undefined : segments.data?.states[""];
+  const widest =
+    all === undefined
+      ? undefined
+      : await runPeriodData(project, name, executor, all.data, now, { [id]: [] });
+  const spanStart = widest?.data?.custom?.span.start;
+  const periods =
+    widest !== undefined && all?.data === data
+      ? widest
+      : await runPeriodData(project, name, executor, data, now, {}, spanStart);
+  const diagnostics = [...periods.diagnostics, ...segments.diagnostics];
+  if (segments.data !== undefined && all !== undefined) {
+    for (const state of Object.values(segments.data.states)) {
+      const own =
+        state.data === data
+          ? periods
+          : state === all && widest !== undefined
+            ? widest
+            : await runPeriodData(
+                project,
+                name,
+                executor,
+                state.data,
+                now,
+                { [id]: state.selected },
+                spanStart,
+              );
+      diagnostics.push(...(state.data === data ? [] : own.diagnostics));
+      if (own.data) {
+        state.periods = own.data;
+        state.data = withSpan(state.data, own.data);
+      }
+    }
+  }
   return {
-    page: { data: shown, ...(periods.data ? { periods: periods.data } : {}) },
-    diagnostics: periods.diagnostics,
+    page: {
+      data: withSpan(data, periods.data),
+      ...(periods.data ? { periods: periods.data } : {}),
+      ...(segments.data ? { segments: segments.data } : {}),
+    },
+    diagnostics,
   };
 }
 

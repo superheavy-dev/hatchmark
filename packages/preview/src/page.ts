@@ -117,6 +117,7 @@ const VIEWS = {
   dashboard: "dashboard/sales/",
   period: "dashboard/explorer/",
   periods: "periods/",
+  segments: "segments/",
 };
 const state = {
   view: "components",
@@ -224,6 +225,7 @@ ${toggle("view", "View", [
   ["dashboard", "Example dashboard"],
   ["period", "Date range picker"],
   ["periods", "Picker variants"],
+  ["segments", "Segment filter"],
 ])}
 ${toggle("theme", "Theme", [
   ["light", "Light"],

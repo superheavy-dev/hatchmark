@@ -11,6 +11,7 @@ import type {
   TableData,
 } from "../compiler/dashboard-data.js";
 import type { PeriodData } from "../compiler/period-data.js";
+import type { SegmentData } from "../compiler/segment-build.js";
 import { type HeightPreset, layoutItems, MIN_CHART_SPAN } from "../spec/layout.js";
 import { barCategories, barHeight, renderBar } from "./bar.js";
 import type { RenderContext } from "./chart.js";
@@ -22,6 +23,7 @@ import { timeOf } from "./partial.js";
 import { PERIOD_MOBILE, periodCaption, periodControl, periodStyles, periodText } from "./period.js";
 import { isPie, pieHeight, renderPie } from "./pie.js";
 import { renderScatter } from "./scatter.js";
+import { segmentControl, segmentStyles } from "./segment.js";
 import { esc, scriptJson } from "./svg.js";
 
 export { scriptJson };
@@ -103,6 +105,8 @@ export interface PageOptions {
   theme?: Theme;
   sources?: string[];
   periods?: PeriodData;
+  /** Every combination of the segment filter, embedded in the page (runSegmentData). */
+  segments?: SegmentData;
 }
 
 function context(data: DashboardData, theme: Theme): RenderContext {
@@ -442,6 +446,7 @@ export function pageStyles(
   assets: PageAssets,
   theme: Theme = DEFAULT_THEME,
   groups = false,
+  segments = false,
 ): string {
   const d = theme.density;
   const fonts = FONT_FILES.filter((f) => assets.fonts[f.file] !== undefined)
@@ -525,19 +530,25 @@ export function pageStyles(
       .join(""),
     layouts,
     ...(groups ? [groupStyles(theme)] : []),
+    ...(segments ? [segmentStyles(theme)] : []),
   ].join("\n");
 }
 
 const THEME_SCRIPT =
   'var t=new URLSearchParams(location.search).get("theme");if(t==="dark"||t==="light")document.documentElement.dataset.theme=t';
 
-export function pageHead(assets: PageAssets, theme: Theme = DEFAULT_THEME, groups = false): string {
+export function pageHead(
+  assets: PageAssets,
+  theme: Theme = DEFAULT_THEME,
+  groups = false,
+  segments = false,
+): string {
   const preload = FONT_FILES.filter((f) => f.file.endsWith("-Latin1.woff2") && f.weight !== 600)
     .map((f) => assets.fonts[f.file])
     .filter((url) => url !== undefined)
     .map((url) => `<link rel="preload" href="${esc(url)}" as="font" type="font/woff2" crossorigin>`)
     .join("");
-  return `${preload}<style>${pageStyles(assets, theme, groups)}</style><script>${THEME_SCRIPT}</script><script defer src="${esc(assets.runtime)}"></script>`;
+  return `${preload}<style>${pageStyles(assets, theme, groups, segments)}</style><script>${THEME_SCRIPT}</script><script defer src="${esc(assets.runtime)}"></script>`;
 }
 
 function document(title: string, head: string, body: string): string {
@@ -566,17 +577,22 @@ export function renderFragment(data: DashboardData, theme: Theme = DEFAULT_THEME
 }
 
 export function renderDashboardPage(data: DashboardData, options: PageOptions): string {
-  const { periods } = options;
+  const { periods, segments } = options;
   const { result: html, ranges } = recordRanges(() => {
     const page = dashboardPage(data, options);
-    for (const preset of Object.values(periods?.presets ?? {})) {
+    const states = Object.values(segments?.states ?? {});
+    const shown = [
+      ...states.map((s) => s.data),
+      ...[periods, ...states.map((s) => s.periods)].flatMap((p) => Object.values(p?.presets ?? {})),
+    ];
+    for (const preset of shown) {
       renderDashboardBlocks(preset, options.theme);
       periodCaption(preset);
       if (preset.periodFilter) periodText(preset.periodFilter, preset.locale);
     }
     return page;
   });
-  if (!periods) return html;
+  if (!periods && !segments) return html;
   return html.replace(
     RANGES_SLOT,
     () => `<script type="application/json" data-hm-ranges>${scriptJson(ranges)}</script>`,
@@ -606,14 +622,21 @@ function dashboardPage(data: DashboardData, options: PageOptions): string {
           ` data-hm-grain-filter="${esc(data.grainFilter.id)}"`,
         )
       : "",
+    data.segmentFilter ? segmentControl(data.segmentFilter) : "",
   ].join("");
   const note = data.periodFilter
     ? `<p class="hm-period-note" data-hm-period-note aria-live="polite" hidden></p>`
     : "";
   const header = `<header class="hm-header"><div class="hm-titles"><div class="hm-brand"><span class="hm-logo" aria-hidden="true"></span>${esc(data.project)}</div><div class="hm-title"><h1>${esc(data.title)}</h1><p class="hm-caption" data-hm-caption>${esc(periodCaption(data))}</p>${note}${data.description ? `<p class="hm-description">${esc(data.description)}</p>` : ""}</div></div>${controls ? `<div class="hm-header-side">${controls}${asOf}</div>` : asOf}</header>`;
-  const embedded = options.periods
-    ? `<script type="application/json" data-hm-periods>${scriptJson(options.periods)}</script>${RANGES_SLOT}`
-    : "";
+  const embedded = [
+    options.periods
+      ? `<script type="application/json" data-hm-periods>${scriptJson(options.periods)}</script>`
+      : "",
+    options.segments
+      ? `<script type="application/json" data-hm-segments${options.assets.periods ? ` data-hm-engine="${esc(options.assets.periods)}"` : ""}>${scriptJson(options.segments)}</script>`
+      : "",
+    options.periods || options.segments ? RANGES_SLOT : "",
+  ].join("");
   const sources = options.sources?.length
     ? `Source: ${options.sources.join(", ")}`
     : `Source: ${data.project}`;
@@ -621,7 +644,7 @@ function dashboardPage(data: DashboardData, options: PageOptions): string {
   const body = `<div class="hm-page">${header}<main class="hm-grid">${renderBlocks(data.blocks, ctx)}</main>${footer}</div>${embedded}`;
   return document(
     `${data.title} \u00B7 ${data.project}`,
-    pageHead(options.assets, theme, usesGroups(data)),
+    pageHead(options.assets, theme, usesGroups(data), data.segmentFilter !== undefined),
     body,
   );
 }

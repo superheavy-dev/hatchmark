@@ -13,6 +13,7 @@ export interface PeriodView {
 
 interface Engine {
   view(payload: unknown, key: string, ranges: Record<string, string>): PeriodView | undefined;
+  render(data: unknown, ranges: Record<string, string>): { blocks: string; caption: string };
 }
 
 const DAY = 86_400_000;
@@ -46,7 +47,7 @@ export function writeParam(name: string, value: string | undefined): void {
 
 let engine: Promise<Engine> | undefined;
 
-function loadEngine(src: string): Promise<Engine> {
+export function loadEngine(src: string): Promise<Engine> {
   engine ??= new Promise<Engine>((resolve, reject) => {
     const script = document.createElement("script");
     script.src = src;
@@ -64,7 +65,10 @@ function loadEngine(src: string): Promise<Engine> {
   return engine;
 }
 
-export function mountPeriod(root: HTMLElement, redraw: (view: PeriodView) => void): () => void {
+export function mountPeriod(
+  root: HTMLElement,
+  redraw: (view: PeriodView) => void,
+): (force?: boolean) => void {
   const filter = root.dataset.hmPeriod ?? "period";
   const locale = root.dataset.hmLocale ?? "en-US";
   const button = root.querySelector<HTMLButtonElement>(".hm-period-button");
@@ -79,6 +83,8 @@ export function mountPeriod(root: HTMLElement, redraw: (view: PeriodView) => voi
   const initial = presets.find((b) => b.getAttribute("aria-checked") === "true")?.dataset.hmPreset;
   const fallback = initial ?? presets[0]?.dataset.hmPreset ?? "";
   let shown = fallback;
+  let wanted = fallback;
+  let turn = 0;
   const live = document.createElement("p");
   live.className = "hm-sr";
   live.setAttribute("aria-live", "polite");
@@ -283,11 +289,15 @@ export function mountPeriod(root: HTMLElement, redraw: (view: PeriodView) => voi
     }
     const grid = document.querySelector<HTMLElement>("main.hm-grid");
     const src = root.dataset.hmEngine;
-    const payload = document.querySelector("script[data-hm-periods]")?.textContent;
-    if (!src || !payload) return;
+    if (!src) return;
+    wanted = key;
+    const mine = ++turn;
     grid?.setAttribute("aria-busy", "true");
     try {
-      const view = (await loadEngine(src)).view(JSON.parse(payload), key, ranges);
+      const engine = await loadEngine(src);
+      if (mine !== turn) return;
+      const payload = document.querySelector("script[data-hm-periods]")?.textContent ?? "{}";
+      const view = engine.view(JSON.parse(payload), key, ranges);
       if (view === undefined) throw new RangeError(`no range "${key}"`);
       shown = view.key;
       check(view.key);
@@ -313,10 +323,13 @@ export function mountPeriod(root: HTMLElement, redraw: (view: PeriodView) => voi
       if (announce) live.textContent = `Showing ${view.name}${view.dates ? `, ${view.dates}` : ""}`;
       close(announce);
     } catch {
+      if (mine !== turn) return;
+      wanted = fallback;
+      if (again && key !== fallback) void choose(fallback, false, true);
       if (!announce) writeParam(filter, undefined);
       else if (status) status.textContent = "This range is not available on this page";
     } finally {
-      grid?.removeAttribute("aria-busy");
+      if (mine === turn) grid?.removeAttribute("aria-busy");
     }
   };
 
@@ -461,7 +474,7 @@ export function mountPeriod(root: HTMLElement, redraw: (view: PeriodView) => voi
 
   const requested = new URLSearchParams(location.search).get(filter);
   if (requested && requested !== shown) void choose(requested, false);
-  return () => {
-    if (shown !== fallback) void choose(shown, false, true);
+  return (force = false) => {
+    if (wanted !== fallback || force) void choose(wanted, false, true);
   };
 }

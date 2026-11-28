@@ -173,11 +173,12 @@ export async function startDevServer(
     return files;
   };
 
-  const render = ({ data, periods }: Page): Rendered => {
+  const render = ({ data, periods, segments }: Page): Rendered => {
     const html = renderDashboardPage(data, {
       assets: assets.assetsFrom("../"),
       sources: config ? sourceNames(config) : [],
       ...(periods ? { periods } : {}),
+      ...(segments ? { segments } : {}),
     });
     const items = gridItems(data.blocks, { data, theme: DEFAULT_THEME, paint: cssPaint });
     const grid = `<main class="hm-grid">${items.map((i) => i.html).join("")}</main>`;
