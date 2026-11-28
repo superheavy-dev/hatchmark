@@ -658,17 +658,16 @@ function dashboardPage(data: DashboardData, options: PageOptions): string {
   const ctx = context(data, theme, options.geographies);
   const locale = data.locale;
   const asOf = `<p class="hm-asof">Data through ${esc(formatDate(data.asOf, locale))}</p>`;
+  const geo = Object.keys(options.geographies ?? {}).flatMap(
+    (id) => options.assets.geo?.[id as GeographyId] ?? [],
+  );
   const controls = [
     data.periodFilter
       ? periodControl(
           { ...data, periodFilter: data.periodFilter },
           options.periods ? options.assets.periods : undefined,
           WEEK_ORDER.indexOf(data.anchors.week),
-          options.periods
-            ? Object.keys(options.geographies ?? {}).flatMap(
-                (id) => options.assets.geo?.[id as GeographyId] ?? [],
-              )
-            : [],
+          options.periods ? geo : [],
         )
       : "",
     data.grainFilter
@@ -690,7 +689,7 @@ function dashboardPage(data: DashboardData, options: PageOptions): string {
       ? `<script type="application/json" data-hm-periods>${scriptJson(options.periods)}</script>`
       : "",
     options.segments
-      ? `<script type="application/json" data-hm-segments${options.assets.periods ? ` data-hm-engine="${esc(options.assets.periods)}"` : ""}>${scriptJson(options.segments)}</script>`
+      ? `<script type="application/json" data-hm-segments${options.assets.periods ? ` data-hm-engine="${esc(options.assets.periods)}"` : ""}${geo.length > 0 ? ` data-hm-geo="${esc(geo.join(" "))}"` : ""}>${scriptJson(options.segments)}</script>`
       : "",
     options.periods || options.segments ? RANGES_SLOT : "",
   ].join("");

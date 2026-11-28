@@ -29,7 +29,7 @@ async function open(name: string, width: number, touch = false): Promise<Page> {
     hasTouch: touch,
     isMobile: touch,
   });
-  const styles = pageStyles({ runtime: "", fonts: {} }, DEFAULT_THEME, false, true);
+  const styles = pageStyles({ runtime: "", fonts: {} }, DEFAULT_THEME, false, false, true);
   await page.setContent(
     `<!doctype html><html><head><style>${styles}</style></head><body>${renderFragment(data, DEFAULT_THEME, usedGeographies(data.blocks))}</body></html>`,
   );

@@ -528,6 +528,52 @@ describe("map ranks, classes and region filters", () => {
   });
 });
 
+describe("map on a page with a segment toggle", () => {
+  afterAll(removeProjects);
+
+  it("hands the engine the boundary scripts it redraws the map with", async () => {
+    const { root } = await writeProject({
+      "hatchmark.yaml": {
+        ...PROJECT_DEFAULTS,
+        name: "Segments",
+        sources: { s: { type: "csv", path: "s.csv" } },
+      },
+      "s.csv": [
+        "d,state,channel",
+        "2026-06-02,TX,web",
+        "2026-06-03,CA,store",
+        "2026-06-04,NY,web",
+      ].join("\n"),
+      "metrics/orders.yaml": metric({
+        type: "aggregate",
+        table: "s",
+        time: "d",
+        aggregate: "count",
+      }),
+      "segments/web.yaml": {
+        label: "Web",
+        filters: [{ column: "channel", op: "eq", value: "web" }],
+      },
+      "dashboards/m.yaml": {
+        title: "Segments",
+        period: { asOf: "2026-06-30", range: "month_to_date", compare: "none" },
+        filters: [{ type: "segment", id: "segments", segments: ["web"] }],
+        blocks: [{ type: "map", id: "m", geo: "us-states", region: "state", value: "orders" }],
+      },
+    });
+    expect((await buildProject(root)).code).toBe(0);
+    const html = await readFile(path.join(root, "dist", "m", "index.html"), "utf8");
+    const tag = html.match(/<script type="application\/json" data-hm-segments[^>]*>/)?.[0] ?? "";
+    const geo = tag.match(/data-hm-geo="([^"]+)"/)?.[1]?.split(" ") ?? [];
+    expect(geo.length).toBeGreaterThan(0);
+    for (const src of geo) {
+      await expect(
+        readFile(path.resolve(path.join(root, "dist", "m"), src)),
+      ).resolves.toBeDefined();
+    }
+  });
+});
+
 describe("hatchmark check on a map block", () => {
   afterAll(removeProjects);
 

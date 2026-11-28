@@ -586,7 +586,8 @@ function mountSegments(group: HTMLElement, params: URLSearchParams): void {
       const grid = document.querySelector<HTMLElement>("main.hm-grid");
       grid?.setAttribute("aria-busy", "true");
       try {
-        const view = (await loadEngine(src)).render(state.data, ranges);
+        const geo = (script.dataset.hmGeo ?? "").split(" ").filter(Boolean);
+        const view = (await loadEngine(src, geo)).render(state.data, ranges);
         redraw({ key: chosen, name: "", nameIsDates: false, presetOnly: [], ...view });
       } finally {
         grid?.removeAttribute("aria-busy");

@@ -257,7 +257,9 @@ export async function build(
 
   const redrawn = new Set(
     pages.flatMap((p) =>
-      p.periods === undefined && p.segments === undefined ? [] : Object.keys(usedGeographies(p.data.blocks)),
+      p.periods === undefined && p.segments === undefined
+        ? []
+        : Object.keys(usedGeographies(p.data.blocks)),
     ) as GeographyId[],
   );
   const assets = await bundledAssets(
