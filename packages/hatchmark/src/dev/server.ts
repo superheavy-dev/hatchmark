@@ -157,6 +157,7 @@ export async function startDevServer(
   const watched = new Set<string>();
   let vite: ViteDevServer | undefined;
   let booted = false;
+  let watcherReady: Promise<void> | undefined;
 
   const send = (message: DevEvent) => {
     options.onEvent?.(message);
@@ -434,6 +435,12 @@ export async function startDevServer(
     name: "hatchmark",
     resolveId: (id) => (id === CLIENT_ID ? CLIENT_FILE : undefined),
     configureServer(server) {
+      // chokidar emits "ready" once and has no public flag for it, so a late listener checks
+      // _readyEmitted. Edits made before "ready" can be missed on Linux.
+      const watcher = server.watcher as typeof server.watcher & { _readyEmitted?: boolean };
+      watcherReady = watcher._readyEmitted
+        ? Promise.resolve()
+        : new Promise((resolve) => watcher.once("ready", () => resolve()));
       server.watcher.on("all", (_event, file) => onFile(path.resolve(file)));
       server.middlewares.use((req, res, next) => {
         const handle = async () => {
@@ -511,6 +518,7 @@ export async function startDevServer(
   for (const file of watched) vite.watcher.add(file);
   try {
     await vite.listen();
+    await watcherReady;
   } catch (error) {
     await vite.close();
     await executor?.close();
