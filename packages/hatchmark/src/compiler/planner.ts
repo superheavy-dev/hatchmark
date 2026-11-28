@@ -41,6 +41,7 @@ import {
   type PlanParam,
   type PlanResult,
   type QueryPlan,
+  type SnapshotPick,
 } from "./plan.js";
 
 /** Block types the planner builds in phase 1; the others get an HM4002 warning and no plan. */
@@ -106,7 +107,25 @@ function countsRows(sql: string, types: readonly { name: string; type: string }[
   return type !== undefined && NUMERIC_TYPE.test(type.type);
 }
 
-/** An aggregate or SQL metric as components plus how to combine them (see PlannedMeasure). */
+/**
+ * How an aggregate metric reads a snapshot table (RFC 0001 section 3.2): its over_time, when that is
+ * last, first, avg, min or max with a time column and no entity; undefined for any other metric.
+ */
+export function snapshotPick(metric: Metric): SnapshotPick | undefined {
+  if (metric.type !== "aggregate" || metric.time === undefined || metric.entity !== undefined) {
+    return undefined;
+  }
+  return metric.over_time === undefined || metric.over_time === "sum"
+    ? undefined
+    : metric.over_time;
+}
+
+/**
+ * An aggregate or SQL metric as components plus how to combine them (see PlannedMeasure). A snapshot
+ * read with over_time avg, min or max is one component, aggregated per snapshot before it is taken
+ * over the bucket: avg of a sum or count adds up across groups, since every group is averaged over
+ * the source's snapshots; min and max, and any other aggregate, do not.
+ */
 export function plannedMeasure(
   name: string,
   metric: Metric,
@@ -126,6 +145,19 @@ export function plannedMeasure(
     return { metric: name, components: [c, rows], combine, rows: rows.id };
   }
   const column = metric.column === undefined ? {} : { column: metric.column };
+  const pick = snapshotPick(metric);
+  if (pick === "avg" || pick === "min" || pick === "max") {
+    const additive = metric.aggregate === "sum" || metric.aggregate === "count";
+    const id = `${name}__${metric.aggregate}`;
+    const c = component(
+      id,
+      metric.aggregate,
+      metric,
+      column,
+      pick === "avg" && additive ? "sum" : "none",
+    );
+    return { metric: name, components: [c], combine: { op: "identity", component: id } };
+  }
   if (metric.aggregate === "avg") {
     const sum = component(`${name}__sum`, "sum", metric, column, "sum");
     const count = component(`${name}__count`, "count", metric, column, "sum");
@@ -169,14 +201,14 @@ export function notBuiltYet(
   }
   const source = sources[metric.table];
   if (source?.type === "lookup") return "lookup sources";
-  if (source?.snapshot !== undefined) return 'the source option "snapshot"';
+  if (source?.snapshot !== undefined && snapshotPick(metric) === undefined) {
+    return 'the source option "snapshot"';
+  }
   const tables = (metric.filters ?? []).flatMap((f) =>
     f.op === "in_table" || f.op === "not_in_table" ? [f.table] : [],
   );
   if (tables.some((t) => sources[t]?.type === "lookup")) return "in_table on a lookup source";
   if (metric.type === "sql") return undefined;
-  if (metric.over_time !== undefined && metric.over_time !== "sum")
-    return `over_time: ${metric.over_time}`;
   for (const key of ["value", "entity", "active", "trailing", "scale"] as const) {
     if (metric[key] !== undefined) return `"${key}"`;
   }
@@ -239,7 +271,13 @@ function planReading(
 ): Reading {
   const groups = new Map<
     string,
-    { source: string; time?: string; horizons: TimeColumn[]; metrics: string[] }
+    {
+      source: string;
+      time?: string;
+      pick?: SnapshotPick;
+      horizons: TimeColumn[];
+      metrics: string[];
+    }
   >();
   const queryOf = new Map<string, string>();
   const horizonsOf = (name: string): TimeColumn[] => {
@@ -265,15 +303,18 @@ function planReading(
     const metric = ctx.metrics.get(leaf);
     if (metric === undefined || (metric.type !== "aggregate" && metric.type !== "sql")) continue;
     const isolated = metric.type === "sql" && (metric.filters ?? []).length > 0;
+    const pick = snapshotPick(metric);
     const key = canonicalJson([
       metric.table,
       metric.time ?? null,
       isolated ? leaf : null,
       horizons,
+      ...(pick === undefined ? [] : [pick]),
     ]);
     const group = groups.get(key) ?? {
       source: metric.table,
       ...(metric.time === undefined ? {} : { time: metric.time }),
+      ...(pick === undefined ? {} : { pick }),
       horizons,
       metrics: [],
     };
@@ -324,6 +365,9 @@ function planReading(
       params: paramsForQuery(ctx.params, group.source, group.time).filter(
         (p) => !allPeriods || p.kind !== "period",
       ),
+      ...(group.pick === undefined || group.time === undefined
+        ? {}
+        : { evaluation: { kind: "snapshot" as const, column: group.time, pick: group.pick } }),
     };
     const id = queryId(shape);
     ids.set(key, id);

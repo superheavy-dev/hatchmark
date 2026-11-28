@@ -11,6 +11,7 @@ import {
   PERIOD_DATA_VERSION,
   type PeriodData,
   type PortableMetric,
+  snapshotCubeable,
 } from "./period-data.js";
 import { rangeKey } from "./periods.js";
 import type {
@@ -21,6 +22,7 @@ import type {
   PlannedQuery,
   QueryPlan,
   QueryResult,
+  SnapshotEvaluation,
 } from "./plan.js";
 import { planDashboard, queryId } from "./planner.js";
 import {
@@ -40,6 +42,7 @@ import { nextDay, queryBounds } from "./windows.js";
 export function dayCubeQuery(query: PlannedQuery): PlannedQuery | undefined {
   const column = query.window.column;
   if (column === undefined || !query.params.some((p) => p.kind === "period")) return undefined;
+  if (query.evaluation !== undefined) return snapshotCubeQuery(query, query.evaluation);
   const sets = query.measures.flatMap((m) => m.components.flatMap((c) => c.anyOf ?? []));
   const split = new Set(sets.map((s) => s.time)).size > 1;
   if (split && sets.some((s) => s.time === undefined)) return undefined;
@@ -70,7 +73,74 @@ export function dayCubeQuery(query: PlannedQuery): PlannedQuery | undefined {
   return { id: queryId(shape), ...shape };
 }
 
+function snapshotCubeQuery(query: PlannedQuery, evaluation: SnapshotEvaluation): PlannedQuery {
+  const { column } = evaluation;
+  const columns = query.dimensions.filter((d) => d.kind !== "time");
+  const lead: PlannedDimension[] = [
+    { kind: "time", column, grain: { unit: "day" } },
+    { kind: "snapshot", column },
+  ];
+  const all = [...lead, ...columns].map((_, i) => i);
+  const shape: Omit<PlannedQuery, "id"> = {
+    source: query.source,
+    input: query.input,
+    ...(query.tables === undefined ? {} : { tables: query.tables }),
+    measures: query.measures,
+    dimensions: [...lead, ...columns],
+    groupingSets: columns.length > 0 ? [all, [0, 1]] : [all],
+    window: {
+      range: "all_time",
+      shift: "none",
+      column,
+      ...(query.window.horizons ? { horizons: query.window.horizons } : {}),
+    },
+    params: query.params.filter((p) => p.kind !== "period"),
+    evaluation: { ...evaluation, pick: "last" },
+  };
+  return { id: queryId(shape), ...shape };
+}
+
+function snapshotCubeFrom(
+  query: PlannedQuery,
+  result: QueryResult,
+  start: number,
+  last: number,
+): DayCube {
+  const components = query.measures.flatMap((m) => m.components.map((c) => c.id));
+  const at = new Map(result.columns.map((c, i) => [c.name, i]));
+  const width = query.dimensions.length;
+  const cube: DayCube = {
+    columns: query.dimensions.slice(2).map((d) => d.column),
+    days: [],
+    instants: [],
+    keys: query.dimensions.slice(2).map(() => []),
+    values: Object.fromEntries(components.map((id) => [id, []])),
+    snapshots: { days: [], instants: [] },
+  };
+  const markers = query.groupingSets.length - 1;
+  result.rows.forEach((row, r) => {
+    if (typeof row[0] !== "string" || dayNumber(row[0]) > last) return;
+    const day = dayNumber(row[0]) - start;
+    const instant = String(row[1]);
+    const set = result.groupingSet?.[r] ?? 0;
+    if (set === markers) {
+      cube.snapshots?.days.push(day);
+      cube.snapshots?.instants.push(instant);
+    }
+    if (set !== 0) return;
+    cube.days.push(day);
+    cube.instants?.push(instant);
+    for (let i = 2; i < width; i++) cube.keys[i - 2]?.push(toKey(row[i]));
+    for (const id of components) {
+      const raw = row[at.get(id) ?? -1];
+      cube.values[id]?.push(typeof raw === "number" ? raw : null);
+    }
+  });
+  return cube;
+}
+
 function cubeFrom(query: PlannedQuery, result: QueryResult, start: number, last: number): DayCube {
+  if (query.evaluation !== undefined) return snapshotCubeFrom(query, result, start, last);
   const components = query.measures.flatMap((m) => m.components.map((c) => c.id));
   const at = new Map(result.columns.map((c, i) => [c.name, i]));
   const width = query.dimensions.length;
@@ -125,7 +195,9 @@ function presetOnlyMetrics(plan: QueryPlan): string[] {
   for (const query of plan.queries) {
     if (dayCubeQuery(query) === undefined) continue;
     for (const measure of query.measures) {
-      if (measure.components.some((c) => c.reaggregate === "none")) names.add(measure.metric);
+      const cubeable = (c: MeasureComponent) =>
+        query.evaluation === undefined ? c.reaggregate !== "none" : snapshotCubeable(c);
+      if (!measure.components.every(cubeable)) names.add(measure.metric);
     }
   }
   return [...names].sort();

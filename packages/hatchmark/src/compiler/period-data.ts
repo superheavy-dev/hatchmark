@@ -8,6 +8,7 @@ import type {
   PlannedQuery,
   QueryPlan,
   QueryResult,
+  SnapshotEvaluation,
 } from "./plan.js";
 import { bucketStart, queryBounds } from "./windows.js";
 
@@ -44,6 +45,13 @@ export interface DayCube {
   sets?: (number | null)[][];
   /** One array per column dimension, aligned with days. */
   keys: Key[][];
+  /**
+   * For a snapshot query (SnapshotEvaluation): each entry's snapshot, aligned with days. An entry
+   * then holds one group's aggregate at one snapshot.
+   */
+  instants?: string[];
+  /** For a snapshot query: every snapshot of the source in the span, whether or not rows pass. */
+  snapshots?: { days: number[]; instants: string[] };
   /** One array per measure component, by component id, aligned with days. */
   values: Record<string, Value[]>;
 }
@@ -130,6 +138,9 @@ export function cubeResult(
   };
   const lo = bounds.kind === "bounded" ? dayOf(bounds.start, false) : -Infinity;
   const hi = bounds.end === undefined ? Infinity : dayOf(bounds.end, true);
+  if (query.evaluation !== undefined) {
+    return snapshotCubeResult(query, query.evaluation, cube, origin, lo, hi);
+  }
   const components = query.measures.flatMap((m) => m.components);
   const dims = query.dimensions;
   const texts = new Map<number, string>();
@@ -196,6 +207,144 @@ export function cubeResult(
       groupingSet.push(s);
     }
   });
+  return {
+    columns: [
+      ...dims.map((d) => ({
+        name: d.column,
+        type: d.kind === "time" ? ("date" as const) : ("string" as const),
+      })),
+      ...components.map((c) => ({ name: c.id, type: "number" as const })),
+    ],
+    rows,
+    ...(query.groupingSets.length > 1 ? { groupingSet } : {}),
+  };
+}
+
+function innerCombine(c: MeasureComponent): "sum" | "min" | "max" | undefined {
+  if (c.aggregate === "sum" || c.aggregate === "count") return "sum";
+  return c.aggregate === "min" || c.aggregate === "max" ? c.aggregate : undefined;
+}
+
+/**
+ * True when a snapshot query's component can be answered from its day cube: its aggregate combines
+ * across groups at one snapshot (sum and count add up, min and max take the extreme).
+ */
+export function snapshotCubeable(c: MeasureComponent): boolean {
+  return innerCombine(c) !== undefined;
+}
+
+function snapshotCubeResult(
+  query: PlannedQuery,
+  evaluation: SnapshotEvaluation,
+  cube: DayCube,
+  origin: number,
+  lo: number,
+  hi: number,
+): QueryResult {
+  const components = query.measures.flatMap((m) => m.components);
+  const dims = query.dimensions;
+  let columns = 0;
+  const columnAt = dims.map((d) => (d.kind !== "time" ? columns++ : -1));
+  const inside = (day: number | undefined) => day !== undefined && day >= lo && day < hi;
+  const markers = (cube.snapshots?.days ?? []).flatMap((day, i) =>
+    inside(day) ? [{ day, instant: cube.snapshots?.instants[i] ?? "" }] : [],
+  );
+  const entries = cube.days.flatMap((day, i) => (inside(day) ? [i] : []));
+  const rows: unknown[][] = [];
+  const groupingSet: number[] = [];
+  query.groupingSets.forEach((set, s) => {
+    const times = set.filter((d) => dims[d]?.kind === "time");
+    const others = set.filter((d) => dims[d]?.kind !== "time");
+    const bucketOf = (day: number): Key[] =>
+      times.map((d) => {
+        const dim = dims[d];
+        return dim?.kind === "time" ? bucketStart(dayText(origin + day), dim.grain) : null;
+      });
+    const groupOf = (i: number): Key[] =>
+      others.map((d) => cube.keys[columnAt[d] ?? -1]?.[i] ?? null);
+    const buckets = new Map<string, { keys: Key[]; instants: Set<string> }>();
+    for (const { day, instant } of markers) {
+      const keys = bucketOf(day);
+      const id = JSON.stringify(keys);
+      const bucket = buckets.get(id) ?? { keys, instants: new Set<string>() };
+      bucket.instants.add(instant);
+      buckets.set(id, bucket);
+    }
+    const chosen = new Map<string, { keys: Key[]; instants: string[] }>();
+    for (const [id, { keys, instants }] of buckets) {
+      const sorted = [...instants].sort();
+      const picked =
+        evaluation.pick === "last"
+          ? sorted.slice(-1)
+          : evaluation.pick === "first"
+            ? sorted.slice(0, 1)
+            : sorted;
+      chosen.set(id, { keys, instants: picked });
+    }
+    const domain = new Map<string, Key[]>();
+    if (others.length === 0) domain.set("[]", []);
+    for (const i of entries) {
+      const keys = groupOf(i);
+      domain.set(JSON.stringify(keys), keys);
+    }
+    const acc = new Map<string, (number | null)[]>();
+    for (const i of entries) {
+      const instant = cube.instants?.[i] ?? "";
+      const bucket = JSON.stringify(bucketOf(cube.days[i] ?? 0));
+      if (!chosen.get(bucket)?.instants.includes(instant)) continue;
+      const id = JSON.stringify([bucket, instant, JSON.stringify(groupOf(i))]);
+      const sums = acc.get(id) ?? components.map(() => null);
+      components.forEach((c, j) => {
+        const v = cube.values[c.id]?.[i] ?? null;
+        const combine = innerCombine(c);
+        const prior = sums[j] ?? null;
+        if (v === null || combine === undefined) return;
+        sums[j] =
+          prior === null
+            ? v
+            : combine === "sum"
+              ? prior + v
+              : combine === "min"
+                ? Math.min(prior, v)
+                : Math.max(prior, v);
+      });
+      acc.set(id, sums);
+    }
+    const found: Key[][] = [];
+    const values: Value[][] = [];
+    for (const [bucketId, bucket] of chosen) {
+      for (const [groupId, group] of domain) {
+        found.push(
+          dims.map((_, d) => {
+            const t = times.indexOf(d);
+            if (t >= 0) return bucket.keys[t] ?? null;
+            const o = others.indexOf(d);
+            return o >= 0 ? (group[o] ?? null) : null;
+          }),
+        );
+        values.push(
+          components.map((c, j) => {
+            if (innerCombine(c) === undefined) return null;
+            const empty = c.aggregate === "sum" || c.aggregate === "count" ? 0 : null;
+            const at = bucket.instants
+              .map((instant) => acc.get(JSON.stringify([bucketId, instant, groupId]))?.[j] ?? empty)
+              .filter((v): v is number => v !== null);
+            if (at.length === 0) return null;
+            if (evaluation.pick === "avg") return at.reduce((a, v) => a + v, 0) / at.length;
+            if (evaluation.pick === "min") return Math.min(...at);
+            if (evaluation.pick === "max") return Math.max(...at);
+            return at[0] ?? null;
+          }),
+        );
+      }
+    }
+    const order = found.map((_, i) => i).sort((a, b) => compareRow(found[a] ?? [], found[b] ?? []));
+    for (const i of order) {
+      rows.push([...(found[i] ?? []), ...(values[i] ?? [])]);
+      groupingSet.push(s);
+    }
+  });
+  if (dims.length === 0 && rows.length === 0) rows.push(components.map(() => null));
   return {
     columns: [
       ...dims.map((d) => ({

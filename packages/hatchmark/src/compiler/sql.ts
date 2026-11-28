@@ -9,7 +9,12 @@ import {
 } from "../spec/index.js";
 import { canonicalJson } from "./hash.js";
 import { segmentValues, selectValues } from "./params.js";
-import type { ExecutionContext, MeasureComponent, PlannedQuery } from "./plan.js";
+import type {
+  ExecutionContext,
+  MeasureComponent,
+  PlannedQuery,
+  SnapshotEvaluation,
+} from "./plan.js";
 import { queryBounds } from "./windows.js";
 
 /** A value bound to a $name parameter. */
@@ -95,6 +100,15 @@ function instant(source: SqlSource, name: string, timezone: string, sql: Sql): s
   if (type === "TIMESTAMP WITH TIME ZONE") return q;
   if (type === "DATE") return `timezone(${sql.bind(timezone)}, CAST(${q} AS TIMESTAMP))`;
   return `timezone(${naiveZone(source, sql)}, CAST(${q} AS TIMESTAMP))`;
+}
+
+function snapshotKey(source: SqlSource, name: string, timezone: string, sql: Sql): string {
+  const { name: actual, type } = column(source, name);
+  if (type === "DATE") return quote(actual);
+  if (isTimestamp(type)) return instant(source, actual, timezone, sql);
+  throw new Error(
+    `time column "${actual}" of source "${source.name}" has type ${type}; it needs DATE or TIMESTAMP`,
+  );
 }
 
 function naiveZone(source: SqlSource, sql: Sql): string {
@@ -257,6 +271,12 @@ function dimensionSql(
     const when = filters.map((f) => filterSql(source, f, context, sql));
     return when.length === 0 ? bucket : `CASE WHEN ${when.join(" AND ")} THEN ${bucket} END`;
   }
+  if (dimension.kind === "snapshot") {
+    const key = snapshotKey(source, dimension.column, context.timezone, sql);
+    return column(source, dimension.column).type === "DATE"
+      ? `CAST(${key} AS VARCHAR)`
+      : `strftime(timezone('UTC', ${key}), '%Y-%m-%dT%H:%M:%S.%fZ')`;
+  }
   if (dimension.kind === "time") {
     const local = `CAST(${localTime(source, dimension.column, context.timezone, sql)} AS DATE)`;
     const { grain } = dimension;
@@ -354,7 +374,8 @@ function builtQuery(
     ];
   };
   const perSet = query.measures.some((m) => m.components.some((c) => c.anyOf !== undefined));
-  if (!perSet) where.push(...windowOn(query.window.column));
+  const windowed = perSet ? [] : windowOn(query.window.column);
+  if (query.evaluation === undefined) where.push(...windowed);
   for (const param of query.params) {
     if (param.kind === "segment") {
       const on = segmentValues(param, context.bindings);
@@ -418,6 +439,23 @@ function builtQuery(
         : `${dimRefs[i]} NOT IN (${hidden.join(", ")})`,
     );
   });
+  if (query.evaluation !== undefined) {
+    return snapshotQuery({
+      source,
+      query,
+      evaluation: query.evaluation,
+      context,
+      sql,
+      tag,
+      windowed,
+      where,
+      dims,
+      dimRefs,
+      components,
+      measureSql,
+      key: free("hm_s"),
+    });
+  }
   const grouped = dimRefs.length > 0;
   const at = (id: string) => measureSql[components.findIndex((c) => c.id === id)];
   const floatSum = (id: string) => {
@@ -466,6 +504,160 @@ function builtQuery(
     groupingAt,
     large: shown.map(({ m }) => m.metric),
     serial: components.some((c) => c.aggregate === "sql"),
+  };
+}
+
+function floatSumOf(source: SqlSource, c: MeasureComponent | undefined): boolean {
+  return c?.aggregate === "sum" && c.column !== undefined && isFloat(column(source, c.column).type);
+}
+
+function snapshotQuery(input: {
+  source: SqlSource;
+  query: PlannedQuery;
+  evaluation: SnapshotEvaluation;
+  context: ExecutionContext;
+  sql: Sql;
+  tag: number | undefined;
+  windowed: string[];
+  where: string[];
+  dims: string[];
+  dimRefs: string[];
+  components: MeasureComponent[];
+  measureSql: string[];
+  key: string;
+}): BuiltQuery {
+  const { source, query, evaluation, context, sql, tag, where, dimRefs, components, key } = input;
+  const rows = '"hm_rows"';
+  const filtered = where.length > 0 ? ` WHERE ${where.join(" AND ")}` : "";
+  const keyExpr = snapshotKey(source, evaluation.column, context.timezone, sql);
+  const ctes = [
+    `${rows} AS (SELECT *${input.dims.join("")}, ${keyExpr} AS ${key} FROM ${source.relation} WHERE ${[
+      ...input.windowed,
+      `${keyExpr} IS NOT NULL`,
+    ].join(" AND ")})`,
+  ];
+  const values = components.map((_, j) => `"hm_c${j}"`);
+  const width = query.dimensions.length;
+  const sets = query.groupingSets.map((set, i) => {
+    const inSet = [...set].sort((a, b) => a - b);
+    const buckets = inSet.filter((d) => {
+      const kind = query.dimensions[d]?.kind;
+      return kind === "time" || kind === "snapshot";
+    });
+    const groups = inSet.filter((d) => !buckets.includes(d));
+    const refs = (ds: number[]) => ds.map((d) => dimRefs[d] as string);
+    const same = (a: string, b: string, ds: number[]) =>
+      refs(ds).map((r) => `${a}.${r} IS NOT DISTINCT FROM ${b}.${r}`);
+    const by = (ds: string[]) => (ds.length > 0 ? ` GROUP BY ${ds.join(", ")}` : "");
+    const pickOne =
+      evaluation.pick === "last" ? "max" : evaluation.pick === "first" ? "min" : undefined;
+    const k = `"hm_k${i}"`;
+    const g = `"hm_g${i}"`;
+    const v = `"hm_v${i}"`;
+    ctes.push(
+      pickOne === undefined
+        ? `${k} AS (SELECT DISTINCT ${[...refs(buckets), key].join(", ")} FROM ${rows})`
+        : `${k} AS (SELECT ${[...refs(buckets), `${pickOne}(${key}) AS ${key}`].join(", ")} FROM ${rows}${by(refs(buckets))} HAVING count(*) > 0)`,
+    );
+    const grid =
+      groups.length === 0 || !buckets.some((d) => query.dimensions[d]?.kind === "snapshot");
+    if (grid) {
+      ctes.push(
+        groups.length === 0
+          ? `${g} AS (SELECT 1 AS "hm_one")`
+          : `${g} AS (SELECT DISTINCT ${refs(groups).join(", ")} FROM ${rows}${filtered})`,
+      );
+    }
+    const inner = [...refs(buckets), key, ...refs(groups)];
+    ctes.push(
+      `${v} AS (SELECT ${[...inner, ...input.measureSql.map((m, j) => `${m} AS ${values[j]}`)].join(", ")} FROM ${rows}${filtered} GROUP BY ${inner.join(", ")})`,
+    );
+    const onBucket = [...same("k", "v", buckets), `k.${key} = v.${key}`];
+    const from = grid
+      ? `${k} AS k CROSS JOIN ${g} AS g LEFT JOIN ${v} AS v ON ${[...onBucket, ...same("g", "v", groups)].join(" AND ")}`
+      : `${k} AS k JOIN ${v} AS v ON ${onBucket.join(" AND ")}`;
+    const groupSide = grid ? "g" : "v";
+    const outer = components.map((c, j) => {
+      const empty =
+        c.aggregate === "sum" || c.aggregate === "count" || c.aggregate === "count_distinct";
+      const value = empty ? `coalesce(v.${values[j]}, 0)` : `v.${values[j]}`;
+      switch (evaluation.pick) {
+        case "avg":
+          return `fsum(CAST(${value} AS DOUBLE) ORDER BY k.${key}) / count(${value})`;
+        case "min":
+          return `min(${value})`;
+        default:
+          return `max(${value})`;
+      }
+    });
+    const mask = query.dimensions.reduce(
+      (m, _, d) => (set.includes(d) ? m : m | (1 << (width - 1 - d))),
+      0,
+    );
+    const select = [
+      ...query.dimensions.map((_, d) => {
+        const ref = dimRefs[d] as string;
+        if (buckets.includes(d)) return `k.${ref} AS ${ref}`;
+        if (groups.includes(d)) return `${groupSide}.${ref} AS ${ref}`;
+        return `NULL AS ${ref}`;
+      }),
+      ...outer.map((o, j) => `${o} AS ${values[j]}`),
+      ...(width > 0 ? [`${mask} AS "hm_grouping"`] : []),
+    ];
+    const keys = [
+      ...buckets.map((d) => `k.${dimRefs[d]}`),
+      ...groups.map((d) => `${groupSide}.${dimRefs[d]}`),
+    ];
+    return `SELECT ${select.join(", ")} FROM ${from}${keys.length > 0 ? ` GROUP BY ${keys.join(", ")}` : ""}`;
+  });
+  ctes.push(`"hm_out" AS (${sets.join(" UNION ALL ")})`);
+  const grouped = width > 0;
+  const shown = query.measures.flatMap((m) => {
+    const at = (id: string) => values[components.findIndex((c) => c.id === id)];
+    const { combine } = m;
+    if (combine.op === "identity") {
+      return floatSumOf(
+        source,
+        components.find((c) => c.id === combine.component),
+      )
+        ? [{ m, e: at(combine.component) }]
+        : [];
+    }
+    if (
+      !floatSumOf(
+        source,
+        components.find((c) => c.id === combine.numerator),
+      )
+    )
+      return [];
+    return [{ m, e: `(${at(combine.numerator)}) / nullif(${at(combine.denominator)}, 0)` }];
+  });
+  const select = [
+    ...(tag === undefined ? [] : [String(tag)]),
+    ...dimRefs,
+    ...values,
+    ...(grouped ? ['"hm_grouping"'] : []),
+    ...shown.map(({ e }) => `max(CASE WHEN isfinite(${e}) THEN abs(${e}) END) OVER ()`),
+  ];
+  const groupingAt = dimRefs.length + values.length;
+  const from = grouped
+    ? '"hm_out"'
+    : `(SELECT ${values.map((c) => `max(${c}) AS ${c}`).join(", ")} FROM "hm_out") AS "hm_out"`;
+  const text = [
+    `WITH ${ctes.join(",\n")}`,
+    `SELECT ${select.join(", ")}`,
+    `FROM ${from}`,
+    ...(grouped && tag === undefined
+      ? [`ORDER BY ${['"hm_grouping"', ...dimRefs.map((d) => `${d} ASC NULLS LAST`)].join(", ")}`]
+      : []),
+  ].join("\n");
+  return {
+    text,
+    params: sql.values(),
+    components,
+    groupingAt,
+    large: shown.map(({ m }) => m.metric),
+    serial: false,
   };
 }
 

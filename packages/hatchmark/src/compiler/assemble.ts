@@ -228,6 +228,7 @@ class Assembler {
     if (indexed === undefined || measure === undefined) return null;
     const { combine } = measure;
     const rowsAt = measure.rows === undefined ? undefined : indexed.components.get(measure.rows);
+    const gapless = indexed.query.evaluation === undefined;
     const component = (id: string): Value => {
       const at = indexed.components.get(id);
       const reaggregate = measure.components.find((c) => c.id === id)?.reaggregate ?? "none";
@@ -236,7 +237,7 @@ class Assembler {
         if (row !== undefined && rowsAt !== undefined && row[rowsAt] === 0) return 0;
         const raw = row === undefined || at === undefined ? null : row[at];
         const value = typeof raw === "number" ? raw : null;
-        return value === null && reaggregate === "sum" && row === undefined ? 0 : value;
+        return value === null && reaggregate === "sum" && row === undefined && gapless ? 0 : value;
       });
       if (!fold) return values[0] ?? null;
       const present = values.filter((v): v is number => v !== null);
