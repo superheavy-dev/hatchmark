@@ -735,7 +735,8 @@ class Assembler {
    * A target over a KPI's or category's window. A point-in-time target is read at the window's
    * end. A flow target covers the window's period: a to-date range's whole bucket, the window
    * itself for last N units, else the range as written. When the window ends before its period
-   * does, pace is the target times the share of the period the window covers (elapsedShare).
+   * does, pace is the target times the share of the period the window covers (elapsedShare), for
+   * a metric that adds up over time only.
    */
   private windowTarget(
     planned: PlannedTarget,
@@ -784,13 +785,14 @@ class Assembler {
     const start = parseInstant(period.start);
     const stop = parseInstant(period.end);
     const end = "to_date" in spec ? local(bounds.end) : parseInstant(localDate(bounds.end));
-    if (end >= stop) return full;
+    if (end >= stop || planned.additive !== true) return full;
     return { ...full, pace: full.value * elapsedShare(start, end, start, stop) };
   }
 
   /**
    * A target at each bucket of a time axis. A flow target covers each bucket (flowTarget), with
-   * pace in the buckets the measure's horizon or a clipped start makes partial. A point-in-time
+   * pace in the buckets the measure's horizon or a clipped start makes partial when the metric adds
+   * up over time. A point-in-time
    * target is read at each bucket's end, and at the horizon in the bucket it cuts.
    */
   private timeTarget(
@@ -821,7 +823,7 @@ class Assembler {
       return {
         value: flow.value,
         pace:
-          !partial || flow.value === null
+          !partial || flow.value === null || planned.additive !== true
             ? null
             : flow.value * elapsedShare(span.from, span.to, span.start, span.end),
       };

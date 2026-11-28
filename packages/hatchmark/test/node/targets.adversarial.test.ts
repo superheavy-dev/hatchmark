@@ -495,7 +495,7 @@ function check(seed: number, c: Case, data: DashboardData, codes: Set<string>): 
     prorated ||= full.prorated;
     if (full.value === null) return { value: null };
     const stop = ms(period.end);
-    if (endAt >= stop) return { value: full.value };
+    if (endAt >= stop || !c.spec.additive) return { value: full.value };
     const start = ms(period.start);
     return { value: full.value, pace: (full.value * (endAt - start)) / (stop - start) };
   };
@@ -531,7 +531,8 @@ function check(seed: number, c: Case, data: DashboardData, codes: Set<string>): 
       const partial = from < horizon && (from > s || to < e);
       return {
         value: f.value,
-        pace: partial && f.value !== null ? (f.value * (to - from)) / (e - s) : null,
+        pace:
+          partial && f.value !== null && c.spec.additive ? (f.value * (to - from)) / (e - s) : null,
       };
     });
     if (out.some((o) => o.value === null)) missing = true;

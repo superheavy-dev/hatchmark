@@ -206,7 +206,8 @@ target's table is not evaluated yet, so the block shows no target and build warn
   in local wall-clock time, so a month-to-date KPI on November 26 at 2 p.m. is compared with 25.58
   of 30 days. A time series' partial bucket has a pace the same way, by its own elapsed share.
 - A metric that doesn't add up over time (an average, a ratio) has a target only at its own grain,
-  never summed or split.
+  never summed or split, and no pace: its attainment is the value over the target. Point-in-time
+  targets have no pace either.
 
 **Point-in-time targets** (balances, ARR) are values at the end of each bucket. Between two values
 the target moves in a straight line (`linear`) or by a constant growth factor (`compound`, which

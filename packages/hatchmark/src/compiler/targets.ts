@@ -73,7 +73,8 @@ export function flowTarget(
  * A point-in-time target at a local wall-clock instant (microseconds since 1970-01-01T00:00 local,
  * instants.ts). Each value holds at the end of its bucket; between two of them the target follows
  * the path: "linear" moves by the same amount per microsecond, "compound" by the same factor, which
- * needs both values positive (null otherwise). Null before the first value's instant and after the
+ * needs both values positive (null otherwise). At a value's own instant the target is that value.
+ * Null before the first value's instant and after the
  * last one's.
  */
 export function pointTarget(
@@ -84,9 +85,10 @@ export function pointTarget(
   const points = [...values.entries()]
     .sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0))
     .map(([start, value]) => ({ at: parseInstant(bucketEnd(start, target.grain)), value }));
+  const hit = points.find((p) => p.at === at);
+  if (hit !== undefined) return hit.value;
   for (let i = 0; i < points.length; i++) {
     const p = points[i] as { at: bigint; value: number };
-    if (at === p.at) return p.value;
     const next = points[i + 1];
     if (next === undefined || at < p.at) return null;
     if (at > next.at) continue;
