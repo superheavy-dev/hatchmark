@@ -9,6 +9,17 @@ import {
 
 const AA = 4.5;
 
+function over(top: string, base: string, opacity: number): string {
+  const channel = (hex: string, i: number) => Number.parseInt(hex.slice(i, i + 2), 16);
+  return `#${[1, 3, 5]
+    .map((i) =>
+      Math.round(channel(top, i) * opacity + channel(base, i) * (1 - opacity))
+        .toString(16)
+        .padStart(2, "0"),
+    )
+    .join("")}`;
+}
+
 describe("tile map labels", () => {
   for (const mode of ["light", "dark"] as const) {
     it(`reach WCAG AA on every class fill in the ${mode} theme`, () => {
@@ -20,9 +31,11 @@ describe("tile map labels", () => {
       expect(short).toEqual([]);
     });
 
-    it(`reach WCAG AA on a no-data tile in the ${mode} theme`, () => {
-      const { textMuted, land } = DEFAULT_THEME.color[mode];
-      expect(contrastRatio(textMuted, land)).toBeGreaterThanOrEqual(AA);
+    it(`reach WCAG AA on a no-data tile's crosshatch lines and land in the ${mode} theme`, () => {
+      const { text, textSubtle, land } = DEFAULT_THEME.color[mode];
+      const line = over(textSubtle, land, DEFAULT_THEME.noData.opacity[mode]);
+      expect(contrastRatio(text, line)).toBeGreaterThanOrEqual(AA);
+      expect(contrastRatio(text, land)).toBeGreaterThanOrEqual(AA);
     });
   }
 

@@ -186,7 +186,7 @@ function tileLabels(
 }
 
 function tileLabelPaint(ctx: RenderContext, fill: MapColor | undefined): string {
-  if (fill === undefined) return ctx.paint.attrs("textMuted");
+  if (fill === undefined) return ctx.paint.attrs("text");
   if (ctx.paint.mode === undefined) return ` class="hm-on-${fill}"`;
   return ` fill="${onMapColor(ctx.theme, ctx.paint.mode, fill)}"`;
 }
