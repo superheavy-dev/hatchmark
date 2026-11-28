@@ -22,6 +22,8 @@ export function periodText(
   return { name: dates ?? filter.selected, nameIsDates: dates !== undefined };
 }
 
+// A browser without this locale's Intl data falls back to US date order and Latin digits, so the
+// page embeds the build's pattern and digits.
 export function fieldFormat(locale: string): { pattern: string; digits?: string } {
   const tag = Intl.DateTimeFormat.supportedLocalesOf(locale).length > 0 ? locale : "en-US";
   const options = { year: "numeric", month: "2-digit", day: "2-digit", timeZone: "UTC" } as const;

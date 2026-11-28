@@ -222,7 +222,9 @@ function wallOf(at: bigint, timeZone: string): bigint {
   );
   return BigInt(localMs) * 1000n + (at % 1_000_000n);
 }
-// Matches DuckDB, which reads a wall time repeated by a fall-back as its later occurrence.
+
+// Matches DuckDB: a wall time repeated by a fall-back is its later occurrence, and one skipped by
+// a spring-forward takes the offset before the change.
 function fromWall(wall: bigint, timeZone: string): bigint {
   const offset = (at: bigint) => wallOf(at, timeZone) - at;
   const before = wall - offset(wall - DAY_US);

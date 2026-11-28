@@ -50,8 +50,8 @@ import { overlayHtml } from "./overlay.js";
 const CLIENT_FILE = fileURLToPath(new URL("../../runtime/dev-client.ts", import.meta.url));
 const CLIENT_ID = "virtual:hatchmark-dev-client";
 const DEBOUNCE_MS = 20;
-// Vite's bundled chokidar ignores a file for 50 ms after reporting a change, so a second save
-// inside that window gets no event.
+// Vite's bundled chokidar drops a repeat change event for the same path within 50 ms, so a
+// second save inside that window gets no event.
 const RECHECK_MS = 100;
 const INDEX = "/";
 
@@ -86,6 +86,7 @@ export interface DevOptions {
 export interface DevServer {
   url: string;
   urls: string[];
+  // Vite rejects HMR websocket upgrades from a browser origin that lack ?token=.
   token: string;
   idle(): Promise<void>;
   close(): Promise<void>;
