@@ -11,6 +11,7 @@ import {
   scalar,
   schemaRef,
 } from "./common.js";
+import { HEIGHT_PRESETS } from "./layout.js";
 import { GROUP_MAX_COUNT, GROUP_MAX_SIZE, PIE_DEFAULT_LIMIT } from "./units.js";
 
 const blockCommon = {
@@ -28,6 +29,11 @@ const blockCommon = {
     .meta({ description: "Width in a 12-column grid." }),
 };
 
+const height = z.enum(HEIGHT_PRESETS).optional().meta({
+  description:
+    'Card height: "compact", "default" or "tall". The theme sets the pixels for desktop and phone; there are no pixel heights. Charts side by side in a grid row are drawn at the tallest preset among them.',
+});
+
 const metricName = identifier.meta({ description: "A metric name, the file name under metrics/." });
 const metricList = z.array(metricName).min(1).max(8);
 const sort = z
@@ -41,6 +47,10 @@ const kpiBlock = z
   .strictObject({
     ...blockCommon,
     type: z.literal("kpi"),
+    height: height.meta({
+      description:
+        'Size of the figure and sparkline: "compact", "default" or "tall". KPIs in one strip are drawn at the tallest preset among them.',
+    }),
     metric: metricName,
     compare: comparison
       .optional()
@@ -83,6 +93,7 @@ const groupsField = z
 
 const timeSeriesFields = {
   ...blockCommon,
+  height,
   metrics: metricList,
   grain: grainSchema,
   grains: grainsField(),
@@ -154,6 +165,7 @@ const barBlock = z
   .strictObject({
     ...blockCommon,
     type: z.literal("bar"),
+    height,
     metrics: metricList,
     by: columnName
       .optional()
@@ -227,6 +239,7 @@ export const PIE_READABLE_LIMIT = 6;
 
 const pieFields = {
   ...blockCommon,
+  height,
   metric: metricName.meta({
     description: "A part-of-whole metric: a sum or a count, whose slices add up to its total.",
   }),
@@ -271,6 +284,10 @@ const tableBlock = z
   .strictObject({
     ...blockCommon,
     type: z.literal("table"),
+    height: height.meta({
+      description:
+        'Height of the scroll area: "compact", "default" or "tall". A table with a height scrolls inside its card past that many rows; with overflow: page it grows instead and height has no effect (HM2027).',
+    }),
     by: z
       .array(columnName)
       .min(1)
@@ -331,6 +348,7 @@ const scatterBlock = z
   .strictObject({
     ...blockCommon,
     type: z.literal("scatter"),
+    height,
     x: metricName.meta({ description: "Metric on the horizontal axis." }),
     y: metricName.meta({ description: "Metric on the vertical axis." }),
     by: columnName.meta({ description: "Category column: one point per value." }),

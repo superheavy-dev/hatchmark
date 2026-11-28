@@ -1,3 +1,4 @@
+import type { HeightPreset } from "../spec/layout.js";
 import defaultTokens from "./themes/default.json" with { type: "json" };
 
 /** The colour roles a theme defines for each mode, as named in the tokens file. */
@@ -49,6 +50,22 @@ export interface Density {
   kpiLineHeight: number;
 }
 
+/** Phone is a layout narrower than 600 px; desktop is every wider one. */
+export type Device = "desktop" | "phone";
+
+/** What a height preset sets on one device. */
+export interface BlockHeight {
+  /** Plot height of a chart; a longer key or more bars adds to it. */
+  chart: number;
+  /** Largest pie or donut diameter. */
+  pie: number;
+  kpiSize: number;
+  kpiLineHeight: number;
+  sparkline: number;
+  /** Body rows a scrolling table shows; a half row hints that it scrolls. */
+  tableRows: number;
+}
+
 /** The parts of a hatchmark-tokens file the renderer reads. */
 export interface Theme {
   id: string;
@@ -60,6 +77,7 @@ export interface Theme {
   /** Hue families a group of related series takes, in the order groups take them. */
   groups?: GroupTheme;
   density: Density;
+  height: Record<HeightPreset, Record<Device, BlockHeight>>;
   radius: { card: number; control: number; tooltip: number; bar: number };
   /** The partial-bucket treatment (RFC 0001 section 6.6, option B): hatch, hollow point, partial bars. */
   partial: {
@@ -128,6 +146,11 @@ export const DEFAULT_THEME: Theme = {
   },
   ...optionalGroups(groupTheme(defaultTokens.data.groups)),
   density: defaultTokens.density.compact,
+  height: {
+    compact: defaultTokens.blockHeight.compact,
+    default: defaultTokens.blockHeight.default,
+    tall: defaultTokens.blockHeight.tall,
+  },
   radius: defaultTokens.radius,
   partial: {
     spacing: defaultTokens.chart.partial.region.pattern.spacing,

@@ -4,11 +4,16 @@ import { formatDate, formatKey, formatSpan, formatValue, parseDate } from "./for
 import { timeOf } from "./partial.js";
 import { esc, langAttr, r } from "./svg.js";
 
-/**
- * Rows past which a table keeps its header and total row in view: scrolling inside its card, or in
- * page mode growing with the page with both rows pinned to the screen edges.
- */
-export const TALL_TABLE_ROWS = 15;
+/** How a table past its row limit fits: the explicit overflow, else page when it has its grid row alone and no height. */
+export function tableOverflow(block: TableData, alone: boolean): "page" | "scroll" {
+  return block.overflow ?? (alone && block.height === undefined ? "page" : "scroll");
+}
+
+/** The non-default height preset a scrolling table is drawn at, if any. */
+export function tableHeight(block: TableData, alone: boolean): "compact" | "tall" | undefined {
+  if (tableOverflow(block, alone) === "page" || block.height === undefined) return undefined;
+  return block.height === "default" ? undefined : block.height;
+}
 
 /** An attribute value that keeps carriage returns and line feeds, which HTML parsing would fold. */
 const attr = (text: string) => esc(text).replaceAll("\r", "&#13;").replaceAll("\n", "&#10;");
@@ -302,8 +307,10 @@ export function renderTable(
       : "";
   const empty =
     block.rows.length === 0 ? `<p class="hm-table-note">No rows in this period.</p>` : "";
-  const overflow = block.overflow ?? (alone ? "page" : "scroll");
-  const tall =
-    block.rows.length > TALL_TABLE_ROWS ? ` hm-tall${overflow === "page" ? " hm-grow" : ""}` : "";
-  return `<div class="hm-table-wrap${tall}" tabindex="0" role="region" aria-labelledby="hm-${esc(block.id)}-t"><table${described ? ` aria-describedby="hm-${esc(block.id)}-s"` : ""} class="hm-table${grouped ? (block.subtotals ? " hm-ma" : " hm-mb") : ""}${grouped && block.subtotals && width > 2 ? " hm-deep" : ""}"><thead><tr>${head}</tr></thead><tbody>${rows}</tbody>${total}</table></div>${empty}${note}`;
+  const overflow = tableOverflow(block, alone);
+  const preset = tableHeight(block, alone);
+  const { desktop, phone } = ctx.theme.height[preset ?? "default"];
+  const limit = Math.floor(Math.min(desktop.tableRows, phone.tableRows));
+  const tall = block.rows.length > limit ? ` hm-tall${overflow === "page" ? " hm-grow" : ""}` : "";
+  return `<div class="hm-table-wrap${tall}"${preset ? ` data-hm-height="${preset}"` : ""} tabindex="0" role="region" aria-labelledby="hm-${esc(block.id)}-t"><table${described ? ` aria-describedby="hm-${esc(block.id)}-s"` : ""} class="hm-table${grouped ? (block.subtotals ? " hm-ma" : " hm-mb") : ""}${grouped && block.subtotals && width > 2 ? " hm-deep" : ""}"><thead><tr>${head}</tr></thead><tbody>${rows}</tbody>${total}</table></div>${empty}${note}`;
 }

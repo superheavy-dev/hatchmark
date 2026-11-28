@@ -135,9 +135,15 @@ function donutTotal(block: PieData, ctx: RenderContext, diameter: number) {
 }
 
 /** Where the pie and its key go at a width: the key beside the pie, or under it on narrow cards. */
-function geometry(block: PieData, ctx: RenderContext, width: number, plotHeight: number) {
+function geometry(
+  block: PieData,
+  ctx: RenderContext,
+  width: number,
+  plotHeight: number,
+  cap: number,
+) {
   const side = width >= PIE_SIDE_KEY_MIN;
-  const diameter = Math.min(MAX_DIAMETER, plotHeight - 24, Math.floor(width * (side ? 0.42 : 0.7)));
+  const diameter = Math.min(cap, plotHeight - 24, Math.floor(width * (side ? 0.42 : 0.7)));
   const keyX = side ? diameter + KEY_GAP : 0;
   const keyWidth = side ? width - keyX : width;
   const empty = pieItems(block).length === 0 || block.whole === 0;
@@ -160,8 +166,9 @@ export function pieHeight(
   ctx: RenderContext,
   width: number,
   chartHeight: number,
+  maxDiameter = MAX_DIAMETER,
 ): number {
-  return geometry(block, ctx, width, chartHeight).height;
+  return geometry(block, ctx, width, chartHeight, maxDiameter).height;
 }
 
 /** A point on a circle, with angle 0 at the top and clockwise in fractions of a turn. */
@@ -213,11 +220,12 @@ export function renderPie(
   ctx: RenderContext,
   size: ChartSize,
   standalone?: { font: string; background: string },
+  maxDiameter = MAX_DIAMETER,
 ): string {
   const { paint, data } = ctx;
   const locale = data.locale;
   const metric = metricOf(ctx, block.metric);
-  const g = geometry(block, ctx, size.width, size.height);
+  const g = geometry(block, ctx, size.width, size.height, maxDiameter);
   const outer = g.diameter / 2;
   const inner = block.type === "donut" ? outer * HOLE : 0;
   const items = pieItems(block);

@@ -1,4 +1,5 @@
 import type { Anchors, Comparison, Format, RangeSpec, TimeGrain } from "../spec/index.js";
+import type { HeightPreset } from "../spec/layout.js";
 import type { SourceHorizon } from "./horizons.js";
 
 /**
@@ -75,6 +76,8 @@ export interface BlockCommon {
   title?: string;
   /** Width in the 12-column grid, resolved (12 when the spec sets none, 3 for a KPI). */
   span: number;
+  /** Height preset as the spec sets it; absent when it sets none, which draws as "default". */
+  height?: HeightPreset;
 }
 
 export interface KpiData extends BlockCommon {

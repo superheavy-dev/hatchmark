@@ -7,6 +7,9 @@ import type {
   LineData,
   PieData,
 } from "../../src/compiler/dashboard-data.js";
+
+type Chart = LineData | BarData | PieData;
+
 import {
   cardWidth,
   cssPaint,
@@ -47,21 +50,31 @@ describe("golden renders", () => {
   for (const entry of GALLERY) {
     it(`${entry.component}/${entry.variant}`, () => {
       const ctx: RenderContext = { data: entry.data, theme: DEFAULT_THEME, paint: cssPaint };
-      const block = entry.data.blocks[0];
+      const charts = (blocks: DashboardData["blocks"], name: (b: Chart) => string) => {
+        for (const chart of blocks as Chart[]) {
+          const desktop = cardWidth(LAYOUTS[0], chart.span) - 34;
+          golden(
+            `${name(chart)}.desktop.svg`,
+            `${renderChartSvg(chart, entry.data, { width: desktop })}\n`,
+          );
+          golden(
+            `${name(chart)}.mobile-dark.svg`,
+            `${renderChartSvg(chart, entry.data, { width: 324, device: "phone", mode: "dark" })}\n`,
+          );
+        }
+      };
+      if (entry.component === "height") {
+        golden(`${entry.variant}.html`, `${renderBlocks(entry.data.blocks, ctx)}\n`);
+        const each = entry.data.blocks.filter((b) => b.type !== "kpi" && b.type !== "table");
+        if (each.length === entry.data.blocks.length)
+          charts(each, (b) => `${entry.variant}.${b.id}`);
+        return;
+      }
       if (entry.component === "kpi" || entry.component === "table") {
         golden(`${entry.variant}.html`, `${renderBlocks(entry.data.blocks, ctx)}\n`);
         return;
       }
-      const chart = block as LineData | BarData | PieData;
-      const desktop = cardWidth(LAYOUTS[0], chart.span) - 34;
-      golden(
-        `${entry.variant}.desktop.svg`,
-        `${renderChartSvg(chart, entry.data, { width: desktop })}\n`,
-      );
-      golden(
-        `${entry.variant}.mobile-dark.svg`,
-        `${renderChartSvg(chart, entry.data, { width: 324, height: 230, mode: "dark" })}\n`,
-      );
+      charts(entry.data.blocks.slice(0, 1), () => entry.variant);
     });
   }
 

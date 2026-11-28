@@ -190,6 +190,16 @@ export const CODES = {
     explanation:
       'A table with overflow: page grows as tall as its rows, but this one shares its grid row with other blocks, and a grid row is as tall as its tallest card. Its neighbours stretch to the table\'s height with empty space below their content. Remove "overflow" (a table in a shared row scrolls inside its card by default), or give the table its own row with span: 12.',
   },
+  HM2027: {
+    title: "height on a table that grows with the page",
+    explanation:
+      'A table with overflow: page grows as tall as its rows, so a "height" preset on it has no effect. Remove "height" (the fix does, and is safe: the page does not change), or remove "overflow" so the table scrolls inside a card of that height.',
+  },
+  HM2028: {
+    title: "cards side by side with different heights",
+    explanation:
+      'Cards that sit side by side end level. Charts in one grid row are drawn at the tallest "height" preset among them, and KPIs in one strip at the tallest among the strip\'s KPIs, so a shorter preset is drawn taller on wide screens. Below 1024 px every card takes the full width and keeps its own preset. Set the same height on every card in the row (the fix sets this one to the height it is drawn at, which also changes how it looks on phones), or give the chart its own row with span: 12. Tables keep their own height.',
+  },
   HM2025: {
     title: "grain no block switches to",
     explanation:

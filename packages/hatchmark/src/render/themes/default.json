@@ -2,10 +2,11 @@
   "$schema": "hatchmark-tokens/0.2",
   "id": "default",
   "name": "Default",
-  "version": "1.3.0",
+  "version": "1.4.0",
   "status": "final",
   "finalized": "2026-11-27: good/bad variant A (cerulean / vermilion); brand colours are kept and warned about, never replaced",
   "changelog": {
+    "1.4.0": "Block height presets: compact, default and tall, each with desktop and phone values for the chart plot, the KPI figure and sparkline, and the rows a scrolling table shows. default matches the heights of 1.3.0.",
     "1.3.0": "Series groups: the lead step of each family may differ from the family's base slot so that steps 2 and 3 always recede behind it; checks.<mode>.groupCVD.leadVsBase records how far each lead is from its base slot. All group bars still hold: every step is at least 3:1 on the page (light) and cardAlt (dark), every pair of steps in a family is at least ΔE2000 10, and every step is at least 8 from the other families, the ungrouped slots outside its family and the context grey, under normal vision and the three Machado simulations. Categorical slots, good and bad are unchanged.",
     "1.2.0": "Series groups: three hue families (blue on slots 1 and 5, pink and red on slots 2, 6 and 8, green on slot 4) with three lightness steps each, in light and dark, as stroke and fill. Step 1 is the family's base slot colour. Every step is at least 3:1 on the page (light) and cardAlt (dark); every pair of steps in a family is at least ΔE2000 10, and every step is at least 8 from the other families, the ungrouped slots outside its family and the context grey, under normal vision and the three Machado simulations. Lightness only, no dash. Categorical slots, good and bad are unchanged.",
     "1.1.0": "Categorical palette adapted from the FT's g-chartcolour 0.8.26 (BSD-3-Clause), with separate stroke and fill sets. Strokes (lines, points, line keys) use data.<mode>.categorical, built from FT categorical_line; fills (bars, areas, pie and donut slices, square keys) use data.<mode>.categoricalFill, built from FT categorical_bar and re-ordered so slot n matches the stroke hue of slot n. Light values keep FT's hues, with lightness adjusted where a slot missed 3:1 contrast or the colour-vision separation bar; the dark set is derived. Context grey unchanged.",
@@ -358,6 +359,63 @@
       "kpiLineHeight": 40,
       "historyRow": 30,
       "periodChartHeight": 170
+    }
+  },
+  "blockHeight": {
+    "use": "height: compact | default | tall on a block. chart: plot height of line, area, vertical bar, pie, donut and scatter charts (a longer key or more bars adds to it). pie: the largest pie or donut diameter. kpiSize, kpiLineHeight, sparkline: the KPI figure and its sparkline. tableRows: body rows a scrolling table shows before it scrolls. desktop applies from 600 px, phone below.",
+    "compact": {
+      "desktop": {
+        "chart": 200,
+        "pie": 160,
+        "kpiSize": 22,
+        "kpiLineHeight": 28,
+        "sparkline": 21,
+        "tableRows": 7.5
+      },
+      "phone": {
+        "chart": 180,
+        "pie": 150,
+        "kpiSize": 18,
+        "kpiLineHeight": 24,
+        "sparkline": 20,
+        "tableRows": 7.5
+      }
+    },
+    "default": {
+      "desktop": {
+        "chart": 280,
+        "pie": 240,
+        "kpiSize": 28,
+        "kpiLineHeight": 32,
+        "sparkline": 24,
+        "tableRows": 15.5
+      },
+      "phone": {
+        "chart": 230,
+        "pie": 240,
+        "kpiSize": 20,
+        "kpiLineHeight": 28,
+        "sparkline": 24,
+        "tableRows": 15.5
+      }
+    },
+    "tall": {
+      "desktop": {
+        "chart": 400,
+        "pie": 360,
+        "kpiSize": 36,
+        "kpiLineHeight": 44,
+        "sparkline": 33,
+        "tableRows": 25.5
+      },
+      "phone": {
+        "chart": 320,
+        "pie": 280,
+        "kpiSize": 24,
+        "kpiLineHeight": 32,
+        "sparkline": 28,
+        "tableRows": 18.5
+      }
     }
   },
   "radius": {

@@ -105,6 +105,29 @@ export function addPropertyFix(
   };
 }
 
+export function removePropertyFix(
+  document: SpecDocument,
+  objectPointer: string,
+  key: string,
+  applicability: Applicability,
+  description: string,
+): Fix | undefined {
+  const found = document.locate(objectPointer);
+  if (!found?.exact || found.node.kind !== "object") return undefined;
+  const members = found.node.members;
+  const at = members.findLastIndex((m) => m.key === key);
+  const member = members[at];
+  if (member === undefined) return undefined;
+  const next = members[at + 1];
+  const previous = members[at - 1];
+  const [start, end] = next
+    ? [member.keyStart, next.keyStart]
+    : previous
+      ? [previous.value.end, member.value.end]
+      : [member.keyStart, member.value.end];
+  return { range: document.rangeAt(start, end), text: "", applicability, description };
+}
+
 export function removeItemFix(
   document: SpecDocument,
   arrayPointer: string,
