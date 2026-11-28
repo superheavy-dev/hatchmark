@@ -31,7 +31,7 @@ describe("normalizeRegionKey", () => {
     ["0", "0"],
     ["000", "0"],
     ["06.0", "6"],
-    ["6.5", "6 5"],
+    ["6.5", "6.5"],
     ["Straße", "strasse"],
     ["Łódź", "lodz"],
     ["Ｆｒａｎｃｅ", "france"],
@@ -47,8 +47,44 @@ describe("normalizeRegionKey", () => {
     expect(normalizeRegionKey(true)).toBe("true");
   });
 
-  it("keeps signed numbers out of every code, padded or not", () => {
-    for (const raw of ["-6", "-06", "-6.0", " -06 ", " -6", "+6", "+06.0", "'-6'", -6, -840])
+  it("joins a code only from ASCII digits with an optional zero fraction", () => {
+    for (const raw of ["6", "06", " 06 ", "06.0", "\t6\n", 6])
+      expect(matchRegion("us-states", raw), JSON.stringify(raw)).toEqual({
+        kind: "matched",
+        id: "CA",
+        by: "fips",
+      });
+  });
+
+  it("keeps every other value without letters out of the codes", () => {
+    for (const raw of [
+      "-6",
+      "-06",
+      "-6.0",
+      " -06 ",
+      " -6",
+      "+6",
+      "+06.0",
+      "'-6'",
+      "- 6",
+      "+ 6",
+      " - 6 ",
+      "\u22126",
+      "\u221206",
+      "\u20136",
+      "(6)",
+      "6-",
+      "6 -",
+      "6.5",
+      "-\uff10\uff16",
+      "\uff0d06",
+      "\uff0b6",
+      "\uff16",
+      "\uff10\uff16",
+      "\u00a06",
+      -6,
+      -840,
+    ])
       expect(
         matchRegion(raw === -840 ? "world-countries" : "us-states", raw).kind,
         String(raw),

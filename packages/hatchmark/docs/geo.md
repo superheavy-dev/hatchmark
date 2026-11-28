@@ -49,10 +49,10 @@ A map's region column is matched to region ids through an alias table per geogra
 
 Before matching, values are normalized:
 
-1. A whole number written with a zero fraction (`6.0`) reads as that integer, so a DOUBLE column of FIPS or ISO numeric codes matches like an integer one. A number with a sign (`-6`, `-06.0`, `+6`), even padded with spaces or quotes (`" -06 "`), never matches a code.
-2. A fixed fold table spells out letters that have no accent to strip: `ß` → `ss`, `æ` → `ae`, `ø` → `o`, `ł` → `l`, ligatures such as `ﬁ`, and full-width letters and digits.
+1. A code is ASCII digits, optionally with a zero fraction (`06`, `6.0`), with or without spaces around it. It loses its leading zeros (`006` → `6`), so a DOUBLE column of FIPS or ISO numeric codes matches like an integer one.
+2. Anything else is a name. A fixed fold table spells out letters that have no accent to strip: `ß` → `ss`, `æ` → `ae`, `ø` → `o`, `ł` → `l`, ligatures such as `ﬁ`, and full-width letters.
 3. Accents are removed, the text is lowercased, `&` becomes "and", every run of other characters (spaces, punctuation, apostrophes) becomes one space, and the ends are trimmed.
-4. An all-digit value loses its leading zeros (`006` → `6`).
+4. A name left without letters never matches: signed or bracketed numbers (`-6`, `−06`, `+6`, `(6)`, `6-`), full-width digits (`６`) and decimals (`6.5`) are reported as unmatched rather than read as a code.
 
 So `Côte d’Ivoire`, `COTE-D'IVOIRE` and `cote d ivoire` are the same key. The same normalization runs in DuckDB when a query groups or joins by region, and a test checks that both give the same key for every Unicode character.
 

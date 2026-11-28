@@ -60,8 +60,9 @@ boundaries coincide, the classes merge rather than leave an empty colour in the 
 
 `hatchmark build --json` and `hatchmark check --json` carry the full match report under `maps`:
 every distinct value of the region column, its rows, and the region it joined or why it joined none.
-When `value` reads several sources, such as orders per session, a value's rows count the rows of
-every source.
+A row counts once, when it passes the filters of one of the metrics `value` reads and falls inside
+that metric's window on its own time column. So orders per session counts the rows of both sources,
+and shipped per paid order counts a row shipped in the window even if it was ordered before it.
 
 ## Checks
 

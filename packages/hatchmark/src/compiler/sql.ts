@@ -332,11 +332,8 @@ function builtQuery(
   if (bounds === undefined) {
     throw new Error(`range "${query.window.range}" has no "${query.window.shift}" window`);
   }
-  if (
-    query.window.column !== undefined &&
-    (bounds.kind === "bounded" || bounds.end !== undefined)
-  ) {
-    const column = query.window.column;
+  const windowOn = (column: string | undefined): string[] => {
+    if (column === undefined || !(bounds.kind === "bounded" || bounds.end !== undefined)) return [];
     const [start, end] = [bounds.kind === "bounded" ? bounds.start : undefined, bounds.end];
     const local = [start, end].some((v) => v !== undefined && !v.endsWith("Z"))
       ? localTime(source, column, context.timezone, sql)
@@ -345,9 +342,13 @@ function builtQuery(
       value.endsWith("Z")
         ? `${instant(source, column, context.timezone, sql)} ${op} CAST(${sql.bind(value)} AS TIMESTAMPTZ)`
         : `${local} ${op} CAST(${sql.bind(value)} AS DATE)`;
-    if (start !== undefined) where.push(compare(start, ">="));
-    if (end !== undefined) where.push(compare(end, "<"));
-  }
+    return [
+      ...(start === undefined ? [] : [compare(start, ">=")]),
+      ...(end === undefined ? [] : [compare(end, "<")]),
+    ];
+  };
+  const perSet = query.measures.some((m) => m.components.some((c) => c.anyOf !== undefined));
+  if (!perSet) where.push(...windowOn(query.window.column));
   for (const param of query.params) {
     if (param.kind === "segment") {
       const on = segmentValues(param, context.bindings);
@@ -385,9 +386,13 @@ function builtQuery(
   const measureSql = components.map((c) => {
     const inWhere = shared !== undefined;
     const filters = inWhere ? [] : c.filters.map((f) => filterSql(source, f, context, sql));
-    const any = (c.anyOf ?? []).map(
-      (set) => `(${set.map((f) => filterSql(source, f, context, sql)).join(" AND ")})`,
-    );
+    const any = (c.anyOf ?? []).map((set) => {
+      const parts = [
+        ...windowOn(set.time),
+        ...set.filters.map((f) => filterSql(source, f, context, sql)),
+      ];
+      return parts.length > 0 ? `(${parts.join(" AND ")})` : "TRUE";
+    });
     if (any.length > 0) filters.push(`(${any.join(" OR ")})`);
     const clause = filters.length > 0 ? ` FILTER (WHERE ${filters.join(" AND ")})` : "";
     const aggregate = `${aggregateSql(c, source)}${clause}`;

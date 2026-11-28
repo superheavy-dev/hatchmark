@@ -158,7 +158,7 @@ function filterTables(
 ): Record<string, FileSource> | undefined {
   const names = measures
     .flatMap((m) => m.components)
-    .flatMap((c) => [...c.filters, ...(c.anyOf ?? []).flat()])
+    .flatMap((c) => [...c.filters, ...(c.anyOf ?? []).flatMap((s) => s.filters)])
     .flatMap((f) => (f.op === "in_table" || f.op === "not_in_table" ? [f.table] : []))
     .sort();
   const tables: Record<string, FileSource> = {};
@@ -288,28 +288,38 @@ function planReading(
   if (rows) {
     const bySource = new Map<
       string,
-      { group: { time?: string; horizons: TimeColumn[] }; filters: Map<string, Filter[]> }
+      {
+        group: { time?: string; horizons: TimeColumn[] };
+        byTime: Map<string, { time?: string; filters: Map<string, Filter[]> }>;
+      }
     >();
     for (const group of groups.values()) {
       const input = ctx.sources[group.source];
       if (input === undefined || input.type === "lookup") continue;
-      const entry = bySource.get(group.source) ?? { group, filters: new Map<string, Filter[]>() };
+      const entry = bySource.get(group.source) ?? { group, byTime: new Map() };
+      const timeKey = group.time ?? "";
+      const at = entry.byTime.get(timeKey) ?? {
+        ...(group.time === undefined ? {} : { time: group.time }),
+        filters: new Map<string, Filter[]>(),
+      };
       for (const m of group.metrics) {
         const metric = ctx.metrics.get(m);
         const filters = (metric && plannedMeasure(m, metric))?.components[0]?.filters ?? [];
-        entry.filters.set(canonicalJson(filters), filters);
+        at.filters.set(canonicalJson(filters), filters);
       }
+      entry.byTime.set(timeKey, at);
       bySource.set(group.source, entry);
     }
-    for (const [source, { group, filters }] of bySource) {
-      const sets = [...filters.values()];
+    for (const [source, { group, byTime }] of bySource) {
+      const sets = [...byTime.values()].flatMap(({ time, filters }) => {
+        const all = [...filters.values()];
+        const kept = all.some((f) => f.length === 0) ? [[]] : all;
+        return kept.map((f) => ({ ...(time === undefined ? {} : { time }), filters: f }));
+      });
+      const only = sets.length === 1 ? sets[0] : undefined;
       const counted: MeasureComponent = {
         ...(ROWS_MEASURE.components[0] as MeasureComponent),
-        ...(sets.some((s) => s.length === 0)
-          ? {}
-          : sets.length === 1
-            ? { filters: sets[0] as Filter[] }
-            : { anyOf: sets }),
+        ...(only === undefined ? { anyOf: sets } : { filters: only.filters }),
       };
       const measure: PlannedMeasure = { ...ROWS_MEASURE, components: [counted] };
       const tables = filterTables(ctx.sources, [measure]);

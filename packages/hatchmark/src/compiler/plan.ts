@@ -37,8 +37,11 @@ export interface MeasureComponent {
   /** Raw SQL aggregate expression, for metrics of type "sql". */
   sql?: string;
   filters: Filter[];
-  /** Counts rows passing any of these filter sets, in place of filters. */
-  anyOf?: Filter[][];
+  /**
+   * Counts rows that pass any of these sets: the set's filters and the query's window on the set's
+   * time column. Replaces filters and the query's own window.
+   */
+  anyOf?: { time?: string; filters: Filter[] }[];
   /**
    * How a browser or a total row may combine this component across groups: "sum" for sum and
    * count, "min"/"max" for those, and "none" when it must be recomputed from rows (count_distinct,
@@ -257,8 +260,8 @@ export interface BlockPlan {
   /**
    * A map block's match report reading: its value and a row count by the raw region column and the
    * region each value matched (null when none), over the same window and filters as measures. rows
-   * names one query per source the value reads, each counting that source's rows once, after the
-   * metric's own filters (a row passing any operand's filters counts).
+   * names one query per source the value reads, each counting that source's rows once: a row counts
+   * when it passes an operand's filters inside that operand's window on its own time column.
    */
   report?: { queryIds: string[]; measures: Record<string, MeasureExpression>; rows: string[] };
   /** One reading per grain a block switches between (its grains, in spec order), all built ahead. */

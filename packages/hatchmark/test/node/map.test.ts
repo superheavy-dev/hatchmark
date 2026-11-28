@@ -319,6 +319,61 @@ describe("map match report for filtered and same-source metrics", () => {
   });
 });
 
+describe("map match report across date columns of one source", () => {
+  afterAll(removeProjects);
+
+  it("counts a row when it passes an operand's filters inside that operand's own window", async () => {
+    const { root, project } = await writeProject({
+      "hatchmark.yaml": {
+        ...PROJECT_DEFAULTS,
+        name: "Dates",
+        sources: { o: { type: "csv", path: "o.csv" } },
+      },
+      "o.csv": [
+        "d,shipped,state,status",
+        "2026-05-30,2026-06-02,CA,paid",
+        "2026-06-03,,CA,paid",
+        "2026-06-10,2026-07-02,California,refunded",
+        "2026-06-15,2026-06-16,TX,paid",
+        "2026-06-20,,Narnia,refunded",
+        "2026-05-20,2026-06-05,Atlantis,refunded",
+      ].join("\n"),
+      "metrics/paid.yaml": metric({
+        type: "aggregate",
+        table: "o",
+        time: "d",
+        aggregate: "count",
+        filters: [{ column: "status", op: "eq", value: "paid" }],
+      }),
+      "metrics/shipped.yaml": metric({
+        type: "aggregate",
+        table: "o",
+        time: "shipped",
+        aggregate: "count",
+        filters: [{ column: "shipped", op: "not_null" }],
+      }),
+      "metrics/ship_rate.yaml": metric({
+        type: "ratio",
+        numerator: "shipped",
+        denominator: "paid",
+      }),
+      "dashboards/m.yaml": {
+        title: "Dates",
+        period: { asOf: "2026-06-30", range: "month_to_date", compare: "none" },
+        blocks: [
+          { type: "map", id: "rate", geo: "us-states", region: "state", value: "ship_rate" },
+        ],
+      },
+    });
+    const map = (await run(root, project, "m")).data?.blocks[0] as MapData;
+    expect(Object.fromEntries(map.match.map((m) => [String(m.key), [m.rows, m.region]]))).toEqual({
+      CA: [2, "CA"],
+      TX: [1, "TX"],
+      Atlantis: [1, null],
+    });
+  });
+});
+
 describe("map ranks, classes and region filters", () => {
   afterAll(removeProjects);
 
