@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { GALLERY } from "../../gallery/variants.js";
 import type {
+  BarData,
   BlockData,
   DashboardData,
   LineData,
@@ -14,6 +15,7 @@ import {
   renderBlocks,
   renderChartSvg,
 } from "../../src/render/index.js";
+import type { HeightPreset } from "../../src/spec/layout.js";
 
 const entry = (variant: string) => {
   const found = GALLERY.find((v) => v.variant === variant);
@@ -159,6 +161,38 @@ describe("height presets", () => {
     const plain = html(data, [{ ...legacy, overflow: "scroll" }]);
     expect(plain).not.toContain("hm-nofoot");
     expect(plain).not.toContain("data-hm-height");
+  });
+
+  it("stretches horizontal bar rows within each preset's limits", () => {
+    const data = entry("height-bar-horizontal");
+    const [base] = data.blocks as BarData[];
+    const rows = (block: BarData, n: number): BarData => {
+      if (block.axis.kind !== "category") throw new Error("category axis expected");
+      const names = Array.from({ length: n }, (_, i) => `Country ${i + 1}`);
+      return {
+        ...block,
+        axis: { ...block.axis, categories: names },
+        series: block.series.map((s) => ({ ...s, values: names.map((_, i) => 1000 * (n - i)) })),
+      };
+    };
+    const drawn = (n: number, height: HeightPreset, device: "desktop" | "phone") =>
+      Number(
+        /height="(\d+)"/.exec(
+          renderChartSvg({ ...rows(base as BarData, n), height }, data, { width: 900, device }),
+        )?.[1],
+      );
+    const expected: Record<number, Record<HeightPreset, [number, number]>> = {
+      5: { compact: [150, 150], default: [180, 180], tall: [240, 240] },
+      10: { compact: [220, 220], default: [280, 280], tall: [400, 320] },
+      20: { compact: [440, 440], default: [560, 560], tall: [560, 560] },
+    };
+    for (const [n, presets] of Object.entries(expected)) {
+      for (const [height, [desktop, phone]] of Object.entries(presets)) {
+        const label = `${n} rows, ${height}`;
+        expect(drawn(Number(n), height as HeightPreset, "desktop"), label).toBe(desktop);
+        expect(drawn(Number(n), height as HeightPreset, "phone"), label).toBe(phone);
+      }
+    }
   });
 
   it("renders a standalone SVG at the block's preset for desktop and phone", () => {

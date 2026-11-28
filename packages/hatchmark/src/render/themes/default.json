@@ -362,7 +362,7 @@
     }
   },
   "blockHeight": {
-    "use": "height: compact | default | tall on a block. chart: plot height of line, area, vertical bar, pie, donut and scatter charts (a longer key or more bars adds to it). pie: the largest pie or donut diameter. kpiSize, kpiLineHeight, sparkline: the KPI figure and its sparkline. tableRows: body rows a scrolling table shows before it scrolls. desktop applies from 600 px, phone below.",
+    "use": "height: compact | default | tall on a block. chart: plot height of line, area, vertical bar, pie, donut and scatter charts (a longer key or more bars adds to it). pie: the largest pie or donut diameter. kpiSize, kpiLineHeight, sparkline: the KPI figure and its sparkline. tableRows: body rows a scrolling table shows before it scrolls. barRow, barRowMax: the shortest and tallest row of a horizontal bar chart. desktop applies from 600 px, phone below.",
     "compact": {
       "desktop": {
         "chart": 200,
@@ -370,7 +370,9 @@
         "kpiSize": 22,
         "kpiLineHeight": 28,
         "sparkline": 21,
-        "tableRows": 7.5
+        "tableRows": 7.5,
+        "barRow": 22,
+        "barRowMax": 30
       },
       "phone": {
         "chart": 180,
@@ -378,7 +380,9 @@
         "kpiSize": 18,
         "kpiLineHeight": 24,
         "sparkline": 20,
-        "tableRows": 7.5
+        "tableRows": 7.5,
+        "barRow": 22,
+        "barRowMax": 30
       }
     },
     "default": {
@@ -388,7 +392,9 @@
         "kpiSize": 28,
         "kpiLineHeight": 32,
         "sparkline": 24,
-        "tableRows": 15.5
+        "tableRows": 15.5,
+        "barRow": 28,
+        "barRowMax": 36
       },
       "phone": {
         "chart": 230,
@@ -396,7 +402,9 @@
         "kpiSize": 20,
         "kpiLineHeight": 28,
         "sparkline": 24,
-        "tableRows": 15.5
+        "tableRows": 15.5,
+        "barRow": 28,
+        "barRowMax": 36
       }
     },
     "tall": {
@@ -406,7 +414,9 @@
         "kpiSize": 36,
         "kpiLineHeight": 44,
         "sparkline": 33,
-        "tableRows": 25.5
+        "tableRows": 25.5,
+        "barRow": 28,
+        "barRowMax": 48
       },
       "phone": {
         "chart": 320,
@@ -414,7 +424,9 @@
         "kpiSize": 24,
         "kpiLineHeight": 32,
         "sparkline": 28,
-        "tableRows": 18.5
+        "tableRows": 18.5,
+        "barRow": 28,
+        "barRowMax": 48
       }
     }
   },

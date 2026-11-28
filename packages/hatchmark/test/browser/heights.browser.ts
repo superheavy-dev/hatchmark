@@ -160,7 +160,8 @@ describe.each(DEVICES)("height presets at $device width", ({ device, viewport })
         const [compact, standard, tall] = found.map((c) => c.drawn) as [number, number, number];
         expect(compact).toBeLessThanOrEqual(standard);
         expect(standard).toBeLessThanOrEqual(tall);
-        if (name !== "height-bar-horizontal") expect(compact).toBeLessThan(tall);
+        expect(compact).toBeLessThan(tall);
+        if (name === "height-bar-horizontal") expect(compact).toBeLessThan(standard);
       } finally {
         await page.close();
       }

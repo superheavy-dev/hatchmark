@@ -165,15 +165,25 @@ function rowNames(names: string[], width: number) {
   return { column, wrapped: names.map((t) => wrapLines(t, column, NAME_STYLE, NAME_LINES)) };
 }
 
+/** The shortest and tallest row of a horizontal bar chart. */
+export interface BarRows {
+  barRow: number;
+  barRowMax: number;
+}
+
 /** Row height of a horizontal bar chart: rows stretch to fill the chart height, within limits. */
-export function barRowHeight(block: BarData, ctx: RenderContext, chartHeight: number): number {
+export function barRowHeight(
+  block: BarData,
+  ctx: RenderContext,
+  chartHeight: number,
+  rows: BarRows,
+): number {
   const n = Math.max(1, barCategories(block, ctx.data.locale).length);
-  const { barRow } = ctx.theme.density;
   if (block.series.length > 1 && !block.stack) {
     const thick = block.series.length * GROUPED_THICKNESS + (block.series.length - 1) * 2;
-    return Math.max(barRow, thick + 12);
+    return Math.max(rows.barRow, thick + 12);
   }
-  return Math.max(barRow, Math.min(barRow + 8, Math.floor(chartHeight / n)));
+  return Math.max(rows.barRow, Math.min(rows.barRowMax, Math.floor(chartHeight / n)));
 }
 
 /** The height a bar chart takes at a width: fixed for vertical bars, by rows for horizontal. */
@@ -182,12 +192,13 @@ export function barHeight(
   ctx: RenderContext,
   width: number,
   chartHeight: number,
+  rows: BarRows,
 ): number {
   const key = drawKey(cssLessPaint, keyItems(block, ctx.theme), width).height;
   if (block.orientation === "vertical") return chartHeight + Math.max(0, key - KEY_ROW);
   const names = barCategories(block, ctx.data.locale);
   const wraps = rowNames(names, width).wrapped.some((w) => w.lines.length > 1);
-  const row = barRowHeight(block, ctx, chartHeight);
+  const row = barRowHeight(block, ctx, chartHeight, rows);
   return (
     key +
     Math.max(1, names.length) * (wraps ? Math.max(row, NAME_LINES * NAME_LINE + 6) : row) +

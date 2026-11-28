@@ -64,6 +64,10 @@ export interface BlockHeight {
   sparkline: number;
   /** Body rows a scrolling table shows; a half row hints that it scrolls. */
   tableRows: number;
+  /** Shortest row of a horizontal bar chart; rows stretch from it to fill the chart height. */
+  barRow: number;
+  /** Tallest row of a horizontal bar chart. */
+  barRowMax: number;
 }
 
 /** The parts of a hatchmark-tokens file the renderer reads. */

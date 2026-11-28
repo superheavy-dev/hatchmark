@@ -36,7 +36,10 @@ What it draws:
 - Horizontal bars give the category names a column as wide as they need, up to 40% of the chart,
   and wrap longer names to two lines. Only a name that does not fit in two lines is cut, at the
   end, with the full name on hover.
-- Horizontal charts get one row per category, 28 to 36 px tall.
+- Horizontal charts get one row per category. Rows stretch to fill the chart's `height` within
+  limits: 22 to 30 px at `compact`, 28 to 36 px at `default` and 28 to 48 px at `tall` in the
+  Default theme. A chart with more rows than fit grows instead of scrolling or dropping bars; to
+  show fewer, set `limit` (and `other`), which says "top 10 of 51" in the subtitle.
 - Several series get a key above the plot. The key wraps instead of shortening names; only a name
   wider than the whole card is cut, at the end, with the full name on hover.
 - Hover, tap or the arrow keys highlight a category and show a tooltip with every series and, for

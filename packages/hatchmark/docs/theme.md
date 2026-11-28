@@ -42,8 +42,11 @@ Categorical colours are adapted from the FT's g-chartcolour.
 | `kpiLineHeight` | KPI figure line height in px                      | 28 / 24                   | 32 / 28     | 44 / 32     |
 | `sparkline`     | KPI sparkline height in px                        | 21 / 20                   | 24 / 24     | 33 / 28     |
 | `tableRows`     | Body rows a table shows before it scrolls         | 7.5 / 7.5                 | 15.5 / 15.5 | 25.5 / 18.5 |
+| `barRow`        | Shortest horizontal bar row in px                 | 22 / 22                   | 28 / 28     | 28 / 28     |
+| `barRowMax`     | Tallest horizontal bar row in px                  | 30 / 30                   | 36 / 36     | 48 / 48     |
 
 The values keep every chart legible at each preset: a compact plot still has three value ticks and
 room for its key and tooltip, a pie's largest diameter follows the preset (on phones the card's width caps it first), and
-a KPI sparkline keeps about three quarters of its figure's line height. A tall table on a phone
+a KPI sparkline keeps about three quarters of its figure's line height. A 22 px horizontal bar row
+still fits its bar and a one-line name; names that wrap keep a two-line row at every preset. A tall table on a phone
 stops at 18.5 rows so its scroll area never fills the screen.

@@ -275,7 +275,7 @@ function chartBody(
     const base = sizes.chart;
     const height =
       block.type === "bar"
-        ? barHeight(block, ctx, width, base)
+        ? barHeight(block, ctx, width, base, sizes)
         : isPie(block)
           ? pieHeight(block, ctx, width, base, sizes.pie)
           : base;
@@ -742,7 +742,7 @@ export function renderChartSvg(
     return renderBar(
       block,
       ctx,
-      { ...size, height: barHeight(block, ctx, size.width, base) },
+      { ...size, height: barHeight(block, ctx, size.width, base, sizes) },
       standalone,
     );
   }

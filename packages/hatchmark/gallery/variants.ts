@@ -1714,7 +1714,7 @@ const HEIGHTS: GalleryVariant[] = [
   everyPreset("height-bar", "Vertical stacked bars with a key", "bar-stacked"),
   everyPreset(
     "height-bar-horizontal",
-    "Horizontal bars: rows stretch within limits, so the row count sets most of the height",
+    "Horizontal bars: rows stretch within each preset's limits, so the row count sets most of the height",
     "bar-horizontal",
   ),
   everyPreset("height-pie", "Pie", "pie-countries"),
