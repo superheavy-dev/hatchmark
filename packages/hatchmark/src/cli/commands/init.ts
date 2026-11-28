@@ -15,12 +15,20 @@ import {
   sampleOrdersCsv,
 } from "../sample.js";
 import { usageError } from "../usage.js";
+import {
+  commitSkillInstall,
+  discardSkillInstall,
+  planSkillInstall,
+  type StagedSkills,
+  skillLocations,
+  stageSkillInstall,
+} from "./skills.js";
 
 export const initHelp: CommandHelp = {
   name: "init",
   summary:
     "Create a project: hatchmark.yaml with every setting written out, sample US data, and an AGENTS.md block.",
-  usage: "hatchmark init [dir] [--template sample|minimal] [--name <name>] [--force]",
+  usage: "hatchmark init [dir] [--template sample|minimal] [--name <name>] [--skills] [--force]",
   options: [
     {
       flag: "[dir]",
@@ -32,6 +40,11 @@ export const initHelp: CommandHelp = {
         "sample (default): orders data, four metrics and a dashboard. minimal: config only.",
     },
     { flag: "--name <name>", description: "Project name. Default: the directory name." },
+    {
+      flag: "--skills",
+      description:
+        "Also install the Hatchmark agent skill for every supported agent, as hatchmark skills install does.",
+    },
     { flag: "--force", description: "Overwrite files init writes if they already exist." },
   ],
   example: {
@@ -96,7 +109,7 @@ function markerLines(text: string): { starts: number[]; ends: number[]; stray: n
 export async function init(
   ctx: CommandContext,
   positionals: string[],
-  flags: { template?: string; name?: string; force?: boolean },
+  flags: { template?: string; name?: string; force?: boolean; skills?: boolean },
 ): Promise<CommandResult> {
   const [dir, ...rest] = positionals;
   if (rest.length > 0)
@@ -157,6 +170,14 @@ export async function init(
     );
   }
 
+  const skillPlans = flags.skills
+    ? await planSkillInstall(
+        skillLocations(target, undefined, undefined, ["project"]),
+        flags.force === true,
+      )
+    : [];
+  if (!Array.isArray(skillPlans)) return skillPlans;
+
   const block = agentsBlock(VERSION);
   const agents = await readOptional(path.join(target, "AGENTS.md"));
   let nextAgents = `${block}\n`;
@@ -192,6 +213,13 @@ export async function init(
     }
   }
 
+  let staged: StagedSkills | undefined;
+  if (Array.isArray(skillPlans) && skillPlans.length > 0) {
+    const result = await stageSkillInstall(skillPlans);
+    if (!("staged" in result)) return result;
+    staged = result;
+  }
+
   const created: string[] = [];
   const updated: string[] = [];
   const unchanged: string[] = [];
@@ -208,29 +236,64 @@ export async function init(
     (before === undefined ? created : updated).push(file);
   };
 
-  await mkdir(target, { recursive: true });
-  for (const [file, text] of owned) await write(file, text);
-  for (const sub of ["data", "metrics", "dashboards"])
-    await mkdir(path.join(target, sub), { recursive: true });
-  await write("AGENTS.md", nextAgents);
+  try {
+    await mkdir(target, { recursive: true });
+    for (const [file, text] of owned) await write(file, text);
+    for (const sub of ["data", "metrics", "dashboards"])
+      await mkdir(path.join(target, sub), { recursive: true });
+    await write("AGENTS.md", nextAgents);
 
-  const claude = await readOptional(path.join(target, "CLAUDE.md"));
-  if (claude === undefined) await write("CLAUDE.md", "@AGENTS.md\n");
-  else if (!claude.includes("@AGENTS.md")) {
-    notes.push(
-      "CLAUDE.md exists and does not include @AGENTS.md; add that line so Claude Code reads the Hatchmark block",
-    );
-  }
+    const claude = await readOptional(path.join(target, "CLAUDE.md"));
+    if (claude === undefined) await write("CLAUDE.md", "@AGENTS.md\n");
+    else if (!claude.includes("@AGENTS.md")) {
+      notes.push(
+        "CLAUDE.md exists and does not include @AGENTS.md; add that line so Claude Code reads the Hatchmark block",
+      );
+    }
 
-  const gitignore = (await readOptional(path.join(target, ".gitignore"))) ?? "";
-  const lines = gitignore.split(/\r?\n/);
-  const missing = GITIGNORE.filter((entry) => !lines.includes(entry));
-  if (missing.length > 0) {
-    await write(
-      ".gitignore",
-      `${gitignore}${gitignore === "" || gitignore.endsWith("\n") ? "" : "\n"}${missing.join("\n")}\n`,
-    );
+    const gitignore = (await readOptional(path.join(target, ".gitignore"))) ?? "";
+    const lines = gitignore.split(/\r?\n/);
+    const missing = GITIGNORE.filter((entry) => !lines.includes(entry));
+    if (missing.length > 0) {
+      await write(
+        ".gitignore",
+        `${gitignore}${gitignore === "" || gitignore.endsWith("\n") ? "" : "\n"}${missing.join("\n")}\n`,
+      );
+    }
+  } catch (error) {
+    if (staged !== undefined) await discardSkillInstall(staged);
+    throw error;
   }
+  if (staged !== undefined) {
+    const committed = await commitSkillInstall(staged);
+    if ("problem" in committed) {
+      const failed = usageError(
+        "HM0010",
+        `init wrote the project in ${target}, but could not install the agent skill; the skill directories are as they were`,
+        {
+          expected: [committed.problem],
+          help: "fix the path, then run hatchmark skills install to add the skill",
+        },
+      );
+      const written = [
+        ...created.map((f) => `  created    ${f}`),
+        ...updated.map((f) => `  updated    ${f}`),
+        ...unchanged.map((f) => `  unchanged  ${f}`),
+      ];
+      return {
+        exitCode: failed.exitCode,
+        json: { ...(failed.json as object), root: target, created, updated, unchanged, skills: [] },
+        human: [failed.human, "", `Project files in ${target}:`, ...written].join("\n"),
+      };
+    }
+    notes.push(...committed.warnings);
+  }
+  const skills = skillPlans.map(({ location, status }) => ({
+    agent: location.agent,
+    scope: location.scope,
+    path: location.dir,
+    status,
+  }));
 
   const relative = path.relative(ctx.io.cwd, requested) || ".";
   const next = relative === "." ? ["hatchmark check"] : [`hatchmark check --cwd ${relative}`];
@@ -239,6 +302,9 @@ export async function init(
     ...created.map((f) => `  created    ${f}`),
     ...updated.map((f) => `  updated    ${f}`),
     ...unchanged.map((f) => `  unchanged  ${f}`),
+    ...skills.map(
+      (s) => `  ${s.status.padEnd(9)}  ${path.relative(target, s.path)}/ (${s.agent} skill)`,
+    ),
     ...notes.map((n) => `note: ${n}`),
     "",
     `Next: ${next.join("; ")}`,
@@ -254,6 +320,7 @@ export async function init(
       updated,
       unchanged,
       notes,
+      ...(flags.skills ? { skills } : {}),
       next,
     },
     human,

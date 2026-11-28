@@ -6,11 +6,12 @@ import { VERSION } from "../../version.js";
 import type { CommandHelp } from "../help.js";
 import { type CommandContext, type CommandResult, EXIT } from "../io.js";
 import { packageRoot } from "../package-root.js";
+import { homeDir, inspectSkill, installCommand, skillLocations } from "./skills.js";
 
 export const doctorHelp: CommandHelp = {
   name: "doctor",
   summary:
-    "Check that this machine can run Hatchmark: Node.js, bundled docs and schemas, project config.",
+    "Check that this machine can run Hatchmark: Node.js, bundled docs and schemas, project config, agent skill version.",
   usage: "hatchmark doctor",
   options: [],
   example: {
@@ -78,6 +79,33 @@ export async function doctor(ctx: CommandContext): Promise<CommandResult> {
     detail: config
       ? `${CONFIG_FILE} found in ${ctx.root}`
       : `no ${CONFIG_FILE} in ${ctx.root}; run hatchmark init to create a project`,
+  });
+
+  const copies = [];
+  for (const location of skillLocations(ctx.root, homeDir(ctx.io.env))) {
+    copies.push(await inspectSkill(location));
+  }
+  const current = copies.filter((c) => c.status === "current");
+  const drift = copies.flatMap((c) =>
+    c.status === "stale"
+      ? [
+          `${c.dir} is the agent skill of hatchmark ${c.version}, not ${VERSION}; run ${installCommand(ctx, c.agent, c.scope)}`,
+        ]
+      : c.status === "modified"
+        ? [
+            `${c.dir} was changed since hatchmark ${c.version} installed it; keep it, or replace it with ${installCommand(ctx, c.agent, c.scope, true)}`,
+          ]
+        : [],
+  );
+  checks.push({
+    name: "skills",
+    status: drift.length === 0 ? "ok" : "warn",
+    detail:
+      drift.length > 0
+        ? drift.join("; ")
+        : current.length > 0
+          ? `agent skill ${VERSION} at ${current.map((c) => c.dir).join(", ")}`
+          : "no Hatchmark agent skill installed; hatchmark skills install adds one for coding agents",
   });
 
   const ok = checks.every((c) => c.status !== "fail");

@@ -22,6 +22,7 @@
     "dist",
     "docs",
     "schema",
+    "skills",
     "assets",
     "runtime/dev-client.ts",
     "LICENSE",
