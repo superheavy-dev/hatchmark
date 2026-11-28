@@ -139,7 +139,9 @@ export function sampleConfig(name: string, withData: boolean): ProjectConfig {
     ...PROJECT_DEFAULTS,
     name,
     anchors: { week: WEEKDAYS[firstDay - 1] as (typeof WEEKDAYS)[number] },
-    sources: withData ? { orders: { type: "csv", path: "data/orders.csv" } } : {},
+    sources: withData
+      ? { orders: { type: "csv", path: "data/orders.csv", freshness: { column: "ordered_at" } } }
+      : {},
   };
 }
 

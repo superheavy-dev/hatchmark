@@ -15,3 +15,5 @@ sources:
   orders:
     type: csv
     path: data/orders.csv
+    freshness:
+      column: ordered_at

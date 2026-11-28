@@ -1,7 +1,9 @@
 import { describe, expect, it } from "vitest";
+import { parse } from "yaml";
 import { explainDefaults } from "../../src/compiler/index.js";
 import { createReport, renderHuman } from "../../src/diagnostics/index.js";
 import { checkReferences } from "../../src/spec/index.js";
+import { toYaml } from "../yaml.js";
 import { CONFIG, METRICS, projectFrom } from "./helpers.js";
 
 const BASE = {
@@ -386,4 +388,30 @@ describe("the freshness note (HM4040)", () => {
       "set freshness: {lag: {days: 1}} when its newest day may still be loading, or {through: as_of} for a source that is complete whenever the build runs; any freshness silences this note",
     );
   });
+
+  it.each([["Charged: at"], ["#charged"], ["'charged"], ['"charged'], ["charged, at"]])(
+    "prints a column named %j so that pasting the snippet parses back to it and silences the note",
+    (column) => {
+      const config = {
+        ...CONFIG,
+        sources: { ...CONFIG.sources, orders: { type: "csv", path: "data/orders.csv" } },
+      };
+      const metrics = { ...METRICS, orders: { ...(METRICS.orders as object), time: column } };
+      const dashboards = { a: kpis("orders") };
+      const [note] = explainDefaults(projectFrom({ config, metrics, dashboards })).filter(
+        (n) => n.pointer === "/sources/orders",
+      );
+      const snippet = /freshness: (\{column: .*\}) keeps the default/.exec(note?.help ?? "")?.[1];
+      expect(parse(snippet ?? "", { version: "1.2", schema: "core" })).toEqual({ column });
+      const pasted = toYaml(config).replace(
+        "    path: data/orders.csv\n",
+        `    path: data/orders.csv\n    freshness: ${snippet}\n`,
+      );
+      const project = projectFrom({ config: pasted, metrics, dashboards });
+      expect(project.config.diagnostics).toEqual([]);
+      expect(explainDefaults(project).filter((n) => n.pointer?.startsWith("/sources/"))).toEqual(
+        [],
+      );
+    },
+  );
 });

@@ -1,4 +1,5 @@
 import { type Diagnostic, docsCommand } from "../diagnostics/index.js";
+import { yamlText } from "../spec/fixes.js";
 import {
   type Anchors,
   type Block,
@@ -156,7 +157,7 @@ export function explainDefaults(project: Project): Diagnostic[] {
         project.config,
         `/sources/${name}`,
         `uses the default freshness for source "${name}": it is complete through its newest timestamp, or through the whole newest date of a date column`,
-        `set freshness: {lag: {days: 1}} when its newest day may still be loading, or {through: as_of} for a source that is complete whenever the build runs${only === undefined ? "; any freshness silences this note" : `; freshness: {column: ${only}} keeps the default and silences this note`}`,
+        `set freshness: {lag: {days: 1}} when its newest day may still be loading, or {through: as_of} for a source that is complete whenever the build runs${only === undefined ? "; any freshness silences this note" : `; freshness: {column: ${yamlText(only)}} keeps the default and silences this note`}`,
       ),
     );
   }
