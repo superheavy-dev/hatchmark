@@ -86,8 +86,9 @@ const METRICS = [
   "med",
   "top",
   "all_rev",
+  "seg_rev",
+  "share",
 ];
-const LEFT_OUT = ["seg_rev", "share"];
 const FOLDABLE = ["revenue", "orders", "aov", "refund_rate", "top"];
 
 interface Case {
@@ -205,7 +206,7 @@ async function makeCase(seed: number, now: number): Promise<Case> {
       period: { asOf: "latest_data", range: "last_12_months", compare: "previous_period" },
       filters,
       blocks: [
-        ...[...METRICS, ...LEFT_OUT].map((m) => ({ type: "kpi", id: "k_" + m, metric: m })),
+        ...METRICS.map((m) => ({ type: "kpi", id: "k_" + m, metric: m })),
         { type: "table", id: "by_region", by: ["region"], metrics: METRICS },
         {
           type: "table",
@@ -355,9 +356,6 @@ async function compare(
   const filt = rowSql(c, on);
   const grand = expected((await oracleRows(c, where + " AND " + filt))[0]);
   const skip = (k: KpiData | undefined) => partialMetrics && k?.presetOnly === true;
-  for (const m of LEFT_OUT)
-    if (find<KpiData>(data, "k_" + m))
-      p("kpi " + m + " is drawn although the planner does not evaluate metric segments");
   for (const m of METRICS) {
     const k = find<KpiData>(data, "k_" + m);
     if (k === undefined) {
