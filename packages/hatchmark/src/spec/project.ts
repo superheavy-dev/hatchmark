@@ -397,6 +397,20 @@ function typedSources(project: Project): Set<string> {
 /** The longest CSV header Hatchmark reads; a longer first record is an error, never a partial list. */
 export const CSV_HEADER_LIMIT = 16 * 1024 * 1024;
 
+/** The column names of a file source's file, or undefined when they cannot be read. */
+export async function fileColumns(
+  host: ProjectHost,
+  source: FileSource,
+): Promise<string[] | undefined> {
+  const file = normalizePath(source.path);
+  if (source.type === "csv") {
+    if (source.header === false) return undefined;
+    const header = await readCsvHeader(host, file, source.delimiter ?? ",");
+    return header === "too-long" ? undefined : header;
+  }
+  return host.columns ? await host.columns(file, source).catch(() => undefined) : undefined;
+}
+
 async function readCsvHeader(
   host: ProjectHost,
   file: string,

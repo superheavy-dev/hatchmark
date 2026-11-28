@@ -18,7 +18,7 @@ example. [README.md](README.md) lists every docs page; the files a project holds
 | `explain <code>`                          | Explains a diagnostic code such as `HM2003` and how to fix it.                                                                                                                                                                                                                                           |
 | `explain <metric>`                        | Prints the SQL that build runs for a metric. See [Printing the SQL](#printing-the-sql).                                                                                                                                                                                                                  |
 | `explain --dashboard <name> --block <id>` | Prints the SQL of one block. See [Printing the SQL](#printing-the-sql).                                                                                                                                                                                                                                  |
-| `test [metric                             | source ...]`                                                                                                                                                                                                                                                                                             | Runs the tests pinned in metric files and the row-count tests of sources against the data. Exits 1 when one fails. See [test](#test). |
+| `test [metric\|source ...]`               | Runs the tests pinned in metric files and the row-count tests of sources against the data. Exits 1 when one fails. See [test](#test).                                                                                                                                                                    |
 | `version`                                 | Prints the Hatchmark and Node.js versions.                                                                                                                                                                                                                                                               |
 | `doctor`                                  | Checks that this machine can run Hatchmark: Node.js, bundled docs and schemas, project config.                                                                                                                                                                                                           |
 
@@ -191,12 +191,26 @@ exits 1 when one fails, so it fits a CI step. Metric tests are described in
 test reads the data through the same queries as `build`, so a pinned number is the number a
 dashboard shows.
 
-JSON gives `passed`, `failed`, `errors` (tests that could not run, such as a missing fixture file),
-one entry per test in `results` (`kind`, `target`, `index`, `name`, `file`, `pointer`, `status`,
-`expected`, `actual`, `difference`), and the diagnostics: `HM4030` for each failure, `HM4031` for a
-test that reads past the data. A test with `by` gives `actual` and `difference` per group. Exit
-codes: 0 every test passed, 1 a test failed or could not run, 2 an error in `hatchmark.yaml` or a
-name that is no metric or source, 3 a missing data or fixture file.
+Before a test is read, the project is checked as `hatchmark check` checks it. Any error stops the
+run: no test runs, `results` is empty, and the exit code is the one `check` gives for that error.
+
+The JSON report is the `check` report (`format_version`, `ok`, `error_count`, `warning_count`,
+`diagnostics`) plus `passed`, `failed`, `errors` (tests that could not run, such as a missing
+fixture file or a metric the planner can't evaluate yet) and one entry per test in `results`:
+
+- Always: `kind` (`metric` or `source`), `target`, `index`, `file`, `pointer` and `status`
+  (`pass`, `fail` or `error`). `name` when the test has one.
+- When the test was read: `expected` and `actual`. `actual` is `null` when the metric has no value.
+- `difference` (actual minus expected) when both are numbers. A test with `by` gives `actual` and
+  `difference` per group, with `null` for a group without a value.
+
+Diagnostics: `HM4030` for each test whose value was compared and differs, `HM4031` (a warning) for
+a test that reads past the data, and the reason for each test that could not run. A failed test
+without `by` carries an unsafe fix that pins the actual value; one with `by` doesn't.
+
+Exit codes: 0 when every test passed. Otherwise: 2 for an error in `hatchmark.yaml`, a name that is
+no metric or source, or no project; 3 when the only errors are missing data or fixture files; 1 for
+anything else, a failed test or an error in a metric file included.
 
 ## dev
 

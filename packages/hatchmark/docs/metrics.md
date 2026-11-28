@@ -251,14 +251,16 @@ tests:
 | `at`        | Point-in-time metrics (`over_time` other than `sum`): the value at the end of that local date, from the latest snapshot on or before it.                                                          |
 | `where`     | Optional [filters](#filters) added to the metric's own. A ratio or formula applies them to every metric it reads.                                                                                 |
 | `segments`  | Optional segments applied as well.                                                                                                                                                                |
-| `by`        | Optional column: `expect` then maps each group to its value. Groups not listed are not checked; an empty group is `(empty)`.                                                                      |
+| `by`        | Optional column: `expect` then maps each group to its value. Groups not listed are not checked; an empty group is `(empty)`, which fails if the column also holds the text `(empty)`.             |
 | `expect`    | The value, in the metric's units after `scale` (no currency or percent formatting).                                                                                                               |
-| `tolerance` | Optional absolute difference allowed. Without it, both sides must be equal after rounding to 6 decimals.                                                                                          |
+| `tolerance` | Optional absolute difference allowed: \|actual − expected\| ≤ tolerance. Without it, the difference may be at most 0.0000005.                                                                     |
 | `data`      | Optional fixture files that replace sources for this test, by source name, such as `{ orders: tests/orders_small.csv }`. Fixture tests pin the definition; tests on the real data pin the number. |
 | `name`      | Optional label shown in the results.                                                                                                                                                              |
 
-A test that fails is `HM4030` with the expected and actual values and the difference; its fix rewrites
-`expect` and is unsafe, so say when you change a pinned number. A test whose window reaches past the
+A test that fails is `HM4030` with the expected and actual values and the difference. Without `by`,
+its fix rewrites `expect` and is unsafe, so say when you change a pinned number. `check` reports a
+column in `where` or `by` that a source the metric reads doesn't have (`HM2018`); with `data`, the
+columns are checked against the fixture when the test runs. A test whose window reaches past the
 newest data of a source it reads gets warning `HM4031`: the number can still change.
 
 ## Format

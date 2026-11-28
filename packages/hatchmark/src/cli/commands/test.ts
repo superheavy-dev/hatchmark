@@ -1,4 +1,5 @@
 import {
+  forRowCounts,
   runMetricTest,
   runSourceTest,
   type TestResult,
@@ -12,7 +13,15 @@ import {
   renderHuman,
 } from "../../diagnostics/index.js";
 import { createDuckDbExecutor, nodeProjectHost } from "../../node/index.js";
-import { CONFIG_FILE, checkReferences, loadProject, parseDiagnostics } from "../../spec/index.js";
+import {
+  CONFIG_FILE,
+  checkReferences,
+  fileColumns,
+  loadProject,
+  type Project,
+  parseDiagnostics,
+  testsOfSource,
+} from "../../spec/index.js";
 import type { CommandHelp } from "../help.js";
 import { type CommandContext, type CommandResult, EXIT } from "../io.js";
 import { usageError } from "../usage.js";
@@ -41,6 +50,33 @@ interface Planned {
   target: string;
   index: number;
   data: Record<string, string>;
+  rows?: boolean;
+}
+
+function envelope(report: ReturnType<typeof createReport>, results: TestResult[]) {
+  const count = (status: TestResult["status"]) => results.filter((r) => r.status === status).length;
+  const summary = { passed: count("pass"), failed: count("fail"), errors: count("error") };
+  return {
+    ...report,
+    ok: report.ok && summary.failed === 0 && summary.errors === 0,
+    ...summary,
+    results: results.map(({ diagnostics: _, ...r }) => r),
+  };
+}
+
+async function withFixtureColumns(
+  host: ReturnType<typeof nodeProjectHost>,
+  project: Project,
+  data: Readonly<Record<string, string>>,
+): Promise<Project> {
+  const swapped = withTestData(project, data);
+  for (const name of Object.keys(data)) {
+    const source = swapped.config.spec?.sources[name];
+    if (source === undefined || source.type === "lookup") continue;
+    const columns = await fileColumns(host, source);
+    if (columns !== undefined) swapped.columns.set(name, columns);
+  }
+  return swapped;
 }
 
 export async function test(ctx: CommandContext, positionals: string[]): Promise<CommandResult> {
@@ -54,8 +90,8 @@ export async function test(ctx: CommandContext, positionals: string[]): Promise<
   if (project === undefined || config === undefined || errors.length > 0) {
     const report = createReport(errors);
     return {
-      exitCode: exitCodeFor(errors, false),
-      json: report,
+      exitCode: project === undefined ? EXIT.usage : exitCodeFor(errors, false),
+      json: envelope(report, []),
       human: renderHuman(report, { color: ctx.color }),
     };
   }
@@ -66,8 +102,8 @@ export async function test(ctx: CommandContext, positionals: string[]): Promise<
     });
   }
   for (const name of Object.keys(config.sources).sort()) {
-    (config.sources[name]?.tests ?? []).forEach((_, index) => {
-      planned.push({ kind: "source", target: name, index, data: {} });
+    testsOfSource(config.sources[name]).forEach((_, index) => {
+      planned.push({ kind: "source", target: name, index, data: {}, rows: true });
     });
   }
   const known = [...new Set([...project.metrics.keys(), ...Object.keys(config.sources)])].sort();
@@ -84,7 +120,7 @@ export async function test(ctx: CommandContext, positionals: string[]): Promise<
 
   const groups = new Map<string, Planned[]>();
   for (const p of selected) {
-    const key = JSON.stringify(Object.entries(p.data).sort());
+    const key = p.rows ? "rows" : JSON.stringify(Object.entries(p.data).sort());
     groups.set(key, [...(groups.get(key) ?? []), p]);
   }
   const results: TestResult[] = [];
@@ -117,7 +153,9 @@ export async function test(ctx: CommandContext, positionals: string[]): Promise<
       }
       continue;
     }
-    const swapped = withTestData(project, data);
+    const swapped = group[0]?.rows
+      ? forRowCounts(project)
+      : await withFixtureColumns(host, project, data);
     const executor = await createDuckDbExecutor({
       root: ctx.root,
       config: swapped.config.spec ?? config,
@@ -126,8 +164,8 @@ export async function test(ctx: CommandContext, positionals: string[]): Promise<
       for (const p of group) {
         results.push(
           p.kind === "metric"
-            ? await runMetricTest(project, p.target, p.index, executor, now)
-            : await runSourceTest(project, p.target, p.index, executor, now),
+            ? await runMetricTest(swapped, p.target, p.index, executor, now)
+            : await runSourceTest(swapped, p.target, p.index, executor, now),
         );
       }
     } finally {
@@ -138,10 +176,10 @@ export async function test(ctx: CommandContext, positionals: string[]): Promise<
     selected.findIndex((p) => p.kind === r.kind && p.target === r.target && p.index === r.index);
   results.sort((a, b) => order(a) - order(b));
   const diagnostics = results.flatMap((r) => r.diagnostics);
-  const count = (status: TestResult["status"]) => results.filter((r) => r.status === status).length;
-  const summary = { passed: count("pass"), failed: count("fail"), errors: count("error") };
   const report = createReport(diagnostics);
-  const ok = summary.failed === 0 && summary.errors === 0;
+  const json = envelope(report, results);
+  const summary = { passed: json.passed, failed: json.failed, errors: json.errors };
+  const ok = json.ok;
   const fallback = exitCodeFor(diagnostics, false);
   const exitCode = ok
     ? EXIT.ok
@@ -154,13 +192,7 @@ export async function test(ctx: CommandContext, positionals: string[]): Promise<
   const tally = `${summary.passed} passed, ${summary.failed} failed, ${summary.errors} could not run`;
   return {
     exitCode,
-    json: {
-      format_version: "1",
-      ok,
-      ...summary,
-      results: results.map(({ diagnostics: _, ...r }) => r),
-      diagnostics: report.diagnostics,
-    },
+    json,
     human:
       results.length === 0
         ? "no tests: add tests to a metric file or a source in hatchmark.yaml"

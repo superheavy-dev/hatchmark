@@ -157,7 +157,6 @@ const lookupSource = z
     from: identifier.meta({ description: "The base file source." }),
     lookups: z.array(lookupSchema).min(1),
     freshness: freshnessSchema.optional(),
-    tests: sourceTests,
   })
   .meta({
     description:
@@ -180,8 +179,17 @@ export type LookupSource = Extract<Source, { type: "lookup" }>;
  */
 export function planningSources(sources: Readonly<Record<string, Source>>): Record<string, Source> {
   return Object.fromEntries(
-    Object.entries(sources).map(([name, { tests: _, ...source }]) => [name, source as Source]),
+    Object.entries(sources).map(([name, source]) => {
+      if (source.type === "lookup") return [name, source];
+      const { tests: _, ...rest } = source;
+      return [name, rest as Source];
+    }),
   );
+}
+
+/** The row-count tests of a source; a lookup source has none. */
+export function testsOfSource(source: Source | undefined): SourceTest[] {
+  return source === undefined || source.type === "lookup" ? [] : (source.tests ?? []);
 }
 
 function isLocale(tag: string): boolean {

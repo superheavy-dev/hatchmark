@@ -413,7 +413,7 @@ export const CODES = {
   HM4030: {
     title: "test failed",
     explanation:
-      "hatchmark test read a value that differs from what a test pins. For a metric test (tests in metrics/<name>.yaml), the value is the metric over the test's window, or at the end of its at date, with its where filters and segments, read the way a dashboard reads it; the diagnostic gives expected, actual and the difference. With no tolerance both sides must be equal after rounding to 6 decimals; with tolerance their difference may be at most that much. For a row-count test (tests under a source in hatchmark.yaml), the number of rows that match where is below min or above max. If the data or the definition changed on purpose, update the test; the fix that rewrites expect is unsafe, so say that you changed a pinned number.",
+      "hatchmark test read a value that differs from what a test pins. For a metric test (tests in metrics/<name>.yaml), the value is the metric over the test's window, or at the end of its at date, with its where filters and segments, read the way a dashboard reads it; the diagnostic gives expected, actual and the difference. With no tolerance their difference may be at most 0.0000005; with tolerance, at most that much. For a row-count test (tests under a source in hatchmark.yaml), the number of rows that match where is below min or above max. If the data or the definition changed on purpose, update the test; the fix that rewrites expect is unsafe, so say that you changed a pinned number.",
   },
   HM4031: {
     title: "test reads past the data",

@@ -653,13 +653,6 @@
                 }
               ],
               "description": "How complete the source is. Default: through its latest timestamp, or through the whole latest date of a date column."
-            },
-            "tests": {
-              "description": "Row-count checks that hatchmark test runs against the data.",
-              "type": "array",
-              "items": {
-                "$ref": "#/$defs/SourceTest"
-              }
             }
           },
           "required": [

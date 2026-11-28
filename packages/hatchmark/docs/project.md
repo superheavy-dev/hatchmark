@@ -135,8 +135,10 @@ which names the source and the column; `hatchmark check` does not catch every su
 
 ### Row-count tests
 
-A source can carry `tests` that `hatchmark test` runs: each counts the source's rows, optionally only
-those that match `where` ([metric filters](metrics.md#filters)), against inclusive bounds.
+A file source can carry `tests` that `hatchmark test` runs: each counts the rows of its file,
+optionally only those that match `where` ([metric filters](metrics.md#filters)), against inclusive
+bounds. A snapshot source counts the rows of every snapshot. A lookup source takes no tests; test the
+sources it joins.
 
 ```yaml
 sources:

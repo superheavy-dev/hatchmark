@@ -148,7 +148,6 @@ async function runTests(
     stdoutIsTTY: false,
     isAgent: async () => false,
   });
-  console.log(JSON.stringify(JSON.parse(stdout).diagnostics).slice(0, 1500));
   return { code, out: JSON.parse(stdout) };
 }
 

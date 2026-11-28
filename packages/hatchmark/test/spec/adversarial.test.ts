@@ -1049,14 +1049,14 @@ describe("metric tests read only what the metric reads", () => {
     [err("HM2023")],
   );
   attack(
-    "test where column missing from the source is accepted today (not covered)",
+    "test where column missing from the source is HM2018",
     { metrics: { x: windowTest({ where: [{ column: "nope", op: "eq", value: 1 }] }) } },
-    [],
+    [err("HM2018")],
   );
   attack(
-    "test by column missing from the source is accepted today (not covered)",
+    "test by column missing from the source is HM2018",
     { metrics: { x: windowTest({ by: "nope", expect: { a: 1 } }) } },
-    [],
+    [err("HM2018")],
   );
   attack(
     "contradicting duplicate tests are accepted today (not covered)",
