@@ -93,9 +93,8 @@ export function compareDiagnostics(a: Diagnostic, b: Diagnostic): number {
   return keyA < keyB ? -1 : keyA > keyB ? 1 : 0;
 }
 
-/** Builds the versioned report; ok is false only when there is at least one error. */
-const URL_PASSWORD = /(\w+:\/\/[^:/@\s]*:)[^@\s]*@/g;
-const KEYWORD_PASSWORD = /\b(password\s*=\s*)('(?:[^'\\]|\\.)*'|[^\s"]+)/gi;
+const URL_PASSWORD = /(\w+:\/\/[^:/@\s]*:)[^\s"']*@/g;
+const KEYWORD_PASSWORD = /\b((?:password|passwd|pwd)\s*=\s*)('(?:[^'\\]|\\.)*'|[^\s"]+)/gi;
 
 /**
  * Replaces passwords in connection strings (scheme://user:password@host, password=...) with ***,
@@ -114,6 +113,7 @@ function masked<T>(value: T): T {
   return value;
 }
 
+/** Builds the versioned report; ok is false only when there is at least one error. */
 export function createReport(diagnostics: readonly Diagnostic[]): DiagnosticReport {
   const sorted = [...diagnostics].sort(compareDiagnostics).map(masked);
   const errorCount = sorted.filter((d) => d.severity === "error").length;

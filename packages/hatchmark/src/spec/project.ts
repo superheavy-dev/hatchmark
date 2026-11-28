@@ -142,19 +142,17 @@ export function parseSpecFile<K extends SpecKind>(
   return result;
 }
 
-/**
- * How the engine reads a project. The core never touches a file system itself, so it runs
- * unchanged in Node, a browser or a worker; the CLI passes a Node implementation (src/node/host.ts).
- * Every path is project-relative with forward slashes.
- */
 /** The columns of a database source, as Hatchmark reads them. */
 export interface DatabaseSchema {
   columns: { name: string; type: string }[];
   /** Exact decimal columns (NUMERIC, DECIMAL) the database driver delivers as DOUBLE (HM4080). */
   decimals: string[];
-  /** "database" when read from the database itself, "copy" when from the newest local copy. */
-  origin: "database" | "copy";
-  /** For "copy": when the copy was fetched, ISO 8601 UTC. */
+  /**
+   * "database" when read from the database itself, "cached" from a local copy younger than the
+   * source's max_age, "copy" from the newest local copy when the credentials are not set.
+   */
+  origin: "database" | "cached" | "copy";
+  /** For "cached" and "copy": when the copy was fetched, ISO 8601 UTC. */
   stored_at?: string;
 }
 
@@ -165,6 +163,11 @@ export interface DatabaseProblem {
   help?: string;
 }
 
+/**
+ * How the engine reads a project. The core never touches a file system itself, so it runs
+ * unchanged in Node, a browser or a worker; the CLI passes a Node implementation (src/node/host.ts).
+ * Every path is project-relative with forward slashes.
+ */
 export interface ProjectHost {
   /** Shown in messages, such as the project's absolute directory. */
   readonly label: string;
@@ -391,6 +394,7 @@ const DATABASE_POINTERS: Record<string, string> = {
   HM2040: "env",
   HM2041: "env",
   HM2042: "table",
+  HM2045: "timezone",
 };
 
 async function readDatabase(

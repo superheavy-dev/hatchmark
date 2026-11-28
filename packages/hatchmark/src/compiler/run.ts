@@ -66,10 +66,20 @@ export interface DashboardExecutor extends QueryExecutor {
 }
 
 function failure(message: string): Diagnostic {
-  return { code: "HM2015", severity: "error", message, docs: docsCommand("HM2015") };
+  return {
+    code: "HM2015",
+    severity: "error",
+    message,
+    ...(/Overflow in SUM of DECIMAL/.test(message)
+      ? {
+          help: "exact decimals are summed in at most 38 digits; cast the column to a float in the source's query, such as amount::double precision, when the total needs more",
+        }
+      : {}),
+    docs: docsCommand("HM2015"),
+  };
 }
 
-const DATA_CODES = new Set(["HM2040", "HM2041", "HM2042", "HM2044"]);
+const DATA_CODES = new Set(["HM2040", "HM2041", "HM2042", "HM2043", "HM2044", "HM2045", "HM2046"]);
 
 /**
  * The diagnostic of a failed data read: the executor's own code and help when it gives one (a

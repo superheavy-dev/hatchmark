@@ -93,7 +93,7 @@ jobs:
           node-version: lts/*
           cache: pnpm
       - run: pnpm install --frozen-lockfile
-      - run: pnpm vitest run packages/hatchmark/test/node/database.test.ts packages/hatchmark/test/node/database-config.test.ts
+      - run: pnpm vitest run packages/hatchmark/test/node/database.test.ts packages/hatchmark/test/node/database-adversarial.test.ts packages/hatchmark/test/node/database-config.test.ts
 
   workerd:
     runs-on: ubuntu-latest

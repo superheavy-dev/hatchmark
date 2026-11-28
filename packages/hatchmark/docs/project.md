@@ -152,12 +152,12 @@ sources:
       hours: 1
 ```
 
-| Option    | Meaning                                                                                                                                                                                          |
-| --------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `env`     | Required. The name of the environment variable that holds the connection string. The connection string never goes in `hatchmark.yaml`; `env` takes only a variable name.                         |
-| `table`   | A table or view, as `name` or `schema.name`, matched exactly as written. Without a schema: `public` (or the connection's search path) in PostgreSQL, the connection's database in MySQL.         |
-| `query`   | Instead of `table`: a `SELECT` that the database runs, in its own SQL dialect. Use it to cast columns, filter rows or join tables before Hatchmark reads them.                                   |
-| `max_age` | `{ minutes: n }`, `{ hours: n }` or `{ days: n }`: reuse the local copy of the rows while it is younger than this. Without it, `build` fetches the rows on every run and `dev` once per session. |
+| Option    | Meaning                                                                                                                                                                                                    |
+| --------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `env`     | Required. The name of the environment variable that holds the connection string. The connection string never goes in `hatchmark.yaml`; `env` takes only a variable name.                                   |
+| `table`   | A table or view, as `name` or `schema.name`, matched exactly as written. Without a schema: the first schema on the connection's search path that has it in PostgreSQL, the connection's database in MySQL. |
+| `query`   | Instead of `table`: a query that returns rows, such as a `SELECT`, that the database runs in its own SQL dialect. Use it to cast columns, filter rows or join tables before Hatchmark reads them.          |
+| `max_age` | `{ minutes: n }`, `{ hours: n }` or `{ days: n }`: reuse the local copy of the rows while it is younger than this. Without it, `build` fetches the rows on every run and `dev` once per session.           |
 
 `timezone`, `freshness` and `snapshot` work as for file sources.
 
@@ -168,10 +168,22 @@ The variable holds the connection string in the form DuckDB's extensions take:
 - PostgreSQL: a URL or a libpq string, such as `postgresql://reader:secret@db.example.com:5432/shop?sslmode=require`.
 - MySQL: `host=db.example.com port=3306 user=reader password=secret database=shop`.
 
+Percent-encode `@`, `/`, `?` and `#` in a URL password (`%40`, `%2F`, `%3F`, `%23`); a URL
+password with a raw `@` or `/` fails with `HM2041` before Hatchmark connects, because PostgreSQL
+would read part of the password as the host.
+
+The password in the variable is the only one Hatchmark uses. `PGPASSWORD`, `~/.pgpass`, a
+PostgreSQL service file and `MYSQL_PWD` are ignored, so a connection string without a password
+connects only to a database that asks for none.
+
 Set it in the shell, or as a secret in CI. Hatchmark never writes it to disk: diagnostics, `--json`
-output and logs replace the connection string and every password in it with `***`, and the local
-copy is keyed by the host, port, database and user, never by the password. Hatchmark only reads:
-the database is attached read-only and only `SELECT` statements run. Give it a user that may only
+output and logs replace the connection string and every password in it (`password=`, `passwd=`,
+`pwd=` and URL passwords) with `***`. The local copy is keyed by the host, port, database and user,
+never by the password, and stores a SHA-256 of a source's query rather than its text.
+
+Hatchmark attaches the database read-only. PostgreSQL runs every read in a read-only transaction,
+so a query that writes fails. DuckDB's MySQL extension refuses statements that return no rows, such
+as `DELETE`, but MySQL itself does not enforce read-only reads. Give Hatchmark a user that may only
 read the tables it needs.
 
 ### How queries run
@@ -192,21 +204,41 @@ fetches again.
 
 ### Types
 
-| Database type                                                             | Read as                        | Numbers rule                                                                                                          |
-| ------------------------------------------------------------------------- | ------------------------------ | --------------------------------------------------------------------------------------------------------------------- |
-| `smallint`, `integer`, `bigint`, MySQL unsigned integers                  | DuckDB integers                | Summed exactly (as `HUGEINT`), like integers in files.                                                                |
-| `numeric(p,s)`, `decimal(p,s)` with p ≤ 38                                | `DECIMAL(p,s)`                 | Exact.                                                                                                                |
-| PostgreSQL `numeric` without a precision; `numeric`/`decimal` with p > 38 | `DOUBLE` (the driver's choice) | Float rules (`HM4004`); a metric that aggregates it gets warning `HM4080`. Declare a precision or cast it in `query`. |
-| `real`, `double precision`, `float`, `double`                             | `DOUBLE`                       | Float rules.                                                                                                          |
-| PostgreSQL `timestamptz`, MySQL `TIMESTAMP`                               | `TIMESTAMP WITH TIME ZONE`     | An instant; MySQL is read with session time zone UTC, so the server's zone never shifts it.                           |
-| PostgreSQL `timestamp`, MySQL `DATETIME`                                  | `TIMESTAMP`                    | Wall-clock time in the source's `timezone` (default UTC; note `HM4016`).                                              |
-| `date`                                                                    | `DATE`                         | A calendar date.                                                                                                      |
-| `text`, `varchar`, `char`, `uuid`, `json`, `jsonb`, `time`, enums         | `VARCHAR`                      | Text.                                                                                                                 |
-| `boolean`, MySQL `TINYINT(1)` and `BIT(1)`                                | `BOOLEAN`                      |                                                                                                                       |
-| `interval`, `bytea`/`BLOB`, arrays, composite types                       | kept as DuckDB reads them      | A metric that uses one fails `check` with `HM2043`.                                                                   |
+| Database type                                                             | Read as                        | Numbers rule                                                                                                                                                                                          |
+| ------------------------------------------------------------------------- | ------------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `smallint`, `integer`, `bigint`, MySQL unsigned integers                  | DuckDB integers                | Summed exactly (as `HUGEINT`), like integers in files.                                                                                                                                                |
+| `numeric(p,s)`, `decimal(p,s)` with p ≤ 38                                | `DECIMAL(p,s)`                 | Exact, summed in at most 38 digits: a total that needs more stops with `HM2015`. A scale above the precision, such as `numeric(3,5)`, reads as `DECIMAL(s,s)`; a negative scale fails with `HM2043`.  |
+| PostgreSQL `numeric` without a precision; `numeric`/`decimal` with p > 38 | `DOUBLE` (the driver's choice) | Float rules (`HM4004`); a metric that aggregates it gets warning `HM4080` with `table`. With `query` Hatchmark cannot see the declared type, so no warning: cast it, such as `amount::numeric(18,2)`. |
+| `real`, `double precision`, `float`, `double`                             | `DOUBLE`                       | Float rules.                                                                                                                                                                                          |
+| PostgreSQL `timestamptz`, MySQL `TIMESTAMP`                               | `TIMESTAMP WITH TIME ZONE`     | An instant; MySQL is read with session time zone UTC, so the server's zone never shifts it. MySQL through `query`: see below.                                                                         |
+| PostgreSQL `timestamp`, MySQL `DATETIME`                                  | `TIMESTAMP`                    | Wall-clock time in the source's `timezone` (default UTC; note `HM4016`).                                                                                                                              |
+| `date`                                                                    | `DATE`                         | A calendar date.                                                                                                                                                                                      |
+| `text`, `varchar`, `char`, `uuid`, `json`, `jsonb`, `time`, enums         | `VARCHAR`                      | Text. MySQL text must not collide under its collation (`HM2046`, below).                                                                                                                              |
+| PostgreSQL `money`                                                        | `VARCHAR`, such as `$1,000.50` | Text: a metric that sums it fails with `HM2043`. Cast it in `query`, such as `cash::numeric(18,2)`.                                                                                                   |
+| `boolean`, MySQL `TINYINT(1)` and `BIT(1)`                                | `BOOLEAN`                      | A MySQL `TINYINT(1)` holding any value other than 0 reads as true; cast it in `query` to keep the number.                                                                                             |
+| `interval`, `bytea`/`BLOB`, arrays, composite types                       | kept as DuckDB reads them      | A metric that uses one fails `check` with `HM2043`.                                                                                                                                                   |
 
 Both databases deliver microseconds; nanosecond timestamps (`TIMESTAMP_NS`) only come from Parquet
-files. Integer sums that pass 64 bits stay exact in `HUGEINT`, as for files.
+files. Integer sums that pass 64 bits stay exact in `HUGEINT`, as for files. A PostgreSQL `NaN` in
+a `numeric(p,s)` column reads as `NULL`, and in a plain `numeric` column as the float `NaN`.
+
+A MySQL query reads `DATETIME` and `TIMESTAMP` columns as the same type, so Hatchmark cannot tell a
+wall-clock time from an instant. Without `timezone` on the source both read the same and the query
+is fine. With `timezone`, a date-time column in the query fails with `HM2045`: read it with
+`table`, or convert it to UTC in the query, such as `CONVERT_TZ(created_at, 'America/New_York',
+'+00:00')` for a `DATETIME`, and remove `timezone`.
+
+### MySQL text and collations
+
+MySQL compares text with the column's collation; the default, `utf8mb4_0900_ai_ci`, ignores case and
+accents, so `West`, `west` and `Wést` form one group in MySQL's own SQL. Hatchmark groups, counts
+and filters the copied rows by their bytes. So that a dashboard never shows more groups, a higher
+distinct count or a smaller filtered total than MySQL would, `build` and `dev` check every MySQL
+text column when they copy it and stop with `HM2046` when two values differ only in case, accents
+or trailing spaces. Normalize the column in `query`, such as `SELECT LOWER(region) AS region`, or
+make it case- and accent-sensitive, such as `SELECT region COLLATE utf8mb4_0900_as_cs AS region`. A
+binary collation such as `utf8mb4_bin` reaches DuckDB as `BLOB` (`HM2043`). The check reads each
+text column once per copy.
 
 ### Checking without a connection
 
@@ -218,7 +250,12 @@ files. Integer sums that pass 64 bits stay exact in `HUGEINT`, as for files.
 2. When it is not set, from the newest local copy of the same table or query in `.hatchmark/cache`,
    with note `HM2040` naming when that copy was fetched.
 3. With neither, the source's columns are not checked: warning `HM2040` (exit 0 unless `--strict`).
-   Everything else in the project is still checked.
+   Everything else in the project is still checked, except the regions of map blocks over that
+   source, which need its rows.
+
+With `max_age`, a copy younger than `max_age` stands for the database: `check`, `build` and `dev`
+check the columns against the copy they then read, without connecting. `check --sql` and map
+region matching read rows, so they need the variable, or a copy younger than `max_age`.
 
 `build` and `dev` need the rows, so a missing variable is an error there. In CI, set the variable
 as a secret where `build` runs; a `check` job without database access still checks every file and

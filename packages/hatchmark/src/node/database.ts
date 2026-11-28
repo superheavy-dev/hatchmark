@@ -1,20 +1,10 @@
 import { createHash, randomUUID } from "node:crypto";
 import { mkdir, readdir, rename, rm, stat } from "node:fs/promises";
+import { tmpdir } from "node:os";
 import path from "node:path";
 import { type DuckDBConnection, DuckDBInstance } from "@duckdb/node-api";
 import { canonicalJson, quote } from "../compiler/index.js";
 import type { DatabaseSchema, DatabaseSource } from "../spec/index.js";
-
-/**
- * Database sources (postgres, mysql). DuckDB's postgres and mysql extensions read the table or
- * query once into a Parquet copy under .hatchmark/cache/v1/s/, and every query of a command reads
- * that copy as it reads a Parquet file, so one build sees one set of rows in one order. The
- * connection string comes only from the environment variable the source names; it is never
- * written to disk, and every message that leaves this module has it redacted.
- *
- * A copy is reused while it is younger than the source's max_age. Without max_age, a store fetches
- * each source once in its lifetime: once per build, check or explain, and once per dev session.
- */
 
 export const DATABASE_DIR = ".hatchmark/cache/v1/s";
 
@@ -22,7 +12,15 @@ const FORMAT = 1;
 
 const CONNECT_TIMEOUT_MS = 30_000;
 
-export type DatabaseCode = "HM2015" | "HM2040" | "HM2041" | "HM2042" | "HM2044";
+export type DatabaseCode =
+  | "HM2015"
+  | "HM2040"
+  | "HM2041"
+  | "HM2042"
+  | "HM2043"
+  | "HM2044"
+  | "HM2045"
+  | "HM2046";
 
 /** A failure to reach or read a database, with its diagnostic code and a redacted message. */
 export class DatabaseError extends Error {
@@ -55,7 +53,7 @@ interface Header {
 interface Select {
   type: DatabaseSource["type"];
   table?: string;
-  query?: string;
+  query_sha256?: string;
 }
 
 export interface DatabaseStore {
@@ -69,13 +67,13 @@ export interface DatabaseStore {
   close(): Promise<void>;
 }
 
+const sha256 = (text: string) => createHash("sha256").update(text).digest("hex");
+
 const selectOf = (source: DatabaseSource): Select => ({
   type: source.type,
   ...(source.table !== undefined ? { table: source.table } : {}),
-  ...(source.query !== undefined ? { query: source.query } : {}),
+  ...(source.query !== undefined ? { query_sha256: sha256(source.query) } : {}),
 });
-
-const sha256 = (text: string) => createHash("sha256").update(text).digest("hex");
 
 const maxAgeMs = (source: DatabaseSource): number | undefined => {
   const age = source.max_age;
@@ -85,11 +83,31 @@ const maxAgeMs = (source: DatabaseSource): number | undefined => {
   return age.days * 86_400_000;
 };
 
-const PASSWORD_PARAM = /\bpassword\s*=\s*('(?:[^'\\]|\\.)*'|\S+)/gi;
+const PASSWORD_PARAM = /\b((?:password|passwd|pwd)\s*=\s*)('(?:[^'\\]|\\.)*'|\S+)/gi;
+
+function urlPassword(connection: string): string | undefined {
+  const scheme = /^[a-z][a-z0-9+.-]*:\/\//i.exec(connection);
+  if (scheme === null) return undefined;
+  const rest = connection.slice(scheme[0].length).split(/[?#]/)[0] ?? "";
+  const at = rest.lastIndexOf("@");
+  if (at < 0) return undefined;
+  const colon = rest.slice(0, at).indexOf(":");
+  return colon < 0 ? undefined : rest.slice(colon + 1, at);
+}
+
+function hasPassword(connection: string): boolean {
+  if ((urlPassword(connection) ?? "") !== "") return true;
+  return [...connection.matchAll(PASSWORD_PARAM)].some((m) => !/^(''|"")?$/.test(m[2] ?? ""));
+}
 
 /** The secret parts of a connection string: the whole string and any password in it. */
 export function secretsOf(connection: string): string[] {
   const out = new Set<string>([connection]);
+  const raw = urlPassword(connection);
+  if (raw !== undefined) {
+    out.add(raw);
+    for (const piece of raw.split(/[@/]/)) if (piece.length >= 4) out.add(piece);
+  }
   try {
     const url = new URL(connection);
     if (url.password !== "") {
@@ -100,7 +118,7 @@ export function secretsOf(connection: string): string[] {
     if (param) out.add(param);
   } catch {}
   for (const match of connection.matchAll(PASSWORD_PARAM)) {
-    const value = match[1] ?? "";
+    const value = match[2] ?? "";
     out.add(value);
     if (value.startsWith("'")) out.add(value.slice(1, -1).replace(/\\(.)/g, "$1"));
   }
@@ -113,9 +131,7 @@ export function redact(message: string, connection: string | undefined): string 
   if (connection !== undefined) {
     for (const secret of secretsOf(connection)) out = out.split(secret).join("***");
   }
-  return out
-    .replace(/(\w+:\/\/[^:/@\s]*:)[^@\s]*@/g, "$1***@")
-    .replace(PASSWORD_PARAM, "password=***");
+  return out.replace(/(\w+:\/\/[^:/@\s]*:)[^\s"']*@/g, "$1***@").replace(PASSWORD_PARAM, "$1***");
 }
 
 /** The database a connection string points at, without its password, for the copy's key. */
@@ -126,25 +142,83 @@ function identityOf(connection: string): string {
     url.searchParams.delete("password");
     return url.toString();
   } catch {
-    return connection.replace(PASSWORD_PARAM, "");
+    return connection.replace(PASSWORD_PARAM, "").trim().split(/\s+/).sort().join(" ");
   }
 }
 
 const stringLiteral = (text: string) => `'${text.replaceAll("'", "''")}'`;
 
-function relationOf(source: DatabaseSource): string {
-  if (source.query !== undefined) {
-    const fn = source.type === "postgres" ? "postgres_query" : "mysql_query";
-    return `${fn}('hm_db', ${stringLiteral(source.query)})`;
+const backtick = (name: string) => `\`${name.replaceAll("`", "``")}\``;
+
+const URL_FORM = /^[a-z][a-z0-9+.-]*:\/\//i;
+
+const NO_PASSFILE = path.join(tmpdir(), `hatchmark-${randomUUID()}.pgpass`).replaceAll("\\", "/");
+
+/**
+ * libpq falls back to PGPASSWORD, a service file and ~/.pgpass, and DuckDB's mysql extension to
+ * MYSQL_PWD, when the connection string has no password; an explicit empty password and a passfile
+ * that does not exist turn those fallbacks off.
+ */
+function namedOnly(type: DatabaseSource["type"], connection: string): string {
+  const missing = !hasPassword(connection);
+  if (type === "mysql") return missing ? `${connection} password=''` : connection;
+  if (URL_FORM.test(connection)) {
+    const params = `${missing ? "password=&" : ""}passfile=${encodeURIComponent(NO_PASSFILE)}`;
+    return `${connection}${connection.includes("?") ? "&" : "?"}${params}`;
   }
-  return ["hm_db", ...(source.table ?? "").split(".").map(quote)].join(".");
+  return `${connection}${missing ? " password=''" : ""} passfile='${NO_PASSFILE}'`;
 }
 
-function catalogQuery(source: DatabaseSource): string | undefined {
-  if (source.table === undefined) return undefined;
-  const parts = source.table.split(".");
-  const table = stringLiteral(parts.at(-1) ?? "");
-  const schema = parts.length > 1 ? stringLiteral(parts[0] ?? "") : undefined;
+interface Relation {
+  sql: string;
+  schema?: string;
+  table?: string;
+}
+
+const missingTable = (name: string, table: string) =>
+  new DatabaseError(
+    "HM2042",
+    `table "${table}" of database source "${name}" is not in the database`,
+    "check the table name and its schema, and that the database user may read it",
+  );
+
+async function relationOf(
+  connection: DuckDBConnection,
+  name: string,
+  source: DatabaseSource,
+): Promise<Relation> {
+  if (source.query !== undefined) {
+    const fn = source.type === "postgres" ? "postgres_query" : "mysql_query";
+    // DuckDB's postgres extension trims the query and wraps it in COPY (...), so a trailing line
+    // comment would swallow the closing parenthesis.
+    return { sql: `${fn}('hm_db', ${stringLiteral(`${source.query}\n/**/`)})` };
+  }
+  const parts = (source.table ?? "").split(".");
+  const table = parts.at(-1) ?? "";
+  let schema = parts.length > 1 ? parts[0] : undefined;
+  if (schema === undefined && source.type === "postgres") {
+    const inner = `SELECT n.nspname::text FROM pg_catalog.pg_class c JOIN pg_catalog.pg_namespace n ON n.oid = c.relnamespace WHERE c.oid = to_regclass(quote_ident(${stringLiteral(table)}))`;
+    const found = (
+      await connection.runAndReadAll(
+        `SELECT * FROM postgres_query('hm_db', ${stringLiteral(inner)})`,
+      )
+    ).getRows()[0]?.[0];
+    if (typeof found !== "string") throw missingTable(name, source.table ?? table);
+    schema = found;
+  }
+  return {
+    sql: ["hm_db", ...(schema !== undefined ? [schema] : []), table]
+      .map((p, i) => (i === 0 ? p : quote(p)))
+      .join("."),
+    ...(schema !== undefined ? { schema } : {}),
+    table,
+  };
+}
+
+function catalogQuery(source: DatabaseSource, relation: Relation): string | undefined {
+  if (relation.table === undefined) return undefined;
+  const table = stringLiteral(relation.table);
+  const schema = relation.schema !== undefined ? stringLiteral(relation.schema) : undefined;
   if (source.type === "postgres") {
     const inner = `SELECT column_name::text, data_type::text, numeric_precision::int FROM information_schema.columns WHERE table_name = ${table} AND table_schema = ${schema ?? "current_schema()"}`;
     return `SELECT * FROM postgres_query('hm_db', ${stringLiteral(inner)})`;
@@ -175,6 +249,13 @@ async function withDatabase<T>(
       `set ${source.env} to the connection string, such as ${source.type === "postgres" ? "postgresql://user:password@host:5432/db" : "host=db.example.com user=reader password=... database=shop"}`,
     );
   }
+  if (/[@/]/.test(urlPassword(secret) ?? "")) {
+    throw new DatabaseError(
+      "HM2041",
+      `the connection string in ${source.env} for database source "${name}" has an unencoded "@" or "/" in its password`,
+      "percent-encode them in the password: @ as %40 and / as %2F",
+    );
+  }
   const fail = (code: DatabaseCode, text: string, help?: string): never => {
     throw new DatabaseError(code, redact(text, secret).trim(), help);
   };
@@ -202,7 +283,9 @@ async function withDatabase<T>(
     });
     try {
       await Promise.race([
-        connection.run(`ATTACH ${stringLiteral(secret)} AS hm_db (TYPE ${source.type}, READ_ONLY)`),
+        connection.run(
+          `ATTACH ${stringLiteral(namedOnly(source.type, secret))} AS hm_db (TYPE ${source.type}, READ_ONLY)`,
+        ),
         timeout,
       ]);
     } catch (error) {
@@ -221,11 +304,7 @@ async function withDatabase<T>(
         throw new DatabaseError(error.code, redact(error.message, secret), error.help);
       const text = message(error);
       if (source.table !== undefined && /^Catalog Error: Table with name/.test(text)) {
-        fail(
-          "HM2042",
-          `table "${source.table}" of database source "${name}" is not in the database`,
-          "check the table name and its schema, and that the database user may read it",
-        );
+        throw missingTable(name, source.table);
       }
       return fail("HM2015", `database source "${name}": ${text}`);
     }
@@ -238,39 +317,69 @@ async function withDatabase<T>(
 interface Described {
   columns: { name: string; type: string }[];
   decimals: string[];
+  texts: string[];
+  relation: Relation;
   select: string;
 }
 
 async function describeRemote(
   connection: DuckDBConnection,
+  sourceName: string,
   source: DatabaseSource,
 ): Promise<Described> {
-  const relation = relationOf(source);
-  const read = (await connection.runAndReadAll(`DESCRIBE SELECT * FROM ${relation}`))
+  const relation = await relationOf(connection, sourceName, source);
+  const read = (await connection.runAndReadAll(`DESCRIBE SELECT * FROM ${relation.sql}`))
     .getRows()
     .map((row) => ({ name: String(row[0]), type: String(row[1]) }));
   const remote = new Map<string, string>();
-  const catalog = catalogQuery(source);
+  const catalog = catalogQuery(source, relation);
   if (catalog !== undefined) {
     for (const row of (await connection.runAndReadAll(catalog)).getRows()) {
       remote.set(String(row[0]), String(row[1]).toLowerCase());
     }
   }
   const decimals: string[] = [];
+  const texts: string[] = [];
   const columns: { name: string; type: string }[] = [];
   const select: string[] = [];
   for (const { name, type } of read) {
     const declared = remote.get(name);
     const column = quote(name);
+    const at = `column "${name}" of database source "${sourceName}"`;
     if ((declared === "numeric" || declared === "decimal") && type === "DOUBLE")
       decimals.push(name);
+    const decimal = /^DECIMAL\((\d+),(\d+)\)$/.exec(type);
+    const width = Number(decimal?.[1]);
+    const scale = Number(decimal?.[2]);
+    if (decimal !== null && scale > 38) {
+      throw new DatabaseError(
+        "HM2043",
+        `${at} is a numeric with a negative scale, which DuckDB's postgres extension misreads`,
+        `cast it in the source's query, such as SELECT ${name}::numeric(38,0) AS ${name}`,
+      );
+    }
     if (TEXT_TYPES.test(type)) {
       columns.push({ name, type: "VARCHAR" });
       select.push(`CAST(${column} AS VARCHAR) AS ${column}`);
+    } else if (decimal !== null && scale > width) {
+      columns.push({ name, type: `DECIMAL(${scale},${scale})` });
+      select.push(`CAST(${column} AS DECIMAL(${scale},${scale})) AS ${column}`);
     } else if (source.type === "mysql" && declared === "timestamp" && type === "TIMESTAMP") {
       columns.push({ name, type: "TIMESTAMP WITH TIME ZONE" });
       select.push(`timezone('UTC', ${column}) AS ${column}`);
+    } else if (
+      source.type === "mysql" &&
+      source.query !== undefined &&
+      type === "TIMESTAMP" &&
+      (source.timezone ?? "UTC") !== "UTC"
+    ) {
+      throw new DatabaseError(
+        "HM2045",
+        `${at} is a MySQL DATETIME or TIMESTAMP, and a query does not say which, so Hatchmark cannot tell a ${source.timezone} wall-clock time from an instant`,
+        `read it with table:, which knows the column type, or convert it to UTC in the query, such as CONVERT_TZ(${name}, '${source.timezone}', '+00:00') for a DATETIME, and remove timezone from the source`,
+      );
     } else {
+      if (source.type === "mysql" && type === "VARCHAR") texts.push(name);
       columns.push({ name, type });
       select.push(column);
     }
@@ -278,8 +387,48 @@ async function describeRemote(
   return {
     columns,
     decimals,
-    select: `SELECT ${select.length > 0 ? select.join(", ") : "*"} FROM ${relation}`,
+    texts,
+    relation,
+    select: `SELECT ${select.length > 0 ? select.join(", ") : "*"} FROM ${relation.sql}`,
   };
+}
+
+async function checkCollation(
+  connection: DuckDBConnection,
+  name: string,
+  source: DatabaseSource,
+  described: Described,
+): Promise<void> {
+  if (described.texts.length === 0) return;
+  const { schema, table } = described.relation;
+  const from =
+    source.query ??
+    `SELECT * FROM ${[schema, table]
+      .filter((p) => p !== undefined)
+      .map(backtick)
+      .join(".")}`;
+  const counts = described.texts.map((c) => {
+    const column = backtick(c);
+    return `COUNT(DISTINCT ${column}), COUNT(DISTINCT CAST(${column} AS BINARY)), MAX(COLLATION(${column}))`;
+  });
+  const inner = `SELECT ${counts.join(", ")} FROM (\n${from}\n) AS hm_q`;
+  const row =
+    (
+      await connection.runAndReadAll(`SELECT * FROM mysql_query('hm_db', ${stringLiteral(inner)})`)
+    ).getRows()[0] ?? [];
+  const colliding = described.texts.flatMap((c, i) => {
+    const equal = Number(row[i * 3]);
+    const distinct = Number(row[i * 3 + 1]);
+    return equal === distinct
+      ? []
+      : [`"${c}" (${row[i * 3 + 2]}: ${equal} distinct values in MySQL, ${distinct} by bytes)`];
+  });
+  if (colliding.length === 0) return;
+  throw new DatabaseError(
+    "HM2046",
+    `database source "${name}" has text that MySQL's collation treats as equal but whose bytes differ, in case, accents or trailing spaces, so grouping, distinct counts and filters would not match MySQL: ${colliding.join(", ")}`,
+    "normalize the column in the source's query, such as SELECT LOWER(region) AS region, or make it case- and accent-sensitive, such as SELECT region COLLATE utf8mb4_0900_as_cs AS region",
+  );
 }
 
 async function readHeader(file: string): Promise<Header | undefined> {
@@ -324,17 +473,29 @@ export function createDatabaseStore(options: {
       (n) => n.startsWith(`${name}.`) && n.endsWith(".parquet"),
     );
 
-  const toCopy = (file: string, header: Header): DatabaseCopy => ({
+  const toCopy = (file: string, header: Header, origin: DatabaseCopy["origin"]): DatabaseCopy => ({
     file,
     stored_at: header.stored_at,
     columns: header.columns,
     decimals: header.decimals,
-    origin: "copy",
+    origin,
   });
+
+  const keyOf = (source: DatabaseSource) => {
+    const secret = env[source.env];
+    return sha256(
+      canonicalJson({
+        format: FORMAT,
+        select: selectOf(source),
+        database: secret === undefined ? null : identityOf(secret),
+      }),
+    );
+  };
 
   const fetch = (name: string, source: DatabaseSource, key: string): Promise<DatabaseCopy> =>
     withDatabase(env, name, source, async (connection) => {
-      const described = await describeRemote(connection, source);
+      const described = await describeRemote(connection, name, source);
+      if (source.type === "mysql") await checkCollation(connection, name, source, described);
       const header: Header = {
         format: FORMAT,
         key,
@@ -367,7 +528,7 @@ export function createDatabaseStore(options: {
           if (file !== final) await rm(file, { force: true });
         }
       }
-      return toCopy(relative, header);
+      return toCopy(relative, header, "database");
     });
 
   const reusable = async (
@@ -383,19 +544,12 @@ export function createDatabaseStore(options: {
     const header = await readHeader(absolute(relative));
     if (header?.key !== key) return undefined;
     const age = now().getTime() - Date.parse(header.stored_at);
-    return age >= 0 && age < limit ? toCopy(relative, header) : undefined;
+    return age >= 0 && age < limit ? toCopy(relative, header, "cached") : undefined;
   };
 
   return {
     copy(name, source) {
-      const secret = env[source.env];
-      const key = sha256(
-        canonicalJson({
-          format: FORMAT,
-          select: selectOf(source),
-          database: secret === undefined ? null : identityOf(secret),
-        }),
-      );
+      const key = keyOf(source);
       const memo = `${name}\n${key}`;
       const limit = maxAgeMs(source);
       const existing = fetched.get(memo);
@@ -411,6 +565,12 @@ export function createDatabaseStore(options: {
       return loading;
     },
     async describe(name, source) {
+      const key = keyOf(source);
+      const young = await reusable(name, source, key);
+      if (young !== undefined) {
+        fetched.set(`${name}\n${key}`, Promise.resolve(young));
+        return young;
+      }
       const secret = env[source.env];
       if (secret === undefined || secret === "") {
         const select = canonicalJson(selectOf(source));
@@ -419,13 +579,13 @@ export function createDatabaseStore(options: {
           const header = await readHeader(path.join(dir, file));
           if (header === undefined || canonicalJson(header.select) !== select) continue;
           if (newest === undefined || header.stored_at > newest.stored_at) {
-            newest = toCopy(`${DATABASE_DIR}/${file}`, header);
+            newest = toCopy(`${DATABASE_DIR}/${file}`, header, "copy");
           }
         }
         if (newest !== undefined) return newest;
       }
       return withDatabase(env, name, source, async (connection) => {
-        const { columns, decimals } = await describeRemote(connection, source);
+        const { columns, decimals } = await describeRemote(connection, name, source);
         return { columns, decimals, origin: "database" as const };
       });
     },

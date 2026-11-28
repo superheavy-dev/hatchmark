@@ -148,7 +148,7 @@ export const CODES = {
   HM2015: {
     title: "data cannot be queried",
     explanation:
-      "Running a dashboard's queries failed: a data file cannot be read, a column a metric names is not in the data, a time column is not a date or timestamp, a filter is bound to a value it cannot take, or latest_data found no dates because the time columns are empty. The message carries the cause. Fix the data or the metric, or set period.asOf to a fixed date.",
+      "Running a dashboard's queries failed: a data file cannot be read, a column a metric names is not in the data, a time column is not a date or timestamp, a filter is bound to a value it cannot take, an exact decimal sum needs more than DuckDB's 38 digits, or latest_data found no dates because the time columns are empty. The message carries the cause. Fix the data or the metric, or set period.asOf to a fixed date.",
   },
   HM2016: {
     title: "glob characters in a source path",
@@ -253,7 +253,7 @@ export const CODES = {
   HM2041: {
     title: "database cannot be reached",
     explanation:
-      "Connecting to a postgres or mysql source failed: the host or port is wrong or not reachable from this machine, the database refused the user or password, the database name is wrong, or it did not answer within 30 seconds. The message carries the driver's reason with every password replaced by ***. Check the connection string in the variable the source's env names, and that a firewall or VPN lets this machine reach the database.",
+      "Connecting to a postgres or mysql source failed: the host or port is wrong or not reachable from this machine, the database refused the user or password, the database name is wrong, it did not answer within 30 seconds, or a URL password has an unencoded @ or / (write them as %40 and %2F). Hatchmark uses only the password in that variable: PGPASSWORD, ~/.pgpass, a PostgreSQL service file and MYSQL_PWD are ignored, so a connection string without a password connects only where the database needs none. The message carries the driver's reason with every password replaced by ***. Check the connection string in the variable the source's env names, and that a firewall or VPN lets this machine reach the database.",
   },
   HM2042: {
     title: "table not in database",
@@ -263,12 +263,22 @@ export const CODES = {
   HM2043: {
     title: "column type Hatchmark cannot read",
     explanation:
-      "A metric uses a column of a database source whose type does not fit how the metric uses it: a summed or averaged column that is not a number, a time column that is not a date or timestamp, or a column of a type Hatchmark does not compare or group (INTERVAL, BLOB, arrays, structs and maps). UUID, JSON, TIME and enum columns are read as text. Cast the column in the source's query, such as query: SELECT id, amount::numeric(18,2) AS amount FROM orders, or point the metric at another column.",
+      "A metric uses a column of a database source whose type does not fit how the metric uses it: a summed or averaged column that is not a number, a time column that is not a date or timestamp, or a column of a type Hatchmark does not compare or group (INTERVAL, BLOB, arrays, structs and maps). UUID, JSON, TIME and enum columns are read as text. A PostgreSQL numeric with a negative scale, such as numeric(5,-2), fails for the whole source because DuckDB's postgres extension misreads it. Cast the column in the source's query, such as query: SELECT id, amount::numeric(18,2) AS amount FROM orders, or point the metric at another column.",
   },
   HM2044: {
     title: "database extension cannot be loaded",
     explanation:
       "Hatchmark reads postgres and mysql sources with DuckDB's postgres and mysql extensions, which DuckDB downloads from extensions.duckdb.org the first time and keeps in ~/.duckdb/extensions. The download or the load failed, usually because the machine is offline or a proxy blocks the host. Let the machine reach extensions.duckdb.org once, or copy the extension files for this DuckDB version and platform into ~/.duckdb/extensions.",
+  },
+  HM2045: {
+    title: "MySQL date-time in a query is ambiguous",
+    explanation:
+      "A mysql source with a query and a timezone returns a date-time column. MySQL's DATETIME holds a wall-clock time and its TIMESTAMP an instant, but DuckDB's mysql extension reads both from a query as the same type, so Hatchmark cannot tell whether to read the value in the source's timezone or as UTC, and a wrong guess moves rows across day and month boundaries. Read the column with table:, where Hatchmark knows its type from the catalog, or convert it to UTC in the query, such as CONVERT_TZ(created_at, 'America/New_York', '+00:00') for a DATETIME, and remove timezone from the source. Without timezone, both types read the same and the query is fine.",
+  },
+  HM2046: {
+    title: "text values collide under MySQL's collation",
+    explanation:
+      "A text column of a mysql source has values that MySQL treats as equal under the column's collation but whose bytes differ: 'West' and 'west', 'Wést' and 'West', or 'a' and 'a ' under a PAD SPACE collation. MySQL's default utf8mb4_0900_ai_ci ignores case and accents. Hatchmark groups, counts and filters the copied rows by their bytes, so it would show more groups, a higher distinct count and smaller filtered totals than MySQL's own SQL. build stops instead of showing different numbers. Normalize the column in the source's query, such as SELECT LOWER(region) AS region, or make it case- and accent-sensitive, such as SELECT region COLLATE utf8mb4_0900_as_cs AS region (a binary collation such as utf8mb4_bin reaches DuckDB as BLOB). check reads no rows, so only commands that copy the rows report it.",
   },
   HM3001: {
     title: "missing required property",

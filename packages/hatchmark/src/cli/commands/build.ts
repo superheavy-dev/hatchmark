@@ -517,6 +517,28 @@ async function runAll(
   const databases = createDatabaseStore({ root, env });
   const pages: Page[] = [];
   const diagnostics = new Map<string, Diagnostic>();
+  const add = (d: Diagnostic) => {
+    const located =
+      d.file === undefined
+        ? [...diagnostics].find(([, l]) => {
+            const source = /^\/sources\/([^/]+)/.exec(l.pointer ?? "")?.[1];
+            return l.code === d.code && source !== undefined && d.message.includes(`"${source}"`);
+          })
+        : undefined;
+    if (located === undefined) {
+      diagnostics.set(JSON.stringify(d), d);
+      return;
+    }
+    const { help: _, ...at } = located[1];
+    const merged: Diagnostic = {
+      ...at,
+      severity: d.severity,
+      message: d.message,
+      ...(d.help !== undefined ? { help: d.help } : {}),
+    };
+    diagnostics.delete(located[0]);
+    diagnostics.set(JSON.stringify(merged), merged);
+  };
   for (const d of loaded) diagnostics.set(JSON.stringify(d), d);
   for (const d of [...parseDiagnostics(project), ...checkReferences(project)]) {
     if (d.severity === "warning") diagnostics.set(JSON.stringify(d), d);
@@ -535,10 +557,10 @@ async function runAll(
     for (const name of [...project.dashboards.keys()].sort()) {
       const now = new Date();
       const result = await deps.runDashboard(project, name, executor, now);
-      for (const d of result.diagnostics) diagnostics.set(JSON.stringify(d), d);
+      for (const d of result.diagnostics) add(d);
       if (result.data === undefined) continue;
       const page = await periodPage(project, name, executor, result.data, now);
-      for (const d of page.diagnostics) diagnostics.set(JSON.stringify(d), d);
+      for (const d of page.diagnostics) add(d);
       pages.push(page.page);
     }
   } finally {

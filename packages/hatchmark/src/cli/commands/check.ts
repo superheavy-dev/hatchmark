@@ -16,7 +16,14 @@ import {
 } from "../../diagnostics/index.js";
 import { nodeProjectHost } from "../../node/host.js";
 import { createDatabaseStore, createDuckDbExecutor } from "../../node/index.js";
-import { CONFIG_FILE, checkReferences, loadProject, parseDiagnostics } from "../../spec/index.js";
+import {
+  CONFIG_FILE,
+  checkReferences,
+  dashboardDependencies,
+  loadProject,
+  parseDiagnostics,
+  sourceTables,
+} from "../../spec/index.js";
 import type { CommandHelp } from "../help.js";
 import { type CommandContext, type CommandResult, EXIT, type ExitCode } from "../io.js";
 import { type CreateSqlExecutor, renderQueries } from "./explain.js";
@@ -127,8 +134,16 @@ export async function check(
     }
   }
   const maps: MapMatchReport[] = [];
+  const sources = config?.sources ?? {};
+  const unread = (name: string) =>
+    [...dashboardDependencies(project, name).sources].some((s) =>
+      sourceTables(sources, s).some((t) => project.missingData.has(t)),
+    );
   const mapped = [...project.dashboards].filter(
-    ([, file]) => selected(file.file) && (file.spec?.blocks ?? []).some((b) => b.type === "map"),
+    ([name, file]) =>
+      selected(file.file) &&
+      (file.spec?.blocks ?? []).some((b) => b.type === "map") &&
+      !unread(name),
   );
   if (
     mapped.length > 0 &&
