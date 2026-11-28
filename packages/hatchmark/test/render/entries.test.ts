@@ -36,4 +36,15 @@ describe("gallery entries", () => {
     expect(head).toContain('<script defer src="../_hatchmark/hatchmark.js"></script>');
     expect(head).toContain('url("../_hatchmark/IBMPlexSans-Regular-Latin1.woff2")');
   });
+
+  it("styles every colour class and map layout the gallery uses", () => {
+    const head = galleryHead("");
+    const html = galleryEntries()
+      .map((e) => e.html)
+      .join("");
+    const used = new Set([...html.matchAll(/\bhm-(?:f|on)-[\w-]+/g)].map((m) => m[0]));
+    expect([...used].filter((c) => !head.includes(`.${c}{`))).toEqual([]);
+    for (const c of ["hm-map-body", "hm-map-frame", "hm-map-list"])
+      expect(head).toContain(`.${c}{`);
+  });
 });

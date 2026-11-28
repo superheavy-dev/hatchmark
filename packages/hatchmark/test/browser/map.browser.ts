@@ -39,7 +39,7 @@ async function open(
     hasTouch: touch,
     isMobile: touch,
   });
-  const styles = pageStyles({ runtime: "", fonts: {} }, DEFAULT_THEME, false, false, true);
+  const styles = pageStyles({ runtime: "", fonts: {} }, DEFAULT_THEME, { maps: true, tiles: true });
   await page.setContent(
     `<!doctype html><html><head><style>${styles}</style></head><body>${renderFragment(data, DEFAULT_THEME, usedGeographies(data.blocks))}</body></html>`,
   );
@@ -184,6 +184,50 @@ describe("map in a browser", () => {
       const page = await open(name, 1024, false, (b) => ({ ...b, span: 3 }));
       expect(await page.locator(".hm-map-tiles text >> visible=true").count()).toBe(52);
       await page.close();
+    },
+  );
+
+  it.each(["light", "dark"] as const)(
+    "tile codes have no halo and reach WCAG AA on their own tile in the %s theme",
+    async (scheme) => {
+      for (const name of ["map-us-tiles-square", "map-us-tiles-hex", "map-us-tiles-narrow"]) {
+        const page = await open(name, 1440);
+        await page.emulateMedia({ colorScheme: scheme });
+        const result = await page.evaluate(() => {
+          const rgb = (c: string) => (c.match(/\d+(\.\d+)?/g) ?? []).slice(0, 3).map(Number);
+          const lum = (c: string) => {
+            const [r, g, b] = rgb(c).map((v) => {
+              const x = v / 255;
+              return x <= 0.04045 ? x / 12.92 : ((x + 0.055) / 1.055) ** 2.4;
+            }) as [number, number, number];
+            return 0.2126 * r + 0.7152 * g + 0.0722 * b;
+          };
+          const ratio = (a: string, b: string) => {
+            const [hi, lo] = [lum(a), lum(b)].sort((x, y) => y - x) as [number, number];
+            return (hi + 0.05) / (lo + 0.05);
+          };
+          return [...document.querySelectorAll(".hm-map-tiles text")]
+            .filter((t) => t.checkVisibility())
+            .map((t) => {
+              const tile = document.querySelector(
+                `svg[data-hm-kind=map] [data-hm-r="${t.textContent}"]`,
+              );
+              const fill = tile ? getComputedStyle(tile).fill : "none";
+              const text = getComputedStyle(t);
+              return {
+                id: t.textContent,
+                stroke: text.stroke,
+                ratio: fill.startsWith("rgb") ? ratio(text.fill, fill) : undefined,
+              };
+            });
+        });
+        expect(result).toHaveLength(52);
+        expect(result.filter((l) => l.stroke !== "none")).toEqual([]);
+        const filled = result.filter((l) => l.ratio !== undefined);
+        expect(filled.length).toBeGreaterThan(40);
+        expect(filled.filter((l) => (l.ratio as number) < 4.5)).toEqual([]);
+        await page.close();
+      }
     },
   );
 

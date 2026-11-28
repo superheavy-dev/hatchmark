@@ -11,7 +11,7 @@ import {
 } from "./format.js";
 import { textWidth } from "./measure.js";
 import { esc, langAttr, r, scriptJson, svgText } from "./svg.js";
-import type { MapColor, Theme } from "./theme.js";
+import { type MapColor, onMapColor, type Theme } from "./theme.js";
 
 /** At or above this card width the bar list sits beside the map, else below it. */
 export const MAP_SIDE_MIN = 640;
@@ -21,7 +21,6 @@ const MAX_HEIGHT = 520;
 const LEADER_SWATCH = 8;
 const TILE_LABEL_MIN = 8;
 const TILE_LABEL_SHARE = 0.5;
-const TILE_HALO = 2;
 
 /**
  * The fill of each class, lowest first. Sequential scales take the theme's ramp for their number
@@ -155,23 +154,41 @@ export function mapLayers(
   });
   const over =
     geography.labels === "inside"
-      ? tileLabels(ctx, geography, s, box)
+      ? tileLabels(
+          ctx,
+          geography,
+          new Map(geography.regions.map((g) => [g.id, regionColor(byId.get(g.id), colors)])),
+          s,
+          box,
+        )
       : labels.length === 0
         ? ""
         : `<svg class="hm-map-layer hm-map-labels" ${box}><defs>${noDataPattern(ctx, `${hatch}-k`, s)}</defs>${labels.join("")}</svg>`;
   return { under, over };
 }
 
-function tileLabels(ctx: RenderContext, geography: Geography, scale: number, box: string): string {
+function tileLabels(
+  ctx: RenderContext,
+  geography: Geography,
+  fills: Map<string, MapColor | undefined>,
+  scale: number,
+  box: string,
+): string {
   const pitch = Math.sqrt(geography.regions[0]?.area ?? 0) * scale;
   const size = Math.min(ctx.theme.leader.size, Math.floor(pitch * TILE_LABEL_SHARE));
   if (size < TILE_LABEL_MIN) return "";
   const u = (px: number) => Math.round((px / scale) * 1e3) / 1e3;
   const texts = geography.regions.map(
     (g) =>
-      `<text x="${g.label[0]}" y="${g.label[1]}" dy="0.35em" text-anchor="middle" font-size="${u(size)}" font-weight="500" stroke-width="${u(TILE_HALO)}" paint-order="stroke"${ctx.paint.attrs("text", "card")}>${esc(g.id)}</text>`,
+      `<text x="${g.label[0]}" y="${g.label[1]}" dy="0.35em" text-anchor="middle" font-size="${u(size)}" font-weight="500"${tileLabelPaint(ctx, fills.get(g.id))}>${esc(g.id)}</text>`,
   );
   return `<svg class="hm-map-layer hm-map-tiles" ${box}>${texts.join("")}</svg>`;
+}
+
+function tileLabelPaint(ctx: RenderContext, fill: MapColor | undefined): string {
+  if (fill === undefined) return ctx.paint.attrs("textMuted");
+  if (ctx.paint.mode === undefined) return ` class="hm-on-${fill}"`;
+  return ` fill="${onMapColor(ctx.theme, ctx.paint.mode, fill)}"`;
 }
 
 /**

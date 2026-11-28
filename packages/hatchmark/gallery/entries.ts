@@ -27,7 +27,6 @@ export function galleryHead(base: string): string {
       fonts: Object.fromEntries(FONT_FILES.map((f) => [f.file, `${base}${f.file}`])),
     },
     DEFAULT_THEME,
-    true,
-    true,
+    { groups: true, maps: true, tiles: true },
   );
 }
