@@ -36,7 +36,14 @@ import {
   sqlType,
   type TimeColumn,
 } from "../compiler/index.js";
-import { type FileSource, normalizePath, type ProjectConfig } from "../spec/index.js";
+import {
+  type FileSource,
+  isDatabaseSource,
+  normalizePath,
+  type ProjectConfig,
+  type TableSource,
+} from "../spec/index.js";
+import { createDatabaseStore, type DatabaseStore } from "./database.js";
 
 /**
  * The DuckDB executor (build mode): runs planned queries over the project's CSV, Parquet and JSON
@@ -95,7 +102,18 @@ export async function createDuckDbExecutor(options: {
   config: ProjectConfig;
   /** DuckDB worker threads; DuckDB's default (the machine's cores) when absent. */
   threads?: number;
+  /**
+   * Where database sources' rows come from, shared with a build cache; a store of its own over
+   * process.env when absent.
+   */
+  databases?: DatabaseStore;
 }): Promise<SqlExecutor & { close(): Promise<void> }> {
+  const ownStore =
+    options.databases === undefined &&
+    Object.values(options.config.sources).some((s) => isDatabaseSource(s))
+      ? createDatabaseStore({ root: options.root, env: process.env })
+      : undefined;
+  const databases = options.databases ?? ownStore;
   const instance = await DuckDBInstance.create(":memory:");
   const connection = await instance.connect();
   await connection.run("SET TimeZone = 'UTC'");
@@ -113,13 +131,30 @@ export async function createDuckDbExecutor(options: {
     if (source.type === "lookup") {
       return Promise.reject(new Error(`lookup source "${name}" is not evaluated yet`));
     }
-    const file = path.join(options.root, ...normalizePath(source.path).split("/"));
-    const loading = loadSource(connection, name, source, file);
+    const loading = isDatabaseSource(source)
+      ? (databases as DatabaseStore).copy(name, source).then((copy) =>
+          loadSource(
+            connection,
+            name,
+            {
+              type: "parquet",
+              path: copy.file,
+              ...(source.timezone ? { timezone: source.timezone } : {}),
+            },
+            path.join(options.root, ...copy.file.split("/")),
+          ),
+        )
+      : loadSource(
+          connection,
+          name,
+          source,
+          path.join(options.root, ...normalizePath(source.path).split("/")),
+        );
     sources.set(name, loading);
     return loading;
   };
 
-  const current = (name: string, input: FileSource): Promise<LoadedSource> => {
+  const current = (name: string, input: TableSource): Promise<LoadedSource> => {
     const configured = options.config.sources[name];
     if (configured === undefined || canonicalJson(configured) !== canonicalJson(input)) {
       return Promise.reject(
@@ -162,6 +197,7 @@ export async function createDuckDbExecutor(options: {
     async close() {
       connection.closeSync();
       instance.closeSync();
+      await ownStore?.close();
     },
   };
 }

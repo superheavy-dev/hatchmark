@@ -56,6 +56,45 @@ jobs:
       - run: pnpm install --frozen-lockfile
       - run: pnpm test
 
+  databases:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:17
+        env:
+          POSTGRES_PASSWORD: hatchmark
+          POSTGRES_DB: shop
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 20
+      mysql:
+        image: mysql:8.4
+        env:
+          MYSQL_ROOT_PASSWORD: hatchmark
+          MYSQL_DATABASE: shop
+        ports: ["3306:3306"]
+        options: >-
+          --health-cmd "mysqladmin ping -h 127.0.0.1 -phatchmark"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 30
+    env:
+      HM_TEST_POSTGRES_URL: postgresql://postgres:hatchmark@127.0.0.1:5432/shop
+      HM_TEST_MYSQL_URL: host=127.0.0.1 port=3306 user=root password=hatchmark database=shop
+      TZ: UTC
+    steps:
+      - uses: actions/checkout@v5
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v5
+        with:
+          node-version: lts/*
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm vitest run packages/hatchmark/test/node/database.test.ts packages/hatchmark/test/node/database-config.test.ts
+
   workerd:
     runs-on: ubuntu-latest
     steps:

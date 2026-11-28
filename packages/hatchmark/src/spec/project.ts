@@ -2,6 +2,7 @@ import type { z } from "zod";
 import {
   type Diagnostic,
   docsCommand,
+  isDiagnosticCode,
   parseYamlFile,
   type SpecDocument,
   type SpecNode,
@@ -13,8 +14,14 @@ import {
   normalizePath,
   plainAggregate,
 } from "./common.js";
-import type { FileSource } from "./config.js";
-import { PROJECT_DEFAULTS, type ProjectConfig, projectConfigSchema } from "./config.js";
+import {
+  type DatabaseSource,
+  type FileSource,
+  isDatabaseSource,
+  PROJECT_DEFAULTS,
+  type ProjectConfig,
+  projectConfigSchema,
+} from "./config.js";
 import { type Dashboard, dashboardSchema } from "./dashboard.js";
 import { KEYWORDS } from "./expr.js";
 import { type Metric, metricSchema } from "./metric.js";
@@ -77,6 +84,8 @@ export interface Project {
    * the host can read them (ProjectHost.columnTypes). A source missing from the map has unknown types.
    */
   columnTypes: Map<string, { name: string; type: string }[]>;
+  /** The schema of each database source whose columns the host could read (ProjectHost.database). */
+  databases: Map<string, DatabaseSchema>;
 }
 
 /**
@@ -138,6 +147,24 @@ export function parseSpecFile<K extends SpecKind>(
  * unchanged in Node, a browser or a worker; the CLI passes a Node implementation (src/node/host.ts).
  * Every path is project-relative with forward slashes.
  */
+/** The columns of a database source, as Hatchmark reads them. */
+export interface DatabaseSchema {
+  columns: { name: string; type: string }[];
+  /** Exact decimal columns (NUMERIC, DECIMAL) the database driver delivers as DOUBLE (HM4080). */
+  decimals: string[];
+  /** "database" when read from the database itself, "copy" when from the newest local copy. */
+  origin: "database" | "copy";
+  /** For "copy": when the copy was fetched, ISO 8601 UTC. */
+  stored_at?: string;
+}
+
+/** A failure the host reports for a database source: its diagnostic code, message and help. */
+export interface DatabaseProblem {
+  code: string;
+  message: string;
+  help?: string;
+}
+
 export interface ProjectHost {
   /** Shown in messages, such as the project's absolute directory. */
   readonly label: string;
@@ -167,6 +194,12 @@ export interface ProjectHost {
     file: string,
     source: FileSource,
   ): Promise<{ name: string; type: string }[] | undefined>;
+  /**
+   * Optional: the columns of a database source, without reading its rows. Rejects with a
+   * DatabaseProblem when the database cannot be read. Hosts without database access leave it out,
+   * and those sources keep unknown columns.
+   */
+  database?(name: string, source: DatabaseSource): Promise<DatabaseSchema>;
 }
 
 const FILTER_VALUE_KEYS = new Set(["value", "values", "from", "to"]);
@@ -278,6 +311,7 @@ export async function loadProject(
     missingData: new Set(),
     columns: new Map(),
     columnTypes: new Map(),
+    databases: new Map(),
   };
 
   for (const [kind, key, target] of [
@@ -304,6 +338,10 @@ export async function loadProject(
   const diagnostics: Diagnostic[] = [...unread];
   for (const [name, source] of Object.entries(config.spec?.sources ?? {})) {
     if (source.type === "lookup") continue;
+    if (isDatabaseSource(source)) {
+      diagnostics.push(...(await readDatabase(host, project, config.document, name, source)));
+      continue;
+    }
     if (GLOB_CHARACTERS.test(source.path)) continue;
     const file = normalizePath(source.path);
     if (await host.isFile(file)) {
@@ -347,6 +385,67 @@ export async function loadProject(
     });
   }
   return { project, diagnostics };
+}
+
+const DATABASE_POINTERS: Record<string, string> = {
+  HM2040: "env",
+  HM2041: "env",
+  HM2042: "table",
+};
+
+async function readDatabase(
+  host: ProjectHost,
+  project: Project,
+  document: SpecDocument,
+  name: string,
+  source: DatabaseSource,
+): Promise<Diagnostic[]> {
+  if (host.database === undefined) return [];
+  try {
+    const schema = await host.database(name, source);
+    project.databases.set(name, schema);
+    project.columns.set(
+      name,
+      schema.columns.map((c) => c.name),
+    );
+    project.columnTypes.set(name, schema.columns);
+    if (schema.origin !== "copy") return [];
+    const pointer = `/sources/${name}/env`;
+    return [
+      {
+        code: "HM2040",
+        severity: "note",
+        message: `${source.env} is not set; the columns of "${name}" are checked against the local copy fetched ${schema.stored_at ?? "earlier"}`,
+        file: CONFIG_FILE,
+        pointer,
+        ...document.locationOf(pointer),
+        help: `set ${source.env} to check against the database itself`,
+        docs: docsCommand("HM2040"),
+      },
+    ];
+  } catch (error) {
+    const problem = error as Partial<DatabaseProblem>;
+    const code =
+      typeof problem.code === "string" && isDiagnosticCode(problem.code) ? problem.code : "HM2015";
+    const key = DATABASE_POINTERS[code] ?? "";
+    const pointer = `/sources/${name}${key !== "" && (key !== "table" || source.table !== undefined) ? `/${key}` : ""}`;
+    project.missingData.add(name);
+    return [
+      {
+        code,
+        severity: code === "HM2040" ? "warning" : "error",
+        message:
+          code === "HM2040"
+            ? `${problem.message ?? "credentials not set"}; the columns of "${name}" are not checked`
+            : (problem.message ?? String(error)),
+        file: CONFIG_FILE,
+        pointer,
+        ...document.locationOf(pointer),
+        ...(problem.help !== undefined ? { help: problem.help } : {}),
+        docs: docsCommand(code),
+      },
+    ];
+  }
 }
 
 function typedSources(project: Project): Set<string> {
