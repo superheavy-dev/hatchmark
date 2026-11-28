@@ -265,9 +265,7 @@ export function agentsBlock(version: string): string {
     "",
     `This project builds dashboards with Hatchmark ${version}. Your training data likely predates this version, so trust the bundled docs over memory.`,
     "",
-    "- Read the bundled docs before writing or editing specs: `hatchmark docs` lists them, `hatchmark docs <topic>` prints one, `hatchmark docs --search " <
-      words >
-      "` finds a section. `hatchmark schema <project|metric|dashboard>` prints the JSON Schema.",
+    '- Read the bundled docs before writing or editing specs: `hatchmark docs` lists them, `hatchmark docs <topic>` prints one, `hatchmark docs --search "<words>"` finds a section. `hatchmark schema <project|metric|dashboard>` prints the JSON Schema.',
     '- Look at the data before writing a metric: `hatchmark data describe <source> --json` lists columns, types, nulls and time ranges; `hatchmark data query "<sql>" --json` runs a read-only SELECT over the sources.',
     "- One file per thing: `metrics/<name>.yaml` and `dashboards/<name>.yaml`; the file name is the name. Settings live in `hatchmark.yaml`.",
     "- Run `hatchmark check --json` after every edit and fix every error before you finish. `hatchmark explain <code>` explains a code.",
