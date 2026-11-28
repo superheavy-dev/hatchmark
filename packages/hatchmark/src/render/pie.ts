@@ -15,7 +15,6 @@ import { textWidth, truncateEnd, wrapLines } from "./measure.js";
 import { r, svgText } from "./svg.js";
 import { type ColorKey, seriesFill } from "./theme.js";
 
-/** Below this width the key goes under the pie instead of beside it. */
 export const PIE_SIDE_KEY_MIN = 440;
 const HOLE = 0.62;
 const MAX_DIAMETER = 240;
@@ -26,7 +25,6 @@ const DOT = 8;
 const SHARE_WIDTH = 48;
 const VALUE_GAP = 12;
 
-/** One drawn slice: a category, or Other. */
 export interface PieItem {
   label: string;
   value: number;
@@ -34,7 +32,6 @@ export interface PieItem {
   color: ColorKey;
 }
 
-/** The slices as drawn, Other last in the neutral context colour. */
 export function pieItems(block: PieData): PieItem[] {
   const items: PieItem[] = block.slices.map((s, k) => ({
     label: s.label,
@@ -53,10 +50,6 @@ export function pieItems(block: PieData): PieItem[] {
   return items;
 }
 
-/**
- * Why a pie has nothing to draw: its window has no complete day yet, every category is negative or
- * empty (the total is still stated), or there is no data.
- */
 export function pieEmptyText(block: PieData, ctx: RenderContext): string {
   if (block.empty === "no_complete_day") return "No complete day yet";
   if (isNumber(block.total) && block.excluded !== undefined) return "No positive values to divide";
@@ -64,7 +57,6 @@ export function pieEmptyText(block: PieData, ctx: RenderContext): string {
   return `No ${metric.label.replace(/^[A-Z][a-z]/, (s) => s.toLowerCase())} in this period`;
 }
 
-/** "Leaves out ..." under the key, when categories were negative, zero or undefined. */
 export function pieNote(block: PieData, ctx: RenderContext): string | undefined {
   const excluded = block.excluded;
   if (excluded === undefined) return undefined;
@@ -91,7 +83,6 @@ interface KeyLayout {
 }
 
 const NAME_STYLE = { size: BODY } as const;
-/** Key names wrap rather than shorten; only a name longer than this many lines is cut. */
 const NAME_MAX_LINES = 4;
 const VALUE_STYLE = { size: BODY, weight: 500 } as const;
 
@@ -134,7 +125,6 @@ function donutTotal(block: PieData, ctx: RenderContext, diameter: number) {
   return { text, room, size, inHole: textWidth(text, { size }) <= room };
 }
 
-/** Where the pie and its key go at a width: the key beside the pie, or under it on narrow cards. */
 function geometry(
   block: PieData,
   ctx: RenderContext,
@@ -160,7 +150,6 @@ function geometry(
   return { side, diameter, keyX, keyY, keyWidth, key, height, cx, cy, total };
 }
 
-/** The height a pie card's chart takes at a width: the plot height, or more for a long key. */
 export function pieHeight(
   block: PieData,
   ctx: RenderContext,
@@ -171,13 +160,11 @@ export function pieHeight(
   return geometry(block, ctx, width, chartHeight, maxDiameter).height;
 }
 
-/** A point on a circle, with angle 0 at the top and clockwise in fractions of a turn. */
 function at(cx: number, cy: number, radius: number, turn: number): [number, number] {
   const a = turn * 2 * Math.PI;
   return [cx + radius * Math.sin(a), cy - radius * Math.cos(a)];
 }
 
-/** An annular sector from turn a0 to a1; a full turn is drawn as two halves. */
 export function slicePath(
   cx: number,
   cy: number,
@@ -186,6 +173,7 @@ export function slicePath(
   a0: number,
   a1: number,
 ): string {
+  // SVG draws no arc whose start and end points are the same, so a full turn is two halves.
   if (a1 - a0 >= 1 - 1e-9) {
     return slicePath(cx, cy, inner, outer, 0, 0.5) + slicePath(cx, cy, inner, outer, 0.5, 1);
   }
@@ -200,7 +188,6 @@ export function slicePath(
   return `M${r(x0)},${r(y0)}A${r(outer)},${r(outer)} 0 ${large} 1 ${r(x1)},${r(y1)}L${r(x2)},${r(y2)}A${r(inner)},${r(inner)} 0 ${large} 0 ${r(x3)},${r(y3)}Z`;
 }
 
-/** Cumulative end of each slice as a fraction of a turn, for drawing and the runtime's hit test. */
 export function pieCuts(block: PieData): number[] {
   let sum = 0;
   return pieItems(block).map((item) => {
@@ -209,12 +196,6 @@ export function pieCuts(block: PieData): number[] {
   });
 }
 
-/**
- * A pie or donut with its key: slices from 12 o'clock clockwise, largest first and Other last in
- * the neutral context colour, separated by 1 px card-coloured lines. The key lists every slice's
- * name, value and share, beside the pie (under it on narrow cards); a donut states the total in its
- * hole. The plot keeps its height; a long key makes the chart taller.
- */
 export function renderPie(
   block: PieData,
   ctx: RenderContext,
@@ -360,12 +341,10 @@ export function renderPie(
   );
 }
 
-/** The value of a pie item, for describe and the runtime. */
 export function pieValues(block: PieData): Value[] {
   return pieItems(block).map((i) => i.value);
 }
 
-/** Whether a chart block is a pie or a donut. */
 export function isPie<T extends { type: string }>(block: T | PieData): block is PieData {
   return block.type === "pie" || block.type === "donut";
 }

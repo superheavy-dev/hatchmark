@@ -102,7 +102,6 @@ function toKey(value: unknown): Key {
     : null;
 }
 
-/** Leaf metrics whose components a custom range cannot re-aggregate. */
 function presetOnlyMetrics(plan: QueryPlan): string[] {
   const names = new Set<string>();
   for (const query of plan.queries) {
@@ -114,7 +113,6 @@ function presetOnlyMetrics(plan: QueryPlan): string[] {
   return [...names].sort();
 }
 
-/** The plan without what the page does not need: SQL text and metric filters. */
 function portablePlan(plan: QueryPlan): QueryPlan {
   return {
     ...plan,

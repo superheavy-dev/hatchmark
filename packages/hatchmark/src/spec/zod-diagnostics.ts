@@ -98,7 +98,6 @@ const HEIGHTLESS_TYPES = new Set(["text", "bar_list"]);
 
 const optionalFix = (fix: Fix | undefined): { fix?: Fix } => (fix ? { fix } : {});
 
-/** A height written in pixels: 320, "320" or "320px". */
 function pixels(value: unknown): number | undefined {
   if (typeof value === "number" && Number.isFinite(value)) return value;
   const match = typeof value === "string" ? /^\s*(\d+(?:\.\d+)?)\s*(?:px)?\s*$/i.exec(value) : null;

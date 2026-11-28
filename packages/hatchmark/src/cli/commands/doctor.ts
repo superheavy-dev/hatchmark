@@ -5,6 +5,7 @@ import { CONFIG_FILE, SCHEMA_FILES } from "../../spec/index.js";
 import { VERSION } from "../../version.js";
 import type { CommandHelp } from "../help.js";
 import { type CommandContext, type CommandResult, EXIT } from "../io.js";
+import { packageRoot } from "../package-root.js";
 
 export const doctorHelp: CommandHelp = {
   name: "doctor",
@@ -17,17 +18,6 @@ export const doctorHelp: CommandHelp = {
     description: "Exits 3 when a check fails; each check says how to fix it.",
   },
 };
-
-export async function packageRoot(from: string): Promise<string> {
-  for (let dir = from; ; dir = path.dirname(dir)) {
-    const manifest = await readFile(path.join(dir, "package.json"), "utf8").then(
-      (text) => JSON.parse(text) as { name?: unknown },
-      () => undefined,
-    );
-    if (manifest?.name === "hatchmark") return dir;
-    if (path.dirname(dir) === dir) throw new Error(`no hatchmark package.json above ${from}`);
-  }
-}
 
 type Status = "ok" | "warn" | "fail";
 interface Check {

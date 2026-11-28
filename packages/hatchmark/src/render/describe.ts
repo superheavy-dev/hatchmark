@@ -19,7 +19,6 @@ import { type SeriesPaint, seriesPaints } from "./theme.js";
 
 type ChartBlock = LineData | BarData;
 
-/** A scatter block's metrics in display order: x, y, then size when set. */
 function scatterMetrics(block: ScatterData): string[] {
   return [block.x, block.y, ...(block.size === undefined ? [] : [block.size])];
 }
@@ -90,10 +89,6 @@ function positions(block: ChartBlock, ctx: RenderContext): string[] {
 const full = (ctx: RenderContext, metric: string, v: Value | undefined) =>
   formatValue(v ?? null, metricOf(ctx, metric), ctx.data.locale, "full");
 
-/**
- * A generated text alternative for a chart (Datawrapper-style): chart type, what it shows, and per
- * series (up to three) the first and last values and the extremes.
- */
 export function describeChart(
   input: ChartBlock | PieData | ScatterData,
   ctx: RenderContext,
@@ -142,7 +137,6 @@ export function describeChart(
   return parts.join(" ");
 }
 
-/** The series a chart shows, in words: a group reads as its name with its members in brackets. */
 function seriesNames(block: ChartBlock): string {
   const names: string[] = [];
   block.series.forEach((s, k) => {
@@ -161,10 +155,6 @@ function seriesNames(block: ChartBlock): string {
 const share = (ctx: RenderContext, v: Value | undefined) =>
   formatValue(v ?? null, SHARE, ctx.data.locale, "full");
 
-/**
- * The chart's numbers as a visually hidden table, so screen readers get every value. Stacked charts
- * add each value's share and a Total column.
- */
 export function chartTable(
   input: ChartBlock | PieData | ScatterData,
   ctx: RenderContext,
@@ -242,47 +232,28 @@ function totalPartial(block: ChartBlock, i: number): boolean {
   );
 }
 
-/** What the browser runtime needs for tooltips and the readout: labels and formatted values. */
 export interface ChartRuntimeData {
   kind: "line" | "bar" | "pie" | "scatter";
-  /** The tooltip swatch's shape, matching the mark: a line for lines, a square for filled marks. */
   swatch: "line" | "square";
-  /** Pie only: each slice's categorical slot (0 for Other, which is neutral). */
   colors?: number[];
-  /** Pie only: each slice's cumulative end as a fraction of a turn from 12 o'clock. */
   cuts?: number[];
-  /** Group names; a chart with groups lists its tooltip rows in series order under these. */
   groups?: string[];
-  /** scatter: headers name the points from left to right, and series are its metrics' rows. */
   headers: string[];
   series: {
     label: string;
-    /** Categorical slot, 1 to 8, or a group colour such as "g1-2" (family 1, step 2). */
     color: number | string;
-    /** Index into groups. */
     group?: number;
-    /** The label with its group's name, when another series shares the label: for announcements. */
     name?: string;
-    /** Raw values, for sorting tooltip rows. */
     v: Value[];
-    /** Full-format text per position. */
     text: string[];
-    /** Compact text per position, for the pinned readout. */
     short: string[];
-    /** Plotted values when they differ from v (stacked areas). */
     y?: Value[];
-    /** Share of the position's total, as text, for stacked charts. */
     pct?: string[];
-    /** Positions where this flow series is partial: its tooltip row takes the hatched swatch. */
     partial?: number[];
   }[];
-  /** Total text per position, for stacked charts. */
   total?: string[];
-  /** The pinned readout's first line per position, when it differs from headers. */
   heads?: string[];
-  /** The tooltip's second line per position: a partial bucket's status, else "". */
   status?: string[];
-  /** A partial Total's status per position (any summed part is partial), else "". */
   totalStatus?: string[];
 }
 
@@ -360,7 +331,6 @@ export function chartRuntimeData(
   };
 }
 
-/** A pie or donut in words: what it shows, the total, and every slice's share and value. */
 function describePie(block: PieData, ctx: RenderContext): string {
   const metric = metricOf(ctx, block.metric);
   const items = pieItems(block);

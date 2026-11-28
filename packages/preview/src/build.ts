@@ -11,11 +11,14 @@ import {
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
+import { packageRoot } from "../../hatchmark/src/cli/package-root.js";
 import { entries, head } from "./entries.js";
 import { type BuildInfo, renderSite } from "./page.js";
 import { periodProject } from "./periods.js";
 
-const PACKAGES = fileURLToPath(new URL("../../../../../", import.meta.url));
+const PACKAGES = dirname(
+  await packageRoot(dirname(fileURLToPath(import.meta.url)), "@hatchmark/preview"),
+);
 const DIST = join(PACKAGES, "preview", "dist");
 const HATCHMARK = join(PACKAGES, "hatchmark");
 const BRAND = join(PACKAGES, "..", "assets", "brand");

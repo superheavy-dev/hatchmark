@@ -104,7 +104,6 @@ async function open(
   return page;
 }
 
-/** Every visible chart's id, drawn height and the overlaps between its text labels. */
 function charts(page: Page) {
   return page.evaluate(() =>
     [...document.querySelectorAll<HTMLElement>("figure.hm-chart")].map((figure) => {

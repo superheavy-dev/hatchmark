@@ -32,52 +32,6 @@ const readSources = (query: PlannedQuery): string[] => [
   ...Object.keys(query.tables ?? {}),
 ];
 
-/**
- * The build cache: query results and source horizons stored as Parquet under .hatchmark/cache/, so
- * a build recomputes only what changed.
- *
- * Keys. An entry's key is the SHA-256 of the canonical JSON of everything that decides its value:
- * the cache format, the engine (the hatchmark version, the DuckDB library, and the bytes of every
- * module under compiler/, node/ and spec/, so a change to SQL generation or the executor
- * invalidates even in a source checkout), the whole PlannedQuery (its id is its slice of the plan
- * hash; its input carries the source's reader options), the ExecutionContext (as-of date, time
- * zone, anchors, bindings, measured horizons), and the data fingerprint: the size and SHA-256 of
- * every file the executor can read for the query. That is the query's own source and the sources
- * its in_table filters read when they are file sources, and every file source of the project
- * otherwise. File contents are hashed, never
- * trusted by size or modification time, so any changed byte invalidates.
- *
- * Snapshots. The first time a build needs a data file, the file is copied into a private
- * snapshot directory (.hatchmark/tmp/<random>/, a copy-on-write clone where the file system has
- * them) and the copy is hashed; the executor then reads only the snapshot. So the bytes a result
- * was computed from are exactly the bytes its key fingerprints, whatever happens to the project's
- * files during the build (an edit, or an edit and its undo). close() removes the snapshot.
- *
- * Writes. A miss runs the executor on the snapshot and keeps the result in memory; close() writes
- * the entries. Each entry is written to a fresh temporary name and renamed into place.
- * With sweep (hatchmark build, which runs every dashboard), close() then removes every entry the
- * build neither read nor wrote, so the cache holds exactly the last build's results.
- *
- * Reads. An entry is used only when its stored key equals the expected one and every row decodes;
- * anything else (truncated, corrupted, renamed, from another version) is a miss and is rewritten.
- * Values round-trip exactly: numbers as DOUBLE, strings as VARCHAR, booleans as BOOLEAN, and a
- * column of mixed or unusual values as JSON text. A cached build is byte-identical to an uncached
- * one (test/node/cache.test.ts).
- *
- * Raw SQL metrics (type "sql") are never cached: their SQL can read the clock, other files or
- * anything else DuckDB reaches, which no key can fingerprint, so their queries always run.
- *
- * Best effort. The cache never fails a command and never changes its output. When .hatchmark or
- * any directory under it that the cache uses is a symbolic link, not a directory or not
- * accessible, or when reading the snapshot, writing an entry or sweeping fails, the cache turns
- * off for the rest of the command (stats.enabled false, stats.reason says why, and build prints
- * one warning) and every remaining query runs on the project's own files, as with --no-cache. A
- * query whose data file is missing or outside the project runs uncached, so the executor reports
- * it exactly as --no-cache does. Failing to write or sweep entries
- * (a read-only directory, a full disk) never fails the build; those entries are just not kept.
- */
-
-/** Bumped whenever the entry layout or the key changes. */
 const CACHE_FORMAT = 1;
 
 export const CACHE_DIR = ".hatchmark/cache";
@@ -127,7 +81,6 @@ interface Header {
   key: string;
   parts: KeyParts;
   stored_at: string;
-  /** The result without rows and groupingSet (columns, imprecise, large, ...), or a horizon. */
   meta: Record<string, unknown>;
   storage: Storage[];
   rows: number;
@@ -149,7 +102,6 @@ type InnerExecutor = DashboardExecutor & { close(): Promise<void>; sql?: SqlExec
 
 const sha256 = (text: string) => createHash("sha256").update(text).digest("hex");
 
-/** The engine fingerprint, once per process. */
 let engineHash: Promise<string> | undefined;
 
 async function engineFingerprint(duckdb: string): Promise<string> {
@@ -182,19 +134,13 @@ async function hashFile(file: string): Promise<{ bytes: number; sha256: string }
   return { bytes, sha256: hash.digest("hex") };
 }
 
-/** Where each kind of entry lives, under .hatchmark. */
 const KIND_DIR = {
   query: `cache/v${CACHE_FORMAT}/q`,
   horizon: `cache/v${CACHE_FORMAT}/h`,
 } as const;
 
-/** The directories under .hatchmark the cache writes into. */
 const CACHE_DIRS = [KIND_DIR.query, KIND_DIR.horizon, "tmp"];
 
-/**
- * Why a directory under .hatchmark cannot be used, or undefined: .hatchmark and every existing
- * step down to it must be a real directory, never a symbolic link.
- */
 async function unsafeDir(root: string, under: string, writing = true): Promise<string | undefined> {
   let at = root;
   for (const part of [".hatchmark", ...under.split("/")]) {
@@ -262,7 +208,6 @@ export async function createCachedExecutor(options: {
 }): Promise<CachedExecutor> {
   const { root, config } = options;
   const stats: CacheStats = { enabled: true, dir: CACHE_DIR, hits: 0, misses: 0, written: 0 };
-  /** Turns the cache off for the rest of this command, keeping the first reason. */
   const turnOff = (reason: string) => {
     if (!stats.enabled) return;
     stats.enabled = false;
@@ -291,10 +236,8 @@ export async function createCachedExecutor(options: {
     let made: Promise<T> | undefined;
     return { get: () => (made ??= make()), made: () => made };
   };
-  /** Explain reads the project's files directly: it writes nothing, so nothing can be stored stale. */
   const snapshotting = stats.enabled && !options.readOnly;
   const snapshot = path.join(root, ".hatchmark", "tmp", randomUUID());
-  /** Whether this executor tried to create the snapshot, so close() removes only its own. */
   let snapshotted = false;
   const projectExecutor = lazy(() => options.createInner(root));
   const snapshotExecutor = lazy(() => options.createInner(snapshot));
@@ -325,7 +268,6 @@ export async function createCachedExecutor(options: {
     }
     return found;
   };
-  /** The data files a query on these sources can read, or undefined when one cannot be read. */
   const dataFiles = async (sources: string[]): Promise<DataFile[] | undefined> => {
     const files = sources.every(
       (s) => config.sources[s] !== undefined && config.sources[s].type !== "lookup",
@@ -419,7 +361,6 @@ export async function createCachedExecutor(options: {
     }
   };
 
-  /** Entry files this executor read or wrote, kept by sweep. */
   const used = new Set<string>();
   const pending: {
     kind: KeyParts["kind"];
@@ -494,7 +435,6 @@ export async function createCachedExecutor(options: {
     }
   };
 
-  /** Queries whose SQL explain asked for, with the context it used. */
   const explained = new Map<string, { query: PlannedQuery; context: ExecutionContext }>();
   const plannedInput = (query: PlannedQuery) =>
     [[query.source, query.input] as const, ...Object.entries(query.tables ?? {})].every(

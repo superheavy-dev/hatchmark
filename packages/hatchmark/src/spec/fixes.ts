@@ -1,7 +1,6 @@
 import { parse, stringify } from "yaml";
 import type { Applicability, Fix, SpecDocument } from "../diagnostics/index.js";
 
-/** A value as YAML flow text that reads back as the same value at any key, list item or flow position. */
 export function yamlText(value: unknown): string {
   const json = JSON.stringify(value);
   if (typeof value === "string" && /[,[\]{}\r\n]/.test(value)) return json;

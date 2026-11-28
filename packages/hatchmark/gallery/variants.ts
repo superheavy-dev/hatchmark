@@ -67,7 +67,6 @@ import {
   TABLE_WINDOWS,
 } from "./tables.js";
 
-/** One gallery entry: a component variant on sample data, wrapped as a one-block dashboard. */
 export interface GalleryVariant {
   component: "kpi" | "line" | "bar" | "stacked" | "pie" | "scatter" | "table" | "groups" | "height";
   variant: string;
@@ -182,7 +181,6 @@ const sevenChannels = [
   ),
 );
 
-/** World Bank region names: long, multi-word series names that must never be middle-truncated. */
 const WORLD_REGIONS = [
   { name: "North America", share: 0.38 },
   { name: "Europe & Central Asia", share: 0.24 },
@@ -694,7 +692,6 @@ const TABLES: GalleryVariant[] = [
   one("table", "table-group-empty", "An empty group value", TABLE_GROUP_EMPTY),
 ];
 
-/** Every gallery variant, by component. */
 const GRAIN_LINES: GalleryVariant[] = [
   one(
     "line",
@@ -799,10 +796,6 @@ const GRAIN_BARS: GalleryVariant[] = [
   ),
 ];
 
-/**
- * A stacked block's engine output for sample data: totals per position and each value's share.
- * totals overrides the sum, as the engine does for a split metric that is recomputed from rows.
- */
 function stacked<T extends BarData | LineData>(block: T, percent = false, totals?: Value[]): T {
   const n = block.series[0]?.values.length ?? 0;
   const sums =
@@ -826,7 +819,6 @@ function stacked<T extends BarData | LineData>(block: T, percent = false, totals
   };
 }
 
-/** How each region's revenue splits across channels: marketplaces matter more outside the US. */
 const CHANNEL_MIX: Record<string, number[]> = {
   "North America": [0.64, 0.22, 0.14],
   Europe: [0.52, 0.31, 0.17],
@@ -857,7 +849,6 @@ const deviceOrders = DEVICES.map((d) =>
   ),
 );
 
-/** Payment methods by country: cards everywhere, wallets and local methods vary by market. */
 const PAYMENTS: [string, number[]][] = [
   ["United States", [0.62, 0.18, 0.14, 0.06]],
   ["United Kingdom", [0.55, 0.19, 0.16, 0.1]],
@@ -1026,7 +1017,6 @@ const STACKED: GalleryVariant[] = [
   ),
 ];
 
-/** A pie or donut's engine output for sample data: the largest positive slices, then Other. */
 function pie(
   type: "pie" | "donut",
   id: string,
@@ -1210,7 +1200,6 @@ const PIES: GalleryVariant[] = [
   ),
 ];
 
-/** Deterministic noise in [-1, 1] per index and salt, so scatter samples need no shared generator. */
 const wobble = (i: number, salt: number) => Math.sin(i * 12.9898 + salt * 78.233);
 
 const pct = (name: string, label: string, better: MetricInfo["better"] = "up"): MetricInfo => ({
@@ -1290,7 +1279,6 @@ const CATEGORY_GROWTH = [
   ["Ski and snowboard", -0.167, 0.142, 189_000],
 ] as const;
 
-/** US states and DC with rounded 2023 populations in millions. */
 const STATES = [
   ["California", 39.0],
   ["Texas", 30.5],
@@ -1691,7 +1679,6 @@ const heights = (
   data: { ...from.data, name: variant, title, blocks },
 });
 
-/** One chart drawn at each preset, each on its own grid row (two span-8 cards never share one). */
 const everyPreset = (variant: string, title: string, from: string, span = 8): GalleryVariant => {
   const base = sample(from);
   const block = base.data.blocks[0] as DashboardData["blocks"][number];
@@ -1775,5 +1762,4 @@ export const GALLERY: GalleryVariant[] = [
 ];
 
 export type { KpiData };
-/** The example dashboard rendered as a whole. */
 export { SALES };

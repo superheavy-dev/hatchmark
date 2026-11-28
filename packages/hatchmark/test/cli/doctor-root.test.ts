@@ -3,7 +3,7 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { afterAll, describe, expect, it } from "vitest";
-import { packageRoot } from "../../src/cli/commands/doctor.js";
+import { packageRoot } from "../../src/cli/package-root.js";
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const dirs: string[] = [];
