@@ -124,13 +124,13 @@ the nearest one. Any other string is HM3004 that lists the presets, with a fix w
 (`tal` to `tall`). `text` and `bar_list` blocks are as tall as their content: `height` on them is
 HM3002, and the safe fix removes it.
 
-A table with `overflow: page` grows with its rows, so `height` on it has no effect: warning HM2027,
+A table with `overflow: page` grows with its rows, so `height` on it has no effect: warning HM2031,
 and the safe fix removes `height`.
 
 Cards side by side end level. On wide screens, charts in one grid row are drawn at the tallest
 preset among them, and the KPIs of one strip at the tallest among the strip's KPIs. A card set
-lower is a warning, HM2028, labelled with the height it is drawn at. Below 1024 px every card
-takes the full width and keeps its own preset. The fix sets the card to the height it is drawn at;
+lower is a warning, HM2028, labelled with the height it is drawn at. Below 1024 px cards stack,
+and every card, each KPI included, keeps its own preset. The fix sets the card to the height it is drawn at;
 it is unsafe because it also changes how the card looks on phones.
 
 ## YAML syntax

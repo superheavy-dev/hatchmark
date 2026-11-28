@@ -286,7 +286,7 @@ const tableBlock = z
     type: z.literal("table"),
     height: height.meta({
       description:
-        'Height of the scroll area: "compact", "default" or "tall". A table with a height scrolls inside its card past that many rows; with overflow: page it grows instead and height has no effect (HM2027).',
+        'Height of the scroll area: "compact", "default" or "tall". A table with a height scrolls inside its card past that many rows; with overflow: page it grows instead and height has no effect (HM2031).',
     }),
     by: z
       .array(columnName)

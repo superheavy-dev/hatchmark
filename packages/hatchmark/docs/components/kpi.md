@@ -18,9 +18,10 @@ sparkline: true
 
 What it draws:
 
-- Consecutive KPI blocks share one card, split by hairlines (the KPI strip). The strip draws every
-  KPI at the tallest `height` among them, so figures in one strip match; a KPI set lower gets
-  warning HM2028.
+- Consecutive KPI blocks share one card, split by hairlines (the KPI strip). On screens 1024 px
+  and wider the strip draws every KPI at the tallest `height` among them, so figures in one strip
+  match, and a KPI set lower gets warning HM2028. Below 1024 px the strip wraps and each KPI keeps
+  its own `height`.
 - `height` scales the figure and its sparkline together, in the Default theme (figure size / line
   height / sparkline height in px): `compact` 22/28/21, `default` 28/32/24, `tall` 36/44/33 on
   desktop; `compact` 18/24/20, `default` 20/28/24, `tall` 24/32/28 on phones.

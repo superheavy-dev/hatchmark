@@ -1212,7 +1212,7 @@ function checkDashboard(project: Project, file: SpecFile<"dashboard">, out: Diag
     }
     if (block.type === "table" && block.overflow === "page" && block.height !== undefined) {
       r.report(
-        "HM2027",
+        "HM2031",
         `${base}/height`,
         'a table with overflow: page grows with its rows, so "height" has no effect',
         {

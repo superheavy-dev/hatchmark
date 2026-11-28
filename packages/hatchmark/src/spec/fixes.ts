@@ -118,14 +118,42 @@ export function removePropertyFix(
   const at = members.findLastIndex((m) => m.key === key);
   const member = members[at];
   if (member === undefined) return undefined;
-  const next = members[at + 1];
-  const previous = members[at - 1];
-  const [start, end] = next
-    ? [member.keyStart, next.keyStart]
-    : previous
-      ? [previous.value.end, member.value.end]
-      : [member.keyStart, member.value.end];
-  return { range: document.rangeAt(start, end), text: "", applicability, description };
+  if (members.length === 1) return undefined;
+  const text = document.text;
+  if (/[\r\n#]/.test(text.slice(member.keyStart, member.value.end))) return undefined;
+  if (found.node.flow) {
+    const next = members[at + 1];
+    const previous = members[at - 1] as (typeof members)[number];
+    const [start, end] = next
+      ? [member.keyStart, next.keyStart]
+      : [previous.value.end, member.value.end];
+    if (/[\r\n#]/.test(text.slice(start, end))) return undefined;
+    return { range: document.rangeAt(start, end), text: "", applicability, description };
+  }
+  const lineStart = text.slice(0, member.keyStart).search(/[^\r\n]*$/);
+  if (!/^[ \t]*$/.test(text.slice(lineStart, member.keyStart))) {
+    const next = members[at + 1];
+    if (
+      next === undefined ||
+      !/^[ \t]*(?:\r\n|\r|\n)[ \t]*$/.test(text.slice(member.value.end, next.keyStart))
+    ) {
+      return undefined;
+    }
+    return {
+      range: document.rangeAt(member.keyStart, next.keyStart),
+      text: "",
+      applicability,
+      description,
+    };
+  }
+  const rest = /^[ \t]*(?:#[^\r\n]*)?(?:\r\n|\r|\n|$)/.exec(text.slice(member.value.end));
+  if (rest === null) return undefined;
+  return {
+    range: document.rangeAt(lineStart, member.value.end + rest[0].length),
+    text: "",
+    applicability,
+    description,
+  };
 }
 
 export function removeItemFix(

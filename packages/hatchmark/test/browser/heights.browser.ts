@@ -5,7 +5,7 @@ import path from "node:path";
 import { type Browser, chromium, type Page } from "playwright";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { GALLERY } from "../../gallery/variants.js";
-import type { DashboardData } from "../../src/compiler/dashboard-data.js";
+import type { DashboardData, TableData } from "../../src/compiler/dashboard-data.js";
 import { DEFAULT_THEME, FONT_FILES, renderDashboardPage } from "../../src/render/index.js";
 import type { HeightPreset } from "../../src/spec/layout.js";
 
@@ -45,6 +45,20 @@ beforeAll(async () => {
     await writeFile(
       path.join(dir, `${entry.variant}.html`),
       renderDashboardPage(entry.data, { assets: { runtime: "hatchmark.js", fonts } }),
+    );
+  }
+  const tables = variant("height-table");
+  for (const [name, rows] of [
+    ["height-table-untotalled", undefined],
+    ["height-table-untotalled-8", 8],
+  ] as const) {
+    const blocks = tables.blocks.map((b) => {
+      const { total: _, ...block } = b as TableData;
+      return { ...block, rows: block.rows.slice(0, rows) };
+    });
+    await writeFile(
+      path.join(dir, `${name}.html`),
+      renderDashboardPage({ ...tables, blocks }, { assets: { runtime: "hatchmark.js", fonts } }),
     );
   }
 });
@@ -196,26 +210,45 @@ describe.each(DEVICES)("height presets at $device width", ({ device, viewport })
     },
   );
 
-  it("a table scrolls past its preset's rows inside a card of that height", async () => {
-    const page = await open("height-table", viewport);
+  it.each(["height-table", "height-table-untotalled"])(
+    "a table scrolls past its preset's rows inside a card of that height (%s)",
+    async (name) => {
+      const page = await open(name, viewport);
+      try {
+        const wraps = await page.evaluate(() =>
+          [...document.querySelectorAll<HTMLElement>(".hm-table-wrap")].map((w) => {
+            const row = (w.querySelector("tbody tr") as HTMLElement).getBoundingClientRect().height;
+            return {
+              rows:
+                (w.clientHeight -
+                  (w.querySelector("thead") as HTMLElement).offsetHeight -
+                  ((w.querySelector("tfoot") as HTMLElement | null)?.offsetHeight ?? 0)) /
+                row,
+              scrolls: w.scrollHeight > w.clientHeight,
+            };
+          }),
+        );
+        expect(wraps.map((w) => w.scrolls)).toEqual([true, true, true]);
+        (["compact", "default", "tall"] as const).forEach((preset, i) => {
+          expect(wraps[i]?.rows, preset).toBeCloseTo(tokens[preset][device].tableRows, 0);
+        });
+      } finally {
+        await page.close();
+      }
+    },
+  );
+
+  it("a compact table without totals scrolls with one row more than it shows", async () => {
+    const page = await open("height-table-untotalled-8", viewport);
     try {
-      const wraps = await page.evaluate(() =>
-        [...document.querySelectorAll<HTMLElement>(".hm-table-wrap")].map((w) => {
-          const row = (w.querySelector("tbody tr") as HTMLElement).getBoundingClientRect().height;
-          return {
-            rows:
-              (w.clientHeight -
-                (w.querySelector("thead") as HTMLElement).offsetHeight -
-                (w.querySelector("tfoot") as HTMLElement).offsetHeight) /
-              row,
-            scrolls: w.scrollHeight > w.clientHeight,
-          };
-        }),
-      );
-      expect(wraps.map((w) => w.scrolls)).toEqual([true, true, true]);
-      (["compact", "default", "tall"] as const).forEach((preset, i) => {
-        expect(wraps[i]?.rows, preset).toBeCloseTo(tokens[preset][device].tableRows, 0);
+      const compact = await page.evaluate(() => {
+        const wrap = document.querySelector<HTMLElement>(".hm-table-wrap") as HTMLElement;
+        return {
+          tfoot: wrap.querySelector("tfoot") !== null,
+          scrolls: wrap.scrollHeight > wrap.clientHeight,
+        };
       });
+      expect(compact).toEqual({ tfoot: false, scrolls: true });
     } finally {
       await page.close();
     }
@@ -238,7 +271,10 @@ describe.each(DEVICES)("height presets at $device width", ({ device, viewport })
         const sizes = await strip.evaluate(() =>
           [...document.querySelectorAll(".hm-kpi-value")].map((v) => getComputedStyle(v).fontSize),
         );
-        expect(new Set(sizes)).toEqual(new Set([`${tokens.tall[device].kpiSize}px`]));
+        const own = (["compact", "tall", "default", "compact"] as const).map(
+          (preset) => `${tokens[device === "desktop" ? "tall" : preset][device].kpiSize}px`,
+        );
+        expect(sizes).toEqual(own);
       } finally {
         await strip.close();
       }

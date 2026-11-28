@@ -130,7 +130,7 @@ one the spec's layout gives.
 
 `height` sets the scroll area, so a table with a `height` scrolls inside its card even when it has
 its grid row alone. The Default theme shows these many body rows before a table scrolls (the half
-row hints that there is more):
+row hints that there is more), with the header and any total row in view on top of them:
 
 | `height`  | Desktop | Phone |
 | --------- | ------- | ----- |
@@ -139,7 +139,7 @@ row hints that there is more):
 | `tall`    | 25.5    | 18.5  |
 
 A table at or under its preset's rows does not scroll. With `overflow: page` the table grows with
-the page and `height` has no effect, so check warns with HM2027; the safe fix removes `height`.
+the page and `height` has no effect, so check warns with HM2031; the safe fix removes `height`.
 Tables keep their own height in a grid row; chart presets do not change them.
 
 Printing shows every row.

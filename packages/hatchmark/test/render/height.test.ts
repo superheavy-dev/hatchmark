@@ -97,7 +97,7 @@ describe("height presets", () => {
     expect(svgHeights(markup, barBlock.id)[0]).toBe(tokens.tall.desktop.chart);
   });
 
-  it("sizes a KPI strip at its tallest KPI's preset, with scoped styles only when it is not default", () => {
+  it("sizes a KPI strip at its tallest KPI's preset on wide screens and each KPI at its own below", () => {
     const strip = (variant: string) => html(entry(variant), entry(variant).blocks);
     expect(strip("height-kpi-default")).not.toContain("data-hm-height");
     expect(strip("height-kpi-default")).not.toContain("<style>");
@@ -105,9 +105,19 @@ describe("height presets", () => {
     expect(mixed).toContain(
       '<section class="hm-strip" style="--span:12" aria-label="Key metrics" data-hm-height="tall">',
     );
-    expect(mixed).toContain(`.hm-kpi-value{font-size:${tokens.tall.desktop.kpiSize}px`);
-    expect(mixed).toContain(`.hm-spark{height:${tokens.tall.phone.sparkline}px}`);
-    expect(mixed.match(/<style>/g)).toHaveLength(1);
+    expect(
+      mixed.match(/<div class="hm-kpi"[^>]*>/g)?.map((t) => /data-hm-height="(\w+)"/.exec(t)?.[1]),
+    ).toEqual(["compact", "tall", undefined, "compact"]);
+    expect(mixed).toContain(
+      `@container hm (max-width:599.98px){.hm-kpi[data-hm-height=compact] .hm-kpi-value{font-size:${tokens.compact.phone.kpiSize}px`,
+    );
+    expect(mixed).toContain(
+      `@container hm (min-width:1024px){.hm-strip[data-hm-height=tall] .hm-kpi-value{font-size:${tokens.tall.desktop.kpiSize}px`,
+    );
+    expect(mixed.match(/<style>/g)).toHaveLength(3);
+    const uniform = strip("height-kpi-tall");
+    expect(uniform).not.toContain("min-width:1024px){.hm-strip");
+    expect(uniform.match(/<style>/g)).toHaveLength(1);
   });
 
   it("scrolls a table with a height past its preset's rows, even alone in its row", () => {
@@ -135,8 +145,14 @@ describe("height presets", () => {
       ' tabindex="0" role="region" aria-labelledby="hm-states_compact-t"',
     ]);
     const row = DEFAULT_THEME.density.tableRow;
+    const body = row - 4 + Math.round(tokens.compact.desktop.tableRows * row);
+    expect((compact as TableData).total).toBeDefined();
     expect(html(data, [compact as TableData])).toContain(
-      `.hm-table-wrap[data-hm-height=compact].hm-tall{max-height:${row - 4 + Math.round(tokens.compact.desktop.tableRows * row) + row}px}`,
+      `.hm-table-wrap[data-hm-height=compact].hm-tall{max-height:${body + row}px}`,
+    );
+    const { total: __, ...untotalled } = compact as TableData;
+    expect(html(data, [untotalled])).toContain(
+      `.hm-table-wrap[data-hm-height=compact].hm-tall{max-height:${body}px}`,
     );
   });
 

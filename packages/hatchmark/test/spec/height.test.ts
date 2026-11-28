@@ -116,11 +116,38 @@ describe("height presets in the schema", () => {
       expect(fromYaml(fixed).blocks[0], source).toEqual({ type: "text", markdown: "Hi" });
     }
   });
+
+  it("removes only the height line, keeping block scalars, comments and other blocks", () => {
+    for (const [source, expected] of [
+      [
+        "title: Sales\nblocks:\n  - type: text\n    markdown: |+\n      Hello\n\n    height: tall\n  - type: text\n    markdown: Bye\n",
+        "title: Sales\nblocks:\n  - type: text\n    markdown: |+\n      Hello\n\n  - type: text\n    markdown: Bye\n",
+      ],
+      [
+        "title: Sales\nblocks:\n  - type: text\n    height: tall # too big\n    # the intro\n    markdown: Hi\n",
+        "title: Sales\nblocks:\n  - type: text\n    # the intro\n    markdown: Hi\n",
+      ],
+      [
+        "title: Sales\nblocks:\n  - type: text\n    markdown: |+\n      Hello\n\n    height: tall",
+        "title: Sales\nblocks:\n  - type: text\n    markdown: |+\n      Hello\n\n",
+      ],
+    ] as const) {
+      const { diagnostics } = parseSpecFile("dashboard", "dashboards/x.yaml", source);
+      expect(applyFix(source, diagnostics[0]?.fix), source).toBe(expected);
+    }
+  });
+
+  it("offers no safe fix when removing height would also remove a comment", () => {
+    const source =
+      "title: Sales\nblocks:\n  - height: tall\n    # the intro\n    type: text\n    markdown: Hi\n";
+    const { diagnostics } = parseSpecFile("dashboard", "dashboards/x.yaml", source);
+    expect(diagnostics.map((d) => [d.code, d.fix])).toEqual([["HM3002", undefined]]);
+  });
 });
 
-describe("HM2027", () => {
+describe("HM2031", () => {
   it("warns on height for a table with overflow: page, and the safe fix removes it", () => {
-    const { text, found } = check([table({ overflow: "page", height: "compact" })], "HM2027");
+    const { text, found } = check([table({ overflow: "page", height: "compact" })], "HM2031");
     expect(found).toEqual([
       expect.objectContaining({
         severity: "warning",
@@ -139,7 +166,7 @@ describe("HM2027", () => {
           table({ overflow: "scroll", height: "compact" }),
           table({ overflow: "page" }),
         ],
-        "HM2027",
+        "HM2031",
       ).found,
     ).toEqual([]);
   });

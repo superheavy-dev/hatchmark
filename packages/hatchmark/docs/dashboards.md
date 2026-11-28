@@ -118,12 +118,12 @@ and 180, 230 or 320 px on phones; [theme.md](theme.md#block-heights) lists every
 
 Cards side by side end level. On screens 1024 px and wider, the charts in one grid row are drawn at
 the tallest preset among them, and a KPI strip at the tallest preset of its KPIs, so a compact
-chart is never drawn beside a tall one. A card set lower gets warning HM2028. Below 1024 px every
-card takes the full width and keeps its own preset. Tables keep their own height in any row.
+chart is never drawn beside a tall one. A card set lower gets warning HM2028. Below 1024 px cards
+stack, and every card, each KPI included, keeps its own preset. Tables keep their own height in any row.
 
 A pixel value or another string is an error that lists the presets. `height` on a `text` or
 `bar_list` block is an error with a safe fix that removes it, and on a table with
-`overflow: page` it is warning HM2027 (see [diagnostics.md](diagnostics.md#card-height)).
+`overflow: page` it is warning HM2031 (see [diagnostics.md](diagnostics.md#card-height)).
 
 ## Filters
 

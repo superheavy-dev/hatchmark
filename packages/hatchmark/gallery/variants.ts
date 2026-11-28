@@ -1748,7 +1748,7 @@ const HEIGHTS: GalleryVariant[] = [
   ),
   heights(
     "height-strip",
-    "Mixed presets in one KPI strip: the strip is drawn at its tallest KPI's preset",
+    "Mixed presets in one KPI strip: drawn at its tallest KPI's preset on wide screens, each KPI's own below 1024 px",
     stripKpis.map((k, i) => ({
       ...k,
       id: `${k.id}_mixed`,

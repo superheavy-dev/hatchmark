@@ -66,6 +66,9 @@ const WEEK_ORDER = ["monday", "tuesday", "wednesday", "thursday", "friday", "sat
 /** The container query of the phone layouts: below the narrowest layout that is not mobile. */
 export const PHONE_QUERY = `(max-width:${Math.min(...LAYOUTS.filter((l) => !l.mobile).map((l) => l.min)) - 0.02}px)`;
 
+/** The container query of the 12-column layouts, where cards sit side by side. */
+const GRID_QUERY = `(min-width:${Math.min(...LAYOUTS.filter((l) => l.grid).map((l) => l.min))}px)`;
+
 /**
  * Styles for one non-default height preset, scoped to the elements that carry it, so a page that
  * uses no preset keeps its stylesheet unchanged.
@@ -365,16 +368,17 @@ function grainCard(
   return `<section class="hm-card hm-${block.type}" style="--span:${chartSpan(block)}" aria-labelledby="${esc(id)}" data-hm-grains>${head}${panels.map((p) => p.body).join("")}</section>`;
 }
 
-/** The scroll area's height for a table with a non-default preset: header, rows and total row. */
+/** The scroll area's height for a table with a non-default preset: header, rows and any total row. */
 function tableStyle(block: TableData, ctx: RenderContext, alone: boolean): string {
-  const preset = tableHeight(block, alone);
+  const preset = tableHeight(block, alone, ctx.theme);
   if (preset === undefined) return "";
   const row = ctx.theme.density.tableRow;
+  const footer = block.total ? row : 0;
   return heightStyle(
     ctx.theme,
     preset,
     (h, scope) =>
-      `.hm-table-wrap${scope}.hm-tall{max-height:${row - 4 + Math.round(h.tableRows * row) + row}px}`,
+      `.hm-table-wrap${scope}.hm-tall{max-height:${row - 4 + Math.round(h.tableRows * row) + footer}px}`,
     ".hm-table-wrap&.hm-tall{max-height:none}",
   );
 }
@@ -407,15 +411,20 @@ function strip(kpis: KpiData[], ctx: RenderContext, height: HeightPreset): GridI
     kpis.reduce((sum, k) => sum + k.span, 0),
   );
   const parts = kpis.map((k) => renderKpi(k, ctx));
+  const kpiRules = (h: BlockHeight, scope: string) =>
+    `${scope} .hm-kpi-value{font-size:${h.kpiSize}px;line-height:${h.kpiLineHeight}px}${scope} .hm-spark{height:${h.sparkline}px}`;
+  const presets = [...new Set(kpis.map((k) => k.height ?? "default"))];
+  const tiles = presets
+    .filter((p) => p !== "default")
+    .map((p) => heightStyle(ctx.theme, p, (h, scope) => kpiRules(h, `.hm-kpi${scope}`)));
+  const level =
+    presets.length > 1
+      ? `<style>@container hm ${GRID_QUERY}{${kpiRules(ctx.theme.height[height].desktop, `.hm-strip[data-hm-height=${height}]`)}}</style>`
+      : "";
   const sized =
-    height === "default"
+    tiles.length === 0 && level === ""
       ? ">"
-      : ` data-hm-height="${height}">${heightStyle(
-          ctx.theme,
-          height,
-          (h, scope) =>
-            `.hm-strip${scope} .hm-kpi-value{font-size:${h.kpiSize}px;line-height:${h.kpiLineHeight}px}.hm-strip${scope} .hm-spark{height:${h.sparkline}px}`,
-        )}`;
+      : ` data-hm-height="${height}">${tiles.join("")}${level}`;
   return {
     blocks: kpis.map((k) => k.id),
     html: `<section class="hm-strip" style="--span:${span}" aria-label="Key metrics"${sized}${parts.join("")}</section>`,
