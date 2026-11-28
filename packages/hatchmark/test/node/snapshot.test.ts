@@ -1,5 +1,6 @@
 import { afterAll, describe, expect, it } from "vitest";
 import {
+  type BarData,
   customRangeDashboard,
   type DashboardData,
   type KpiData,
@@ -776,5 +777,157 @@ describe("snapshot edge cases", () => {
     } finally {
       await executor.close();
     }
+  });
+});
+
+describe("snapshot values with null balances, custom ranges, Other rows and notes", () => {
+  const CSV = [
+    "t,acct,region,bal",
+    "2026-01-05,a,east,10",
+    "2026-01-05,b,west,",
+    "2026-01-12,a,east,",
+    "2026-01-12,c,east,",
+    "2026-01-19,a,east,30",
+    "2026-01-19,b,west,4",
+    "2026-01-26,b,west,6",
+  ].join("\n");
+  const m = (over_time: string, aggregate: string, column?: string) =>
+    metric({
+      type: "aggregate",
+      table: "b",
+      time: "t",
+      over_time,
+      aggregate,
+      ...(column === undefined ? {} : { column }),
+    });
+
+  async function setup() {
+    const { root, project } = await writeProject({
+      "hatchmark.yaml": {
+        ...PROJECT_DEFAULTS,
+        name: "nulls",
+        sources: { b: { type: "csv", path: "data/b.csv", snapshot: "t" } },
+      },
+      "data/b.csv": CSV,
+      "metrics/avg_av.yaml": m("avg", "avg", "bal"),
+      "metrics/avg_mn.yaml": m("avg", "min", "bal"),
+      "metrics/avg_n.yaml": m("avg", "count"),
+      "metrics/min_sb.yaml": m("min", "sum", "bal"),
+      "metrics/last_sb.yaml": m("last", "sum", "bal"),
+      "dashboards/d.yaml": {
+        title: "Nulls",
+        period: { asOf: "2026-01-31", range: "all_time", compare: "none" },
+        filters: [
+          {
+            type: "period",
+            id: "period",
+            options: ["all_time", { last_complete: "month" }],
+            default: "all_time",
+          },
+        ],
+        blocks: [
+          { type: "kpi", id: "k_avg_av", metric: "avg_av" },
+          { type: "kpi", id: "k_avg_mn", metric: "avg_mn" },
+          { type: "bar", id: "n_by_region", metrics: ["avg_n"], by: "region" },
+          {
+            type: "table",
+            id: "t",
+            by: ["region"],
+            metrics: ["avg_n", "min_sb", "last_sb"],
+            limit: 1,
+            other: true,
+            sort: { by: "region", order: "asc" },
+          },
+        ],
+      },
+      "dashboards/e.yaml": {
+        title: "Share",
+        period: { asOf: "2026-01-31", range: "all_time", compare: "none" },
+        blocks: [
+          {
+            type: "table",
+            id: "share",
+            by: ["region"],
+            metrics: ["min_sb", "last_sb"],
+            percentOfTotal: ["min_sb", "last_sb"],
+          },
+        ],
+      },
+    });
+    const config = project.config.spec;
+    if (config === undefined) throw new Error("invalid hatchmark.yaml");
+    return { project, executor: await createDuckDbExecutor({ root, config, threads: 1 }) };
+  }
+  const kpi = (data: DashboardData | undefined, id: string) =>
+    (data?.blocks.find((b) => b.id === id) as KpiData | undefined)?.value;
+
+  it("skips snapshots whose value is null in an average over time", async () => {
+    const { project, executor } = await setup();
+    try {
+      const { data } = await runDashboard(project, "d", executor);
+      expect(kpi(data, "k_avg_av")).toBeCloseTo(11, 9);
+      expect(kpi(data, "k_avg_mn")).toBeCloseTo(20 / 3, 9);
+    } finally {
+      await executor.close();
+    }
+  });
+
+  it("averages a custom range over the snapshots present, counting an absent group as 0", async () => {
+    const { project, executor } = await setup();
+    try {
+      const base = await runDashboard(project, "d", executor);
+      const periods = await runPeriodData(project, "d", executor, base.data as DashboardData);
+      const custom = periods.data?.custom;
+      if (custom === undefined) throw new Error("no custom range cube");
+      expect(custom.presetOnly).toEqual(["avg_av"]);
+      const data = customRangeDashboard(custom, "period", {
+        start: "2026-01-05",
+        end: "2026-01-27",
+      });
+      expect(kpi(data, "k_avg_mn")).toBeCloseTo(20 / 3, 9);
+      const bars = data.blocks.find((b) => b.id === "n_by_region") as BarData | undefined;
+      const categories = bars?.axis.kind === "category" ? bars.axis.categories : [];
+      const at = (key: string) => bars?.series[0]?.values[categories.indexOf(key)];
+      expect(at("east")).toBeCloseTo(1, 9);
+      expect(at("west")).toBeCloseTo(0.75, 9);
+    } finally {
+      await executor.close();
+    }
+  });
+
+  it("folds an average over time of a count and a last into Other, never a min over time", async () => {
+    const { project, executor } = await setup();
+    try {
+      const { data } = await runDashboard(project, "d", executor);
+      const table = data?.blocks.find((b) => b.id === "t") as TableData | undefined;
+      const other = table?.rows.find((r) => r.kind === "other");
+      expect(other?.values.avg_n).toBeCloseTo(0.75, 9);
+      expect(other?.values.last_sb).toBe(6);
+      expect(other?.values.min_sb).toBeNull();
+    } finally {
+      await executor.close();
+    }
+  });
+
+  it("refuses percent of total for a min over time (HM4001) and allows it for a last", async () => {
+    const { project, executor } = await setup();
+    await executor.close();
+    const share = checkReferences(project).filter(
+      (d) => d.code === "HM4001" && d.file?.includes("dashboards/e"),
+    );
+    expect(share.map((d) => d.pointer)).toEqual(["/blocks/0/percentOfTotal/0"]);
+  });
+
+  it("notes the HM4040 average default on over_time avg metrics only", async () => {
+    const { project, executor } = await setup();
+    await executor.close();
+    const notes = checkReferences(project).filter(
+      (d) => d.code === "HM4040" && d.file?.includes("metrics/"),
+    );
+    expect(notes.map((d) => d.file?.split("/").pop()).sort()).toEqual([
+      "avg_av.yaml",
+      "avg_mn.yaml",
+      "avg_n.yaml",
+    ]);
   });
 });
