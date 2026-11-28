@@ -506,6 +506,7 @@ describe("help", () => {
     for (const command of [
       "init",
       "check",
+      "data",
       "build",
       "dev",
       "schema",
@@ -524,7 +525,7 @@ describe("help", () => {
         usage: expect.stringContaining(`hatchmark ${command}`),
       });
     }
-    expect((await cli(["help"], { cwd })).json().commands).toHaveLength(8);
+    expect((await cli(["help"], { cwd })).json().commands).toHaveLength(9);
     const top = await cli([], { cwd, tty: true });
     expect(top.code).toBe(0);
     expect(top.stdout).toContain("Exit codes: 0 ok");

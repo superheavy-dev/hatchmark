@@ -9,6 +9,8 @@ example. [README.md](README.md) lists every docs page; the files a project holds
 | ----------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `init [dir]`                              | Creates a project: `hatchmark.yaml` with every setting written out, sample US orders data, four metrics, a dashboard, and a Hatchmark block in `AGENTS.md`.                                                                                                                                              |
 | `check [paths...]`                        | Checks YAML syntax, spec shape, and references between files and to data columns. Paths are relative to `--cwd`. `hatchmark.yaml` is always checked first, whatever the paths. `--sql` also prints every block's SQL. `--explain-defaults` prints each HM4040 default note instead of one line per file. |
+| `data describe <source>`                  | Prints a source's columns with their type, null and distinct counts, the min and max of time and number columns, the row count and the first rows. See [data](#data).                                                                                                                                    |
+| `data query "<sql>"`                      | Runs one read-only SELECT over the project's file sources and prints at most `--limit` rows (default 100). See [data](#data).                                                                                                                                                                            |
 | `build [--out <dir>] [--no-cache]`        | Checks the project, runs every dashboard's queries (reusing unchanged results from `.hatchmark/cache/`) and writes static HTML pages to `outDir`. See [build.md](build.md).                                                                                                                              |
 | `dev [--port <n>] [--host <h>] [--open]`  | Serves every dashboard locally at the URLs `build` writes and updates the page on every save: changed cards swap in place, structural changes reload, errors show over the page. See [dev](#dev).                                                                                                        |
 | `schema [project\|metric\|dashboard]`     | Prints the JSON Schema for a file kind, or all three keyed by kind.                                                                                                                                                                                                                                      |
@@ -112,6 +114,43 @@ HM2015 error on that dashboard. A block the planner leaves out, such as a metric
 | `HM0005` | `AGENTS.md` markers are not exactly one start line before one end line. Init wrote nothing. Fix the markers, or delete every marker line.                                                                                                                                                                                                                                                                                                                                                                                                                                                         |
 | `HM0006` | `dev` could not listen on `--port` or `--host`: the port is in use or the host is not an address of this machine. Exits 3. Without `--port`, dev takes the next free port on its own.                                                                                                                                                                                                                                                                                                                                                                                                             |
 | `HM0007` | `dev` could not finish watching the project within 15 seconds, usually because a directory cannot be read; the diagnostic names the file system error. Exits 3.                                                                                                                                                                                                                                                                                                                                                                                                                                   |
+| `HM0008` | `data query` got something other than exactly one SELECT, or the query reads or writes a file that is not a source. Nothing ran. Exits 2.                                                                                                                                                                                                                                                                                                                                                                                                                                                         |
+| `HM0009` | `data query` failed in DuckDB; the message is DuckDB's. An unknown table lists the source names. Exits 2.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                         |
+
+## data
+
+`hatchmark data` lets you (or an agent) look at the data before writing metrics and dashboards. Both
+subcommands read each source with the same reader options `build` uses, so the types they print are
+the types metrics see. The session time zone is UTC: timestamps with an offset print in UTC.
+
+`hatchmark data describe <source>` prints, for each column, its DuckDB type, a `kind` (`time`,
+`number`, `boolean`, `text` or `other`), the number of nulls and of distinct non-null values, and
+the min and max of `time` and `number` columns. It also prints the row count and the first rows in
+file order (`--limit <n>`, default 5, `0` for none). A lookup source is not a file; describe the
+sources it joins.
+
+`hatchmark data query "<sql>"` runs one SELECT statement. Each file source is a table named after the
+source, and `sources` lists them; a CTE of the same name hides the source. A missing or unreadable
+source gives `HM2010` or `HM2015` only when the query reads it. The query cannot read files other than the sources or write anything: any other statement,
+more than one statement, or a file access gives `HM0008`, and nothing runs. A DuckDB error gives
+`HM0009` with DuckDB's message. At most `--limit` rows print (default 100, at most 10000), and
+`truncated` says whether the query had more. Values are DuckDB's, before the rounding `build` applies
+to displayed numbers.
+
+```json
+{
+  "format_version": "1",
+  "sql": "SELECT region, count(*) AS n FROM orders GROUP BY 1",
+  "sources": ["orders"],
+  "limit": 100,
+  "columns": [{ "name": "region", "type": "VARCHAR" }, { "name": "n", "type": "BIGINT" }],
+  "rows": [["South", 562], ["West", 366]],
+  "truncated": false
+}
+```
+
+Rows are arrays in column order. Integers beyond ±2^53, and DECIMAL values a JSON number cannot
+hold exactly, are strings, so no digit is lost; dates are `YYYY-MM-DD` text and timestamps are DuckDB's text.
 
 ## init
 
