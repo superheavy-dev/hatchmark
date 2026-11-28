@@ -308,7 +308,7 @@ export const METRICS: Record<string, (rs: Row[]) => number | null> = {
   min_amount: (rs) => (amounts(rs).length ? Math.min(...amounts(rs)) : null),
   max_amount: (rs) => (amounts(rs).length ? Math.max(...amounts(rs)) : null),
   median_amount: (rs) => median(amounts(rs)),
-  net_sql: (rs) => (rs.length ? amounts(rs).reduce((s, a) => s + a, 0) : null),
+  net_sql: (rs) => amounts(rs).reduce((s, a) => s + a, 0),
   spread_sql: (rs) =>
     amounts(rs).length ? Math.max(...amounts(rs)) - Math.min(...amounts(rs)) : null,
   rev_per_customer: (rs) => divide(metricOf("revenue", rs), metricOf("customers", rs)),

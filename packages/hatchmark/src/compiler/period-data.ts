@@ -160,6 +160,7 @@ export function cubeResult(
   const aggregate = (c: MeasureComponent, rows: number[]): Value => {
     const values = cube.values[c.id] ?? [];
     if (c.reaggregate === "none") return null;
+    if (rows.length === 0 && c.reaggregate === "sum") return 0;
     let acc: number | null = null;
     for (const i of rows) {
       const v = values[i] ?? null;
