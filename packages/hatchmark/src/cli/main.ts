@@ -3,6 +3,7 @@ import { type ParseArgsConfig, parseArgs } from "node:util";
 import { VERSION } from "../version.js";
 import { build, buildHelp } from "./commands/build.js";
 import { check, checkHelp } from "./commands/check.js";
+import { data, dataHelp } from "./commands/data.js";
 import { dev, devHelp } from "./commands/dev.js";
 import { doctor, doctorHelp } from "./commands/doctor.js";
 import { explain, explainHelp } from "./commands/explain.js";
@@ -67,6 +68,12 @@ const COMMANDS: Record<string, Command> = {
         sql: flags.sql === true,
         explainDefaults: flags["explain-defaults"] === true,
       }),
+  },
+  data: {
+    help: dataHelp,
+    options: { limit: { type: "string" } },
+    run: (ctx, positionals, flags) =>
+      data(ctx, positionals, typeof flags.limit === "string" ? { limit: flags.limit } : {}),
   },
   build: {
     help: buildHelp,

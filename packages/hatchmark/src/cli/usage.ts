@@ -8,7 +8,16 @@ import {
 import { type CommandResult, EXIT } from "./io.js";
 
 export function usageError(
-  code: "HM0001" | "HM0002" | "HM0003" | "HM0004" | "HM0005" | "HM0006" | "HM0007",
+  code:
+    | "HM0001"
+    | "HM0002"
+    | "HM0003"
+    | "HM0004"
+    | "HM0005"
+    | "HM0006"
+    | "HM0007"
+    | "HM0008"
+    | "HM0009",
   message: string,
   extra: { help?: string; expected?: string[]; input?: string } = {},
 ): CommandResult {

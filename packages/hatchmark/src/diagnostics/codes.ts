@@ -41,6 +41,16 @@ export const CODES = {
     explanation:
       "hatchmark dev starts only once it watches every file of the project, so that no edit is missed. The watcher did not finish its first scan within 15 seconds, usually because a directory in the project cannot be read; the diagnostic names the file system error when there is one. Make every directory readable, or move what cannot be read out of the project, and run dev again.",
   },
+  HM0008: {
+    title: "query is not a single read-only statement",
+    explanation:
+      "hatchmark data query runs exactly one SELECT statement over the project's file sources and ran nothing: the query was empty, held more than one statement, was another kind of statement such as CREATE, COPY, ATTACH or SET, or read or wrote a file that is not one of the sources. Pass one SELECT, such as SELECT * FROM orders LIMIT 10. A trailing semicolon is fine.",
+  },
+  HM0009: {
+    title: "query failed",
+    explanation:
+      "DuckDB could not parse, bind or run the query given to hatchmark data query; the message is DuckDB's. Each file source is a table named after the source, with the columns hatchmark data describe <source> lists. Files outside the sources cannot be read, and the session time zone is UTC.",
+  },
   HM1001: {
     title: "file cannot be read",
     explanation:

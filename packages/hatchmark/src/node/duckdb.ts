@@ -223,7 +223,7 @@ export function boundParams(params: Record<string, SqlValue>): {
   return { values, types };
 }
 
-interface LoadedSource extends SqlSource {
+export interface LoadedSource extends SqlSource {
   magnitudes: Map<string, Promise<number | null>>;
 }
 
@@ -260,7 +260,7 @@ const utf8Order = (a: string, b: string) => Buffer.compare(Buffer.from(a), Buffe
 
 // DuckDB's CREATE TABLE AS keeps each file's rows in order only with preserve_insertion_order,
 // and a source column named rowid hides the table's rowid, so it is renamed for the load.
-async function loadSource(
+export async function loadSource(
   connection: DuckDBConnection,
   name: string,
   source: FileSource,
