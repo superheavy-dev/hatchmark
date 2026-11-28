@@ -30,7 +30,6 @@ const GROUPED_THICKNESS = 8;
 const VALUE_GAP = 6;
 const KEY_GAP = 16;
 
-/** The text naming each position on the bar axis. */
 export function barCategories(block: BarData, locale: string): string[] {
   return block.axis.kind === "category"
     ? block.axis.categories.map((c) => formatKey(c, locale))
@@ -39,10 +38,6 @@ export function barCategories(block: BarData, locale: string): string[] {
       );
 }
 
-/**
- * Bar extents per series and position: stacked bars start where the previous series ended. A 100%
- * stack draws each series' share of its position's total instead of its value.
- */
 function extents(block: BarData, stacked: boolean): [number, number][][] {
   const n =
     block.axis.kind === "category" ? block.axis.categories.length : block.axis.buckets.length;
@@ -60,16 +55,10 @@ function extents(block: BarData, stacked: boolean): [number, number][][] {
   );
 }
 
-/** What a bar series draws: its shares in a 100% stack, else its values. */
 function drawnValues(block: BarData, s: BarData["series"][number]): Value[] {
   return block.percent && s.share ? s.share : s.values;
 }
 
-/**
- * The value printed at each bar's end: the position's total for stacked bars (the engine's, which
- * a distinct count or ratio needs; summed only for data without totals), or the single series'
- * values; undefined when grouped.
- */
 function labelValues(block: BarData, stacked: boolean): Value[] | undefined {
   if (block.totals && (stacked || block.percent)) return block.totals;
   if (block.series.length === 1) return block.series[0]?.values;
@@ -81,7 +70,6 @@ function labelValues(block: BarData, stacked: boolean): Value[] | undefined {
   });
 }
 
-/** A key entry: a series' name and fill, and its group's name when it is the group's first member. */
 interface KeyItem {
   label: string;
   fill: ColorKey;
@@ -100,7 +88,6 @@ function keyItems(block: BarData, theme: Theme): KeyItem[] {
   });
 }
 
-/** A one-row (or wrapping) key of coloured squares and series names, for multi-series bars. */
 function drawKey(
   paint: Paint,
   items: readonly KeyItem[],
@@ -147,31 +134,25 @@ function drawKey(
   return { svg: `<g class="hm-key">${parts.join("")}</g>`, height: (row + 1) * LABEL_LINE + 8 };
 }
 
-/** Room under a horizontal 100% stack for its 0–100% tick labels. */
 const SHARE_AXIS_BAND = 20;
-/** A horizontal 100% stack labels quarters from this bar width, halves below it. */
 const SHARE_QUARTERS_WIDTH = 240;
 
-/** A one-row key's height, which a vertical bar chart's height already includes. */
 const KEY_ROW = LABEL_LINE + 8;
 
 const NAME_STYLE = { size: BODY };
 const NAME_LINES = 2;
 const NAME_LINE = 17;
 
-/** Category names of a horizontal bar chart: a column as wide as they need up to 40% of the chart, wrapped to two lines. */
 function rowNames(names: string[], width: number) {
   const column = Math.min(width * 0.4, Math.max(0, ...names.map((t) => textWidth(t, NAME_STYLE))));
   return { column, wrapped: names.map((t) => wrapLines(t, column, NAME_STYLE, NAME_LINES)) };
 }
 
-/** The shortest and tallest row of a horizontal bar chart. */
 export interface BarRows {
   barRow: number;
   barRowMax: number;
 }
 
-/** Row height of a horizontal bar chart: rows stretch to fill the chart height, within limits. */
 export function barRowHeight(
   block: BarData,
   ctx: RenderContext,
@@ -186,7 +167,6 @@ export function barRowHeight(
   return Math.max(rows.barRow, Math.min(rows.barRowMax, Math.floor(chartHeight / n)));
 }
 
-/** The height a bar chart takes at a width: fixed for vertical bars, by rows for horizontal. */
 export function barHeight(
   block: BarData,
   ctx: RenderContext,
@@ -208,11 +188,6 @@ export function barHeight(
 
 const cssLessPaint: Paint = { attrs: () => "" };
 
-/**
- * A bar chart: vertical or horizontal, on a category or time axis, one series or several
- * (grouped side by side, or stacked). Values are printed on the bars when they fit, so most bar
- * charts need no axis on the value side.
- */
 export function renderBar(
   block: BarData,
   ctx: RenderContext,

@@ -66,14 +66,11 @@ type Key = string | number | boolean | null;
 
 interface IndexedQuery {
   query: PlannedQuery;
-  /** Rows by grouping set and dimension values: rowKey(). */
   rows: Map<string, unknown[]>;
-  /** Distinct dimension values by grouping set, in result order. */
   keys: Map<number, Key[][]>;
   components: Map<string, number>;
 }
 
-/** Null-safe row identity: the grouping set plus every dimension value, null included. */
 function rowKey(set: number, keys: readonly Key[]): string {
   return JSON.stringify([set, keys]);
 }
@@ -119,10 +116,6 @@ export function textComparer(locale: string, order?: readonly string[]): Compare
   return new Intl.Collator(supported ? locale : "en-US", { numeric: true }).compare;
 }
 
-/**
- * Orders keys: booleans, numbers, strings, then null last; strings by the project locale's
- * collation, and by UTF-16 code unit where the collation sees them as equal.
- */
 function compareKey(a: Key, b: Key, compareText: CompareText): number {
   if (a === b) return 0;
   if (a === null) return 1;
@@ -144,7 +137,6 @@ function compareKeys(a: readonly Key[], b: readonly Key[], compareText: CompareT
   return 0;
 }
 
-/** Orders keys in either direction, null last in both. */
 function compareKeyOrdered(
   a: Key,
   b: Key,
@@ -155,7 +147,6 @@ function compareKeyOrdered(
   return order === "asc" ? compareKey(a, b, compareText) : compareKey(b, a, compareText);
 }
 
-/** Orders values, null last in both directions. */
 function compareValues(a: Value, b: Value, order: "asc" | "desc"): number {
   if (a === b) return 0;
   if (a === null) return 1;
@@ -163,13 +154,11 @@ function compareValues(a: Value, b: Value, order: "asc" | "desc"): number {
   return order === "asc" ? a - b : b - a;
 }
 
-/** A bound's local wall-clock time, for a UTC instant bound (windows.ts). */
 const wallAt = (bound: string, timezone: string) =>
   formatWall(toLocal(parseInstant(bound), timezone));
 
 const atMidnight = (wall: string) => wall.endsWith("T00:00:00.000000");
 
-/** The exclusive end date of the days a wall-clock end reaches into. */
 const dayEnding = (wall: string) =>
   atMidnight(wall) ? wall.slice(0, 10) : nextDay(wall.slice(0, 10));
 
@@ -215,21 +204,10 @@ class Assembler {
     return this.project.metrics.get(name)?.spec;
   }
 
-  /**
-   * A measure's value in one row. A row a query does not have reads as no rows: 0 for additive
-   * components (sum, count, additive SQL), null for the others, so empty groups and empty time
-   * buckets are zero-filled exactly where the metric adds up. A null in a row the query has is an
-   * undefined value (a SQL metric's NULL or non-finite result) and stays null.
-   */
   private measure(queryId: string, metric: string, key: string): Value {
     return this.measureOver(queryId, metric, [key], false);
   }
 
-  /**
-   * A measure over rows of one grouping set. With fold, each component is combined across the rows
-   * first the way it re-aggregates (sum adds, min and max take the extreme, ignoring nulls), and a
-   * component that does not re-aggregate gives null, as does a component null in every row.
-   */
   private measureOver(queryId: string, metric: string, keys: string[], fold: boolean): Value {
     const indexed = this.queries.get(queryId);
     const measure = indexed?.query.measures.find((m) => m.metric === metric);
@@ -256,7 +234,6 @@ class Assembler {
       : divide(component(combine.numerator), component(combine.denominator));
   }
 
-  /** An expression over several rows of a grouping set folded into one (a table's Other row). */
   fold(expression: MeasureExpression | undefined, set: number, rows: readonly Key[][]): Value {
     if (expression === undefined) return null;
     if (expression.op === "ref") {
@@ -280,16 +257,11 @@ class Assembler {
     );
   }
 
-  /** The window the queries behind an expression read (they all read the same span). */
   bounds(expression: MeasureExpression | undefined): WindowBounds | undefined {
     const query = expression && this.queries.get(refs(expression)[0] ?? "")?.query;
     return query && queryBounds(query, this.context);
   }
 
-  /**
-   * Why an expression's window is empty, or undefined when it isn't: no_complete_day when its
-   * horizon is after the window's start, else no_data.
-   */
   empty(expression: MeasureExpression | undefined): EmptyWindow | undefined {
     const bounds = this.bounds(expression);
     if (bounds?.kind !== "bounded" || bounds.start !== bounds.end) return undefined;
@@ -298,7 +270,6 @@ class Assembler {
     return horizon !== undefined && horizon > start ? "no_complete_day" : "no_data";
   }
 
-  /** A measure's horizon (UTC microseconds): the earliest of its queries'. */
   horizon(expression: MeasureExpression | undefined): bigint | undefined {
     let earliest: bigint | undefined;
     for (const id of expression ? refs(expression) : []) {
@@ -414,7 +385,6 @@ class Assembler {
     };
   }
 
-  /** Distinct dimension values of a grouping set across queries, sorted by key. */
   keys(expressions: (MeasureExpression | undefined)[], set: number): Key[][] {
     const seen = new Map<string, Key[]>();
     for (const id of new Set(expressions.flatMap((e) => (e ? refs(e) : [])))) {
@@ -588,11 +558,6 @@ class Assembler {
     }));
   }
 
-  /**
-   * A stacked block's totals and shares (StackTotals). total(i) reads a split's per-position total
-   * from rows; without it, the total is the sum of the series (several metrics). A 100% stack with a
-   * negative value gets HM4061, since its shares no longer add up to 100%.
-   */
   stacked(
     stack: boolean | "percent" | undefined,
     series: Series[],
@@ -619,11 +584,6 @@ class Assembler {
     };
   }
 
-  /**
-   * A stack's totals cut at the horizon of every stacked metric, like its series: a bucket past any
-   * of them has no total and no shares, since a part of the whole is missing there. So has a
-   * position in hidden, where incomplete "hide" left a value out.
-   */
   cutTotals(
     stacked: { series: Series[]; extra: StackTotals },
     expressions: (MeasureExpression | undefined)[],
@@ -646,7 +606,6 @@ class Assembler {
     };
   }
 
-  /** HM4061: a part-of-whole chart (100% stack) with a negative value. */
   negativeShare(plan: BlockPlan, pointer: string, label: string): void {
     const message = `block "${plan.blockId}" shows shares of a total, but "${label}" has negative values, so the shares do not add up to 100%`;
     if (this.diagnostics.some((d) => d.code === "HM4061" && d.message === message)) return;
@@ -835,10 +794,6 @@ class Assembler {
     };
   }
 
-  /**
-   * A time-series block with its grain switch: each grain's axis and series from that grain's
-   * reading, and HM5001 for any grain past MAX_POINTS buckets.
-   */
   series<T extends LineData | BarData>(
     block: Block & { type: "line" | "area" | "bar" },
     plan: BlockPlan,
@@ -889,11 +844,6 @@ class Assembler {
     };
   }
 
-  /**
-   * A pie or donut: categories by value, the largest positive ones as slices and the rest of the
-   * positive ones as Other; zero, negative and undefined categories are left out, with HM4061 for
-   * negatives and HM5011 when Other outweighs every slice shown.
-   */
   pie(block: Block & { type: "pie" | "donut" }, plan: BlockPlan, common: Common): PieData {
     const expression = plan.measures[block.metric];
     const limit = block.limit ?? PIE_DEFAULT_LIMIT;
@@ -1016,7 +966,6 @@ class Assembler {
           )
         : compareValues(a.values[sort.by] ?? null, b.values[sort.by] ?? null, sort.order)) ||
       compareKeys(a.keys, b.keys, this.compareText);
-    /** The rows of one innermost group (or of the whole table): sorted, limited, then Other. */
     const cut = (members: TableRow[], parent: readonly Key[]): TableRow[] => {
       const sorted = members.sort(order);
       if (block.limit === undefined || sorted.length <= block.limit) return sorted;
@@ -1039,7 +988,6 @@ class Assembler {
           : []),
       ];
     };
-    /** A group's subtotal rows and rows, depth first; groups ordered like rows. */
     const nest = (members: TableRow[], parent: Key[]): TableRow[] => {
       const level = parent.length + 1;
       if (level === width) return cut(members, parent);
@@ -1147,11 +1095,6 @@ class Assembler {
     };
   }
 
-  /**
-   * A scatter block: x, y and size per category of the by column, each evaluated from that
-   * category's rows. Points without an x or y are counted (HM4070), never drawn at 0; negative sizes
-   * get HM4071; past MAX_SCATTER_POINTS without an explicit limit, HM5022.
-   */
   scatter(block: Block & { type: "scatter" }, plan: BlockPlan, common: Common): ScatterData {
     const expressions = [block.x, block.y, block.size].flatMap((m) =>
       m === undefined ? [] : [plan.measures[m]],
@@ -1263,7 +1206,6 @@ class Assembler {
     };
   }
 
-  /** HM4003: a SQL metric declared additive whose rows do not add up to the recomputed total. */
   private checkAdditive(
     block: Block & { type: "table" },
     id: string,
@@ -1303,7 +1245,6 @@ class Assembler {
 
 type Common = { id: string; title?: string; span: number; height?: HeightPreset };
 
-/** A column's header text: underscores as spaces, first letter capitalized ("ship_country"). */
 const MAX_POINTS = 1000;
 const MAX_SCATTER_POINTS = 500;
 
@@ -1323,7 +1264,6 @@ export function grainLabels(grains: ResolvedGrain[]): string[] {
   });
 }
 
-/** DashboardData.periodFilter from the dashboard's period filter, with the selected range's key. */
 function periodFilter(
   filters: DashboardFilter[] | undefined,
   plan: QueryPlan,
@@ -1356,7 +1296,6 @@ function periodFilter(
   };
 }
 
-/** DashboardData.grainFilter from the dashboard's grain filter, resolved at the project anchors. */
 function grainFilter(
   filters: DashboardFilter[] | undefined,
   plan: QueryPlan,

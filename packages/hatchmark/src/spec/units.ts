@@ -1,14 +1,7 @@
 import type { Anchors, Grain, RangeSpec, ResolvedGrain, TimeGrain, Weekday } from "./common.js";
 import type { Block } from "./dashboard.js";
 
-/**
- * Spec constants and helpers without the schemas, so code that runs in the browser (assembly and
- * windows, for the period engine) can import them without the validation library.
- */
-
-/** Most series one group holds: the lightness steps of a hue family in the Default theme. */
 export const GROUP_MAX_SIZE = 3;
-/** Most groups one chart holds: the hue families of the Default theme that host a group. */
 export const GROUP_MAX_COUNT = 3;
 
 export const TIME_GRAINS = ["day", "week", "month", "quarter", "year"] as const;
@@ -37,12 +30,10 @@ export const WEEKDAYS = [
   "sunday",
 ] as const;
 
-/** The unit of a grain as written. */
 export function grainUnit(grain: Grain): TimeGrain {
   return typeof grain === "string" ? grain : grain.unit;
 }
 
-/** A grain with the anchor a bucket uses: its own, else the project's. */
 export function resolveGrain(grain: Grain, anchors: Anchors): ResolvedGrain {
   const unit = grainUnit(grain);
   const own = typeof grain === "string" ? undefined : grain.anchor;
@@ -51,23 +42,15 @@ export function resolveGrain(grain: Grain, anchors: Anchors): ResolvedGrain {
   return { unit, anchor: own ?? anchors[unit] };
 }
 
-/** A grain as one string, such as "month" or "week:sunday". Resolved grains with the same buckets share a key. */
 export function grainKey(grain: Grain): string {
   const anchor = typeof grain === "string" ? undefined : grain.anchor;
   return anchor === undefined ? grainUnit(grain) : `${grainUnit(grain)}:${anchor}`;
 }
 
-/** The id a block is addressed by: its explicit id, else <type>_<index>. */
 export function blockId(block: Block, index: number): string {
   return block.id ?? `${block.type}_${index}`;
 }
 
-/**
- * A period range as one string, equal for every spelling of the same span: "last_30_days" and
- * {"last": 30, "unit": "day"} are both "last_30_days", {"to_date": "month"} and {"last": 1, "unit":
- * "month"} are both "month_to_date", and a range of dates is "<first>..<last>", both days
- * included, the way a reader writes it in a link.
- */
 export function rangeKey(range: RangeSpec): string {
   if (typeof range === "string") return range;
   if ("start" in range) {
@@ -84,5 +67,4 @@ export function rangeKey(range: RangeSpec): string {
   return `last_complete_${range.last_complete}`;
 }
 
-/** Slices a pie or donut shows before grouping the rest into "Other". */
 export const PIE_DEFAULT_LIMIT = 5;

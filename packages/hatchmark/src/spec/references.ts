@@ -113,7 +113,7 @@ export function metricHasTime(name: string, metrics: ReadonlyMap<string, Metric>
   return nature === "flow" || nature === "point";
 }
 
-/** Column names of a source, lowercased (DuckDB matches case-insensitively); undefined when unknown. */
+// DuckDB matches column names case-insensitively.
 function columnsOf(project: Project, source: string): Set<string> | undefined {
   const sources = project.config.spec?.sources ?? {};
   const spec = sources[source];
@@ -133,7 +133,6 @@ function columnsOf(project: Project, source: string): Set<string> | undefined {
   return out;
 }
 
-/** Reports problems inside an expression string at the exact characters, not the whole value. */
 function expressionRange(
   file: SpecFile,
   pointer: string,
@@ -150,7 +149,6 @@ function expressionRange(
   };
 }
 
-/** Parses an expression field, reporting HM3010 at the offending token. */
 function parsedField(
   r: Reporter,
   file: SpecFile,
@@ -193,7 +191,6 @@ function sourceSuggestion(
   return false;
 }
 
-/** Checks that each named column exists when the source's columns are known (HM2018). */
 function checkColumns(
   r: Reporter,
   project: Project,
@@ -352,7 +349,6 @@ function checkSegments(project: Project, out: Diagnostic[]): void {
   }
 }
 
-/** Every column a table metric names, for HM2018, with exact ranges inside expressions. */
 function tableMetricColumns(
   r: Reporter,
   file: SpecFile,
@@ -546,7 +542,6 @@ function checkMetrics(project: Project, out: Diagnostic[]): void {
       continue;
     }
 
-    // per_entity
     checkFormatCurrency(r, name, metric, metrics, projectCurrency);
     if (!project.metrics.has(metric.of)) {
       r.report("HM2003", "/of", `unknown metric "${metric.of}"`, {
@@ -622,10 +617,6 @@ function checkMetrics(project: Project, out: Diagnostic[]): void {
   }
 }
 
-/**
- * HM3009: a filter on the metric's time column must be a strict ISO 8601 date or date-time, so its
- * meaning never depends on a database's cast rules (see parseTemporal).
- */
 function checkTimeFilters(
   file: SpecFile<"metric">,
   metric: Metric & { type: "aggregate" | "sql" },
@@ -670,7 +661,6 @@ function checkTimeFilters(
   });
 }
 
-/** HM4009: a flow and a point-in-time value can't be combined; they measure different things. */
 function checkNatureMix(
   r: Reporter,
   pointer: string,
@@ -692,7 +682,6 @@ function checkNatureMix(
   );
 }
 
-/** HM4007: an aggregate over a snapshot table must read one snapshot date at a time. */
 function checkSnapshot(r: Reporter, metric: TableMetric, configured: Record<string, Source>): void {
   const declared = configured[metric.table];
   const base = declared?.type === "lookup" ? configured[declared.from] : declared;
@@ -733,7 +722,6 @@ function checkSnapshot(r: Reporter, metric: TableMetric, configured: Record<stri
   }
 }
 
-/** HM4019: an as-of lookup at "$evaluation" only has an instant to join at for point-in-time metrics. */
 function checkEvaluationLookups(
   r: Reporter,
   name: string,
@@ -757,10 +745,6 @@ function checkEvaluationLookups(
   );
 }
 
-/**
- * HM4005: adding, subtracting or choosing between values in different currencies (see
- * exprCurrency), with each operand's currency derived rather than read from its format.
- */
 function checkUnits(
   r: Reporter,
   file: SpecFile,
@@ -786,7 +770,6 @@ function checkUnits(
   );
 }
 
-/** HM4005: a derived metric whose format names another currency than the one its values are in. */
 function checkFormatCurrency(
   r: Reporter,
   name: string,
@@ -946,7 +929,6 @@ function needsTime(block: Block, dashboard: Dashboard): boolean {
   }
 }
 
-/** Why a metric's values do not add up across groups, for HM4001 and HM4060 labels. */
 function notAdditiveLabel(metric: Metric): string {
   const kind =
     metric.type === "aggregate"
@@ -1051,10 +1033,6 @@ function checkGroups(
   });
 }
 
-/**
- * A pie or donut: its metric must be a part of a whole (HM4001, an error, since the slices would
- * not add up to anything), and more than PIE_READABLE_LIMIT slices are too thin to compare (HM5010).
- */
 function checkPie(
   r: Reporter,
   file: SpecFile<"dashboard">,
@@ -1098,11 +1076,6 @@ function checkPie(
   }
 }
 
-/**
- * A stacked bar or area block: a 100% stack of a metric that does not add up is an error (HM4001),
- * a plain stack of one draws a meaningless height (HM4060), and metrics in different units cannot be
- * stacked at all (HM4062).
- */
 function checkStack(
   r: Reporter,
   file: SpecFile<"dashboard">,
@@ -1171,10 +1144,6 @@ function checkStack(
   }
 }
 
-/**
- * A scatter block: both axes on one metric draw a diagonal line (HM5020), and a size on an axis
- * metric encodes the same number twice (HM5021).
- */
 function checkScatter(r: Reporter, block: Block & { type: "scatter" }, base: string): void {
   if (block.x === block.y) {
     r.report(
@@ -1525,7 +1494,6 @@ function checkDashboard(project: Project, file: SpecFile<"dashboard">, out: Diag
   let periodFilter: string | undefined;
   const anchors = projectAnchors(project.config.spec);
   const resolvedKey = (g: Grain) => grainKey(resolveGrain(g, anchors));
-  /** Grain options resolved at the project anchors: none twice, and the default among them. */
   const checkGrains = (options: Grain[], base: string, shown: Grain, at: string, what: string) => {
     const keys = options.map(resolvedKey);
     keys.forEach((key, i) => {
@@ -1722,11 +1690,7 @@ function checkDashboard(project: Project, file: SpecFile<"dashboard">, out: Diag
   });
 }
 
-/**
- * Checks references between files: metric to source, ratio to metric, dashboard to metric,
- * text references, ids and table options. Pure and cheap, so it can run on every edit.
- */
-/** HM2016: a source path with glob characters, which DuckDB would read as several files. */
+// DuckDB reads a source path with glob characters as several files.
 function checkSourcePaths(project: Project, out: Diagnostic[]): void {
   const config = project.config;
   for (const [name, source] of Object.entries(config.spec?.sources ?? {})) {
@@ -1754,7 +1718,6 @@ function checkSourcePaths(project: Project, out: Diagnostic[]): void {
   }
 }
 
-/** HM2017: a source column whose name starts with __hm_, which the engine reserves for its own. */
 function checkReservedColumns(project: Project, out: Diagnostic[]): void {
   const config = project.config;
   for (const [name, columns] of project.columns) {

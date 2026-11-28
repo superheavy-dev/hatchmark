@@ -59,7 +59,6 @@ interface Context {
   anchors: Anchors;
 }
 
-/** One reading of some metrics: the same axes, grouping sets and window shift for all of them. */
 interface Reading {
   queries: PlannedQuery[];
   measures: Record<string, MeasureExpression>;
@@ -158,7 +157,6 @@ function filterTables(
   return Object.keys(tables).length > 0 ? tables : undefined;
 }
 
-/** The aggregate and SQL metrics a metric reads, through ratios. */
 function leaves(name: string, metrics: Map<string, Metric>, seen = new Set<string>()): string[] {
   const metric = metrics.get(name);
   if (metric === undefined || seen.has(name)) return [];
@@ -176,14 +174,6 @@ export function queryId(query: Omit<PlannedQuery, "id">): string {
   return `q_${sha256Hex(canonicalJson(query)).slice(0, 16)}`;
 }
 
-/**
- * Plans a set of metrics read on the same axes. Leaf metrics group into one query per source and
- * time column (the column that windows them and places them on a time axis). A SQL metric with
- * filters gets a query of its own, since its filters cannot attach to one aggregate call and must
- * filter the query's rows. Ratios become MeasureExpressions over those queries. With oneWindow every
- * metric ends at the earliest horizon among all of them, like a ratio's operands: a scatter point
- * reads x, y and size over one window.
- */
 function planReading(
   ctx: Context,
   names: string[],
@@ -298,11 +288,6 @@ function planReading(
   return { queries, measures };
 }
 
-/**
- * A line, area or bar block's metrics over its axes: time buckets at a grain, or its by column. A
- * split adds the split column, with the split's totals across positions (to order the series) and,
- * for bars and stacked areas, each position's total across split values (StackTotals.totals).
- */
 function seriesReading(
   ctx: Context,
   block: Block & { type: "line" | "area" | "bar" },
@@ -535,7 +520,6 @@ export function tableGroupingSets(block: Block & { type: "table" }): number[][] 
   return [leaf, ...prefixes, ...(total ? [[]] : [])];
 }
 
-/** The metrics a block shows, each once, in spec order (a scatter's x, y and size). */
 function shownMetrics(block: Block): string[] {
   if (block.type === "scatter") {
     return [...new Set([block.x, block.y, ...(block.size === undefined ? [] : [block.size])])];

@@ -22,11 +22,6 @@ import {
 } from "../../src/render/index.js";
 import GLOBAL_SALES from "../fixtures/global-sales/sales.data.json" with { type: "json" };
 
-/**
- * Golden files: every gallery variant rendered and compared byte for byte with the committed
- * output in goldens/. After an intended rendering change, regenerate them with
- * pnpm test:update-goldens and review the diff (and the before/after renders) in the PR.
- */
 const DIR = new URL("./goldens/", import.meta.url);
 const UPDATE = process.env.HATCHMARK_UPDATE_GOLDENS === "1";
 

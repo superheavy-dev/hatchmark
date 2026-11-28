@@ -166,11 +166,6 @@ export async function createDuckDbExecutor(options: {
   };
 }
 
-/**
- * The column names and types of a file source as the executor loads it, with its reader options,
- * for ProjectHost.columnTypes. Opens a short-lived in-memory database; undefined when the file
- * cannot be read.
- */
 export async function describeColumnTypes(
   file: string,
   source: FileSource,

@@ -41,14 +41,6 @@ import {
   type Theme,
 } from "./theme.js";
 
-/**
- * Page layouts, widest first; min is the space a layout needs (content plus page padding). Charts
- * are pre-rendered at each layout's exact pixel width and container queries on the page's root
- * show the one that matches, so chart text is always measured for the width it is drawn at and
- * never scaled. Between breakpoints the page keeps the narrower layout's width, centred. Container
- * queries (not media queries) let the same markup work inside an iframe, a gallery tile or an
- * embed. Below the narrowest layout (phones under 360 px) charts scale down to fit.
- */
 export const LAYOUTS = [
   { min: 1440, content: 1392, page: 24, grid: true, mobile: false },
   { min: 1280, content: 1232, page: 24, grid: true, mobile: false },
@@ -60,19 +52,12 @@ export const LAYOUTS = [
 ] as const;
 export type Layout = (typeof LAYOUTS)[number];
 
-/** Weekdays from Monday, to order the calendar's columns from the project's week anchor. */
 const WEEK_ORDER = ["monday", "tuesday", "wednesday", "thursday", "friday", "saturday", "sunday"];
 
-/** The container query of the phone layouts: below the narrowest layout that is not mobile. */
 export const PHONE_QUERY = `(max-width:${Math.min(...LAYOUTS.filter((l) => !l.mobile).map((l) => l.min)) - 0.02}px)`;
 
-/** The container query of the 12-column layouts, where cards sit side by side. */
 const GRID_QUERY = `(min-width:${Math.min(...LAYOUTS.filter((l) => l.grid).map((l) => l.min))}px)`;
 
-/**
- * Styles for one non-default height preset, scoped to the elements that carry it, so a page that
- * uses no preset keeps its stylesheet unchanged.
- */
 export function heightStyle(
   theme: Theme,
   preset: HeightPreset,
@@ -84,7 +69,6 @@ export function heightStyle(
   return `<style>${rules(desktop, scope)}@container hm ${PHONE_QUERY}{${rules(phone, scope)}}${print ? `@media print{${print.replaceAll("&", scope)}}` : ""}</style>`;
 }
 
-/** One bundled font file: the page loads it with @font-face from a relative URL. */
 export interface FontFile {
   file: string;
   weight: 400 | 500 | 600;
@@ -108,22 +92,16 @@ export const FONT_FILES: FontFile[] = (
   { file: `IBMPlexSans-${style}-Latin2.woff2`, weight, unicodeRange: LATIN2 },
 ]);
 
-/** Where a page finds its assets, as URLs relative to the page. */
 export interface PageAssets {
-  /** The browser runtime script. */
   runtime: string;
-  /** The script that recomputes a page for another period (runtime/periods.ts), when one is used. */
   periods?: string;
-  /** URL per font file name from FONT_FILES. */
   fonts: Record<string, string>;
 }
 
 export interface PageOptions {
   assets: PageAssets;
   theme?: Theme;
-  /** Data files the dashboard reads, named in the footer. */
   sources?: string[];
-  /** Presets and day-grain data for the period filter, embedded in the page (runPeriodData). */
   periods?: PeriodData;
 }
 
@@ -133,7 +111,6 @@ function context(data: DashboardData, theme: Theme): RenderContext {
 
 const humanize = (column: string) => column.replaceAll("_", " ");
 
-/** "A", "A and B", "A, B and C". */
 const listOf = (labels: string[]) =>
   labels.length <= 2
     ? labels.join(" and ")
@@ -143,7 +120,6 @@ function metricLabels(ctx: RenderContext, names: string[]): string {
   return listOf([...new Set(names)].map((n) => ctx.data.metrics[n]?.label ?? n));
 }
 
-/** The card title (the block's, else what it measures) and a subtitle saying what is measured. */
 export function blockHeading(
   block: LineData | BarData | PieData | TableData | ScatterData,
   ctx: RenderContext,
@@ -204,10 +180,6 @@ function tableSpan(block: TableData, ctx: RenderContext): string | undefined {
       : "all time";
 }
 
-/**
- * A scatter card's heading: "Average order value against Orders by country", the window, how many
- * points a limit kept, and how many categories have no x or y value to place them at.
- */
 function scatterHeading(
   block: ScatterData,
   ctx: RenderContext,
@@ -238,16 +210,10 @@ function scatterHeading(
   };
 }
 
-/**
- * The columns a chart card takes: its span, but never fewer than MIN_CHART_SPAN (check warns with
- * HM2024). CSS grid auto-placement moves the card to the next row when the widened card no longer
- * fits beside the cards before it, so the layout stays a function of the spec alone.
- */
 function chartSpan(block: LineData | BarData | PieData | ScatterData): number {
   return Math.max(block.span, MIN_CHART_SPAN);
 }
 
-/** Card widths per layout: the span's share of the 12-column grid, or the full width. */
 export function cardWidth(layout: Layout, span: number, theme: Theme = DEFAULT_THEME): number {
   if (!layout.grid) return layout.content;
   const gap = theme.density.gap;
@@ -255,11 +221,6 @@ export function cardWidth(layout: Layout, span: number, theme: Theme = DEFAULT_T
   return Math.floor(span * column + (span - 1) * gap);
 }
 
-/**
- * Draws a chart for every layout. In the 12-column layouts it takes rowHeight, the tallest preset
- * of the charts in its grid row, so cards side by side end level; narrower layouts stack every card
- * and use the chart's own preset.
- */
 function chartBody(
   block: LineData | BarData | PieData | ScatterData,
   ctx: RenderContext,
@@ -312,7 +273,6 @@ function chartBody(
   ].join("");
 }
 
-/** A segmented control: one radio button per grain, the selected one checked. */
 function grainControl(options: GrainOption[], selected: string, label: string, extra = ""): string {
   const buttons = options
     .map(
@@ -323,10 +283,6 @@ function grainControl(options: GrainOption[], selected: string, label: string, e
   return `<div class="hm-seg"${extra} role="radiogroup" aria-label="${esc(label)}">${buttons}</div>`;
 }
 
-/**
- * A chart card that switches grains: the control in its header, and every grain's heading and chart
- * drawn ahead, all but the selected one hidden. The runtime only toggles which one shows.
- */
 function grainCard(
   block: (LineData | BarData) & { grains: GrainSwitch },
   ctx: RenderContext,
@@ -368,7 +324,6 @@ function grainCard(
   return `<section class="hm-card hm-${block.type}" style="--span:${chartSpan(block)}" aria-labelledby="${esc(id)}" data-hm-grains>${head}${panels.map((p) => p.body).join("")}</section>`;
 }
 
-/** The scroll area's height for a table with a non-default preset: header, rows and any total row. */
 function tableStyle(block: TableData, ctx: RenderContext, alone: boolean): string {
   const preset = tableHeight(block, alone);
   if (preset === undefined) return "";
@@ -432,25 +387,18 @@ function strip(kpis: KpiData[], ctx: RenderContext, height: HeightPreset): GridI
   };
 }
 
-/** One child of the dashboard grid: a card, or a strip holding consecutive KPIs (kpis, in order). */
 export interface GridItem {
-  /** Ids of the blocks it shows. */
   blocks: string[];
   html: string;
   kpis?: string[];
 }
 
-/** The blocks of a dashboard as grid items: consecutive KPIs share one strip card. */
 export function renderBlocks(blocks: readonly BlockData[], ctx: RenderContext): string {
   return gridItems(blocks, ctx)
     .map((item) => item.html)
     .join("");
 }
 
-/**
- * The grid items of renderBlocks one by one, so a dev server can compare two renders card by card
- * and replace only the cards that changed.
- */
 export function gridItems(blocks: readonly BlockData[], ctx: RenderContext): GridItem[] {
   return layoutItems(blocks).map((item) => {
     const shown = item.blocks.map((i) => blocks[i] as BlockData);
@@ -486,12 +434,10 @@ function groupStyles(theme: Theme): string {
   ].join("\n");
 }
 
-/** Whether any chart of a dashboard draws a series group. */
 export function usesGroups(data: DashboardData): boolean {
   return data.blocks.some((b) => "groups" in b && b.groups !== undefined);
 }
 
-/** The page stylesheet: fonts, theme variables for light and dark, layout and components. */
 export function pageStyles(
   assets: PageAssets,
   theme: Theme = DEFAULT_THEME,
@@ -585,7 +531,6 @@ export function pageStyles(
 const THEME_SCRIPT =
   'var t=new URLSearchParams(location.search).get("theme");if(t==="dark"||t==="light")document.documentElement.dataset.theme=t';
 
-/** Everything a page's head needs: fonts preload, styles, the theme switch and the runtime. */
 export function pageHead(assets: PageAssets, theme: Theme = DEFAULT_THEME, groups = false): string {
   const preload = FONT_FILES.filter((f) => f.file.endsWith("-Latin1.woff2") && f.weight !== 600)
     .map((f) => assets.fonts[f.file])
@@ -612,25 +557,14 @@ ${head}
 `;
 }
 
-/** A dashboard's blocks as the page's grid items, for the runtime that redraws them for a period. */
 export function renderDashboardBlocks(data: DashboardData, theme: Theme = DEFAULT_THEME): string {
   return renderBlocks(data.blocks, context(data, theme));
 }
 
-/**
- * A dashboard's blocks without the page header and footer, for galleries and embeds; pair it with
- * pageHead() once per document.
- */
 export function renderFragment(data: DashboardData, theme: Theme = DEFAULT_THEME): string {
   return `<div class="hm-root"><div class="hm-page"><div class="hm-grid">${renderBlocks(data.blocks, context(data, theme))}</div></div></div>`;
 }
 
-/**
- * One dashboard as a complete HTML page: header with the data date (never the build time, so
- * output is byte-identical for identical input), the KPI strip, a 12-column grid of cards and a
- * footer naming the sources. Light and dark follow prefers-color-scheme; data-theme on the html
- * element (or ?theme=dark) overrides it.
- */
 export function renderDashboardPage(data: DashboardData, options: PageOptions): string {
   const { periods } = options;
   const { result: html, ranges } = recordRanges(() => {
@@ -692,7 +626,6 @@ function dashboardPage(data: DashboardData, options: PageOptions): string {
   );
 }
 
-/** The index page listing every dashboard of a build, linked by relative URL. */
 export function renderIndexPage(
   project: string,
   dashboards: { name: string; title: string; description?: string }[],
@@ -710,10 +643,6 @@ export function renderIndexPage(
   return document(`Dashboards \u00B7 ${project}`, head, body);
 }
 
-/**
- * One chart as a standalone SVG with hex colours baked in and the font named on the root, for
- * rasterisers (resvg) and for embedding outside a Hatchmark page.
- */
 export function renderChartSvg(
   block: LineData | BarData | PieData | ScatterData,
   data: DashboardData,

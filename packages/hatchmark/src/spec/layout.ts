@@ -1,6 +1,5 @@
 export const MIN_CHART_SPAN = 3;
 
-/** Card height presets, shortest first. The theme sets each one's pixels for desktop and phone. */
 export const HEIGHT_PRESETS = ["compact", "default", "tall"] as const;
 export type HeightPreset = (typeof HEIGHT_PRESETS)[number];
 
@@ -12,32 +11,18 @@ export function tallestPreset(presets: readonly (HeightPreset | undefined)[]): H
 
 const CHART_TYPES = new Set(["line", "area", "bar", "pie", "donut", "scatter"]);
 
-/** What layout reads from a block: its type, its span as written and its height preset. */
 export interface LayoutBlock {
   type: string;
   span?: number | undefined;
   height?: HeightPreset | undefined;
 }
 
-/**
- * One child of the dashboard grid: consecutive KPIs share a strip, a chart or a table is a card.
- * Blocks of types that are not built (bar_list, text) take no place.
- */
 export interface LayoutItem {
   kind: "strip" | "chart" | "table";
-  /** Indexes of the blocks it shows, in order. */
   blocks: number[];
-  /** Columns it takes: a strip sums its KPIs (at most 12), a chart takes at least MIN_CHART_SPAN. */
   span: number;
-  /** Index of its grid row in a 12-column layout. */
   row: number;
-  /** True when no other item shares its grid row. */
   alone: boolean;
-  /**
-   * The preset it is drawn at in a 12-column layout. A strip takes its tallest KPI's preset. A chart
-   * takes the tallest preset of the charts in its row, so cards side by side end level; tables keep
-   * their own.
-   */
   height: HeightPreset;
 }
 

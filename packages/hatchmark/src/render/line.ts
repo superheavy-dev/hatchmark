@@ -35,7 +35,6 @@ import {
 import { r, svgLine, svgText } from "./svg.js";
 import { type SeriesPaint, seriesPaints } from "./theme.js";
 
-/** Direct labels need this much plot width; below it a pinned readout replaces them. */
 export const DIRECT_LABEL_MIN_PLOT = 320;
 const MAX_DIRECT_SERIES = 6;
 const LINE_WIDTH = 1.75;
@@ -43,11 +42,6 @@ const LEGEND_NAME_X = 13;
 const LEGEND_GAP = 16;
 const LEGEND_ROW = LABEL_LINE + 4;
 
-/**
- * Each series' band as drawn: upper is the value itself, or for stacked areas the running total
- * at that bucket, and lower is where the band starts. Stacks diverge from zero: positive values
- * stack upward and negative values downward. A missing value is a gap in its own band, never 0.
- */
 export function stackBands(block: LineData): { lower: Value[][]; upper: Value[][] } {
   const upper = block.series.map((s) => drawnValues(block, s));
   if (!(block.type === "area" && block.stack)) return { lower: upper.map(() => []), upper };
@@ -69,15 +63,10 @@ export function stackBands(block: LineData): { lower: Value[][]; upper: Value[][
   return { lower, upper: stacked };
 }
 
-/** What a series draws before stacking: its shares in a 100% stack, else its values. */
 export function drawnValues(block: LineData, s: LineData["series"][number]): Value[] {
   return block.percent && s.share ? s.share : s.values;
 }
 
-/**
- * A series' compact text in the pinned readout: the value, and in a 100% stack its share after it
- * ("$866K 47%"), so a narrow chart never hides the values the plot is made of.
- */
 export function readoutValue(block: LineData, k: number, i: number, ctx: RenderContext): string {
   const s = block.series[k];
   if (s === undefined) return "";
@@ -91,7 +80,6 @@ export function readoutValue(block: LineData, k: number, i: number, ctx: RenderC
   return `${value} ${formatValue(s.share[i] ?? null, SHARE, ctx.data.locale, "compact")}`;
 }
 
-/** The readout's first line: the period, and the engine's total when the block has one. */
 export function readoutHead(block: LineData, i: number, ctx: RenderContext): string {
   const bucket = block.axis.buckets[i];
   if (bucket === undefined) return "";
@@ -101,18 +89,10 @@ export function readoutHead(block: LineData, i: number, ctx: RenderContext): str
   return `${period} · Total ${formatValue(block.totals[i] ?? null, metric, ctx.data.locale, "compact")}`;
 }
 
-/** Values as drawn: running totals for stacked areas, with gaps where a value is missing. */
 export function plottedValues(block: LineData): Value[][] {
   return stackBands(block).upper;
 }
 
-/**
- * A line or area chart over a time axis. Direct labels sit at the line ends when the plot is at
- * least 320 px wide and there are at most 6 series; otherwise a key above the plot names them: the
- * period on its own line, then each series' name and value flowing across the card (the runtime
- * updates the period and values on hover).
- * The plot is always as tall as size.height allows; a longer key makes the chart taller.
- */
 export function renderLine(
   block: LineData,
   ctx: RenderContext,

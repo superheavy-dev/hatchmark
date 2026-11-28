@@ -6,18 +6,15 @@ import { timeOf } from "./partial.js";
 import { esc, langAttr, r } from "./svg.js";
 import type { Theme } from "./theme.js";
 
-/** How a table past its row limit fits: the explicit overflow, else page when it has its grid row alone and no height. */
 export function tableOverflow(block: TableData, alone: boolean): "page" | "scroll" {
   return block.overflow ?? (alone && block.height === undefined ? "page" : "scroll");
 }
 
-/** The non-default height preset a scrolling table is drawn at, if any. */
 export function tableHeight(block: TableData, alone: boolean): "compact" | "tall" | undefined {
   if (tableOverflow(block, alone) === "page" || block.height === undefined) return undefined;
   return block.height === "default" ? undefined : block.height;
 }
 
-/** Rows past which a table at this preset scrolls (or, in page mode, pins its header and total row). */
 export function tableRowLimit(theme: Theme, preset: HeightPreset): number {
   const { desktop, phone } = theme.height[preset];
   return Math.floor(Math.min(desktop.tableRows, phone.tableRows));
@@ -28,7 +25,6 @@ const attr = (text: string) => esc(text).replaceAll("\r", "&#13;").replaceAll("\
 
 const CARET = `<svg class="hm-caret" width="8" height="8" viewBox="0 0 8 8" aria-hidden="true"><path d="M1.5 3 4 5.5 6.5 3" fill="none" stroke="currentColor" stroke-width="1.25" stroke-linecap="round" stroke-linejoin="round"/></svg>`;
 
-/** A bar's start and width as fractions of its track, measured from zero across both signs. */
 function barGeometry(
   value: number,
   scale: { neg: number; pos: number },
@@ -47,15 +43,6 @@ function track(geometry: { left: number; width: number }, zero: number | undefin
   return `<span class="hm-track" aria-hidden="true">${axis}<span style="${left}width:${clamp(geometry.width)}%"></span></span>`;
 }
 
-/**
- * A real HTML table: one column per by column, one per metric, a share column after every metric
- * in percentOfTotal (track bar plus percent), and the total row in the footer. Headers are sort
- * buttons the runtime wires up; every cell carries its raw value in data-v for sorting and the CSV
- * download. Subtotal rows lead their group, an Other row closes its group, and in-cell bars scale
- * across group and Other rows (never subtotals or the total). Long keys wrap to at most two lines
- * and keep their full text in a title. An outer key that repeats the row above, or that a subtotal
- * row already names, is left to screen readers, so groups read as groups.
- */
 export function renderTable(
   block: TableData,
   ctx: RenderContext,
@@ -74,7 +61,6 @@ export function renderTable(
   const keyClass = (i: number) =>
     `hm-key${i === 0 ? "" : " hm-key2"}${i === width - 1 ? " hm-fill" : grouped ? " hm-outer" : ""}`;
   const levelOf = (row: TableRow) => row.level ?? 1;
-  /** Subtotals whose group had exactly one row before limit, so no Other row and nothing cut. */
   const solo = new Set<number>();
   block.rows.forEach((row, index) => {
     if (row.kind === "subtotal" && row.count === 1) solo.add(index);
@@ -86,7 +72,6 @@ export function renderTable(
     revealed.push(new Set(stack.filter((a) => a.solo).map((a) => a.level - 1)));
     if (row.kind === "subtotal") stack.push({ level: levelOf(row), solo: solo.has(index) });
   });
-  /** Text only the narrow layout shows; in body rows it repeats key cells, so screen readers skip it. */
   const mobile = (text: string, sub = false, spoken = false) =>
     text === ""
       ? ""

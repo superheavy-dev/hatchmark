@@ -1,17 +1,6 @@
-/**
- * The Hatchmark browser runtime: tooltips, the line crosshair (KPI sparklines included) and the bar
- * highlight, the scatter point ring, plus keyboard stepping through points, announced through a polite live region. Charts
- * are already drawn on the server, so this only reads the chart geometry from data-hm-* attributes
- * and the formatted values from the JSON each chart's figure carries. One pointer listener per
- * chart, no dependencies. Arrow keys scroll a focused, clipped table sideways, which WebKit does
- * not do on its own; table.ts sorts tables and downloads them as CSV. Grain switches show one grain's prebuilt heading and chart and hide the others;
- * the dashboard's grain filter switches every card that lists the chosen grain.
- *
- * A KPI tooltip is position:fixed, so the strip's overflow does not clip it. It floats below the
- * sparkline; near the viewport bottom it goes beside the point, or above the card, so it never
- * covers the figure. .hm-root's container-type makes it the containing block, so the runtime
- * measures the tooltip's origin instead of assuming the viewport.
- */
+// WebKit does not scroll a focused, clipped table with the arrow keys, so the runtime does. The KPI
+// tooltip is position:fixed so the strip's overflow does not clip it, and .hm-root's container-type
+// makes .hm-root its containing block.
 
 import { mountPeriod, type PeriodView, writeParam } from "./period-control.js";
 import { wireTable } from "./table.js";
@@ -48,17 +37,14 @@ const SVG_NS = "http://www.w3.org/2000/svg";
 const numbers = (svg: Element, name: string): number[] =>
   (svg.getAttribute(`data-hm-${name}`) ?? "").split(",").map(Number);
 
-/** A scatter chart's points as [x, y, radius], in the order of the chart's headers. */
 const scatterPoints = (svg: Element): number[][] =>
   (svg.getAttribute("data-hm-pts") ?? "")
     .split(",")
     .filter((p) => p !== "")
     .map((p) => p.split(" ").map(Number));
 
-/** How near, in CSS pixels, the pointer must come to a scatter point to pick it. */
 const SCATTER_PICK = 24;
 
-/** A start and end attribute pair as start and step, so rounding never accumulates over buckets. */
 const span = (svg: Element, name: string, parts: number): [number, number] => {
   const [a = 0, b = 0] = numbers(svg, name);
   return [a, parts > 0 ? (b - a) / parts : 0];
@@ -439,7 +425,6 @@ function attach(figure: HTMLElement, chart: RuntimeChart): void {
   });
 }
 
-/** Shows one grain in a card that switches grains; false when the card does not list it. */
 function selectGrain(card: Element, key: string): boolean {
   const buttons = [...card.querySelectorAll<HTMLButtonElement>(".hm-seg button")];
   if (!buttons.some((b) => b.dataset.hmGrain === key)) return false;
@@ -458,7 +443,6 @@ function checkButton(buttons: HTMLButtonElement[], key: string): void {
   }
 }
 
-/** Radio-group behaviour for a segmented control: click, or arrow keys that move and select. */
 function segmented(group: HTMLElement, choose: (key: string) => void): void {
   const buttons = [...group.querySelectorAll<HTMLButtonElement>("button")];
   group.addEventListener("click", (event) => {
@@ -482,15 +466,9 @@ function segmented(group: HTMLElement, choose: (key: string) => void): void {
   });
 }
 
-/** The grain the header filter chose, and each card's own later choice, by card. */
 const grains: { page?: string; cards: Map<string, string> } = { cards: new Map() };
 const cardKey = (card: Element) => card.getAttribute("aria-labelledby") ?? "";
 
-/**
- * Attaches the runtime to everything in root, root included: the whole document on load, the blocks
- * a period redraws, or one card that hatchmark dev has just swapped in. Cards keep the grains chosen
- * so far.
- */
 function mount(root: ParentNode): void {
   const all = (selector: string): HTMLElement[] => [
     ...(root instanceof HTMLElement && root.matches(selector) ? [root] : []),
@@ -522,7 +500,6 @@ function mount(root: ParentNode): void {
   }
 }
 
-/** Puts the period engine's blocks on the page and says which metrics need a preset. */
 function redraw(view: PeriodView): void {
   const grid = document.querySelector<HTMLElement>("main.hm-grid");
   if (!grid) return;
@@ -577,10 +554,6 @@ function refresh(): void {
 
 declare global {
   interface Window {
-    /**
-     * The hooks hatchmark dev uses: mount attaches the runtime to a card it swapped in, refresh
-     * redraws the chosen period after it replaced the period data.
-     */
     hatchmark?: { mount(root: ParentNode): void; refresh(): void };
   }
 }

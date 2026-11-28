@@ -29,7 +29,6 @@ const ctx = (data: DashboardData): RenderContext => ({
 });
 const html = (data: DashboardData, blocks: BlockData[]) => renderBlocks(blocks, ctx(data));
 
-/** Height of the SVG drawn for each layout of one chart card, by layout index. */
 function svgHeights(markup: string, id: string): number[] {
   const card = markup.slice(markup.indexOf(`data-hm-chart="${id}"`));
   const heights: number[] = [];
