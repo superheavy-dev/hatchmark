@@ -33,7 +33,14 @@ import {
   partialRegion,
 } from "./partial.js";
 import { r, svgLine, svgText } from "./svg.js";
-import { chartTargets, paceMarker, targetDash, targetExtent, targetKey } from "./target.js";
+import {
+  chartTargets,
+  paceMarker,
+  targetDash,
+  targetExtent,
+  targetKey,
+  targetRuntime,
+} from "./target.js";
 import { type SeriesPaint, seriesPaints } from "./theme.js";
 
 export const DIRECT_LABEL_MIN_PLOT = 320;
@@ -241,6 +248,54 @@ export function renderLine(
       );
       x += width + LEGEND_GAP;
     });
+    const goalRows = targetRuntime(goals, block.axis.buckets.length, ctx) ?? [];
+    const at = (texts: string[] | undefined) => texts?.[last] ?? "";
+    const widest = (texts: string[] | undefined) =>
+      Math.max(0, ...(texts ?? []).map((t) => textWidth(t, style)));
+    goalRows.forEach((goal, j) => {
+      row++;
+      const cy = row * LEGEND_ROW + LABEL_LINE / 2;
+      const name = truncateEnd(
+        goal.label,
+        size.width - LEGEND_NAME_X - 6 - widest(goal.text),
+        style,
+      );
+      parts.push(
+        `<line x1="0" y1="${r(cy)}" x2="10" y2="${r(cy)}"${paint.attrs(undefined, ctx.theme.target.line.color)}${targetDash(ctx)}/>`,
+        svgText(paint, LEGEND_NAME_X + 2, cy, name, {
+          ...style,
+          color: "textMuted",
+          ...(name === goal.label ? {} : { title: goal.label }),
+        }),
+        svgText(paint, LEGEND_NAME_X + 2 + textWidth(name, style) + 6, cy, at(goal.text), {
+          ...style,
+          color: "text",
+          className: `hm-rtv-${j}`,
+          lang: ctx.data.locale,
+        }),
+      );
+      let dx = LEGEND_NAME_X + 2;
+      for (const [label, texts, kind] of [
+        ["Pace to date", goal.pace, "p"],
+        ["Attained", goal.att, "a"],
+      ] as const) {
+        if (texts === undefined || !texts.some((t) => t !== "")) continue;
+        const width = textWidth(label, style) + 6 + widest(texts);
+        if (dx > LEGEND_NAME_X + 2 && dx + width > size.width) dx = LEGEND_NAME_X + 2;
+        if (dx === LEGEND_NAME_X + 2) row++;
+        const ry = row * LEGEND_ROW + LABEL_LINE / 2;
+        parts.push(
+          svgText(paint, dx, ry, label, { ...style, color: "textMuted" }),
+          svgText(paint, dx + textWidth(label, style) + 6, ry, at(texts), {
+            ...style,
+            color: "text",
+            className: `hm-rt${kind}-${j}`,
+            lang: ctx.data.locale,
+          }),
+        );
+        dx += width + LEGEND_GAP;
+      }
+    });
     legendHeight = row * LEGEND_ROW + LABEL_LINE;
     readout = `<g class="hm-readout"${key.height > 0 ? ` transform="translate(0,${key.height})"` : ""}>${parts.join("")}</g>`;
   }
@@ -353,26 +408,6 @@ export function renderLine(
   }
   const drawnTracks = empty ? [] : (goals?.tracks ?? []).filter((t) => t.drawn);
   const goalLine = ctx.theme.target.line;
-  for (const track of drawnTracks) {
-    const path = d3line<Value>()
-      .defined((v) => isNumber(v))
-      .x((_, i) => x(i))
-      .y((v) => y(v as number))
-      .digits(1)(track.values);
-    if (path) {
-      parts.push(
-        `<path d="${path}"${paint.attrs("none", goalLine.color, "hm-target")}${targetDash(ctx)} stroke-linejoin="round"/>`,
-      );
-    }
-    track.values.forEach((v, i) => {
-      if (isNumber(v) && !isNumber(track.values[i - 1]) && !isNumber(track.values[i + 1])) {
-        const half = Math.min(6, step / 2 || 6);
-        parts.push(
-          svgLine(paint, x(i) - half, y(v), x(i) + half, y(v), goalLine.color, targetDash(ctx)),
-        );
-      }
-    });
-  }
   for (let k = series.length - 1; k >= 0; k--) {
     const vals = plotted[k] as Value[];
     const path = d3line<Value>()
@@ -396,6 +431,26 @@ export function renderLine(
     }
   }
 
+  for (const track of drawnTracks) {
+    const path = d3line<Value>()
+      .defined((v) => isNumber(v))
+      .x((_, i) => x(i))
+      .y((v) => y(v as number))
+      .digits(1)(track.values);
+    if (path) {
+      parts.push(
+        `<path d="${path}"${paint.attrs("none", goalLine.color, "hm-target")}${targetDash(ctx)} stroke-linejoin="round"/>`,
+      );
+    }
+    track.values.forEach((v, i) => {
+      if (isNumber(v) && !isNumber(track.values[i - 1]) && !isNumber(track.values[i + 1])) {
+        const half = Math.min(6, step / 2 || 6);
+        parts.push(
+          svgLine(paint, x(i) - half, y(v), x(i) + half, y(v), goalLine.color, targetDash(ctx)),
+        );
+      }
+    });
+  }
   for (const track of drawnTracks) {
     track.pace?.forEach((p, i) => {
       if (isNumber(p)) parts.push(paceMarker(ctx, x(i), y(p)));

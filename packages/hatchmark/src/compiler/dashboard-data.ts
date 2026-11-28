@@ -77,17 +77,23 @@ export type TargetHidden = "filter" | "segment" | "grain";
  * A target at each position of a block's axis (time buckets or categories), same order and length
  * as the axis, null where it has none. pace is set when a position is partial: the target times the
  * elapsed share the series' partial bucket gives (flow targets only), null at the other positions.
+ * attainment is the series' own value over the pace, or over the value without pace; null when
+ * either is null or the divisor is 0 or below.
  */
 export interface SeriesTarget {
   values: Value[];
   pace?: Value[];
+  attainment?: Value[];
 }
 
 /**
  * The target a chart names. Positional values sit on the series they describe (Series.target): the
  * metric's series when the block doesn't split, each split series when the target's table has the
- * split column. values here is the target over every split value, set on split blocks; window is the
- * target over the block's window, set on category bars whose target's table has no by column.
+ * split column. values here is the target over every split value, set on split blocks, and
+ * attainment the metric's value over every split value at each position against it; window is the
+ * target over the block's window, set on category bars whose target's table has no by column, and
+ * window.attainment the metric's value over the whole window (every category, not only those shown)
+ * against it. Attainment always pairs the target with the value of the metric that owns it.
  */
 export interface BlockTarget {
   id: string;
@@ -98,14 +104,15 @@ export interface BlockTarget {
   hidden?: TargetHidden;
   values?: Value[];
   pace?: Value[];
-  window?: { value: Value; pace?: number };
+  attainment?: Value[];
+  window?: { value: Value; pace?: number; attainment?: Value };
 }
 
 /**
  * A KPI's target over its window (RFC 0001 section 7). Flow: the target over the window, with pace
  * when the window ends before its period does (a to-date range at the horizon, or a range the
  * horizon trims). Point-in-time: the target at the window's end. attainment is value / pace, or
- * value / value of the target without pace; null when either is null or the divisor is 0.
+ * value / value of the target without pace; null when either is null or the divisor is 0 or below.
  */
 export interface KpiTarget {
   id: string;

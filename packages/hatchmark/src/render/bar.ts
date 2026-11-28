@@ -623,7 +623,7 @@ function goalMarks(
     }
   }
   const w = goals.window;
-  if (w && isNumber(w.value)) {
+  if (w?.drawn && isNumber(w.value)) {
     const at = position(w.value);
     out.push(
       line(

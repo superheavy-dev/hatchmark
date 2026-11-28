@@ -43,15 +43,17 @@ note show it, the same three in every state so cards in a row line up and a card
 when a filter changes:
 
 - The attainment ("103% of pace", or "of target" without a pace) and, for a metric whose `better`
-  is `up` or `down`, "Ahead" or "Behind" in the good or bad colour. Attainment is the value over the
-  pace while the period is in progress, else over the target. On a narrow card "of pace" drops and
+  is `up` or `down`, "Ahead", "On track" or "Behind" in the good or bad colour. Attainment is the
+  value over the pace while the period is in progress, else over the target. Ahead or behind compares
+  the value with the pace or target directly, so a loss of $50 beats a loss ceiling of $100, and a
+  value equal to its target is on track whichever way is better. On a narrow card "of pace" drops and
   the note keeps the reference.
 - A progress bar filled to the attainment. Past 100% the bar stays full and a dot after its end
   marks the overflow.
 - The pace and the target: "Pace $1.14M · FY plan $1.86M". A note too long for the card is cut at
   the end, with the full text on hover.
 
-With no attainment the first row says why: "Target is zero or below", "No value to compare with the
-target", "No FY plan for this period", or "FY plan hidden" with the reason on the note ("A segment is
+With no attainment the first row says why, keeping "Ahead" or "Behind" when there is a value to
+judge: "Target is zero or below", "No value to compare with the target", "No FY plan for this period", or "FY plan hidden" with the reason on the note ("A segment is
 on that the target can't follow"). Screen readers hear one sentence: "Revenue is at 103% of pace,
 ahead; Pace $1.14M · FY plan $1.86M".

@@ -16,7 +16,7 @@ import { isPie, pieCuts, pieEmptyText, pieItems, pieNote } from "./pie.js";
 import { scatterOrder, scatterPoints } from "./scatter.js";
 import { esc, langAttr } from "./svg.js";
 import {
-  attainment,
+  type ChartTargets,
   chartTargets,
   describeTargets,
   percentText,
@@ -223,12 +223,13 @@ function targetTable(
     {
       head: `${t.label} attained`,
       cell: (i: number) => {
-        const a = attainment(t.actual[i], isNumber(t.pace?.[i]) ? t.pace?.[i] : t.values[i]);
+        const a = t.attainment[i];
         return isNumber(a) ? percentText(a, locale) : "\u2014";
       },
     },
   ]);
-  if (columns.length === 0) return "";
+  const windowTable = targetWindowTable(targets, caption, ctx);
+  if (columns.length === 0) return windowTable;
   const corner =
     block.axis.kind === "time" ? "Period" : esc(block.axis.column.replaceAll("_", " "));
   const rows = names
@@ -237,7 +238,23 @@ function targetTable(
         `<tr><th scope="row">${esc(name)}</th>${columns.map((c) => `<td${lang}>${esc(c.cell(i))}</td>`).join("")}</tr>`,
     )
     .join("");
-  return `<div class="hm-sr"><table><caption>${esc(`${caption}: ${targets.label}`)}</caption><thead><tr><th scope="col">${corner}</th>${columns.map((c) => `<th scope="col">${esc(c.head)}</th>`).join("")}</tr></thead><tbody>${rows}</tbody></table></div>`;
+  return `<div class="hm-sr"><table><caption>${esc(`${caption}: ${targets.label}`)}</caption><thead><tr><th scope="col">${corner}</th>${columns.map((c) => `<th scope="col">${esc(c.head)}</th>`).join("")}</tr></thead><tbody>${rows}</tbody></table></div>${windowTable}`;
+}
+
+function targetWindowTable(targets: ChartTargets, caption: string, ctx: RenderContext): string {
+  const w = targets.window;
+  if (w === undefined) return "";
+  const locale = ctx.data.locale;
+  const value = (v: Value | undefined) =>
+    isNumber(v) ? formatValue(v, targets.metric, locale, "full") : "\u2014";
+  const a = w.attainment;
+  const cells = [
+    ["Target", value(w.value)],
+    ...(isNumber(w.pace ?? null) ? [["Pace to date", value(w.pace)]] : []),
+    ["Attained", isNumber(a) ? percentText(a, locale) : "\u2014"],
+  ] as const;
+  const lang = langAttr(locale);
+  return `<div class="hm-sr"><table><caption>${esc(`${caption}: ${targets.label} for the period`)}</caption><thead><tr>${cells.map(([h]) => `<th scope="col">${h}</th>`).join("")}</tr></thead><tbody><tr>${cells.map(([, c]) => `<td${lang}>${esc(c)}</td>`).join("")}</tr></tbody></table></div>`;
 }
 
 function groupedHead(block: ChartBlock, corner: string, total: boolean): string {

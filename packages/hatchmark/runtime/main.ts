@@ -121,6 +121,16 @@ function attach(figure: HTMLElement, chart: RuntimeChart): void {
         show(svg.querySelector(`.hm-rd-${k}`), !partial);
       }
     });
+    chart.targets?.forEach((target, j) => {
+      for (const [kind, texts] of [
+        ["v", target.text],
+        ["p", target.pace],
+        ["a", target.att],
+      ] as const) {
+        const node = svg.querySelector(`.hm-rt${kind}-${j}`);
+        if (node) node.textContent = texts?.[index] ?? "";
+      }
+    });
   };
 
   const tooltip = (index: number): HTMLDivElement => {

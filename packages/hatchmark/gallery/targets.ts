@@ -27,7 +27,23 @@ const planned = (values: readonly Value[], lift = 1.04) =>
     typeof v === "number" ? round(v * lift * (1 + 0.035 * Math.sin(i * 1.3))) : null,
   );
 
-const withTarget = (s: Series, target: SeriesTarget): Series => ({ ...s, target });
+const attained = (actual: readonly Value[], target: SeriesTarget): Value[] =>
+  target.values.map((t, i) => {
+    const against = target.pace?.[i] ?? t;
+    const v = actual[i];
+    return typeof v === "number" && typeof against === "number" && against > 0 ? v / against : null;
+  });
+
+const withTarget = (s: Series, target: SeriesTarget): Series => ({
+  ...s,
+  target: { ...target, attainment: attained(s.values, target) },
+});
+
+const totalTarget = (actual: readonly Value[], values: Value[]) => ({
+  ...PLAN,
+  values,
+  attainment: attained(actual, { values }),
+});
 
 function wholeBuckets(s: Series): Value[] {
   return s.values.map((v, i) => {
@@ -107,7 +123,7 @@ const TARGET_SPLIT_TOTAL: LineData = {
   stack: true,
   title: "All regions together against the company plan",
   totals: regionTotals,
-  target: { ...PLAN, values: planned(regionTotals) },
+  target: totalTarget(regionTotals, planned(regionTotals)),
 };
 
 const TARGET_SPLIT_REGIONS: LineData = {
@@ -117,7 +133,7 @@ const TARGET_SPLIT_REGIONS: LineData = {
   series: REGION_LINE.series.map((s, k) =>
     withTarget(s, { values: planned(s.values, k === 2 ? 0.95 : 1.06) }),
   ),
-  target: { ...PLAN, values: planned(regionTotals) },
+  target: totalTarget(regionTotals, planned(regionTotals)),
 };
 
 const TARGET_HIDDEN_GRAIN: LineData = {
@@ -162,7 +178,11 @@ const TARGET_WINDOW: BarData = {
   ],
   target: {
     ...PLAN,
-    window: { value: round(channelTotal * 1.08), pace: round(channelTotal * 0.98) },
+    window: {
+      value: round(channelTotal * 1.08),
+      pace: round(channelTotal * 0.98),
+      attainment: channelTotal / round(channelTotal * 0.98),
+    },
   },
 };
 
@@ -200,7 +220,7 @@ const TARGET_STACKED: BarData = {
   axis: monthAxis(6),
   series: stackedChannels,
   totals: stackedTotals,
-  target: { ...PLAN, values: planned(stackedTotals) },
+  target: totalTarget(stackedTotals, planned(stackedTotals)),
 };
 
 const goal = (

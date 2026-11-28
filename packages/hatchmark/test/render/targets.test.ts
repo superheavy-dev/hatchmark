@@ -8,7 +8,7 @@ import type {
 } from "../../src/compiler/dashboard-data.js";
 import { chartRuntimeData, chartTable, describeChart } from "../../src/render/describe.js";
 import { pageStyles, renderFragment, usesTargets } from "../../src/render/page.js";
-import { attainment, chartTargets, kpiJudgement } from "../../src/render/target.js";
+import { chartTargets, kpiJudgement } from "../../src/render/target.js";
 import { DEFAULT_THEME } from "../../src/render/theme.js";
 
 function variant(name: string): DashboardData {
@@ -52,23 +52,83 @@ describe("chart targets", () => {
     expect(percent?.tracks.every((t) => !t.drawn)).toBe(true);
   });
 
-  it("has no attainment against a target of zero or below", () => {
-    expect(attainment(50, 100)).toBe(0.5);
-    expect(attainment(50, 0)).toBeNull();
-    expect(attainment(-50, -100)).toBeNull();
-    expect(attainment(null, 100)).toBeNull();
+  it("judges a KPI by comparing its value with the target directly", () => {
+    const t = (value: number, pace?: number) => ({
+      id: "plan",
+      label: "Plan",
+      value,
+      ...(pace === undefined ? {} : { pace }),
+      attainment: null,
+    });
+    expect(kpiJudgement(12, t(10), "up")).toBe("ahead");
+    expect(kpiJudgement(12, t(10), "down")).toBe("behind");
+    expect(kpiJudgement(-50, t(-100), "up")).toBe("ahead");
+    expect(kpiJudgement(-150, t(-100), "up")).toBe("behind");
+    expect(kpiJudgement(10, t(10), "down")).toBe("even");
+    expect(kpiJudgement(10, t(10), "up")).toBe("even");
+    expect(kpiJudgement(6, t(20, 5), "up")).toBe("ahead");
+    expect(kpiJudgement(12, t(10), "neutral")).toBe("neutral");
+    expect(kpiJudgement(null, t(10), "up")).toBeUndefined();
   });
 
-  it("judges attainment by the metric's better direction", () => {
-    const t = { id: "plan", label: "Plan", metric: "m", value: 10, attainment: 1.2 };
-    expect(kpiJudgement(t, "up")).toBe("ahead");
-    expect(kpiJudgement(t, "down")).toBe("behind");
-    expect(kpiJudgement(t, "neutral")).toBe("neutral");
-    expect(kpiJudgement({ ...t, attainment: null }, "up")).toBeUndefined();
+  it("draws the total on a stacked chart of one series, and its own track without a total", () => {
+    const { block, data } = chart<LineData>("target-area");
+    const own = chartTargets({ ...block, stack: true }, ctx(data));
+    expect(own?.tracks.map((t) => t.drawn)).toEqual([true]);
+    const split = chart<BarData>("target-bar-stacked");
+    const [first] = split.block.series;
+    if (!first) throw new Error("no series");
+    const single = chartTargets({ ...split.block, series: [first] }, ctx(split.data));
+    expect(single?.tracks.map((t) => [t.series, t.drawn])).toEqual([[undefined, true]]);
+  });
+
+  it("draws no absolute window rule on a chart stacked to 100%", () => {
+    const { block, data } = chart<BarData>("target-bar-window");
+    const percent = { ...block, stack: true, percent: true as const };
+    expect(chartTargets(percent, ctx(data))?.window?.drawn).toBe(false);
+    const html = firstSvg({ ...data, blocks: [percent] });
+    expect(html).not.toContain("hm-target");
+    expect(html).not.toContain("for the period");
+  });
+
+  it("takes attainment from the data, not from the series it is drawn on", () => {
+    const { block, data } = chart<BarData>("target-bar-window");
+    const window = block.target?.window;
+    if (!window) throw new Error("no window");
+    const moved = {
+      ...block,
+      target: {
+        ...block.target,
+        id: "plan",
+        label: "FY plan",
+        metric: "revenue",
+        window: { ...window, attainment: 0.5 },
+      },
+    };
+    const runtime = chartRuntimeData(moved, ctx(data));
+    expect(runtime.targets?.[0]?.att?.[0]).toBe("50%");
   });
 });
 
 describe("line and area targets", () => {
+  it("draws the target over the actual line so equal values keep it visible", () => {
+    const html = firstSvg(variant("target-line"));
+    const actual = html.indexOf('stroke-width="1.75"');
+    expect(actual).toBeGreaterThan(-1);
+    expect(html.indexOf("hm-target")).toBeGreaterThan(actual);
+  });
+
+  it("carries target, pace and attainment in the pinned readout", () => {
+    const { block, data } = chart<LineData>("target-pace");
+    const html = renderFragment(data);
+    const runtime = chartRuntimeData(block, ctx(data));
+    const [row] = runtime.targets ?? [];
+    expect(html).toContain('class="hm-rtv-0 ');
+    expect(html).toContain(`>${row?.pace?.at(-1)}</text>`);
+    expect(html).toContain(`>${row?.att?.at(-1)}</text>`);
+    expect(html).toContain(">Attained<");
+  });
+
   it("draws the target as one dashed path with the key above the plot", () => {
     const html = firstSvg(variant("target-line"));
     expect(count(html, "hm-target")).toBe(1);
@@ -182,8 +242,10 @@ describe("KPI targets", () => {
     expect(text[1]).toBe("FY plan hidden A segment is on that the target can't follow");
     expect(text[2]).toBe("FY plan hidden A filter is on that the target can't follow");
     expect(text[3]).toBe("No FY plan for this period");
-    expect(text[4]).toBe("Target is zero or below Orders plan 0");
-    expect(text[6]).toBe("Target is zero or below Loss ceiling \u2212$5,000");
+    expect(text[4]).toBe(
+      "Orders 38, ahead; Orders plan 0 Target is zero or below Ahead Orders plan 0",
+    );
+    expect(text[6]).toContain("Target is zero or below Behind");
   });
 });
 
@@ -200,6 +262,15 @@ describe("target text alternatives", () => {
     const html = chartTable(block, ctx(data), "Revenue");
     expect(html).toContain("<caption>Revenue: FY plan</caption>");
     expect(count(html, "<table>")).toBe(2);
+  });
+
+  it("adds a window target's table to a category bar's screen-reader output", () => {
+    const { block, data } = chart<BarData>("target-bar-window");
+    const html = chartTable(block, ctx(data), "Revenue");
+    expect(html).toContain("<caption>Revenue: FY plan for the period</caption>");
+    expect(html).toMatch(
+      /<th scope="col">Attained<\/th><\/tr><\/thead><tbody><tr><td>\$[\d,]+<\/td><td>\$[\d,]+<\/td><td>\d+%<\/td>/,
+    );
   });
 
   it("gives the tooltip the target, pace and attainment at each position", () => {

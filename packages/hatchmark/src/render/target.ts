@@ -18,8 +18,8 @@ export interface TargetTrack {
   series?: number;
   values: Value[];
   pace?: Value[];
-  /** The values the track is compared with, for attainment: the series' or the stack total. */
-  actual: Value[];
+  /** Attainment at each position, as the chart's data gives it. */
+  attainment: Value[];
   /** Whether the chart draws the track; a total on an unstacked split chart is only listed. */
   drawn: boolean;
 }
@@ -29,7 +29,7 @@ export interface ChartTargets {
   metric: MetricInfo;
   hidden?: TargetHidden;
   tracks: TargetTrack[];
-  window?: { value: Value; pace?: number; actual: Value };
+  window?: { value: Value; pace?: number; attainment: Value; drawn: boolean };
 }
 
 const HIDDEN: Record<TargetHidden, { state: string; reason: string }> = {
@@ -52,20 +52,13 @@ export function hiddenText(label: string, hidden: TargetHidden): string {
   return `${lead}: ${reason}`;
 }
 
-function stackTotals(block: LineData | BarData): Value[] {
-  if (block.totals) return block.totals;
-  const n = block.series[0]?.values.length ?? 0;
-  return Array.from({ length: n }, (_, i) => {
-    const vals = block.series.map((s) => s.values[i]).filter(isNumber);
-    return vals.length === 0 ? null : vals.reduce((a, b) => a + b, 0);
-  });
-}
-
 /**
- * The targets a chart shows (RFC 0001 section 7): a track on each series that carries one (drawn
- * unless the chart stacks), the total over every split value (drawn only where the chart shows a
- * total: a stacked area or bar), and the window target of a category bar whose target has no by
- * column. Nothing is drawn on a chart stacked to 100%, whose axis is a share.
+ * The targets a chart shows (RFC 0001 section 7): a track on each series that carries one, the
+ * total over every split value, and the window target of a category bar whose target has no by
+ * column. A stacked chart draws the total, not a track per series; a chart of one series draws its
+ * total, or its own track when it has no total; a chart stacked to 100%, whose axis is a share,
+ * draws none. Attainment comes from the chart's data, which pairs each target with the value of the
+ * metric that owns it.
  */
 export function chartTargets(
   block: LineData | BarData,
@@ -81,8 +74,10 @@ export function chartTargets(
   };
   const head = { label: target.label, metric };
   if (target.hidden !== undefined) return { ...head, hidden: target.hidden, tracks: [] };
-  const stacked =
-    block.type === "area" ? block.stack === true : block.stack === true && block.series.length > 1;
+  const absolute = block.percent !== true;
+  const single = block.series.length <= 1;
+  const stacked = block.stack === true && !single;
+  const total = target.values !== undefined;
   const own = block.series
     .map((s, k) => ({ s, k }))
     .filter(({ s }) => s.target !== undefined && s.metric === target.metric);
@@ -91,30 +86,27 @@ export function chartTargets(
     series: k,
     values: s.target?.values ?? [],
     ...(s.target?.pace ? { pace: s.target.pace } : {}),
-    actual: s.values,
-    drawn: block.percent !== true && !stacked,
+    attainment: s.target?.attainment ?? [],
+    drawn: absolute && !stacked && !(single && total),
   }));
   if (target.values) {
     tracks.push({
       label: own.length > 0 ? `Total ${target.label}` : target.label,
       values: target.values,
       ...(target.pace ? { pace: target.pace } : {}),
-      actual: stackTotals(block),
-      drawn: stacked && block.percent !== true,
+      attainment: target.attainment ?? [],
+      drawn: absolute && (stacked || single),
     });
   }
   if (target.window === undefined) return { ...head, tracks };
-  const actual = stackTotals(block).reduce<Value>(
-    (sum, v) => (isNumber(v) ? (sum ?? 0) + v : sum),
-    null,
-  );
   return {
     ...head,
     tracks,
     window: {
       value: target.window.value,
       ...(target.window.pace === undefined ? {} : { pace: target.window.pace }),
-      actual,
+      attainment: target.window.attainment ?? null,
+      drawn: absolute,
     },
   };
 }
@@ -123,14 +115,8 @@ export function chartTargets(
 export function targetExtent(targets: ChartTargets | undefined): number[] {
   if (targets === undefined) return [];
   const drawn = targets.tracks.filter((t) => t.drawn);
-  const window = targets.window ? [targets.window.value, targets.window.pace ?? null] : [];
+  const window = targets.window?.drawn ? [targets.window.value, targets.window.pace ?? null] : [];
   return [...drawn.flatMap((t) => [...t.values, ...(t.pace ?? [])]), ...window].filter(isNumber);
-}
-
-/** value / target, null unless both are numbers and the target is above zero. */
-export function attainment(value: Value | undefined, target: Value | undefined): Value {
-  if (!isNumber(value) || !isNumber(target) || target <= 0) return null;
-  return value / target;
 }
 
 export function percentText(share: number, locale: string): string {
@@ -170,13 +156,14 @@ export function targetKey(
     };
   }
   const shown = targets.tracks.filter((t) => t.drawn);
-  if (shown.length === 0 && targets.window === undefined) return { svg: "", height: 0 };
+  const window = targets.window?.drawn === true;
+  if (shown.length === 0 && !window) return { svg: "", height: 0 };
   const tick = ctx.theme.target.tick;
   const swatch =
-    marker === "tick" && targets.window === undefined
+    marker === "tick" && !window
       ? `<line x1="0" y1="${r(cy)}" x2="14" y2="${r(cy)}"${paint.attrs(undefined, tick.color)} stroke-width="${tick.width}"/>`
       : `<line x1="0" y1="${r(cy)}" x2="14" y2="${r(cy)}"${paint.attrs(undefined, ctx.theme.target.line.color)}${targetDash(ctx)}/>`;
-  const label = targets.window ? `${targets.label} for the period` : targets.label;
+  const label = window ? `${targets.label} for the period` : targets.label;
   const name = truncateEnd(label, width - 20, style);
   const parts = [
     swatch,
@@ -186,7 +173,8 @@ export function targetKey(
       ...(name === label ? {} : { title: label }),
     }),
   ];
-  const paced = shown.some((t) => t.pace?.some(isNumber)) || isNumber(targets.window?.pace ?? null);
+  const paced =
+    shown.some((t) => t.pace?.some(isNumber)) || (window && isNumber(targets.window?.pace ?? null));
   const after = 20 + textWidth(name, style) + 16;
   if (paced && after + 14 + textWidth("Pace to date", style) <= width) {
     parts.push(
@@ -220,13 +208,11 @@ export function targetRuntime(
     label: t.label,
     text: each((i) => value(t.values[i])),
     ...(t.pace?.some(isNumber) ? { pace: each((i) => value(t.pace?.[i])) } : {}),
-    att: each((i) =>
-      share(attainment(t.actual[i], isNumber(t.pace?.[i]) ? t.pace?.[i] : t.values[i])),
-    ),
+    att: each((i) => share(t.attainment[i] ?? null)),
   }));
   const w = targets.window;
   if (w) {
-    const a = share(attainment(w.actual, w.pace ?? w.value));
+    const a = share(w.attainment);
     rows.push({
       label: `${targets.label} for the period`,
       text: each(() => value(w.value)),
@@ -253,12 +239,12 @@ export function describeTargets(
     .map((t) => {
       const i = t.values.findLastIndex(isNumber);
       const pace = t.pace?.[i];
-      const a = attainment(t.actual[i], isNumber(pace) ? pace : t.values[i]);
+      const a = t.attainment[i] ?? null;
       return `${t.label} ${value(t.values[i])} in ${names[i] ?? ""}${isNumber(pace) ? `, pace ${value(pace)}` : ""}${attained(a)}`;
     });
   const w = targets.window;
   if (w && isNumber(w.value)) {
-    const a = attainment(w.actual, w.pace ?? w.value);
+    const a = w.attainment;
     parts.push(
       `${targets.label} for the period ${value(w.value)}${isNumber(w.pace ?? null) ? `, pace ${value(w.pace)}` : ""}${attained(a)}`,
     );
@@ -266,12 +252,19 @@ export function describeTargets(
   return parts.length > 0 ? `${parts.join("; ")}.` : `${targets.label}: no target in this period.`;
 }
 
-/** A KPI's attainment judged by the metric's better direction; undefined without attainment. */
+/**
+ * A KPI judged by the metric's better direction: its value against the pace, or the target without
+ * one, compared directly so negative targets judge right. Equal is "even" (on track); undefined
+ * without both numbers.
+ */
 export function kpiJudgement(
+  value: Value,
   target: KpiTarget,
   better: MetricInfo["better"],
-): "ahead" | "behind" | "neutral" | undefined {
-  if (!isNumber(target.attainment)) return undefined;
+): "ahead" | "even" | "behind" | "neutral" | undefined {
+  const against = target.pace ?? target.value;
+  if (!isNumber(value) || !isNumber(against)) return undefined;
   if (better === "neutral") return "neutral";
-  return (better === "up") === target.attainment >= 1 ? "ahead" : "behind";
+  if (value === against) return "even";
+  return (better === "up") === value > against ? "ahead" : "behind";
 }

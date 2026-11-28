@@ -229,6 +229,25 @@ async function galleryPage(
 }
 
 describe("target gallery variants", () => {
+  it("keeps target, pace and attainment in the pinned readout on a phone, from the keyboard", async () => {
+    const variant = TARGET_VARIANTS.find((v) => v.variant === "target-pace");
+    if (!variant) throw new Error("no target-pace");
+    const page = await galleryPage(variant, 390, "light");
+    const svg = page.locator("svg[data-hm-readout]").filter({ visible: true }).first();
+    const text = (name: string) => svg.locator(`.${name}`).textContent();
+    await svg.focus();
+    await page.keyboard.press("Home");
+    const first = await text("hm-rtv-0");
+    expect(first).toMatch(/^\$[\d,]+$/);
+    expect(await text("hm-rtp-0")).toBe("");
+    await page.keyboard.press("End");
+    expect(await text("hm-rtv-0")).toMatch(/^\$[\d,]+$/);
+    expect(await text("hm-rtv-0")).not.toBe(first);
+    expect(await text("hm-rtp-0")).toMatch(/^\$[\d,]+$/);
+    expect(await text("hm-rta-0")).toMatch(/^\d+%$/);
+    await page.close();
+  });
+
   it("lines up every KPI card in a row, whatever its target state", async () => {
     for (const name of ["target-kpi-states", "target-kpi-edges"]) {
       const variant = TARGET_VARIANTS.find((v) => v.variant === name);

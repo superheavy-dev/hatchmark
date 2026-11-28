@@ -149,7 +149,7 @@ export function renderKpi(block: KpiData, ctx: RenderContext): string {
   ].join("");
 }
 
-const JUDGED = { ahead: "Ahead", behind: "Behind" } as const;
+const JUDGED = { ahead: "Ahead", even: "On track", behind: "Behind" } as const;
 
 function kpiTarget(block: KpiData, ctx: RenderContext): string {
   const target = block.target;
@@ -183,31 +183,33 @@ function kpiTarget(block: KpiData, ctx: RenderContext): string {
     return shell("none", muted(`No ${target.label} for this period`), "");
   const pace = target.pace;
   const goal = `${isNumber(pace ?? null) ? `Pace ${value(pace as number)} · ` : ""}${target.label} ${value(target.value)}`;
-  const judged = kpiJudgement(target, metric.better);
-  if (!isNumber(target.attainment) || judged === undefined) {
-    const why =
-      block.value === null
-        ? "No value to compare with the target"
-        : (pace ?? target.value) <= 0
-          ? "Target is zero or below"
-          : "No attainment";
-    return shell("none", muted(why), goal);
-  }
+  const judged = kpiJudgement(block.value, target, metric.better);
+  if (judged === undefined)
+    return shell("none", muted("No value to compare with the target"), goal);
+  const word = judged === "neutral" ? "" : JUDGED[judged];
+  const side = word
+    ? `<span class="hm-kt-word hm-${judged === "behind" ? "bad" : "good"}">${esc(word)}</span>`
+    : "";
+  const told = word ? `, ${word.toLowerCase()}` : "";
+  const against = pace ?? target.value;
   const share = target.attainment;
+  if (share === null) {
+    return shell(judged, muted(against <= 0 ? "Target is zero or below" : "No attainment"), goal, {
+      side,
+      spoken: `${metric.label} ${value(block.value as number)}${told}; ${goal}`,
+    });
+  }
   const percent = percentText(share, locale);
   const of = isNumber(pace ?? null) ? "of pace" : "of target";
-  const word = judged === "neutral" ? "" : JUDGED[judged];
   const width = Math.max(0, Math.min(1, share)) * 100;
   return shell(
     judged,
     `<span class="hm-kt-att"${lang}>${esc(percent)}</span> <span class="hm-kt-muted hm-kt-of">${esc(of)}</span>`,
     goal,
     {
-      side: word
-        ? `<span class="hm-kt-word hm-${judged === "ahead" ? "good" : "bad"}">${esc(word)}</span>`
-        : "",
+      side,
       fill: `<span class="hm-kt-fill" style="width:${r(width)}%"></span>${share > 1 ? '<span class="hm-kt-over"></span>' : ""}`,
-      spoken: `${metric.label} is at ${percent} ${of}${word ? `, ${word.toLowerCase()}` : ""}; ${goal}`,
+      spoken: `${metric.label} is at ${percent} ${of}${told}; ${goal}`,
     },
   );
 }

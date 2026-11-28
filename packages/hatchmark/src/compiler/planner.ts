@@ -459,8 +459,11 @@ function seriesReading(
       ? [{ kind: "time", grain }]
       : [{ kind: "column", column: block.type === "bar" ? (block.by ?? "") : "" }];
   if (block.split !== undefined) axes.push({ kind: "column", column: block.split });
-  const perPosition = block.type === "bar" || (block.type === "area" && Boolean(block.stack));
+  const targeted = block.target !== undefined;
+  const perPosition =
+    block.type === "bar" || (block.type === "area" && Boolean(block.stack)) || targeted;
   const sets = block.split === undefined ? [[0]] : perPosition ? [[0, 1], [0], [1]] : [[0, 1], [1]];
+  if (targeted && grain === undefined) sets.push([]);
   return planReading(
     ctx,
     block.metrics,

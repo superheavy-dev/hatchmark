@@ -502,7 +502,7 @@ function targetStyles(theme: Theme): string {
     `.hm-kt{display:flex;flex-direction:column;gap:4px;margin-top:8px;font-size:12px;line-height:16px;container:hm-kt/inline-size}@container hm-kt (max-width:180px){.hm-kt-of{display:none}}.hm-kt-row{display:flex;justify-content:space-between;align-items:baseline;gap:8px;min-height:16px;min-width:0}.hm-kt-lead{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}`,
     `.hm-kt-att{font-weight:500;color:var(--hm-text)}.hm-kt-muted{color:var(--hm-text-muted)}.hm-kt-word{font-weight:500;white-space:nowrap}`,
     `.hm-kt-bar{position:relative;height:${meter}px;margin-right:${2 * meter}px;border-radius:${meter / 2}px;background:var(--hm-grid)}.hm-kt-fill,.hm-kt-over{position:absolute;top:0;bottom:0;border-radius:${meter / 2}px;background:var(--hm-c1)}.hm-kt-fill{left:0}.hm-kt-over{right:-${2 * meter}px;width:${meter}px}`,
-    `.hm-kt[data-hm-t=ahead] :is(.hm-kt-fill,.hm-kt-over){background:var(--hm-good)}.hm-kt[data-hm-t=behind] :is(.hm-kt-fill,.hm-kt-over){background:var(--hm-bad)}`,
+    `.hm-kt:is([data-hm-t=ahead],[data-hm-t=even]) :is(.hm-kt-fill,.hm-kt-over){background:var(--hm-good)}.hm-kt[data-hm-t=behind] :is(.hm-kt-fill,.hm-kt-over){background:var(--hm-bad)}`,
     `.hm-kt-note{min-height:16px;color:var(--hm-text-subtle);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}`,
     `.hm-tip i.hm-tip-tg{width:10px;height:0;border-radius:0;background:none;border-top:${line.width}px dashed var(${cssVar(line.color)})}.hm-tip-tr .hm-tip-n{padding-left:16px}.hm-tip-tt{padding-top:6px;border-top:1px solid var(--hm-border)}`,
   ].join("");

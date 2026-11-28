@@ -167,7 +167,10 @@ describe("target edge cases", () => {
       value: 10,
       attainment: 1,
     });
-    expect(block<LineData>(data, "l").series[0]?.target).toEqual({ values: [10] });
+    expect(block<LineData>(data, "l").series[0]?.target).toEqual({
+      values: [10],
+      attainment: [1],
+    });
     expect(diagnostics.map((d) => d.code)).toEqual([]);
   });
 
