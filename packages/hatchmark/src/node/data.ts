@@ -63,7 +63,32 @@ function toNumber(value: JsonValue, integer: boolean): JsonValue {
   if (typeof value !== "string") return value;
   const n = Number(value);
   if (integer) return Number.isSafeInteger(n) ? n : value;
-  return Number.isFinite(n) && Math.abs(n) < 1e15 ? n : value;
+  const written = value.includes(".") ? value.replace(/0+$/, "").replace(/\.$/, "") : value;
+  return String(n) === written.replace(/^(-?)0+(?=\d)/, "$1") ? n : value;
+}
+
+type Ast = { [key: string]: unknown };
+
+function baseTables(node: unknown, scope: ReadonlySet<string>, out: Set<string>): void {
+  if (Array.isArray(node)) {
+    for (const item of node) baseTables(item, scope, out);
+    return;
+  }
+  if (node === null || typeof node !== "object") return;
+  const ast = node as Ast;
+  if (ast.type === "BASE_TABLE" && ast.schema_name === "" && ast.catalog_name === "") {
+    const name = String(ast.table_name).toLowerCase();
+    if (!scope.has(name)) out.add(name);
+  }
+  const ctes = ((ast.cte_map as Ast | undefined)?.map ?? []) as { key: string; value: unknown }[];
+  const inner = new Set(scope);
+  for (const cte of ctes) {
+    baseTables(cte.value, inner, out);
+    inner.add(cte.key.toLowerCase());
+  }
+  for (const [key, value] of Object.entries(ast)) {
+    if (key !== "cte_map") baseTables(value, inner, out);
+  }
 }
 
 function jsonRows(reader: DuckDBResultReader, limit = Number.POSITIVE_INFINITY): JsonValue[][] {
@@ -146,6 +171,34 @@ export async function openDataSession(options: { root: string; config: ProjectCo
       };
     },
 
+    /**
+     * The tables a query reads by unqualified name, lower case, CTE names excluded. Rejects
+     * anything but one SELECT statement, as DuckDB parses it.
+     */
+    async tables(sql: string): Promise<string[]> {
+      if (sql.replace(/[\s;]/g, "") === "") throw new QueryRejected("the query is empty");
+      const reader = await connection.runAndReadAll("SELECT json_serialize_sql($sql)", { sql });
+      const parsed = JSON.parse(String(reader.getRows()[0]?.[0])) as {
+        error: boolean;
+        error_type?: string;
+        error_message?: string;
+        statements?: unknown[];
+      };
+      if (parsed.error) {
+        if (parsed.error_type === "not implemented") {
+          throw new QueryRejected("the query is not a SELECT statement");
+        }
+        throw new Error(parsed.error_message ?? "the query cannot be parsed");
+      }
+      const statements = parsed.statements ?? [];
+      if (statements.length !== 1) {
+        throw new QueryRejected(`the query has ${statements.length} statements`);
+      }
+      const out = new Set<string>();
+      baseTables(statements, new Set(), out);
+      return [...out].sort();
+    },
+
     async query(sql: string, sources: readonly string[], limit: number): Promise<QueryResultRows> {
       for (const name of sources) {
         const { relation } = await load(name);
@@ -154,7 +207,6 @@ export async function openDataSession(options: { root: string; config: ProjectCo
         );
       }
       await lock(connection);
-      if (sql.replace(/[\s;]/g, "") === "") throw new QueryRejected("the query is empty");
       const extracted = await connection.extractStatements(sql).catch((error: Error) => {
         throw new Error(error.message.replace(/^Failed to extract statements: /, ""));
       });

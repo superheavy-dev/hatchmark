@@ -130,7 +130,8 @@ file order (`--limit <n>`, default 5, `0` for none). A lookup source is not a fi
 sources it joins.
 
 `hatchmark data query "<sql>"` runs one SELECT statement. Each file source is a table named after the
-source. The query cannot read files other than the sources or write anything: any other statement,
+source; only the sources the query names as tables are loaded (a CTE of the same name hides the
+source). The query cannot read files other than the sources or write anything: any other statement,
 more than one statement, or a file access gives `HM0008`, and nothing runs. A DuckDB error gives
 `HM0009` with DuckDB's message. At most `--limit` rows print (default 100, at most 10000), and
 `truncated` says whether the query had more. Values are DuckDB's, before the rounding `build` applies
@@ -148,8 +149,8 @@ to displayed numbers.
 }
 ```
 
-Rows are arrays in column order. Integers beyond ±2^53 and DECIMAL values beyond ±1e15 are strings,
-so no digit is lost; dates are `YYYY-MM-DD` text and timestamps are DuckDB's text.
+Rows are arrays in column order. Integers beyond ±2^53, and DECIMAL values a JSON number cannot
+hold exactly, are strings, so no digit is lost; dates are `YYYY-MM-DD` text and timestamps are DuckDB's text.
 
 ## init
 

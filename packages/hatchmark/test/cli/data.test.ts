@@ -163,6 +163,42 @@ describe("hatchmark data query", () => {
     expect(exact.truncated).toBe(false);
   });
 
+  it("keeps every digit of DECIMAL values", async () => {
+    const sql =
+      "SELECT 123456789012345.6789::DECIMAL(19,4) AS big, 0.10::DECIMAL(5,2) AS small, -0.05::DECIMAL(5,2) AS neg, 12345678901234567.8::DECIMAL(20,1) AS wide";
+    expect((await cli(["data", "query", sql])).json().rows).toEqual([
+      ["123456789012345.6789", 0.1, -0.05, "12345678901234567.8"],
+    ]);
+  });
+
+  it("loads only the sources the query reads as tables", async () => {
+    await withProject(async (p) => {
+      const config = await readFile(path.join(p, "hatchmark.yaml"), "utf8");
+      await writeFile(
+        path.join(p, "hatchmark.yaml"),
+        config.replace(
+          "sources:\n",
+          "sources:\n  missing:\n    type: csv\n    path: data/not-there.csv\n",
+        ),
+      );
+      for (const sql of [
+        "SELECT 'missing' AS label",
+        "SELECT 1 AS missing -- FROM missing",
+        "WITH missing AS (SELECT 1 AS x) SELECT * FROM missing",
+        "SELECT count(*) AS n FROM orders AS missing",
+      ]) {
+        const result = await cli(["data", "query", sql], p);
+        expect(result.code, sql).toBe(0);
+        expect(result.json().sources, sql).not.toContain("missing");
+      }
+      const read = await cli(["data", "query", "SELECT * FROM (SELECT * FROM Missing)"], p);
+      expect(read.code).toBe(3);
+      expect(read.json().diagnostics[0].code).toBe("HM2010");
+      const summarize = await cli(["data", "query", "SUMMARIZE orders"], p);
+      expect(summarize.json().sources).toEqual(["orders"]);
+    });
+  });
+
   it("keeps integers past 2^53 as strings and decimals as numbers", async () => {
     const sql =
       "SELECT 9007199254740993::BIGINT AS big, 7::BIGINT AS small, 1.50::DECIMAL(10,2) AS d";
@@ -173,10 +209,13 @@ describe("hatchmark data query", () => {
     ["CREATE TABLE t AS SELECT 1", "not a SELECT"],
     ["SELECT 1; SELECT 2", "2 statements"],
     [" ; ", "empty"],
-    ["COPY orders TO 'out.csv'", "outside the project's sources"],
+    ["COPY orders TO 'out.csv'", "not a SELECT"],
     ["SELECT * FROM read_csv('data/orders.csv')", "outside the project's sources"],
     ["ATTACH 'x.db'", "not a SELECT"],
     ["SET enable_external_access = true", "not a SELECT"],
+    ["PRAGMA version", "not a SELECT"],
+    ["PRAGMA show_tables", "not a SELECT"],
+    ["CALL pragma_version()", "not a SELECT"],
   ])("refuses %s with HM0008", async (sql, message) => {
     const result = await cli(["data", "query", sql]);
     expect(result.code).toBe(2);

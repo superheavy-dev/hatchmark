@@ -114,12 +114,6 @@ export async function data(
     .map(([name]) => name)
     .sort();
 
-  const used =
-    kind === "describe"
-      ? [arg]
-      : fileSources.filter((name) =>
-          new RegExp(`(^|[^A-Za-z0-9_])${name}($|[^A-Za-z0-9_])`, "i").test(arg),
-        );
   if (kind === "describe") {
     const source = config.sources[arg];
     if (source === undefined) {
@@ -131,13 +125,18 @@ export async function data(
       });
     }
   }
-  const missing = diagnostics.filter(
-    (d) => d.code === "HM2010" && used.some((name) => d.pointer === `/sources/${name}/path`),
-  );
-  if (missing.length > 0) return report(ctx, missing);
-
   const session = await openDataSession({ root: ctx.root, config });
   try {
+    const used =
+      kind === "describe"
+        ? [arg]
+        : await session
+            .tables(arg)
+            .then((names) => fileSources.filter((s) => names.includes(s.toLowerCase())));
+    const missing = diagnostics.filter(
+      (d) => d.code === "HM2010" && used.some((name) => d.pointer === `/sources/${name}/path`),
+    );
+    if (missing.length > 0) return report(ctx, missing);
     return kind === "describe"
       ? await describe(session, config, arg, limit)
       : await query(ctx, session, arg, used, limit);
