@@ -383,7 +383,7 @@ export const CODES = {
   HM4023: {
     title: "metric primitive not evaluated yet",
     explanation:
-      "check validates the metric-layer primitives of RFC 0001 (formula, per_entity, lookup sources, in_table filters on a lookup source, value, over_time, entity, active, trailing, scale, and the snapshot, freshness and timezone source options), but the planner does not evaluate them yet. A block that shows such a metric is left out of the build with this warning rather than computed as a plain sum, which would show a wrong number. The block appears once the planner evaluates the primitive.",
+      "check validates the metric-layer primitives of RFC 0001 (formula, per_entity, lookup sources, in_table filters on a lookup source, value, over_time, entity, active, trailing, scale, and the snapshot, freshness and timezone source options), but the planner does not evaluate them yet. A block that shows such a metric is left out of the build with this warning rather than computed as a plain sum, which would show a wrong number. The block appears once the planner evaluates the primitive. A target whose table is a lookup source is not evaluated yet either: the block keeps its numbers and shows no target, with this warning at its target.",
   },
   HM4040: {
     title: "default business definition",

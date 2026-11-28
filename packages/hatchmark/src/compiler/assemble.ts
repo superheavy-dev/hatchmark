@@ -1,4 +1,5 @@
 import { type Diagnostic, docsCommand } from "../diagnostics/index.js";
+import { proratedTargetNote } from "../spec/graph.js";
 import type {
   Block,
   DashboardFilter,
@@ -666,12 +667,19 @@ class Assembler {
     }
     const indexed = this.queries.get(planned.values.queryId);
     if (indexed === undefined) return [];
-    const at = indexed.components.get(indexed.query.measures[0]?.components[0]?.id ?? "");
+    const [sum, count] = indexed.query.measures[0]?.components ?? [];
+    const at = indexed.components.get(sum?.id ?? "");
+    const counted = indexed.components.get(count?.id ?? "");
     return (indexed.keys.get(0) ?? []).flatMap((keys) => {
       const row = indexed.rows.get(rowKey(0, keys));
       const value = row === undefined || at === undefined ? null : row[at];
+      const present = row === undefined || counted === undefined ? 0 : row[counted];
       const [date, ...rest] = keys;
-      return typeof date === "string" && typeof value === "number" && Number.isFinite(value)
+      return typeof date === "string" &&
+        typeof value === "number" &&
+        Number.isFinite(value) &&
+        typeof present === "number" &&
+        present > 0
         ? [{ date: date.slice(0, 10), keys: rest, value }]
         : [];
     });
@@ -745,6 +753,7 @@ class Assembler {
       bound.endsWith("Z")
         ? toLocal(parseInstant(bound), this.context.timezone)
         : parseInstant(bound);
+    const localDate = (bound: string) => formatWall(local(bound)).slice(0, 10);
     if (planned.kind === "point") {
       if (bounds.end === undefined) return none;
       return { value: pointTarget(values, planned, local(bounds.end)), prorated: false };
@@ -768,13 +777,13 @@ class Assembler {
             end: bucketEnd(base.start, resolveGrain(spec.to_date, this.plan.anchors)),
           }
         : "last" in spec
-          ? { start: bounds.start, end: bounds.end }
+          ? { start: localDate(bounds.start), end: localDate(bounds.end) }
           : base;
     const full = flowTarget(values, planned, period.start, period.end);
     if (full.value === null) return full;
     const start = parseInstant(period.start);
     const stop = parseInstant(period.end);
-    const end = local(bounds.end);
+    const end = "to_date" in spec ? local(bounds.end) : parseInstant(localDate(bounds.end));
     if (end >= stop) return full;
     return { ...full, pace: full.value * elapsedShare(start, end, start, stop) };
   }
@@ -971,11 +980,8 @@ class Assembler {
       );
     }
     if (prorated) {
-      push(
-        "HM4022",
-        `block "${plan.blockId}" splits ${owner}, set per ${planned.grain.unit}, by days: a ${planned.grain.unit} counts by its days inside each bucket or window`,
-        "set prorate: none on the target to show it only where its buckets fit whole",
-      );
+      const note = proratedTargetNote(plan.blockId, planned.id, metric, planned.grain.unit);
+      push("HM4022", note.message, note.help);
     }
   }
 

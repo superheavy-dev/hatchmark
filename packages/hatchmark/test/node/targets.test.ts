@@ -1,4 +1,5 @@
 import { afterAll, describe, expect, it, vi } from "vitest";
+import { run as cli } from "../../src/cli/main.js";
 import type { BarData, DashboardData, KpiData, LineData } from "../../src/compiler/index.js";
 import { explainDefaults } from "../../src/compiler/index.js";
 import { checkReferences, PROJECT_DEFAULTS } from "../../src/spec/index.js";
@@ -37,7 +38,11 @@ const PLAN = [
 
 const INLINE = { "2026-01-01": 310, "2026-02-01": 280, "2026-03-01": 310 };
 
-function files(blocks: unknown[], extra: Record<string, unknown> = {}) {
+function files(
+  blocks: unknown[],
+  extra: Record<string, unknown> = {},
+  sources: Record<string, unknown> = {},
+) {
   return {
     "hatchmark.yaml": {
       ...PROJECT_DEFAULTS,
@@ -45,6 +50,7 @@ function files(blocks: unknown[], extra: Record<string, unknown> = {}) {
       sources: {
         orders: { type: "csv", path: "data/orders.csv" },
         plan: { type: "csv", path: "data/plan.csv" },
+        ...sources,
       },
     },
     "data/orders.csv": ORDERS,
@@ -84,8 +90,13 @@ function files(blocks: unknown[], extra: Record<string, unknown> = {}) {
   };
 }
 
-async function build(blocks: unknown[], extra: Record<string, unknown> = {}) {
-  const { root, project } = await writeProject(files(blocks, extra));
+async function build(
+  blocks: unknown[],
+  extra: Record<string, unknown> = {},
+  more: Record<string, unknown> = {},
+  sources: Record<string, unknown> = {},
+) {
+  const { root, project } = await writeProject({ ...files(blocks, extra, sources), ...more });
   const result = await run(root, project, "d");
   return { project, data: result.data as DashboardData, diagnostics: result.diagnostics };
 }
@@ -278,6 +289,112 @@ describe("targets under filters and segments", () => {
   });
 });
 
+describe("target edge cases", () => {
+  it("reads a last-N-days window by local dates across a midnight DST change", async () => {
+    const orders = [
+      "day,region,amount",
+      ...days("2024-10-20", "2024-11-10").map((d) => `${d},Americas,10`),
+    ].join("\n");
+    for (const asOf of ["2024-11-02", "2024-11-09"]) {
+      const { root, project } = await writeProject({
+        ...files([]),
+        "hatchmark.yaml": {
+          ...PROJECT_DEFAULTS,
+          name: "targets",
+          timezone: "America/Havana",
+          sources: { orders: { type: "csv", path: "data/orders.csv" } },
+        },
+        "data/orders.csv": orders,
+        "metrics/revenue.yaml": metric({
+          type: "aggregate",
+          table: "orders",
+          aggregate: "sum",
+          column: "amount",
+          time: "day",
+          targets: [
+            { id: "plan", grain: "month", values: { "2024-10-01": 310, "2024-11-01": 300 } },
+          ],
+        }),
+        "metrics/average.yaml": metric({
+          type: "aggregate",
+          table: "orders",
+          aggregate: "avg",
+          column: "amount",
+          time: "day",
+        }),
+        "dashboards/d.yaml": {
+          title: "D",
+          period: { asOf, range: "last_7_days", compare: "none" },
+          blocks: [{ type: "kpi", id: "k", metric: "revenue", target: "plan" }],
+        },
+      });
+      const data = (await run(root, project, "d")).data as DashboardData;
+      expect([asOf, kpi(data, "k").target]).toEqual([
+        asOf,
+        expect.objectContaining({ value: expect.closeTo(70, 9), attainment: expect.closeTo(1, 9) }),
+      ]);
+    }
+  });
+
+  it("gives a bucket whose value rows are all empty no value, and keeps an explicit 0", async () => {
+    const plan = (feb: string) =>
+      [
+        "month,region,amount",
+        "2026-01-01,Americas,100",
+        `2026-02-01,Americas,${feb}`,
+        `2026-02-01,EMEA,${feb}`,
+      ].join("\n");
+    const period = { asOf: "2026-03-15", range: "last_complete_month", compare: "none" };
+    const blocks = [{ type: "kpi", id: "k", metric: "revenue", target: "plan" }];
+    const empty = await build(blocks, { period }, { "data/plan.csv": plan("") });
+    expect(kpi(empty.data, "k").target).toMatchObject({ value: null, attainment: null });
+    expect(empty.diagnostics.some((d) => d.code === "HM4020")).toBe(true);
+    const zero = await build(blocks, { period }, { "data/plan.csv": plan("0") });
+    expect(kpi(zero.data, "k").target).toMatchObject({ value: 0, attainment: null });
+    expect(zero.diagnostics.some((d) => d.code === "HM4020")).toBe(false);
+  });
+
+  it("warns with HM4023 at the target for a lookup target table and keeps the numbers", async () => {
+    const { data, diagnostics } = await build(
+      [{ type: "kpi", id: "k", metric: "revenue", target: "joined" }],
+      {},
+      {
+        "data/regions.csv": "region,manager\nAmericas,Ana\nEMEA,Eli",
+        "metrics/revenue.yaml": metric({
+          type: "aggregate",
+          table: "orders",
+          aggregate: "sum",
+          column: "amount",
+          time: "day",
+          targets: [
+            {
+              id: "joined",
+              grain: "month",
+              table: "plan_by_manager",
+              date: "month",
+              value: "amount",
+            },
+          ],
+        }),
+      },
+      {
+        regions: { type: "csv", path: "data/regions.csv" },
+        plan_by_manager: {
+          type: "lookup",
+          from: "plan",
+          lookups: [{ table: "regions", key: { region: "region" } }],
+        },
+      },
+    );
+    expect(kpi(data, "k").value).toBe(150);
+    expect(kpi(data, "k").target).toBeUndefined();
+    expect(diagnostics.find((d) => d.code === "HM4023")).toMatchObject({
+      severity: "warning",
+      pointer: "/blocks/0/target",
+    });
+  });
+});
+
 describe("target checks", () => {
   it("HM2022 for an unknown target id, with a did-you-mean", async () => {
     const { project } = await writeProject(
@@ -337,6 +454,55 @@ describe("target checks", () => {
     expect(notes).toEqual([
       ["HM4040", "metrics/revenue.yaml", "/targets/0", 'target "plan" uses prorate'],
       ["HM4040", "metrics/balance.yaml", "/targets/0", 'target "goal" uses path'],
+    ]);
+  });
+
+  it("HM4022 from check alone for a grain finer than the target, worded as build words it", async () => {
+    const blocks = [
+      { type: "line", id: "daily", metrics: ["revenue"], grain: "day", target: "inline" },
+      { type: "line", id: "monthly", metrics: ["revenue"], grain: "month", target: "inline" },
+      {
+        type: "bar",
+        id: "switch",
+        metrics: ["revenue"],
+        grain: "month",
+        grains: ["month", "week"],
+        target: "inline",
+      },
+      { type: "line", id: "whole", metrics: ["revenue"], grain: "day", target: "gap" },
+      { type: "line", id: "none", metrics: ["revenue"], grain: "day", target: "whole" },
+      { type: "line", id: "avg", metrics: ["average"], grain: "day", target: "avg" },
+    ];
+    const { project } = await writeProject(files(blocks));
+    const notes = checkReferences(project).filter((d) => d.code === "HM4022");
+    expect(notes.map((d) => [d.severity, d.pointer])).toEqual([
+      ["note", "/blocks/0/target"],
+      ["note", "/blocks/2/target"],
+      ["note", "/blocks/3/target"],
+    ]);
+    const built = (await build(blocks)).diagnostics.filter((d) => d.code === "HM4022");
+    expect(built.find((d) => d.pointer === "/blocks/0/target")).toEqual(notes[0]);
+  });
+
+  it("hatchmark check --json reports HM4022 for a day-grain block on a monthly target", async () => {
+    const { root } = await writeProject(
+      files([{ type: "line", id: "l", metrics: ["revenue"], grain: "day", target: "inline" }]),
+    );
+    let stdout = "";
+    const code = await cli(["check", "--json", "--cwd", root], {
+      stdout: (text) => {
+        stdout += text;
+      },
+      stderr: () => {},
+      cwd: root,
+      env: {},
+      stdoutIsTTY: false,
+      isAgent: async () => false,
+    });
+    expect(code).toBe(0);
+    const reported: { code: string; pointer?: string }[] = JSON.parse(stdout).diagnostics;
+    expect(reported.filter((d) => d.code === "HM4022").map((d) => d.pointer)).toEqual([
+      "/blocks/0/target",
     ]);
   });
 

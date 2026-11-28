@@ -123,6 +123,22 @@ export function dashboardDependencies(project: Project, dashboard: string): Dash
 }
 
 /**
+ * The HM4022 note for a block that splits a flow target by days (RFC 0001 section 7), worded the
+ * same in check and in build so the two report it once.
+ */
+export function proratedTargetNote(
+  block: string,
+  target: string,
+  metric: string,
+  unit: string,
+): { message: string; help: string } {
+  return {
+    message: `block "${block}" splits target "${target}" of "${metric}", set per ${unit}, by days: a ${unit} counts by its days inside each bucket or window`,
+    help: "set prorate: none on the target to show it only where its buckets fit whole",
+  };
+}
+
+/**
  * The target a block names (RFC 0001 section 7) and the metric it belongs to: the first of the
  * block's metrics, in order, whose targets include the block's target id. Undefined when the block
  * names none or no metric defines it (HM2022).

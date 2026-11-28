@@ -633,7 +633,7 @@ function planBlockAt(
     }
   })();
 
-  const target = plannedTarget(ctx, block, readings.measures);
+  const target = plannedTarget(ctx, block, index, readings.measures);
   const all = [
     readings.measures,
     readings.previous,
@@ -663,7 +663,7 @@ function planBlockAt(
           }
         : {}),
       ...(readings.grain ? { grain: readings.grain } : {}),
-      ...(target ? { targets: { [target.metric]: target.planned } } : {}),
+      ...(target?.planned ? { targets: { [target.metric]: target.planned } } : {}),
       ...(readings.grains
         ? {
             grains: readings.grains.map(({ grain, reading }) => ({
@@ -675,21 +675,27 @@ function planBlockAt(
         : {}),
     },
     queries,
-    diagnostics: [],
+    diagnostics: target?.skipped ? [target.skipped] : [],
   };
 }
 
 /**
  * The target a block names, resolved (PlannedTarget), with the query that reads a table target's
- * values: the sum of its value column by its date column and the block's by and split columns
- * that the table has, over all rows, under the dashboard filters that bind both to the table and to
- * the metric's sources: select filters and, unless the target lists its segments, segment filters.
+ * values: the sum and the count of non-null values of its value column by its date column and the
+ * block's by and split columns that the table has, over all rows, under the dashboard filters that
+ * bind both to the table and to the metric's sources: select filters and, unless the target lists
+ * its segments, segment filters. A target whose table is a lookup source is skipped with an HM4023
+ * warning; the block keeps its numbers.
  */
 function plannedTarget(
   ctx: Context,
   block: Block,
+  index: number,
   reading: Reading,
-): { metric: string; planned: PlannedTarget; query?: PlannedQuery } | undefined {
+):
+  | { metric: string; planned: PlannedTarget; query?: PlannedQuery; skipped?: undefined }
+  | { metric: string; planned?: undefined; query?: undefined; skipped: Diagnostic }
+  | undefined {
   const found = blockTarget(block, ctx.metrics);
   if (found === undefined) return undefined;
   const { metric, target } = found;
@@ -714,7 +720,23 @@ function plannedTarget(
   }
   const table = target.table ?? "";
   const input = ctx.sources[table];
-  if (input === undefined || input.type === "lookup") return undefined;
+  if (input === undefined) return undefined;
+  if (input.type === "lookup") {
+    const pointer = `/blocks/${index}/target`;
+    return {
+      metric,
+      skipped: {
+        code: "HM4023",
+        severity: "warning",
+        message: `target "${target.id}" of "${metric}" reads lookup source "${table}", which the planner does not evaluate for targets yet; block "${blockId(block, index)}" shows no target`,
+        file: ctx.file.file,
+        pointer,
+        ...ctx.file.document.locationOf(pointer),
+        help: "point the target's table at a file source; the block's numbers are unaffected",
+        docs: docsCommand("HM4023"),
+      },
+    };
+  }
   const axes = [
     ...(block.type === "bar" && block.grain === undefined && block.by !== undefined
       ? [block.by]
@@ -729,6 +751,7 @@ function plannedTarget(
     (qid) => queries.get(qid)?.params ?? [],
   );
   const id = `${target.id}__target`;
+  const count = `${target.id}__target_count`;
   const shape: Omit<PlannedQuery, "id"> = {
     source: table,
     input,
@@ -737,6 +760,13 @@ function plannedTarget(
         metric: `${metric}.${target.id}`,
         components: [
           { id, aggregate: "sum", column: target.value ?? "", filters: [], reaggregate: "sum" },
+          {
+            id: count,
+            aggregate: "count",
+            column: target.value ?? "",
+            filters: [],
+            reaggregate: "sum",
+          },
         ],
         combine: { op: "identity", component: id },
       },

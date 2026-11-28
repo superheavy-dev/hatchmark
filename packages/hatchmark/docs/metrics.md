@@ -185,7 +185,9 @@ targets:
 | `path`     | Point-in-time metrics: `linear` (default) or `compound`.                                                       |
 | `segments` | Optional. The segments the target was set for.                                                                 |
 
-A date inside a bucket counts for that bucket.
+A date inside a bucket counts for that bucket. A bucket whose value rows are all empty has no
+value, while an explicit 0 is 0. A `table` must be a file source for now: a lookup source as a
+target's table is not evaluated yet, so the block shows no target and build warns with `HM4023`.
 
 **Flow targets** (sums and counts over a period) are amounts per bucket.
 

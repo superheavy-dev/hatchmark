@@ -173,7 +173,7 @@ interface Case {
   tz: string;
   spec: Spec;
   inline: boolean;
-  rows: { date: string; region: string; value: number }[];
+  rows: { date: string; region: string; value: number | null }[];
   range: unknown;
   rangeKind: "to_date" | "last" | "written";
   fixed?: string;
@@ -199,7 +199,13 @@ async function makeCase(seed: number) {
   const random = rng(seed);
   const pick = <T>(xs: readonly T[]): T => xs[Math.floor(random() * xs.length)] as T;
   const maybe = (p: number) => random() < p;
-  const tz = pick(["UTC", "America/New_York", "Asia/Seoul", "America/Los_Angeles"]);
+  const tz = pick([
+    "UTC",
+    "America/New_York",
+    "Asia/Seoul",
+    "America/Los_Angeles",
+    "America/Havana",
+  ]);
   const yearAnchor = pick(["01-01", "02-01", "04-01", "07-01", "10-15"]);
   const anchors = {
     week: pick(["monday", "sunday", "wednesday"]),
@@ -251,8 +257,10 @@ async function makeCase(seed: number) {
     const share = [random(), random(), random()];
     const sum = share.reduce((a, c) => a + c, 0);
     const bucketDays = (ms(endOf(b, spec.grain)) - ms(b)) / DAY;
+    const blank = maybe(0.04);
     REGIONS.forEach((region, r) => {
-      const value = Math.round(((total * (share[r] ?? 0)) / sum) * 100) / 100;
+      const value =
+        blank || maybe(0.05) ? null : Math.round(((total * (share[r] ?? 0)) / sum) * 100) / 100;
       const date = maybe(0.2) ? iso(ms(b) + Math.floor(random() * bucketDays) * DAY) : b;
       rows.push({ date, region, value });
     });
@@ -305,7 +313,7 @@ async function makeCase(seed: number) {
     },
     "data/plan.csv": [
       "day,region,amount",
-      ...rows.filter(() => !inline).map((r) => `${r.date},${r.region},${r.value}`),
+      ...rows.filter(() => !inline).map((r) => `${r.date},${r.region},${r.value ?? ""}`),
     ].join("\n"),
     [`metrics/${metricName}.yaml`]: metric({
       type: "aggregate",
@@ -445,6 +453,7 @@ function check(seed: number, c: Case, data: DashboardData, codes: Set<string>): 
     for (const r of c.rows) {
       if (c.select && !c.inline && r.region !== c.select) continue;
       if (region !== undefined && !c.inline && r.region !== region) continue;
+      if (r.value === null) continue;
       const b = startOf(r.date, c.spec.grain);
       out.set(b, (out.get(b) ?? 0) + r.value);
     }

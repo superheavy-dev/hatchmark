@@ -32,7 +32,14 @@ import {
   replaceValueFix,
   yamlText,
 } from "./fixes.js";
-import { blockTarget, filterTables, metricSources, readSources, sourceTables } from "./graph.js";
+import {
+  blockTarget,
+  filterTables,
+  metricSources,
+  proratedTargetNote,
+  readSources,
+  sourceTables,
+} from "./graph.js";
 import { layoutItems, MIN_CHART_SPAN } from "./layout.js";
 import type { Filter, Metric, TableMetric } from "./metric.js";
 import type { Project, SpecFile } from "./project.js";
@@ -902,10 +909,10 @@ function checkBlockTarget(
   project: Project,
   file: SpecFile<"dashboard">,
   block: Block,
-  base: string,
+  index: number,
   metrics: ReadonlyMap<string, Metric>,
 ): void {
-  const pointer = `${base}/target`;
+  const pointer = `/blocks/${index}/target`;
   const found = blockTarget(block, metrics);
   const names = blockMetricRefs(block).map((ref) => ref.name);
   const quoted = (list: readonly string[]) => list.map((n) => `"${n}"`).join(", ");
@@ -925,6 +932,18 @@ function checkBlockTarget(
     return;
   }
   const { metric, target } = found;
+  const nature = timeNature(metric, metrics);
+  const additive = groupAdditive(metric, metrics);
+  const grains =
+    "grain" in block && block.grain !== undefined
+      ? [block.grain, ...("grains" in block ? (block.grains ?? []) : [])]
+      : [];
+  const rank = { day: 0, week: 1, month: 2, quarter: 3, year: 4 } as const;
+  const finer = grains.some((g) => rank[typeof g === "string" ? g : g.unit] < rank[target.grain]);
+  if (nature === "flow" && additive && (target.prorate ?? "days") === "days" && finer) {
+    const note = proratedTargetNote(blockId(block, index), target.id, metric, target.grain);
+    r.report("HM4022", pointer, note.message, { severity: "note", help: note.help });
+  }
   const read = [...metricSources(project, metric)];
   const known = (source: string, column: string) =>
     columnsOf(project, source)?.has(foldColumn(column));
@@ -1436,7 +1455,7 @@ function checkDashboard(project: Project, file: SpecFile<"dashboard">, out: Diag
     }
 
     if ("target" in block && block.target !== undefined) {
-      checkBlockTarget(r, project, file, block, base, metrics);
+      checkBlockTarget(r, project, file, block, index, metrics);
     }
 
     if (block.type === "table") {
