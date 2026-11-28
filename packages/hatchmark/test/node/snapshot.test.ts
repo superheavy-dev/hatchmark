@@ -333,13 +333,13 @@ describe("snapshot edge cases", () => {
     range?: unknown;
     asOf?: string;
     inner?: string;
-    parquet?: boolean;
+    ns?: string[];
     declared?: boolean;
     compare?: unknown;
     filters?: unknown[];
     blocks?: unknown[];
   }) {
-    const parquet = options.parquet === true;
+    const parquet = options.ns !== undefined;
     const { root, project } = await writeProject({
       "hatchmark.yaml": {
         ...PROJECT_DEFAULTS,
@@ -387,7 +387,12 @@ describe("snapshot edge cases", () => {
       const oracle = await Oracle.open();
       try {
         await oracle.run(
-          `COPY (SELECT * FROM (VALUES (TIMESTAMP_NS '2026-10-31 00:00:00.000000100', 'a', 10), (TIMESTAMP_NS '2026-10-31 00:00:00.000000200', 'b', 20)) AS t("at", g, v)) TO '${root}/data/s.parquet' (FORMAT PARQUET)`,
+          `COPY (SELECT * FROM (VALUES ${(options.ns ?? [])
+            .map((row) => {
+              const [at, g, v] = row.split(",");
+              return `(TIMESTAMP_NS '${at}', '${g}', ${v})`;
+            })
+            .join(", ")}) AS t("at", g, v)) TO '${root}/data/s.parquet' (FORMAT PARQUET)`,
         );
       } finally {
         oracle.close();
@@ -562,10 +567,73 @@ describe("snapshot edge cases", () => {
   });
 
   it("keeps Parquet nanosecond timestamps a hundred nanoseconds apart as two snapshots", async () => {
-    const { project, executor } = await setup({ parquet: true, asOf: "2026-10-31" });
+    const { project, executor } = await setup({
+      ns: ["2026-10-31 00:00:00.000000100,a,10", "2026-10-31 00:00:00.000000200,b,20"],
+      asOf: "2026-10-31",
+    });
     try {
       const result = await runDashboard(project, "d", executor);
       expect(lineOf(result.data)).toEqual([20]);
+    } finally {
+      await executor.close();
+    }
+  });
+
+  const MIDNIGHT = ["2026-10-30 23:59:59.999999900,a,10", "2026-10-31 00:00:00.000000200,b,20"];
+
+  it("keeps a Parquet snapshot 100 ns before midnight in its own day", async () => {
+    const { project, executor } = await setup({ ns: MIDNIGHT, asOf: "2026-10-30" });
+    try {
+      const result = await runDashboard(project, "d", executor);
+      expect(kpiOf(result.data)).toBe(10);
+      expect(lineOf(result.data)).toEqual([10]);
+    } finally {
+      await executor.close();
+    }
+  });
+
+  it("puts a Parquet snapshot 1 ns after midnight in the new day, in presets and custom ranges", async () => {
+    for (const [pick, range, want] of [
+      ["first", { start: "2026-10-31", end: "2026-11-01" }, 20],
+      ["last", { start: "2026-10-30", end: "2026-10-31" }, 10],
+    ] as const) {
+      const { project, executor } = await setup({
+        ns: [
+          "2026-10-30 23:59:59.999999999,a,10",
+          "2026-10-31 00:00:00.000000001,b,20",
+          "2026-11-02 12:00:00,a,30",
+        ],
+        pick,
+        asOf: "2026-11-02",
+        filters: PERIOD,
+      });
+      try {
+        const base = await runDashboard(project, "d", executor);
+        expect(lineOf(base.data), pick).toEqual([10, 20, null, 30]);
+        const periods = await runPeriodData(project, "d", executor, base.data as DashboardData);
+        expect(periods.diagnostics, pick).toEqual([]);
+        const custom = periods.data?.custom;
+        if (custom === undefined) throw new Error("no custom range cube");
+        const bound = await runDashboard(project, "d", executor, undefined, { p: range });
+        expect(kpiOf(bound.data), pick).toBe(want);
+        expect(kpiOf(customRangeDashboard(custom, "p", range)), pick).toBe(want);
+      } finally {
+        await executor.close();
+      }
+    }
+  });
+
+  it("keeps a Parquet flow row 100 ns before midnight in its own day", async () => {
+    const { project, executor } = await setup({
+      ns: MIDNIGHT,
+      asOf: "2026-10-30",
+      declared: false,
+      pick: "sum",
+    });
+    try {
+      const result = await runDashboard(project, "d", executor);
+      expect(kpiOf(result.data)).toBe(10);
+      expect(lineOf(result.data)).toEqual([10]);
     } finally {
       await executor.close();
     }

@@ -79,6 +79,30 @@ interface Case {
   keys: string;
 }
 
+function localMidnight(day: string, tz: string): number {
+  const format = new Intl.DateTimeFormat("en-CA", {
+    timeZone: tz,
+    hourCycle: "h23",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    second: "2-digit",
+  });
+  const wall = (t: number) => {
+    const part = Object.fromEntries(format.formatToParts(t).map((x) => [x.type, x.value]));
+    return Date.parse(
+      `${part.year}-${part.month}-${part.day}T${part.hour}:${part.minute}:${part.second}Z`,
+    );
+  };
+  let t = ms(day);
+  for (let n = 0; n < 3; n++) t -= wall(t) - ms(day);
+  return t;
+}
+
+const utcText = (t: number) => new Date(t).toISOString().slice(0, 19).replace("T", " ");
+
 function pick<T>(rand: () => number, items: readonly T[]): T {
   return items[Math.floor(rand() * items.length)] as T;
 }
@@ -117,7 +141,12 @@ function generate(seed: number): Case {
       instants.push(`${day} ${t}.000000100`);
       if (rand() < 0.5) instants.push(`${day} ${t}.000000200`);
     }
+    if (kind === "ns" && rand() < 0.5) {
+      const midnight = localMidnight(day, tz);
+      instants.push(`${utcText(midnight - 1000)}.999999900`, `${utcText(midnight)}.000000001`);
+    }
   }
+  instants.sort();
   const accounts = ["a1", "a2", "a3", "a4", "a5", "a6"];
   const home = new Map(accounts.map((a) => [a, pick(rand, REGIONS)]));
   const lines = ["snapshot_at,account,region,status,balance"];
@@ -322,7 +351,10 @@ async function load(c: Case, path: string): Promise<void> {
     );
   }
   const tz = lit(c.tz);
-  const utc = "timezone('UTC', CAST(snapshot_at AS TIMESTAMP))";
+  const utc =
+    c.kind === "ns"
+      ? "timezone('UTC', CAST(left(CAST(snapshot_at AS VARCHAR), 26) AS TIMESTAMP))"
+      : "timezone('UTC', CAST(snapshot_at AS TIMESTAMP))";
   const instant =
     c.kind === "date"
       ? `timezone(${tz}, CAST(snapshot_at AS TIMESTAMP))`

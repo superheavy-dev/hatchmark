@@ -81,13 +81,18 @@ export function column(source: SqlSource, name: string): { name: string; type: s
 
 export const isTimestamp = (type: string) => type.startsWith("TIMESTAMP");
 
+function wall(q: string, type: string): string {
+  if (type !== "TIMESTAMP_NS") return `CAST(${q} AS TIMESTAMP)`;
+  return `make_timestamp((epoch_ns(${q}) - (epoch_ns(${q}) % 1000 + 1000) % 1000) // 1000)`;
+}
+
 function localTime(source: SqlSource, name: string, timezone: string, sql: Sql): string {
   const { name: actual, type } = column(source, name);
   const q = quote(actual);
   if (type === "DATE") return q;
   if (type === "TIMESTAMP WITH TIME ZONE") return `timezone(${sql.bind(timezone)}, ${q})`;
   if (isTimestamp(type)) {
-    return `timezone(${sql.bind(timezone)}, timezone(${naiveZone(source, sql)}, CAST(${q} AS TIMESTAMP)))`;
+    return `timezone(${sql.bind(timezone)}, timezone(${naiveZone(source, sql)}, ${wall(q, type)}))`;
   }
   throw new Error(
     `time column "${actual}" of source "${source.name}" has type ${type}; it needs DATE or TIMESTAMP`,
@@ -99,7 +104,7 @@ function instant(source: SqlSource, name: string, timezone: string, sql: Sql): s
   const q = quote(actual);
   if (type === "TIMESTAMP WITH TIME ZONE") return q;
   if (type === "DATE") return `timezone(${sql.bind(timezone)}, CAST(${q} AS TIMESTAMP))`;
-  return `timezone(${naiveZone(source, sql)}, CAST(${q} AS TIMESTAMP))`;
+  return `timezone(${naiveZone(source, sql)}, ${wall(q, type)})`;
 }
 
 function snapshotKey(source: SqlSource, name: string, timezone: string, sql: Sql): string {
@@ -107,7 +112,7 @@ function snapshotKey(source: SqlSource, name: string, timezone: string, sql: Sql
   if (type === "DATE") return quote(actual);
   if (type === "TIMESTAMP_NS") {
     const q = quote(actual);
-    return `(epoch_ns(${q}) - (epoch_us(CAST(${q} AS TIMESTAMP)) - epoch_us(${instant(source, actual, timezone, sql)})) * 1000)`;
+    return `(epoch_ns(${q}) - (epoch_us(${wall(q, type)}) - epoch_us(${instant(source, actual, timezone, sql)})) * 1000)`;
   }
   if (isTimestamp(type)) return instant(source, actual, timezone, sql);
   throw new Error(
