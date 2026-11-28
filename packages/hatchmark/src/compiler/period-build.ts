@@ -42,6 +42,7 @@ export function dayCubeQuery(query: PlannedQuery): PlannedQuery | undefined {
   const shape: Omit<PlannedQuery, "id"> = {
     source: query.source,
     input: query.input,
+    ...(query.tables === undefined ? {} : { tables: query.tables }),
     measures: query.measures,
     dimensions: [{ kind: "time", column, grain: { unit: "day" } }, ...columns],
     groupingSets: [[0, ...columns.map((_, i) => i + 1)]],

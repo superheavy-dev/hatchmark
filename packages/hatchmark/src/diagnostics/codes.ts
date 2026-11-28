@@ -200,6 +200,11 @@ export const CODES = {
     explanation:
       'Cards that sit side by side end level. Charts in one grid row are drawn at the tallest "height" preset among them, and KPIs in one strip at the tallest among the strip\'s KPIs, so a shorter preset is drawn taller on wide screens. Below 1024 px cards stack, and every card, each KPI included, keeps its own preset. Set the same height on every card in the row (the fix sets this one to the height it is drawn at, which also changes how it looks on phones), or give the chart its own row with span: 12. Tables keep their own height.',
   },
+  HM2029: {
+    title: "in_table key of another type",
+    explanation:
+      "An in_table or not_in_table filter compares a column with another source's key column. Hatchmark compares two integer columns of any width exactly and two text columns as text, and nothing else: converting a number to text, or an integer to a floating-point or decimal number, can make different values match or fail on values that fit their own column. So check rejects any other pair of types and names both. Store both columns with the same type, for example write the key list's ids as integers, or cast one side where the data is produced.",
+  },
   HM2025: {
     title: "grain no block switches to",
     explanation:
@@ -343,7 +348,7 @@ export const CODES = {
   HM4023: {
     title: "metric primitive not evaluated yet",
     explanation:
-      "check validates the metric-layer primitives of RFC 0001 (formula, per_entity, lookup sources, segments, in_table filters, value, over_time, entity, active, trailing, scale, and the snapshot, freshness and timezone source options), but the planner does not evaluate them yet. A block that shows such a metric is left out of the build with this warning rather than computed as a plain sum, which would show a wrong number. The block appears once the planner evaluates the primitive.",
+      "check validates the metric-layer primitives of RFC 0001 (formula, per_entity, lookup sources, in_table filters on a lookup source, value, over_time, entity, active, trailing, scale, and the snapshot, freshness and timezone source options), but the planner does not evaluate them yet. A block that shows such a metric is left out of the build with this warning rather than computed as a plain sum, which would show a wrong number. The block appears once the planner evaluates the primitive.",
   },
   HM4040: {
     title: "default business definition",

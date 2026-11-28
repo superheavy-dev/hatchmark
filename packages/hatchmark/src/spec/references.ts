@@ -12,6 +12,7 @@ import {
   GLOB_CHARACTERS,
   type Grain,
   grainKey,
+  keyComparison,
   resolveGrain,
   sameColumn,
 } from "./common.js";
@@ -318,6 +319,31 @@ function checkSources(project: Project, out: Diagnostic[]): void {
   }
 }
 
+function checkKeyTypes(r: Reporter, project: Project, metric: TableMetric): void {
+  const typeOf = (source: string, name: string) =>
+    project.columnTypes.get(source)?.find((c) => sameColumn(c.name, name))?.type;
+  const check = (filter: Filter, pointer: string) => {
+    if (filter.op !== "in_table" && filter.op !== "not_in_table") return;
+    const own = typeOf(metric.table, filter.column);
+    const key = typeOf(filter.table, filter.key);
+    if (own === undefined || key === undefined || keyComparison(own, key) !== undefined) return;
+    r.report(
+      "HM2029",
+      pointer,
+      `${filter.op} compares column "${filter.column}" (${own}) of "${metric.table}" with key "${filter.key}" (${key}) of "${filter.table}"`,
+      {
+        help: `store both columns with the same type: integers of any width match each other and text matches text; cast one side where the data is written, or read it with another type`,
+      },
+    );
+  };
+  (metric.filters ?? []).forEach((f, i) => {
+    check(f, `/filters/${i}`);
+  });
+  (metric.segments ?? []).forEach((name, i) => {
+    for (const f of project.segments.get(name)?.spec?.filters ?? []) check(f, `/segments/${i}`);
+  });
+}
+
 function checkSegments(project: Project, out: Diagnostic[]): void {
   const sources = Object.keys(project.config.spec?.sources ?? {});
   for (const file of project.segments.values()) {
@@ -382,6 +408,7 @@ function checkMetrics(project: Project, out: Diagnostic[]): void {
       checkTimeFilters(file, metric, r);
       checkSegmentRefs(r, project, file, metric.segments, "/segments");
       checkFilterTables(r, project, file, metric.filters ?? [], "/filters", sources);
+      checkKeyTypes(r, project, metric);
       if (project.config.spec && !sourceSuggestion(r, file, "/table", metric.table, sources))
         continue;
       checkColumns(r, project, metric.table, tableMetricColumns(r, file, metric, project));

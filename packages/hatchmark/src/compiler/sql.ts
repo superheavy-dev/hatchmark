@@ -1,4 +1,4 @@
-import { type Filter, parseTemporal, sameColumn, WEEKDAYS } from "../spec/index.js";
+import { type Filter, keyComparison, parseTemporal, sameColumn, WEEKDAYS } from "../spec/index.js";
 import { canonicalJson } from "./hash.js";
 import { selectValues } from "./params.js";
 import type { ExecutionContext, MeasureComponent, PlannedQuery } from "./plan.js";
@@ -20,6 +20,8 @@ export interface SqlSource {
   columns: { name: string; type: string }[];
   /** Time zone of timestamps without an offset (the source's "timezone"); UTC when absent. */
   timezone?: string;
+  /** The sources the query's in_table and not_in_table filters read, by name. */
+  tables?: Readonly<Record<string, SqlSource>>;
 }
 
 /** A query's SQL and the layout of its result row. */
@@ -154,8 +156,23 @@ function filterSql(source: SqlSource, filter: Filter, context: ExecutionContext,
       return `(${left} >= ${from} AND ${leftTo} <= ${to})`;
     }
     case "in_table":
-    case "not_in_table":
-      throw new Error(`${filter.op} filters are not evaluated yet`);
+    case "not_in_table": {
+      const table = source.tables?.[filter.table];
+      if (table === undefined) {
+        throw new Error(`source "${filter.table}" of an ${filter.op} filter is not loaded`);
+      }
+      const own = column(source, filter.column);
+      const theirs = column(table, filter.key);
+      const comparison = keyComparison(own.type, theirs.type);
+      if (comparison === undefined) {
+        throw new Error(
+          `${filter.op} compares column "${own.name}" (${own.type}) of source "${source.name}" with key "${theirs.name}" (${theirs.type}) of source "${table.name}"; the types must match (HM2029)`,
+        );
+      }
+      const side = (ref: string) => (comparison === "same" ? ref : `CAST(${ref} AS HUGEINT)`);
+      const match = `EXISTS (SELECT 1 FROM ${table.relation} AS "hm_keys" WHERE ${side(`"hm_keys".${quote(theirs.name)}`)} = ${side(`"hm_rows".${q}`)})`;
+      return filter.op === "in_table" ? match : `NOT ${match}`;
+    }
     case "neq": {
       const [left, right] = sides(source, filter.column, filter.value, context, sql);
       return `${left} IS DISTINCT FROM ${right}`;

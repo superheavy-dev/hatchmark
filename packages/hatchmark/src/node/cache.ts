@@ -27,6 +27,11 @@ import {
 import { normalizePath, type ProjectConfig } from "../spec/index.js";
 import { VERSION } from "../version.js";
 
+const readSources = (query: PlannedQuery): string[] => [
+  query.source,
+  ...Object.keys(query.tables ?? {}),
+];
+
 /**
  * The build cache: query results and source horizons stored as Parquet under .hatchmark/cache/, so
  * a build recomputes only what changed.
@@ -37,8 +42,9 @@ import { VERSION } from "../version.js";
  * invalidates even in a source checkout), the whole PlannedQuery (its id is its slice of the plan
  * hash; its input carries the source's reader options), the ExecutionContext (as-of date, time
  * zone, anchors, bindings, measured horizons), and the data fingerprint: the size and SHA-256 of
- * every file the executor can read for the query. That is the query's own source when it is a
- * file source, and every file source of the project otherwise. File contents are hashed, never
+ * every file the executor can read for the query. That is the query's own source and the sources
+ * its in_table filters read when they are file sources, and every file source of the project
+ * otherwise. File contents are hashed, never
  * trusted by size or modification time, so any changed byte invalidates.
  *
  * Snapshots. The first time a build needs a data file, the file is copied into a private
@@ -319,11 +325,12 @@ export async function createCachedExecutor(options: {
     }
     return found;
   };
-  /** The data files a query on this source can read, or undefined when one cannot be read. */
-  const dataFiles = async (source: string): Promise<DataFile[] | undefined> => {
-    const own = config.sources[source];
-    const names =
-      own !== undefined && own.type !== "lookup" ? [source] : Object.keys(config.sources).sort();
+  /** The data files a query on these sources can read, or undefined when one cannot be read. */
+  const dataFiles = async (sources: string[]): Promise<DataFile[] | undefined> => {
+    const files = sources.every(
+      (s) => config.sources[s] !== undefined && config.sources[s].type !== "lookup",
+    );
+    const names = files ? sources : Object.keys(config.sources).sort();
     try {
       const out: DataFile[] = [];
       for (const name of names) {
@@ -339,11 +346,11 @@ export async function createCachedExecutor(options: {
 
   const keyParts = async (
     kind: KeyParts["kind"],
-    source: string,
+    sources: string[],
     subject: unknown,
     context: unknown,
   ): Promise<KeyParts | undefined> => {
-    const data = await dataFiles(source);
+    const data = await dataFiles(sources);
     if (data === undefined) return undefined;
     return {
       format: CACHE_FORMAT,
@@ -489,10 +496,13 @@ export async function createCachedExecutor(options: {
 
   /** Queries whose SQL explain asked for, with the context it used. */
   const explained = new Map<string, { query: PlannedQuery; context: ExecutionContext }>();
-  const plannedInput = (query: PlannedQuery) => {
-    const configured = config.sources[query.source];
-    return configured !== undefined && canonicalJson(configured) === canonicalJson(query.input);
-  };
+  const plannedInput = (query: PlannedQuery) =>
+    [[query.source, query.input] as const, ...Object.entries(query.tables ?? {})].every(
+      ([name, input]) => {
+        const configured = config.sources[name];
+        return configured !== undefined && canonicalJson(configured) === canonicalJson(input);
+      },
+    );
 
   const horizonId = (column: TimeColumn) => `h_${sha256(canonicalJson(column)).slice(0, 16)}`;
 
@@ -500,11 +510,11 @@ export async function createCachedExecutor(options: {
     async execute(query, context) {
       const parts =
         plannedInput(query) && !readsRawSql(query)
-          ? await keyParts("query", query.source, query, context)
+          ? await keyParts("query", readSources(query), query, context)
           : undefined;
       if (parts === undefined || !stats.enabled) {
         stats.misses++;
-        const copied = snapshotting && (await dataFiles(query.source)) !== undefined;
+        const copied = snapshotting && (await dataFiles(readSources(query))) !== undefined;
         return (await (copied ? snapshotExecutor : projectExecutor).get()).execute(query, context);
       }
       const key = sha256(canonicalJson(parts));
@@ -549,7 +559,7 @@ export async function createCachedExecutor(options: {
       const keys = await Promise.all(
         contexts.map(async (context) => {
           const parts = cacheable
-            ? await keyParts("query", query.source, query, context)
+            ? await keyParts("query", readSources(query), query, context)
             : undefined;
           return parts === undefined || !stats.enabled
             ? undefined
@@ -583,7 +593,7 @@ export async function createCachedExecutor(options: {
       }
       if (uncached.length > 0) {
         stats.misses += uncached.length;
-        const copied = snapshotting && (await dataFiles(query.source)) !== undefined;
+        const copied = snapshotting && (await dataFiles(readSources(query))) !== undefined;
         const executor = await (copied ? snapshotExecutor : projectExecutor).get();
         const ran = await run(
           executor,
@@ -620,7 +630,7 @@ export async function createCachedExecutor(options: {
     },
     async horizon(column) {
       const source = config.sources[column.source];
-      const parts = await keyParts("horizon", column.source, { column, source }, null);
+      const parts = await keyParts("horizon", [column.source], { column, source }, null);
       if (parts === undefined || !stats.enabled) {
         return (await projectExecutor.get()).horizon(column);
       }
@@ -654,7 +664,7 @@ export async function createCachedExecutor(options: {
           reason: "raw SQL metrics are never cached; this query always runs",
         };
       }
-      const parts = await keyParts("query", query.source, query, context);
+      const parts = await keyParts("query", readSources(query), query, context);
       if (parts === undefined) {
         return { status: "off", reason: "a data file of this query cannot be read" };
       }

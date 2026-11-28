@@ -6,6 +6,7 @@ import {
   type Comparison,
   type Dashboard,
   DEFAULT_PERIOD,
+  type FileSource,
   type Grain,
   grainKey,
   type Metric,
@@ -127,10 +128,10 @@ export function notBuiltYet(
   const source = sources[metric.table];
   if (source?.type === "lookup") return "lookup sources";
   if (source?.snapshot !== undefined) return 'the source option "snapshot"';
-  if ((metric.segments ?? []).length > 0) return "segments";
-  if ((metric.filters ?? []).some((f) => f.op === "in_table" || f.op === "not_in_table")) {
-    return "in_table and not_in_table filters";
-  }
+  const tables = (metric.filters ?? []).flatMap((f) =>
+    f.op === "in_table" || f.op === "not_in_table" ? [f.table] : [],
+  );
+  if (tables.some((t) => sources[t]?.type === "lookup")) return "in_table on a lookup source";
   if (metric.type === "sql") return undefined;
   if (metric.over_time !== undefined && metric.over_time !== "sum")
     return `over_time: ${metric.over_time}`;
@@ -138,6 +139,23 @@ export function notBuiltYet(
     if (metric[key] !== undefined) return `"${key}"`;
   }
   return undefined;
+}
+
+function filterTables(
+  sources: Record<string, Source>,
+  measures: PlannedMeasure[],
+): Record<string, FileSource> | undefined {
+  const names = measures
+    .flatMap((m) => m.components)
+    .flatMap((c) => c.filters)
+    .flatMap((f) => (f.op === "in_table" || f.op === "not_in_table" ? [f.table] : []))
+    .sort();
+  const tables: Record<string, FileSource> = {};
+  for (const name of names) {
+    const source = sources[name];
+    if (source !== undefined && source.type !== "lookup") tables[name] = source;
+  }
+  return Object.keys(tables).length > 0 ? tables : undefined;
 }
 
 /** The aggregate and SQL metrics a metric reads, through ratios. */
@@ -230,14 +248,17 @@ function planReading(
     const dimensions: PlannedDimension[] = axes.map((axis) =>
       axis.kind === "column" ? axis : { kind: "time", column: group.time ?? "", grain: axis.grain },
     );
+    const measures = group.metrics.flatMap((m) => {
+      const metric = ctx.metrics.get(m);
+      const measure = metric && plannedMeasure(m, metric);
+      return measure ? [measure] : [];
+    });
+    const tables = filterTables(ctx.sources, measures);
     const shape: Omit<PlannedQuery, "id"> = {
       source: group.source,
       input,
-      measures: group.metrics.flatMap((m) => {
-        const metric = ctx.metrics.get(m);
-        const measure = metric && plannedMeasure(m, metric);
-        return measure ? [measure] : [];
-      }),
+      ...(tables === undefined ? {} : { tables }),
+      measures,
       dimensions,
       groupingSets,
       window:
@@ -556,7 +577,9 @@ function context(
     };
   }
   const metrics = new Map<string, Metric>();
-  for (const [name, metric] of project.metrics) if (metric.spec) metrics.set(name, metric.spec);
+  for (const [name, metric] of project.metrics) {
+    if (metric.spec) metrics.set(name, withSegmentFilters(metric.spec, project));
+  }
   const period = spec.period ?? DEFAULT_PERIOD;
   return {
     ctx: {
@@ -571,6 +594,22 @@ function context(
     },
     diagnostics: [],
   };
+}
+
+/**
+ * A metric with the filters of its segments appended to its own, so a segment filters the rows
+ * exactly like the metric's filters do (RFC 0001 section 8).
+ */
+function withSegmentFilters(metric: Metric, project: Project): Metric {
+  if ((metric.type !== "aggregate" && metric.type !== "sql") || metric.segments === undefined) {
+    return metric;
+  }
+  const { segments, ...rest } = metric;
+  const filters = [
+    ...(metric.filters ?? []),
+    ...segments.flatMap((s) => project.segments.get(s)?.spec?.filters ?? []),
+  ];
+  return { ...rest, ...(filters.length > 0 ? { filters } : {}) };
 }
 
 /**
