@@ -542,6 +542,7 @@ describe("segment filter key-table edges", () => {
       files(
         {
           rows: { type: "csv", path: "data/rows.csv" },
+          visits: { type: "csv", path: "data/visits.csv" },
           keys: { type: "csv", path: "data/keys.csv" },
           labels: { type: "csv", path: "data/labels.csv" },
           enriched: {
@@ -552,6 +553,7 @@ describe("segment filter key-table edges", () => {
         },
         {
           rows: "customer\na\nb\nc\n",
+          visits: "country\nUS\nCA\n",
           keys: "customer\na\nb\n",
           labels: "customer,tier\na,Gold\nb,Silver\n",
         },
@@ -559,13 +561,59 @@ describe("segment filter key-table edges", () => {
           label: "Eligible",
           filters: [{ column: "customer", op: "in_table", table: "enriched", key: "customer" }],
         },
-        { row_count: count("rows") },
+        { row_count: count("rows"), visit_count: count("visits") },
+      ),
+    );
+    const { code, report } = await buildProject(root);
+    const diagnostics = (report as { diagnostics: { code: string; pointer?: string }[] })
+      .diagnostics;
+    expect(code).toBe(0);
+    expect(diagnostics.filter((d) => d.code === "HM4023").map((d) => d.pointer)).toEqual([
+      "/blocks/0",
+    ]);
+    expect(diagnostics.map((d) => d.code)).not.toContain("HM2015");
+    const html = await readFile(path.join(root, "dist", "d", "index.html"), "utf8");
+    const json = html.match(
+      /<script type="application\/json" data-hm-segments[^>]*>(.*?)<\/script>/s,
+    );
+    const states: Record<string, { data: DashboardData }> = JSON.parse(json?.[1] ?? "{}").states;
+    for (const [key, state] of Object.entries(states)) {
+      expect(
+        state.data.blocks.map((b) => b.id),
+        key,
+      ).toEqual(["visit_count"]);
+      expect(kpi(state.data, "visit_count").value, key).toBe(2);
+    }
+  });
+
+  it("never removes a block whose sources cannot apply a lookup-keyed toggle", async () => {
+    const { root } = await writeProject(
+      files(
+        {
+          visits: { type: "csv", path: "data/visits.csv" },
+          keys: { type: "csv", path: "data/keys.csv" },
+          labels: { type: "csv", path: "data/labels.csv" },
+          enriched: {
+            type: "lookup",
+            from: "keys",
+            lookups: [{ table: "labels", key: { customer: "customer" } }],
+          },
+        },
+        {
+          visits: "country\nUS\nCA\n",
+          keys: "customer\na\nb\n",
+          labels: "customer,tier\na,Gold\nb,Silver\n",
+        },
+        {
+          label: "Eligible",
+          filters: [{ column: "customer", op: "in_table", table: "enriched", key: "customer" }],
+        },
+        { visit_count: count("visits") },
       ),
     );
     const { code, report } = await buildProject(root);
     const codes = (report as { diagnostics: { code: string }[] }).diagnostics.map((d) => d.code);
     expect(code).toBe(0);
-    expect(codes).toContain("HM4023");
-    expect(codes).not.toContain("HM2015");
+    expect(codes).toEqual(["HM2030"]);
   });
 });

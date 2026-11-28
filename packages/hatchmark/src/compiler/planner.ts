@@ -467,19 +467,27 @@ function planBlockAt(
   }
 
   const shown = shownMetrics(block);
-  const lookupKeys = ctx.params.some(
-    (p) =>
-      p.kind === "segment" &&
-      p.segments.some((s) =>
-        s.filters.some(
-          (f) =>
-            (f.op === "in_table" || f.op === "not_in_table") &&
-            ctx.sources[f.table]?.type === "lookup",
-        ),
-      ),
-  );
   for (const name of shown) {
-    const feature = lookupKeys
+    const tables = new Set(
+      leaves(name, ctx.metrics).flatMap((leaf) => {
+        const metric = ctx.metrics.get(leaf);
+        return metric?.type === "aggregate" || metric?.type === "sql" ? [metric.table] : [];
+      }),
+    );
+    const lookupKey = ctx.params.some(
+      (p) =>
+        p.kind === "segment" &&
+        p.segments.some(
+          (s) =>
+            s.sources.some((source) => tables.has(source)) &&
+            s.filters.some(
+              (f) =>
+                (f.op === "in_table" || f.op === "not_in_table") &&
+                ctx.sources[f.table]?.type === "lookup",
+            ),
+        ),
+    );
+    const feature = lookupKey
       ? "a segment filter with in_table on a lookup source"
       : notBuiltYet(name, ctx.metrics, ctx.sources);
     if (feature === undefined) continue;
