@@ -3,7 +3,7 @@ import { describe, expect, it } from "vitest";
 import { jsonSchema, SCHEMA_FILES, type SpecKind } from "../../src/spec/index.js";
 
 const DEFINITIONS: Record<SpecKind, string[]> = {
-  project: ["Source", "Weekday"],
+  project: ["Filter", "Source", "SourceTest", "Weekday"],
   metric: [
     "AggregateMetric",
     "Duration",

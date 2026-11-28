@@ -36,7 +36,12 @@ import {
   sqlType,
   type TimeColumn,
 } from "../compiler/index.js";
-import { type FileSource, normalizePath, type ProjectConfig } from "../spec/index.js";
+import {
+  type FileSource,
+  normalizePath,
+  type ProjectConfig,
+  planningSources,
+} from "../spec/index.js";
 
 /**
  * The DuckDB executor (build mode): runs planned queries over the project's CSV, Parquet and JSON
@@ -120,7 +125,7 @@ export async function createDuckDbExecutor(options: {
   };
 
   const current = (name: string, input: FileSource): Promise<LoadedSource> => {
-    const configured = options.config.sources[name];
+    const configured = planningSources(options.config.sources)[name];
     if (configured === undefined || canonicalJson(configured) !== canonicalJson(input)) {
       return Promise.reject(
         new Error(

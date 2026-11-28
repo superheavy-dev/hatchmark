@@ -24,7 +24,7 @@ import {
   type SqlExecutor,
   type TimeColumn,
 } from "../compiler/index.js";
-import { normalizePath, type ProjectConfig } from "../spec/index.js";
+import { normalizePath, type ProjectConfig, planningSources } from "../spec/index.js";
 import { VERSION } from "../version.js";
 
 const readSources = (query: PlannedQuery): string[] => [
@@ -439,7 +439,7 @@ export async function createCachedExecutor(options: {
   const plannedInput = (query: PlannedQuery) =>
     [[query.source, query.input] as const, ...Object.entries(query.tables ?? {})].every(
       ([name, input]) => {
-        const configured = config.sources[name];
+        const configured = planningSources(config.sources)[name];
         return configured !== undefined && canonicalJson(configured) === canonicalJson(input);
       },
     );
@@ -569,7 +569,7 @@ export async function createCachedExecutor(options: {
       return results as QueryResult[];
     },
     async horizon(column) {
-      const source = config.sources[column.source];
+      const source = planningSources(config.sources)[column.source];
       const parts = await keyParts("horizon", [column.source], { column, source }, null);
       if (parts === undefined || !stats.enabled) {
         return (await projectExecutor.get()).horizon(column);

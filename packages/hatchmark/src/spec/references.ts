@@ -16,7 +16,7 @@ import {
   resolveGrain,
   sameColumn,
 } from "./common.js";
-import { projectAnchors, type Source } from "./config.js";
+import { projectAnchors, type Source, testsOfSource } from "./config.js";
 import {
   type Block,
   blockId,
@@ -41,7 +41,7 @@ import {
   sourceTables,
 } from "./graph.js";
 import { layoutItems, MIN_CHART_SPAN } from "./layout.js";
-import type { Filter, Metric, TableMetric } from "./metric.js";
+import type { Filter, Metric, MetricTest, TableMetric } from "./metric.js";
 import type { Project, SpecFile } from "./project.js";
 import {
   currencyUnit,
@@ -275,6 +275,11 @@ function checkSources(project: Project, out: Diagnostic[]): void {
   const r = reporter(config, out);
   const names = Object.keys(sources);
   for (const [name, source] of Object.entries(sources)) {
+    testsOfSource(source).forEach((test, i) => {
+      const base = `/sources/${name}/tests/${i}/where`;
+      checkColumns(r, project, name, filterColumnRefs(test.where ?? [], base));
+      checkFilterTables(r, project, config, test.where ?? [], base, names);
+    });
     if (source.type !== "lookup") continue;
     const base = `/sources/${name}`;
     const tables = [
@@ -885,6 +890,11 @@ function checkTargetsAndTests(
     }
     checkSegmentRefs(r, project, file, test.segments, `${base}/segments`);
     checkFilterTables(r, project, file, test.where ?? [], `${base}/where`, sources);
+    const configured = project.config.spec?.sources ?? {};
+    const swapped = Object.keys(test.data ?? {});
+    testColumns(r, project, file.name, test, base, (table) =>
+      sourceTables(configured, table).some((s) => swapped.includes(s)),
+    );
     const read = readSources(project, file.name);
     const testFilters = [
       ...(test.where ?? []),
@@ -895,7 +905,15 @@ function checkTargetsAndTests(
     }
     for (const key of Object.keys(test.data ?? {})) {
       const pointer = `${base}/data/${key}`;
-      if (!sourceSuggestion(r, file, pointer, key, sources) || read.has(key)) continue;
+      if (!sourceSuggestion(r, file, pointer, key, sources)) continue;
+      const swappedSource = project.config.spec?.sources[key];
+      if (swappedSource?.type === "lookup") {
+        r.report("HM2019", pointer, `"${key}" is a lookup source; tests swap file sources only`, {
+          help: `swap the sources it joins: ${[swappedSource.from, ...swappedSource.lookups.map((l) => l.table)].join(", ")}`,
+        });
+        continue;
+      }
+      if (read.has(key)) continue;
       r.report("HM2023", pointer, `metric "${file.name}" does not read source "${key}"`, {
         label: "swapping it changes nothing",
         expected: [...read].sort(),
@@ -903,6 +921,59 @@ function checkTargetsAndTests(
       });
     }
   });
+}
+
+function rowTables(
+  project: Project,
+  name: string,
+  seen = new Set<string>(),
+  out = new Set<string>(),
+): Set<string> {
+  if (seen.has(name)) return out;
+  seen.add(name);
+  const metric = project.metrics.get(name)?.spec;
+  if (metric === undefined) return out;
+  if (metric.type === "aggregate" || metric.type === "sql") out.add(metric.table);
+  for (const dep of metricDeps(metric)) rowTables(project, dep, seen, out);
+  return out;
+}
+
+function testColumns(
+  r: Reporter,
+  project: Project,
+  name: string,
+  test: MetricTest,
+  base: string,
+  skip: (table: string) => boolean = () => false,
+): void {
+  const refs = [
+    ...filterColumnRefs(test.where ?? [], `${base}/where`),
+    ...(test.by !== undefined ? [{ pointer: `${base}/by`, column: test.by }] : []),
+  ];
+  const tables = [...rowTables(project, name)].filter((t) => !skip(t)).sort();
+  for (const ref of refs) {
+    const missing = tables.find(
+      (t) => columnsOf(project, t)?.has(foldColumn(ref.column)) === false,
+    );
+    if (missing !== undefined) checkColumns(r, project, missing, [ref]);
+  }
+}
+
+/**
+ * HM2018 for each column a metric test's where or by names that a table its metric reads rows
+ * from lacks, checked against project.columns as given (a fixture's columns once swapped in).
+ */
+export function checkMetricTestColumns(
+  project: Project,
+  name: string,
+  index: number,
+): Diagnostic[] {
+  const file = project.metrics.get(name);
+  const test = file?.spec?.tests?.[index];
+  if (file === undefined || test === undefined) return [];
+  const out: Diagnostic[] = [];
+  testColumns(reporter(file, out), project, name, test, `/tests/${index}`);
+  return out;
 }
 
 function reaches(

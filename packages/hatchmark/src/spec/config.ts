@@ -10,6 +10,7 @@ import {
   schemaRef,
   weekday,
 } from "./common.js";
+import { filterSchema } from "./metric.js";
 
 const relativePath = z
   .string()
@@ -50,7 +51,40 @@ const freshnessSchema = z
       "How complete the source is. Default: through its latest timestamp, or through the whole latest date of a date column.",
   });
 
+const sourceTestSchema = z
+  .strictObject({
+    name: z.string().min(1).optional(),
+    rows: z
+      .strictObject({
+        min: z.number().int().min(0).optional().meta({ description: "Fewest rows allowed." }),
+        max: z.number().int().min(0).optional().meta({ description: "Most rows allowed." }),
+      })
+      .superRefine((r, ctx) => {
+        if (r.min === undefined && r.max === undefined) {
+          ctx.addIssue(customIssue("HM3001", ["min"], 'row bounds need "min", "max" or both'));
+        } else if (r.min !== undefined && r.max !== undefined && r.min > r.max) {
+          ctx.addIssue(customIssue("HM3005", ["max"], '"max" is below "min"'));
+        }
+      })
+      .meta({ description: "Inclusive bounds on the number of rows.", minProperties: 1 }),
+    where: z
+      .array(filterSchema)
+      .optional()
+      .meta({ description: "Count only the rows that match." }),
+  })
+  .meta({
+    id: "SourceTest",
+    description: "A row-count check that hatchmark test runs against the data.",
+  });
+export type SourceTest = z.infer<typeof sourceTestSchema>;
+
+const sourceTests = z
+  .array(sourceTestSchema)
+  .optional()
+  .meta({ description: "Row-count checks that hatchmark test runs against the data." });
+
 const fileSourceOptions = {
+  tests: sourceTests,
   snapshot: columnName.optional().meta({
     description:
       "The source is a full snapshot per value of this date column; metrics on it must not sum over time.",
@@ -138,6 +172,25 @@ export const sourceSchema = z
 export type Source = z.infer<typeof sourceSchema>;
 export type FileSource = Exclude<Source, { type: "lookup" }>;
 export type LookupSource = Extract<Source, { type: "lookup" }>;
+
+/**
+ * The sources as queries read them: tests do not change what a query reads, so they are left out of
+ * plans, query ids and the build cache.
+ */
+export function planningSources(sources: Readonly<Record<string, Source>>): Record<string, Source> {
+  return Object.fromEntries(
+    Object.entries(sources).map(([name, source]) => {
+      if (source.type === "lookup") return [name, source];
+      const { tests: _, ...rest } = source;
+      return [name, rest as Source];
+    }),
+  );
+}
+
+/** The row-count tests of a source; a lookup source has none. */
+export function testsOfSource(source: Source | undefined): SourceTest[] {
+  return source === undefined || source.type === "lookup" ? [] : (source.tests ?? []);
+}
 
 function isLocale(tag: string): boolean {
   try {
