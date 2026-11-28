@@ -157,7 +157,16 @@ export type PlannedParam =
       multiple: boolean;
       default: (string | number | boolean)[];
     }
-  | { id: string; kind: "period"; source: string; column: string; default: RangeSpec };
+  | { id: string; kind: "period"; source: string; column: string; default: RangeSpec }
+  | {
+      id: string;
+      kind: "segment";
+      source: string;
+      /** The filter's segments whose columns this source has, with their filters, in spec order. */
+      segments: { name: string; filters: Filter[] }[];
+      /** Segments on when nothing is bound. */
+      default: string[];
+    };
 
 /** How build mode stores a query's result for in-browser filtering. */
 export type Materialization =
@@ -192,6 +201,15 @@ export type PlanParam =
       default: RangeSpec;
       /** Time columns this filter windows, by source. */
       columns: Record<string, string[]>;
+    }
+  | {
+      id: string;
+      kind: "segment";
+      label: string;
+      /** Each segment the reader can turn on, with its filters and the sources it binds to, sorted. */
+      segments: { name: string; label: string; filters: Filter[]; sources: string[] }[];
+      /** Segments on when nothing is bound; empty means none (every row). */
+      default: string[];
     };
 
 export interface BlockPlan {

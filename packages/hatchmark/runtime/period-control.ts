@@ -13,6 +13,7 @@ export interface PeriodView {
 
 interface Engine {
   view(payload: unknown, key: string, ranges: Record<string, string>): PeriodView | undefined;
+  render(data: unknown, ranges: Record<string, string>): { blocks: string; caption: string };
 }
 
 const DAY = 86_400_000;
@@ -46,7 +47,7 @@ export function writeParam(name: string, value: string | undefined): void {
 
 let engine: Promise<Engine> | undefined;
 
-function loadEngine(src: string): Promise<Engine> {
+export function loadEngine(src: string): Promise<Engine> {
   engine ??= new Promise<Engine>((resolve, reject) => {
     const script = document.createElement("script");
     script.src = src;
@@ -64,7 +65,10 @@ function loadEngine(src: string): Promise<Engine> {
   return engine;
 }
 
-export function mountPeriod(root: HTMLElement, redraw: (view: PeriodView) => void): () => void {
+export function mountPeriod(
+  root: HTMLElement,
+  redraw: (view: PeriodView) => void,
+): (force?: boolean) => void {
   const filter = root.dataset.hmPeriod ?? "period";
   const locale = root.dataset.hmLocale ?? "en-US";
   const button = root.querySelector<HTMLButtonElement>(".hm-period-button");
@@ -461,7 +465,7 @@ export function mountPeriod(root: HTMLElement, redraw: (view: PeriodView) => voi
 
   const requested = new URLSearchParams(location.search).get(filter);
   if (requested && requested !== shown) void choose(requested, false);
-  return () => {
-    if (shown !== fallback) void choose(shown, false, true);
+  return (force = false) => {
+    if (shown !== fallback || force) void choose(shown, false, true);
   };
 }

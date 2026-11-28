@@ -47,4 +47,12 @@ function view(
   };
 }
 
-(globalThis as { hatchmarkPeriods?: unknown }).hatchmarkPeriods = { view };
+function render(
+  data: DashboardData,
+  ranges: Record<string, string> = {},
+): { blocks: string; caption: string } {
+  useRanges(ranges);
+  return { blocks: renderDashboardBlocks(data), caption: periodCaption(data) };
+}
+
+(globalThis as { hatchmarkPeriods?: unknown }).hatchmarkPeriods = { view, render };

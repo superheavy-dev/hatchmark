@@ -37,6 +37,24 @@ export function resolveParams(project: Project, dashboard: string): PlanParam[] 
         },
       ];
     }
+    if (filter.type === "segment") {
+      return [
+        {
+          id: filter.id,
+          kind: "segment",
+          label: filter.label ?? "Segments",
+          segments: filter.segments.map((name) => {
+            const segment = project.segments.get(name)?.spec;
+            const filters = segment?.filters ?? [];
+            const bound = sources.filter((s) =>
+              filters.every((f) => hasColumn(project.columns.get(s), f.column) !== false),
+            );
+            return { name, label: segment?.label ?? name, filters, sources: bound };
+          }),
+          default: filter.default ?? [],
+        },
+      ];
+    }
     const fallback = filter.default;
     return [
       {
@@ -66,6 +84,13 @@ export function paramsForQuery(
       if (!param.sources.includes(source)) return [];
       const { id, kind, column, operator, multiple } = param;
       return [{ id, kind, source, column, operator, multiple, default: param.default }];
+    }
+    if (param.kind === "segment") {
+      const segments = param.segments
+        .filter((s) => s.sources.includes(source))
+        .map(({ name, filters }) => ({ name, filters }));
+      if (segments.length === 0) return [];
+      return [{ id: param.id, kind: "segment", source, segments, default: param.default }];
     }
     if (timeColumn === undefined || param.columns[source]?.includes(timeColumn) !== true) return [];
     return [{ id: param.id, kind: "period", source, column: timeColumn, default: param.default }];
@@ -99,4 +124,23 @@ export function selectValues(
     );
   }
   return values;
+}
+
+/**
+ * The segments a segment filter turns on in one execution: the bound names, else the default.
+ * Throws when the binding is not an array of the filter's segment names.
+ */
+export function segmentValues(
+  param: { id: string; default: string[]; segments: { name: string }[] },
+  bindings: ParamBindings,
+): string[] {
+  const bound = bindings[param.id];
+  if (bound === undefined) return param.default;
+  const names = new Set(param.segments.map((s) => s.name));
+  if (!Array.isArray(bound) || !bound.every((v) => typeof v === "string" && names.has(v))) {
+    throw new TypeError(
+      `segment filter "${param.id}" is bound to ${JSON.stringify(bound)}, not a list of its segments`,
+    );
+  }
+  return bound;
 }

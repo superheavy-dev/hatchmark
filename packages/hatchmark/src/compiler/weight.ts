@@ -1,6 +1,7 @@
 import { type Diagnostic, docsCommand } from "../diagnostics/index.js";
 import type { Project } from "../spec/index.js";
 import type { PeriodData } from "./period-data.js";
+import type { SegmentData } from "./segment-build.js";
 
 /**
  * The most a dashboard page should weigh, in bytes of HTML: everything the page carries, the
@@ -22,18 +23,21 @@ export function pageWeight(
   dashboard: string,
   html: string,
   periods: PeriodData | undefined,
+  segments?: SegmentData,
 ): Diagnostic | undefined {
   const total = bytes(html);
   if (total <= PAGE_BUDGET) return undefined;
   const presets = periods ? bytes(JSON.stringify(periods.presets)) : 0;
   const custom = periods?.custom ? bytes(JSON.stringify(periods.custom)) : 0;
+  const segmented = segments ? bytes(JSON.stringify(segments.states)) : 0;
   const file = project.dashboards.get(dashboard);
   const at = file?.spec?.filters?.findIndex((f) => f.type === "period") ?? -1;
   const pointer = custom > 0 && at >= 0 ? `/filters/${at}` : "";
   const parts = [
     ...(custom > 0 ? [`day-grain data for custom ranges ${megabytes(custom)}`] : []),
     ...(presets > 0 ? [`presets ${megabytes(presets)}`] : []),
-    `charts and markup ${megabytes(total - custom - presets)}`,
+    ...(segmented > 0 ? [`segment combinations ${megabytes(segmented)}`] : []),
+    `charts and markup ${megabytes(Math.max(0, total - custom - presets - segmented))}`,
   ];
   return {
     code: "HM5002",

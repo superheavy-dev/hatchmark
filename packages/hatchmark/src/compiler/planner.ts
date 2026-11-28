@@ -354,8 +354,15 @@ function planBlockAt(
   }
 
   const shown = shownMetrics(block);
+  const toggled = ctx.params.some(
+    (p) =>
+      p.kind === "segment" &&
+      p.segments.some((s) => s.filters.some((f) => f.op === "in_table" || f.op === "not_in_table")),
+  );
   for (const name of shown) {
-    const feature = notBuiltYet(name, ctx.metrics, ctx.sources);
+    const feature = toggled
+      ? "a segment filter with in_table filters"
+      : notBuiltYet(name, ctx.metrics, ctx.sources);
     if (feature === undefined) continue;
     return {
       queries: [],

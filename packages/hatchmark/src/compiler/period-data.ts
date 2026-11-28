@@ -227,7 +227,10 @@ export function customRangeDashboard(
       `a custom range must lie within ${custom.span.start} and ${custom.span.end} (exclusive)`,
     );
   }
-  const context: ExecutionContext = { ...custom.context, bindings: { [filter]: range } };
+  const context: ExecutionContext = {
+    ...custom.context,
+    bindings: { ...custom.context.bindings, [filter]: range },
+  };
   const results = new Map<string, QueryResult>();
   for (const query of custom.plan.queries) {
     const source = custom.queries[query.id];

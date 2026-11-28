@@ -2,7 +2,7 @@
 // tooltip is position:fixed so the strip's overflow does not clip it, and .hm-root's container-type
 // makes .hm-root its containing block.
 
-import { mountPeriod, type PeriodView, writeParam } from "./period-control.js";
+import { loadEngine, mountPeriod, type PeriodView, writeParam } from "./period-control.js";
 import { wireTable } from "./table.js";
 
 interface RuntimeSeries {
@@ -544,9 +544,79 @@ function start(): void {
   for (const root of document.querySelectorAll<HTMLElement>("[data-hm-period]")) {
     refreshers.push(mountPeriod(root, redraw));
   }
+  for (const group of document.querySelectorAll<HTMLElement>("[data-hm-segment-filter]")) {
+    mountSegments(group, params);
+  }
 }
 
-const refreshers: (() => void)[] = [];
+function mountSegments(group: HTMLElement, params: URLSearchParams): void {
+  const id = group.dataset.hmSegmentFilter ?? "segments";
+  const buttons = [...group.querySelectorAll<HTMLButtonElement>("[data-hm-segment]")];
+  const script = document.querySelector<HTMLElement>("script[data-hm-segments]");
+  const payload = script?.textContent;
+  if (!script || !payload || buttons.length === 0) return;
+  const states: Record<string, { data: unknown; periods?: unknown }> = JSON.parse(payload).states;
+  const key = () =>
+    buttons
+      .filter((b) => b.getAttribute("aria-pressed") === "true")
+      .map((b) => b.dataset.hmSegment)
+      .join(",");
+  const initial = key();
+  const periods = document.querySelector("script[data-hm-periods]");
+  const ranges: Record<string, string> = JSON.parse(
+    document.querySelector("script[data-hm-ranges]")?.textContent ?? "{}",
+  );
+  const live = document.createElement("p");
+  live.className = "hm-sr";
+  live.setAttribute("aria-live", "polite");
+  group.append(live);
+  const show = async (announce: boolean) => {
+    const chosen = key();
+    const state = states[chosen];
+    if (state === undefined) return;
+    writeParam(id, chosen === initial ? undefined : chosen === "" ? "none" : chosen);
+    if (periods && state.periods !== undefined) {
+      periods.textContent = JSON.stringify(state.periods);
+      for (const again of refreshers) again(true);
+    } else {
+      const src = script.dataset.hmEngine;
+      if (!src) return;
+      const grid = document.querySelector<HTMLElement>("main.hm-grid");
+      grid?.setAttribute("aria-busy", "true");
+      try {
+        const view = (await loadEngine(src)).render(state.data, ranges);
+        redraw({ key: chosen, name: "", nameIsDates: false, presetOnly: [], ...view });
+      } finally {
+        grid?.removeAttribute("aria-busy");
+      }
+    }
+    if (announce) {
+      const on = buttons.filter((b) => b.getAttribute("aria-pressed") === "true");
+      live.textContent =
+        on.length === 0
+          ? "Showing all rows"
+          : `Showing ${on.map((b) => b.textContent).join(" and ")}`;
+    }
+  };
+  for (const button of buttons) {
+    button.addEventListener("click", () => {
+      button.setAttribute("aria-pressed", String(button.getAttribute("aria-pressed") !== "true"));
+      void show(true);
+    });
+  }
+  const requested = params.get(id);
+  if (requested === null) return;
+  const names = requested === "none" ? [] : requested.split(",");
+  if (!names.every((n) => buttons.some((b) => b.dataset.hmSegment === n))) {
+    writeParam(id, undefined);
+    return;
+  }
+  for (const b of buttons)
+    b.setAttribute("aria-pressed", String(names.includes(b.dataset.hmSegment ?? "")));
+  if (key() !== initial) void show(false);
+}
+
+const refreshers: ((force?: boolean) => void)[] = [];
 
 function refresh(): void {
   for (const again of refreshers) again();

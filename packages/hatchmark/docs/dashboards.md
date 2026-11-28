@@ -128,7 +128,7 @@ A pixel value or another string is an error that lists the presets. `height` on 
 ## Filters
 
 `filters` declares controls a reader can change: `select` on a column, `period` with a list of
-ranges, or `grain` with a list of grains.
+ranges, `grain` with a list of grains, or `segment` with a list of segments.
 
 ```yaml
 filters:
@@ -145,6 +145,10 @@ filters:
     id: grain
     options: [week, month, quarter]
     default: month
+  - type: segment
+    id: segments
+    label: Audience
+    segments: [paid_marketing, americas]
 ```
 
 A `grain` filter draws one control in the page header. Choosing a grain switches every line, area
@@ -172,6 +176,21 @@ the page bigger. Above 3 MB, build warns (`HM5002`) and names what weighs the mo
 The chosen period and grain are kept in the page's URL query under each filter's `id`
 (`?period=last_7_days`, `?period=2026-03-01..2026-05-15` with the last day included, `?grain=week`;
 a filter at its default is left out), so a reload or a shared link opens the same view.
+
+A `segment` filter draws one toggle button per segment in the page header (a segment is a named row
+filter in `segments/<name>.yaml`: a `label` and a list of `filters`). A reader turns any of them on or off; the segments
+on combine with AND and apply to every block, before anything else is computed. `segments` lists 1
+to 4 segment names, each once, and the optional `default` lists the ones on when the page opens
+(none by default). A dashboard has at most one `segment` filter (`HM3007`). An unknown segment is
+`HM2021`, and a block reading several sources of which only some have a segment's columns is
+`HM2013`. A segment whose filters use `in_table` or `not_in_table` can't be a toggle yet
+(`HM4023`).
+
+Build runs the dashboard once per combination of segments (at most 16), with each combination's
+period presets and day-level data when the dashboard also has a `period` filter, so every number
+on the page is exact. The combinations count toward the page weight warning (`HM5002`). The
+combination is kept in the URL under the filter's `id` (`?segments=paid_marketing,americas`,
+`?segments=none` for none when the default has some on).
 
 **This version does not draw `select` controls yet:** the built page shows the data at each
 `select` filter's `default`, and does not say so on the page. A `select` filter with a `default`

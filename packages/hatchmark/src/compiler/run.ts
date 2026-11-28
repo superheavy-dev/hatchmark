@@ -27,7 +27,7 @@ import {
   parseInstant,
   toLocal,
 } from "./instants.js";
-import { selectValues } from "./params.js";
+import { segmentValues, selectValues } from "./params.js";
 import {
   type ExecutionContext,
   type MeasureExpression,
@@ -502,7 +502,15 @@ async function runQuery(
     if (raw) return `context ${at}`;
     try {
       const selects = query.params.flatMap((p) =>
-        p.kind === "select" ? [Array.from(selectValues(p, context.bindings))] : [],
+        p.kind === "select"
+          ? [Array.from(selectValues(p, context.bindings))]
+          : p.kind === "segment"
+            ? [
+                segmentValues(p, context.bindings)
+                  .filter((n) => p.segments.some((s) => s.name === n))
+                  .sort(),
+              ]
+            : [],
       );
       return canonicalJson([bounds, selects]);
     } catch {

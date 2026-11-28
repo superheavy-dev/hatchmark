@@ -1465,6 +1465,32 @@ function checkDashboard(project: Project, file: SpecFile<"dashboard">, out: Diag
         .filter((s) => Object.hasOwn(configured, s)),
     );
     if (sources.size < 2) return;
+    const list = [...sources].sort();
+    for (const filter of dashboard.filters ?? []) {
+      if (filter.type !== "segment") continue;
+      for (const name of filter.segments) {
+        const columns = (project.segments.get(name)?.spec?.filters ?? []).map((f) => f.column);
+        if (columns.length === 0) continue;
+        const has = (source: string) => {
+          const known = columnsOf(project, source);
+          return known === undefined ? undefined : columns.every((c) => known.has(foldColumn(c)));
+        };
+        const unknown = list.filter((src) => has(src) === undefined);
+        const lacking = list.filter((src) => has(src) === false);
+        if (unknown.length === 0 && (lacking.length === 0 || lacking.length === list.length))
+          continue;
+        r.report(
+          "HM2013",
+          `/blocks/${index}`,
+          unknown.length > 0
+            ? `cannot confirm that every source of this block (${list.join(", ")}) has the columns of segment "${name}" for filter "${filter.id}"`
+            : `segment "${name}" of filter "${filter.id}" would apply to ${list.filter((src) => !lacking.includes(src)).join(", ")} but not to ${lacking.join(", ")} in this block`,
+          {
+            help: "a segment must apply to every source a block reads, or its numbers mix segmented and unsegmented rows; split the block or drop the segment from the filter",
+          },
+        );
+      }
+    }
     for (const filter of dashboard.filters ?? []) {
       if (filter.type !== "select") continue;
       const list = [...sources].sort();
@@ -1616,7 +1642,36 @@ function checkDashboard(project: Project, file: SpecFile<"dashboard">, out: Diag
   });
 
   let grainFilter: string | undefined;
+  let segmentFilter: string | undefined;
   (dashboard.filters ?? []).forEach((filter, i) => {
+    if (filter.type === "segment") {
+      if (segmentFilter !== undefined) {
+        r.report(
+          "HM3007",
+          `/filters/${i}`,
+          `a dashboard takes one segment filter, and "${segmentFilter}" is already one`,
+          { help: "list every segment in one segment filter" },
+        );
+      }
+      segmentFilter ??= filter.id;
+      checkSegmentRefs(r, project, file, filter.segments, `/filters/${i}/segments`);
+      filter.segments.forEach((name, j) => {
+        if (filter.segments.indexOf(name) !== j) {
+          r.report("HM3007", `/filters/${i}/segments/${j}`, `segment "${name}" is listed twice`, {
+            help: "list each segment once",
+          });
+        }
+      });
+      (filter.default ?? []).forEach((name, j) => {
+        if (filter.segments.includes(name)) return;
+        r.report(
+          "HM3007",
+          `/filters/${i}/default/${j}`,
+          `default segment "${name}" is not one of segments (${filter.segments.join(", ")})`,
+          { help: "add it to segments, or remove it from default" },
+        );
+      });
+    }
     if (filter.type === "grain") {
       if (grainFilter !== undefined) {
         r.report(

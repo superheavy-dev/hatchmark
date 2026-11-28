@@ -1,6 +1,6 @@
 import { type Filter, keyComparison, parseTemporal, sameColumn, WEEKDAYS } from "../spec/index.js";
 import { canonicalJson } from "./hash.js";
-import { selectValues } from "./params.js";
+import { segmentValues, selectValues } from "./params.js";
 import type { ExecutionContext, MeasureComponent, PlannedQuery } from "./plan.js";
 import { queryBounds } from "./windows.js";
 
@@ -317,6 +317,14 @@ function builtQuery(
     if (end !== undefined) where.push(compare(end, "<"));
   }
   for (const param of query.params) {
+    if (param.kind === "segment") {
+      const on = segmentValues(param, context.bindings);
+      for (const segment of param.segments) {
+        if (!on.includes(segment.name)) continue;
+        for (const filter of segment.filters) where.push(filterSql(source, filter, context, sql));
+      }
+      continue;
+    }
     if (param.kind !== "select") continue;
     const values = selectValues(param, context.bindings);
     if (values.length > 0) where.push(anyEqual(source, param.column, values, context, sql));

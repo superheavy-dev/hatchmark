@@ -343,6 +343,46 @@
             "default"
           ],
           "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "type": {
+              "type": "string",
+              "const": "segment"
+            },
+            "id": {
+              "type": "string",
+              "pattern": "^[a-z][a-z0-9_]*$"
+            },
+            "label": {
+              "type": "string"
+            },
+            "segments": {
+              "minItems": 1,
+              "maxItems": 4,
+              "type": "array",
+              "items": {
+                "type": "string",
+                "pattern": "^[a-z][a-z0-9_]*$"
+              },
+              "description": "Segments the reader turns on and off: names of files under segments/. Selected segments combine with AND."
+            },
+            "default": {
+              "description": "Segments on when the page opens; some of segments. Default: none (all rows).",
+              "type": "array",
+              "items": {
+                "type": "string",
+                "pattern": "^[a-z][a-z0-9_]*$"
+              }
+            }
+          },
+          "required": [
+            "type",
+            "id",
+            "segments"
+          ],
+          "additionalProperties": false
         }
       ]
     },

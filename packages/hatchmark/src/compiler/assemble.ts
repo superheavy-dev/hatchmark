@@ -37,6 +37,7 @@ import {
   type Value,
 } from "./dashboard-data.js";
 import { formatWall, lastWallBefore, parseInstant, toLocal } from "./instants.js";
+import { segmentValues } from "./params.js";
 import { rangeKey, rangeName } from "./periods.js";
 import type {
   BlockPlan,
@@ -1316,6 +1317,23 @@ function grainFilter(
   };
 }
 
+function segmentFilter(
+  plan: QueryPlan,
+  context: ExecutionContext,
+): { segmentFilter: NonNullable<DashboardData["segmentFilter"]> } | Record<string, never> {
+  const param = plan.params.find((p) => p.kind === "segment");
+  if (param?.kind !== "segment") return {};
+  const on = segmentValues(param, context.bindings);
+  return {
+    segmentFilter: {
+      id: param.id,
+      label: param.label,
+      options: param.segments.map(({ name, label }) => ({ name, label })),
+      selected: param.segments.map((s) => s.name).filter((name) => on.includes(name)),
+    },
+  };
+}
+
 function columnLabel(column: string): string {
   const text = column.replaceAll("_", " ");
   return text.charAt(0).toUpperCase() + text.slice(1);
@@ -1430,6 +1448,7 @@ export function assembleWith(
     anchors: plan.anchors,
     ...grainFilter(spec.filters, plan),
     ...periodFilter(spec.filters, plan, context, period.range),
+    ...segmentFilter(plan, context),
     metrics,
     blocks,
   };

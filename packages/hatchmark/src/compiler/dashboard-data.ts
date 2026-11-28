@@ -427,6 +427,16 @@ export interface DashboardData {
   grainFilter?: { id: string; label: string; options: GrainOption[]; selected: string };
   /** The dashboard's period filter: presets, and a calendar for any range when custom is set. */
   periodFilter?: PeriodFilter;
+  /**
+   * The dashboard's segment filter: segments the reader turns on and off, and those on in this
+   * data. Selected segments combine with AND.
+   */
+  segmentFilter?: {
+    id: string;
+    label: string;
+    options: { name: string; label: string }[];
+    selected: string[];
+  };
   /** Every metric any block shows, by name. */
   metrics: Record<string, MetricInfo>;
   /** Blocks in spec order. Block types the engine cannot produce yet are omitted with a warning. */

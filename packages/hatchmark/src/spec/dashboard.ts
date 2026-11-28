@@ -431,6 +431,18 @@ export const dashboardFilterSchema = z
       }),
       default: grainSchema,
     }),
+    z.strictObject({
+      type: z.literal("segment"),
+      id: identifier,
+      label: z.string().optional(),
+      segments: z.array(identifier).min(1).max(4).meta({
+        description:
+          "Segments the reader turns on and off: names of files under segments/. Selected segments combine with AND.",
+      }),
+      default: z.array(identifier).optional().meta({
+        description: "Segments on when the page opens; some of segments. Default: none (all rows).",
+      }),
+    }),
   ])
   .meta({ id: "DashboardFilter" });
 export type DashboardFilter = z.infer<typeof dashboardFilterSchema>;

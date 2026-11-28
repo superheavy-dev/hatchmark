@@ -15,6 +15,7 @@ import { packageRoot } from "../../hatchmark/src/cli/package-root.js";
 import { entries, head } from "./entries.js";
 import { type BuildInfo, renderSite } from "./page.js";
 import { periodProject } from "./periods.js";
+import { segmentProject } from "./segments.js";
 
 const PACKAGES = dirname(
   await packageRoot(dirname(fileURLToPath(import.meta.url)), "@hatchmark/preview"),
@@ -108,6 +109,12 @@ try {
   buildDashboards(periods, join(site, "periods"));
 } finally {
   rmSync(periods, { recursive: true, force: true });
+}
+const segments = segmentProject(example);
+try {
+  buildDashboards(segments, join(site, "segments"));
+} finally {
+  rmSync(segments, { recursive: true, force: true });
 }
 console.log(
   `Preview site written to ${site}: ${entries.length} gallery entries and the example dashboard in en-US, de-DE and ja-JP.`,

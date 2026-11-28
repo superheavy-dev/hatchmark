@@ -770,7 +770,7 @@ A segment is a named row filter defined once, `segments/<name>.json` (the direct
 { "type": "segment", "id": "audience", "segments": ["external", "paid"], "default": ["external"] }
 ```
 
-Selected segments combine with AND.
+Selected segments combine with AND. A toggle lists 1 to 4 segments, each once, and `default` must be among them; a dashboard has one segment filter at most (HM3007). A static page embeds every combination (at most 16), each run exactly at build time with its own period presets and day cubes, and keeps the chosen combination in the URL under the filter's id.
 
 - A segment applies to every source that has its columns, the same rule as select filters, and HM2013 rejects a block where it binds to only some of the sources (a formula would divide filtered by unfiltered). HM2021 is an unknown segment.
 - Composition: segments filter rows before anything else, so point-in-time state, targets (section 7) and tests (`"segments"` on a test) all see the segmented rows. Snapshot points stay filter-independent (section 3.2).

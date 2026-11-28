@@ -11,6 +11,7 @@ import type {
   TableData,
 } from "../compiler/dashboard-data.js";
 import type { PeriodData } from "../compiler/period-data.js";
+import type { SegmentData } from "../compiler/segment-build.js";
 import { type HeightPreset, layoutItems, MIN_CHART_SPAN } from "../spec/layout.js";
 import { barCategories, barHeight, renderBar } from "./bar.js";
 import type { RenderContext } from "./chart.js";
@@ -22,6 +23,7 @@ import { timeOf } from "./partial.js";
 import { PERIOD_MOBILE, periodCaption, periodControl, periodStyles, periodText } from "./period.js";
 import { isPie, pieHeight, renderPie } from "./pie.js";
 import { renderScatter } from "./scatter.js";
+import { segmentControl, segmentStyles } from "./segment.js";
 import { esc, scriptJson } from "./svg.js";
 
 export { scriptJson };
@@ -103,6 +105,8 @@ export interface PageOptions {
   theme?: Theme;
   sources?: string[];
   periods?: PeriodData;
+  /** Every combination of the segment filter, embedded in the page (runSegmentData). */
+  segments?: SegmentData;
 }
 
 function context(data: DashboardData, theme: Theme): RenderContext {
@@ -497,6 +501,7 @@ export function pageStyles(
     `.hm-switch{flex-direction:row;flex-wrap:wrap;justify-content:space-between;align-items:flex-start;gap:8px 12px}.hm-card-titles{display:flex;flex-direction:column;gap:2px;min-width:0}.hm-header-side{display:flex;flex-direction:column;align-items:flex-end;gap:8px;max-width:100%;min-width:0}`,
     `.hm-seg{display:inline-flex;flex:0 1 auto;flex-wrap:wrap;max-width:100%;min-width:0;gap:2px;padding:2px;background:var(--hm-card-alt);border:1px solid var(--hm-border);border-radius:${theme.radius.control}px}.hm-seg button{font:inherit;font-size:12px;line-height:16px;font-weight:500;padding:3px 10px;border:0;border-radius:${Math.max(0, theme.radius.control - 2)}px;background:transparent;color:var(--hm-text-muted);cursor:pointer}.hm-seg button:hover{color:var(--hm-text)}.hm-seg button[aria-checked=true]{background:var(--hm-card);color:var(--hm-text);box-shadow:0 0 0 1px var(--hm-border-strong)}.hm-seg button:focus-visible{outline:2px solid var(--hm-focus);outline-offset:1px}[data-hm-grain][hidden]{display:none}`,
     periodStyles(theme),
+    segmentStyles(theme),
     `.hm-chart{position:relative}.hm-v{display:none}.hm-v svg{display:block;max-width:100%;height:auto;overflow:visible;touch-action:pan-y}.hm-v svg:focus,.hm-spark:focus{outline:none}.hm-v svg:focus-visible,.hm-spark:focus-visible,.hm-table-wrap:focus-visible{outline:2px solid var(--hm-focus);outline-offset:2px;border-radius:2px}`,
     `.hm-chart text{font-variant-numeric:tabular-nums}.hm-dim .hm-slice:not(.hm-on){opacity:.35}.hm-b-context{background:var(--hm-context)}`,
     `.hm-table-wrap{overflow-x:auto}.hm-table{width:100%;border-collapse:collapse}`,
@@ -566,17 +571,22 @@ export function renderFragment(data: DashboardData, theme: Theme = DEFAULT_THEME
 }
 
 export function renderDashboardPage(data: DashboardData, options: PageOptions): string {
-  const { periods } = options;
+  const { periods, segments } = options;
   const { result: html, ranges } = recordRanges(() => {
     const page = dashboardPage(data, options);
-    for (const preset of Object.values(periods?.presets ?? {})) {
+    const states = Object.values(segments?.states ?? {});
+    const shown = [
+      ...states.map((s) => s.data),
+      ...[periods, ...states.map((s) => s.periods)].flatMap((p) => Object.values(p?.presets ?? {})),
+    ];
+    for (const preset of shown) {
       renderDashboardBlocks(preset, options.theme);
       periodCaption(preset);
       if (preset.periodFilter) periodText(preset.periodFilter, preset.locale);
     }
     return page;
   });
-  if (!periods) return html;
+  if (!periods && !segments) return html;
   return html.replace(
     RANGES_SLOT,
     () => `<script type="application/json" data-hm-ranges>${scriptJson(ranges)}</script>`,
@@ -606,14 +616,21 @@ function dashboardPage(data: DashboardData, options: PageOptions): string {
           ` data-hm-grain-filter="${esc(data.grainFilter.id)}"`,
         )
       : "",
+    data.segmentFilter ? segmentControl(data.segmentFilter) : "",
   ].join("");
   const note = data.periodFilter
     ? `<p class="hm-period-note" data-hm-period-note aria-live="polite" hidden></p>`
     : "";
   const header = `<header class="hm-header"><div class="hm-titles"><div class="hm-brand"><span class="hm-logo" aria-hidden="true"></span>${esc(data.project)}</div><div class="hm-title"><h1>${esc(data.title)}</h1><p class="hm-caption" data-hm-caption>${esc(periodCaption(data))}</p>${note}${data.description ? `<p class="hm-description">${esc(data.description)}</p>` : ""}</div></div>${controls ? `<div class="hm-header-side">${controls}${asOf}</div>` : asOf}</header>`;
-  const embedded = options.periods
-    ? `<script type="application/json" data-hm-periods>${scriptJson(options.periods)}</script>${RANGES_SLOT}`
-    : "";
+  const embedded = [
+    options.periods
+      ? `<script type="application/json" data-hm-periods>${scriptJson(options.periods)}</script>`
+      : "",
+    options.segments
+      ? `<script type="application/json" data-hm-segments${options.assets.periods ? ` data-hm-engine="${esc(options.assets.periods)}"` : ""}>${scriptJson(options.segments)}</script>`
+      : "",
+    options.periods || options.segments ? RANGES_SLOT : "",
+  ].join("");
   const sources = options.sources?.length
     ? `Source: ${options.sources.join(", ")}`
     : `Source: ${data.project}`;

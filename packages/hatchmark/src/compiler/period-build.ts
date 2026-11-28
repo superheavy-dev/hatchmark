@@ -16,6 +16,7 @@ import { rangeKey } from "./periods.js";
 import type {
   MeasureComponent,
   MeasureExpression,
+  ParamBindings,
   PlannedQuery,
   QueryPlan,
   QueryResult,
@@ -132,7 +133,9 @@ function portablePlan(plan: QueryPlan): QueryPlan {
  * Runs everything a page's period filter needs (see PeriodData): each preset, and the day cubes
  * when the filter offers custom ranges. base is the page's own data, reused for the default preset.
  * Undefined data when the dashboard has no period filter. Errors are HM2015, as in runDashboard;
- * warnings of non-default presets are left out, since the page shows the default first.
+ * warnings of non-default presets are left out, since the page shows the default first. bindings
+ * are the other filters' values (a segment filter's), applied to every preset and to the day cubes;
+ * base must have been run with them.
  */
 export async function runPeriodData(
   project: Project,
@@ -140,6 +143,7 @@ export async function runPeriodData(
   executor: DashboardExecutor,
   base: DashboardData,
   now?: Date,
+  bindings: ParamBindings = {},
 ): Promise<{ data?: PeriodData; diagnostics: Diagnostic[] }> {
   const spec = project.dashboards.get(dashboard)?.spec;
   const filter = spec?.filters?.find((f) => f.type === "period");
@@ -159,7 +163,7 @@ export async function runPeriodData(
           project,
           dashboard,
           executor,
-          [...pending.values()].map((option) => ({ [filter.id]: option })),
+          [...pending.values()].map((option) => ({ ...bindings, [filter.id]: option })),
           now,
         );
   const ran = new Map([...pending.keys()].map((key, i) => [key, presetRuns[i]]));
@@ -183,7 +187,7 @@ export async function runPeriodData(
   const { plan } = planDashboard(project, dashboard);
   if (plan === undefined) return { data, diagnostics };
   const resolved = await executionContext(project, plan, executor, now);
-  const context = resolved.context;
+  const context = resolved.context && { ...resolved.context, bindings };
   if (context === undefined) return { data, diagnostics };
   const last = dayNumber(context.asOf);
   const queries: CustomRangeData["queries"] = {};
