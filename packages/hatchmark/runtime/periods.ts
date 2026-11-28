@@ -57,7 +57,14 @@ function render(
   ranges: Record<string, string> = {},
 ): { blocks: string; caption: string } {
   useRanges(ranges);
-  return { blocks: renderDashboardBlocks(data), caption: periodCaption(data) };
+  return {
+    blocks: renderDashboardBlocks(
+      data,
+      undefined,
+      (globalThis as { hatchmarkGeo?: Geographies }).hatchmarkGeo,
+    ),
+    caption: periodCaption(data),
+  };
 }
 
 (globalThis as { hatchmarkPeriods?: unknown }).hatchmarkPeriods = { view, render };

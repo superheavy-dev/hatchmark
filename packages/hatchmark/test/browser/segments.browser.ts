@@ -59,6 +59,21 @@ beforeAll(async () => {
         ],
         blocks: KPIS,
       },
+      map: {
+        title: "Map",
+        period: PERIOD,
+        filters: [SEGMENT],
+        blocks: [
+          ...KPIS,
+          {
+            type: "map",
+            id: "countries",
+            geo: "world-countries",
+            region: "country",
+            value: "revenue",
+          },
+        ],
+      },
     },
   );
   await mkdir(path.join(root, "segments"));
@@ -239,6 +254,18 @@ describe("segment toggle", () => {
       await page.close();
     });
   }
+
+  it("redraws a map with its boundaries when a segment turns on", async () => {
+    const { page, errors } = await open("map");
+    const regions = () => page.locator(".hm-map-svg path").count();
+    expect(await regions()).toBeGreaterThan(0);
+    await chip(page, "americas").click();
+    await settled(page);
+    await expect.poll(() => page.locator(".hm-map-note").count()).toBe(0);
+    await expect.poll(regions).toBeGreaterThan(0);
+    expect(errors).toEqual([]);
+    await page.close();
+  });
 
   it("names the toggle group for screen readers without a visible label", async () => {
     const { page } = await open("toggles");
