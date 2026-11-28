@@ -8,6 +8,7 @@ import {
   WEEKDAYS,
 } from "../spec/index.js";
 import { canonicalJson } from "./hash.js";
+import { formatInstant, parseInstant } from "./instants.js";
 import { segmentValues, selectValues } from "./params.js";
 import type {
   ExecutionContext,
@@ -118,6 +119,17 @@ function snapshotKey(source: SqlSource, name: string, timezone: string, sql: Sql
   throw new Error(
     `time column "${actual}" of source "${source.name}" has type ${type}; it needs DATE or TIMESTAMP`,
   );
+}
+
+function nanosecondText(epochNs: string): string {
+  const rest = `((${epochNs} % 1000) + 1000) % 1000`;
+  return `strftime(make_timestamp((${epochNs} - ${rest}) // 1000), '%Y-%m-%dT%H:%M:%S.%f') || lpad(CAST(${rest} AS VARCHAR), 3, '0')`;
+}
+
+function micro(bound: string): string {
+  if (!/\.\d{7,}Z$/.test(bound)) return bound;
+  const ns = parseInstant(bound);
+  return formatInstant(ns + ((1000n - (ns % 1000n)) % 1000n));
 }
 
 function naiveZone(source: SqlSource, sql: Sql): string {
@@ -286,8 +298,7 @@ function dimensionSql(
     if (type === "DATE") return `CAST(${key} AS VARCHAR)`;
     if (type !== "TIMESTAMP_NS")
       return `strftime(timezone('UTC', ${key}), '%Y-%m-%dT%H:%M:%S.%fZ')`;
-    const rest = `((${key} % 1000) + 1000) % 1000`;
-    return `strftime(make_timestamp((${key} - ${rest}) // 1000), '%Y-%m-%dT%H:%M:%S.%f') || lpad(CAST(${rest} AS VARCHAR), 3, '0') || 'Z'`;
+    return `${nanosecondText(key)} || 'Z'`;
   }
   if (dimension.kind === "time") {
     const local = `CAST(${localTime(source, dimension.column, context.timezone, sql)} AS DATE)`;
@@ -370,16 +381,19 @@ function builtQuery(
   if (bounds === undefined) {
     throw new Error(`range "${query.window.range}" has no "${query.window.shift}" window`);
   }
-  const windowOn = (column: string | undefined): string[] => {
-    if (column === undefined || !(bounds.kind === "bounded" || bounds.end !== undefined)) return [];
+  const windowOn = (name: string | undefined): string[] => {
+    if (name === undefined || !(bounds.kind === "bounded" || bounds.end !== undefined)) return [];
     const [start, end] = [bounds.kind === "bounded" ? bounds.start : undefined, bounds.end];
     const local = [start, end].some((v) => v !== undefined && !v.endsWith("Z"))
-      ? localTime(source, column, context.timezone, sql)
+      ? localTime(source, name, context.timezone, sql)
       : "";
+    const nanos = column(source, name).type === "TIMESTAMP_NS";
     const compare = (value: string, op: string) =>
-      value.endsWith("Z")
-        ? `${instant(source, column, context.timezone, sql)} ${op} CAST(${sql.bind(value)} AS TIMESTAMPTZ)`
-        : `${local} ${op} CAST(${sql.bind(value)} AS DATE)`;
+      !value.endsWith("Z")
+        ? `${local} ${op} CAST(${sql.bind(value)} AS DATE)`
+        : nanos
+          ? `${snapshotKey(source, name, context.timezone, sql)} ${op} CAST(${sql.bind(String(parseInstant(value)))} AS BIGINT)`
+          : `${instant(source, name, context.timezone, sql)} ${op} CAST(${sql.bind(micro(value))} AS TIMESTAMPTZ)`;
     return [
       ...(start === undefined ? [] : [compare(start, ">=")]),
       ...(end === undefined ? [] : [compare(end, "<")]),
@@ -676,7 +690,8 @@ function snapshotQuery(input: {
 /**
  * The SQL of a source horizon (RFC 0001 section 6.1): the latest value of a column over all rows,
  * with no filters. A DATE column gives "YYYY-MM-DD"; a timestamp gives its UTC instant
- * "YYYY-MM-DDTHH:MM:SS.ffffff", read in the source's timezone (else UTC) when it has no offset.
+ * "YYYY-MM-DDTHH:MM:SS.ffffff", with nine fraction digits for a TIMESTAMP_NS column, read in the
+ * source's timezone (else UTC) when it has no offset.
  * A column of another type with no values (a header-only CSV) is empty; with values it is an error.
  * naive is true for a timestamp column without an offset.
  */
@@ -698,7 +713,9 @@ export function horizonSql(
   const value =
     type === "DATE"
       ? `CAST(max(${quote(actual)}) AS VARCHAR)`
-      : `strftime(timezone('UTC', max(${instant(source, actual, "UTC", sql)})), '%Y-%m-%dT%H:%M:%S.%f')`;
+      : type === "TIMESTAMP_NS"
+        ? nanosecondText(`max(${snapshotKey(source, actual, "UTC", sql)})`)
+        : `strftime(timezone('UTC', max(${instant(source, actual, "UTC", sql)})), '%Y-%m-%dT%H:%M:%S.%f')`;
   return {
     text: `SELECT ${value} FROM ${source.relation}`,
     params: sql.values(),

@@ -58,7 +58,7 @@ describe("fromLocal reads a local wall time the way DuckDB reads a naive timesta
           .join(",")}) t(w) ORDER BY w`,
       );
       const mismatches = rows
-        .map((r) => [r.w as string, formatInstant(BigInt(r.us as number))])
+        .map((r) => [r.w as string, formatInstant(BigInt(r.us as number) * 1000n)])
         .filter(([w, duck]) => formatInstant(fromLocal(parseInstant(w as string), zone)) !== duck);
       expect(mismatches).toEqual([]);
     },

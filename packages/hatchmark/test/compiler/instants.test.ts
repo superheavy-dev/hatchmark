@@ -39,9 +39,9 @@ describe("fromLocal across daylight saving changes", () => {
     "round-trips every quarter hour of 2026 in %s that the zone's clocks show",
     (zone) => {
       const start = parseInstant("2026-01-01T00:00:00Z");
-      const step = 15n * 60n * 1_000_000n;
-      for (let us = start; us < start + 365n * 86_400_000_000n; us += step) {
-        const wall = toLocal(us, zone);
+      const step = 15n * 60n * 1_000_000_000n;
+      for (let ns = start; ns < start + 365n * 86_400_000_000_000n; ns += step) {
+        const wall = toLocal(ns, zone);
         expect(toLocal(fromLocal(wall, zone), zone)).toBe(wall);
       }
     },

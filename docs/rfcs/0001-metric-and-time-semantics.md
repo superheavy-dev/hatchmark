@@ -604,7 +604,7 @@ No peer product marks incomplete periods from the data, so every rule below is e
 ### 6.1 Definitions
 
 - **As-of instant T.** From the dashboard's `period.asOf`: a fixed date means the end of that local date; `latest_data` resolves once per plan (section 6.3).
-- **Source horizon H(source).** The instant a source is complete through. Default: the maximum of the time column the metric uses, over **all rows, ignoring filters and segments**. A timestamp gives that instant; a date column means the whole date is complete (H = end of that local date). A selected region with no recent sales must not make the period look unfinished.
+- **Source horizon H(source).** The instant a source is complete through. Default: the maximum of the time column the metric uses, over **all rows, ignoring filters and segments**. A timestamp gives that instant at the column's own precision (to the nanosecond for `TIMESTAMP_NS`), and every bound derived from it (a to-date end, a comparison cutoff, a partial bucket) keeps that precision; a date column means the whole date is complete (H = end of that local date). A selected region with no recent sales must not make the period look unfinished.
 - **Measure horizon** = min(T, H of every source the measure reads). A formula is as complete as its laggiest operand.
 - **Bucket status**, for a bucket [S, E) in the project timezone: `complete` when horizon ≥ E; `partial` when S < horizon < E, with `elapsed` = (horizon − S) / (E − S) in local wall-clock time; buckets at or after the horizon are not produced.
 

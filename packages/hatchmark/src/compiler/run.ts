@@ -19,7 +19,7 @@ import {
   type TimeColumn,
 } from "./horizons.js";
 import {
-  DAY_US,
+  DAY_NS,
   describeInstant,
   formatInstant,
   formatWall,
@@ -56,7 +56,8 @@ import {
 /**
  * A QueryExecutor that can also measure source horizons (RFC 0001 section 6.1). horizon returns the
  * latest value of a column over all rows, ignoring filters: "YYYY-MM-DD" for a DATE column, else the
- * UTC instant "YYYY-MM-DDTHH:MM:SS.ffffff" (timestamps without an offset read in the source's
+ * UTC instant "YYYY-MM-DDTHH:MM:SS.ffffff", nine fraction digits for a TIMESTAMP_NS column
+ * (timestamps without an offset read in the source's
  * timezone, else UTC); latest is undefined when the column is empty, and naive is true for a
  * timestamp column without an offset.
  */
@@ -143,12 +144,12 @@ export async function executionContext(
       }
       newest.set(h, result.date ? startOf(result.latest, tz) : parseInstant(result.latest));
       const lag = typeof h.rule === "object" ? h.rule.lag : undefined;
-      const days = lag !== undefined && "days" in lag ? BigInt(lag.days) * DAY_US : 0n;
+      const days = lag !== undefined && "days" in lag ? BigInt(lag.days) * DAY_NS : 0n;
       let through = result.date
         ? fromLocal(parseInstant(nextDay(result.latest)) - days, tz)
-        : parseInstant(result.latest) + 1n;
+        : parseInstant(result.latest) + (/\.\d{7,}$/.test(result.latest) ? 1n : 1000n);
       if (!result.date && days > 0n) through = fromLocal(toLocal(through, tz) - days, tz);
-      if (lag !== undefined && "hours" in lag) through -= BigInt(lag.hours) * 3_600_000_000n;
+      if (lag !== undefined && "hours" in lag) through -= BigInt(lag.hours) * 3_600_000_000_000n;
       measured.set(h, through);
     }
   } catch (error) {
@@ -260,7 +261,7 @@ export async function executionContext(
 
   const behind = new Set<string>();
   for (const [h, through] of measured) {
-    if (through === undefined || behind.has(h.source) || through >= instant - DAY_US) continue;
+    if (through === undefined || behind.has(h.source) || through >= instant - DAY_NS) continue;
     behind.add(h.source);
     notes.push({
       code: "HM4010",
@@ -272,7 +273,7 @@ export async function executionContext(
     });
   }
   if (now !== undefined) {
-    const limit = BigInt(now.getTime()) * 1000n + DAY_US;
+    const limit = BigInt(now.getTime()) * 1_000_000n + DAY_NS;
     const ahead = new Set<string>();
     for (const [h, latest] of newest) {
       if (h.column === undefined || ahead.has(h.source) || latest <= limit) continue;
@@ -280,7 +281,7 @@ export async function executionContext(
       notes.push({
         code: "HM4012",
         severity: "warning",
-        message: `source "${h.source}" has data in "${h.column}" through ${describeInstant(latest, tz)}, more than a day after this machine's clock (${describeInstant(limit - DAY_US, tz)})`,
+        message: `source "${h.source}" has data in "${h.column}" through ${describeInstant(latest, tz)}, more than a day after this machine's clock (${describeInstant(limit - DAY_NS, tz)})`,
         ...atSource(h.source),
         help: "look for future-dated rows, such as a typo in a year or scheduled entries, or set period.asOf",
         docs: docsCommand("HM4012"),

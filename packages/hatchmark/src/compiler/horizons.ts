@@ -25,8 +25,9 @@ export interface PlannedHorizon {
 }
 
 /**
- * A measured horizon: the UTC instant (YYYY-MM-DDTHH:MM:SS.ffffffZ) a source's column is complete
- * through, exclusive: just after its latest timestamp, or the start of the day after its latest
+ * A measured horizon: the UTC instant (YYYY-MM-DDTHH:MM:SS.ffffffZ, with nine fraction digits when a
+ * TIMESTAMP_NS column puts it between microseconds) a source's column is complete through,
+ * exclusive: just after its latest timestamp, at the column's own precision, or the start of the day after its latest
  * date. A source complete through the as-of ("through": "as_of") gets the as-of instant.
  */
 export interface SourceHorizon {

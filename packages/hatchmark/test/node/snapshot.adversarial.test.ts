@@ -143,7 +143,20 @@ function generate(seed: number): Case {
     }
     if (kind === "ns" && rand() < 0.5) {
       const midnight = localMidnight(day, tz);
-      instants.push(`${utcText(midnight - 1000)}.999999900`, `${utcText(midnight)}.000000001`);
+      instants.push(
+        `${utcText(midnight - 1000)}.999999900`,
+        `${utcText(midnight)}.000000001`,
+        `${utcText(midnight)}.000000002`,
+      );
+    }
+  }
+  const lastDay = days[days.length - 1];
+  if (kind === "ns" && lastDay !== undefined) {
+    const horizon = addDays(lastDay, 1);
+    instants.push(`${utcText(localMidnight(horizon, tz))}.000000001`);
+    for (const back of [1, 3, 12]) {
+      const midnight = utcText(localMidnight(addMonths(horizon, -back), tz));
+      instants.push(`${midnight}.000000001`, `${midnight}.000000002`);
     }
   }
   instants.sort();
@@ -425,9 +438,14 @@ function spanWhere(c: Case, span: DateSpan | undefined, current: boolean): strin
     const later = `timezone(${tz}, ${w} + INTERVAL 1 HOUR)`;
     return `(CASE WHEN ${later} - timezone(${tz}, ${w}) = INTERVAL 2 HOUR THEN ${later} - INTERVAL 1 HOUR ELSE timezone(${tz}, ${w}) END)`;
   };
-  const start = at(span.startAt ?? span.start);
-  const end = span.endAt === undefined ? at(span.end) : current ? undefined : at(span.endAt);
-  return `i >= ${start}${end === undefined ? "" : ` AND i < ${end}`}`;
+  const exact = (wall: string) =>
+    c.kind === "ns"
+      ? `(epoch_us(${at(wall.slice(0, 26))}) * 1000 + ${Number(wall.slice(26).padEnd(3, "0"))})`
+      : at(wall);
+  const time = c.kind === "ns" ? "k" : "i";
+  const start = exact(span.startAt ?? span.start);
+  const end = span.endAt === undefined ? exact(span.end) : current ? undefined : exact(span.endAt);
+  return `${time} >= ${start}${end === undefined ? "" : ` AND ${time} < ${end}`}`;
 }
 
 function bucketEnd(start: string, grain: string): string {
@@ -466,6 +484,19 @@ async function check(c: Case, data: DashboardData | undefined, where: string): P
           `${where} k_${name} previous: got ${k.previousValue}, oracle ${prev} over ${JSON.stringify(k.previous)}`,
         );
     }
+  }
+  const first = blocks.get(`k_${Object.keys(METRICS)[0]}`) as KpiData | undefined;
+  const endAt = first?.current?.endAt;
+  if (c.kind === "ns" && c.asOf === "latest_data" && endAt !== undefined) {
+    const [row] = await oracle.rows(`
+      WITH h AS (SELECT max(k) + 1 AS n FROM v), p AS (SELECT n, ((n % 1000) + 1000) % 1000 AS r FROM h)
+      SELECT strftime(timezone(${lit(c.tz)}, timezone('UTC', make_timestamp((n - r) // 1000))), '%Y-%m-%dT%H:%M:%S.%f') AS wall, r FROM p`);
+    const rest = Number(row?.r ?? 0);
+    const want = `${row?.wall}${rest === 0 ? "" : String(rest).padStart(3, "0")}`;
+    if (endAt !== want) out.push(`${where} horizon: got ${endAt}, oracle ${want}`);
+    const previous = first?.previous?.endAt;
+    if (previous !== undefined && previous.slice(10) !== want.slice(10))
+      out.push(`${where} previous horizon: got ${previous}, oracle time ${want.slice(10)}`);
   }
   const series = blocks.get("series") as LineData | undefined;
   const buckets = series?.axis.buckets ?? [];

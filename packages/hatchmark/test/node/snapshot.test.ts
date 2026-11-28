@@ -623,6 +623,105 @@ describe("snapshot edge cases", () => {
     }
   });
 
+  it("cuts the previous to-date window at the same nanosecond after midnight", async () => {
+    const { project, executor } = await setup({
+      ns: [
+        "2026-10-01 00:00:00.000000001,a,10",
+        "2026-10-01 00:00:00.000000002,a,99",
+        "2026-11-01 00:00:00.000000001,a,20",
+      ],
+      asOf: "latest_data",
+      range: "month_to_date",
+      compare: "previous_period",
+    });
+    try {
+      const result = await runDashboard(project, "d", executor);
+      expect(result.data?.blocks.find((b) => b.id === "k")).toMatchObject({
+        value: 20,
+        previousValue: 10,
+      });
+    } finally {
+      await executor.close();
+    }
+  });
+
+  it("ends a series at a nanosecond horizon in presets, executor custom ranges and the cube", async () => {
+    const { root, project } = await writeProject({
+      "hatchmark.yaml": {
+        ...PROJECT_DEFAULTS,
+        name: "horizon",
+        timezone: "UTC",
+        sources: {
+          s: { type: "parquet", path: "s.parquet", snapshot: "at" },
+          t: { type: "parquet", path: "t.parquet" },
+        },
+      },
+      "metrics/m.yaml": metric({
+        type: "aggregate",
+        table: "s",
+        time: "at",
+        column: "v",
+        aggregate: "sum",
+        over_time: "last",
+      }),
+      "metrics/n.yaml": metric({
+        type: "aggregate",
+        table: "t",
+        time: "at",
+        column: "v",
+        aggregate: "sum",
+      }),
+      "dashboards/d.yaml": {
+        title: "Horizon",
+        period: { range: "month_to_date", asOf: "latest_common_data", compare: "previous_period" },
+        filters: [
+          { type: "period", id: "p", options: ["month_to_date"], default: "month_to_date" },
+        ],
+        blocks: [
+          { type: "kpi", id: "k", metric: "m" },
+          { type: "line", id: "l", metrics: ["m"], grain: "day" },
+          { type: "kpi", id: "n", metric: "n" },
+        ],
+      },
+    });
+    const oracle = await Oracle.open();
+    try {
+      await oracle.run(
+        `COPY (SELECT * FROM (VALUES (TIMESTAMP_NS '2026-10-01 00:00:00.000000001', 10), (TIMESTAMP_NS '2026-10-01 00:00:00.000000002', 99), (TIMESTAMP_NS '2026-10-31 12:00:00', 5), (TIMESTAMP_NS '2026-11-01 00:00:00.000000001', 20), (TIMESTAMP_NS '2026-11-01 00:00:00.000000002', 30), (TIMESTAMP_NS '2026-11-01 00:00:00.000000003', 40)) AS x("at", v)) TO '${root}/s.parquet' (FORMAT PARQUET)`,
+      );
+      await oracle.run(
+        `COPY (SELECT TIMESTAMP_NS '2026-11-01 00:00:00.000000001' AS "at", 1 AS v) TO '${root}/t.parquet' (FORMAT PARQUET)`,
+      );
+    } finally {
+      oracle.close();
+    }
+    const config = project.config.spec;
+    if (config === undefined) throw new Error("invalid hatchmark.yaml");
+    const executor = await createDuckDbExecutor({ root, config, threads: 1 });
+    try {
+      const base = await runDashboard(project, "d", executor);
+      expect(base.data?.horizons.map((h) => [h.source, h.through])).toEqual([
+        ["s", "2026-11-01T00:00:00.000000004Z"],
+        ["t", "2026-11-01T00:00:00.000000002Z"],
+      ]);
+      expect(base.data?.blocks.find((b) => b.id === "k")).toMatchObject({
+        value: 20,
+        previousValue: 10,
+      });
+      expect(lineOf(base.data)).toEqual([20]);
+      const periods = await runPeriodData(project, "d", executor, base.data as DashboardData);
+      expect(periods.diagnostics).toEqual([]);
+      const custom = periods.data?.custom;
+      if (custom === undefined) throw new Error("no custom range cube");
+      const range = { start: "2026-10-31", end: "2026-11-02" };
+      const bound = await runDashboard(project, "d", executor, undefined, { p: range });
+      expect(lineOf(bound.data)).toEqual([5, 20]);
+      expect(lineOf(customRangeDashboard(custom, "p", range))).toEqual([5, 20]);
+    } finally {
+      await executor.close();
+    }
+  });
+
   it("keeps a Parquet flow row 100 ns before midnight in its own day", async () => {
     const { project, executor } = await setup({
       ns: MIDNIGHT,

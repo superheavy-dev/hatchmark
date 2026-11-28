@@ -103,7 +103,7 @@ function actual(
       asOfInstant: iso(T),
       horizons: [],
     },
-    H,
+    H * 1000n,
   );
   if (w?.kind !== "bounded") throw new Error("expected a bounded window");
   const start = boundAt(w.start, tz);
@@ -334,7 +334,7 @@ describe("wall times resolve as DuckDB reads them", { timeout: FULL ? 1_800_000 
         continue;
       }
       const mine = wallToInstant(x.w, x.tz);
-      const core = fromLocal(x.w, x.tz);
+      const core = fromLocal(x.w * 1000n, x.tz) / 1000n;
       const line =
         x.tz +
         " " +

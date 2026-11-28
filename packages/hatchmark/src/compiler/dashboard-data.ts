@@ -29,7 +29,8 @@ export type Value = number | null;
 /**
  * A calendar span in the project time zone: start inclusive, end exclusive, YYYY-MM-DD, covering
  * every day the window touches. startAt and endAt give the exact local date-time
- * (YYYY-MM-DDTHH:MM:SS.ffffff) of a bound that a horizon puts inside a day (RFC 0001 section 6.4).
+ * (YYYY-MM-DDTHH:MM:SS.ffffff, nine fraction digits when a TIMESTAMP_NS horizon puts it between
+ * microseconds) of a bound that a horizon puts inside a day (RFC 0001 section 6.4).
  */
 export interface DateSpan {
   start: string;

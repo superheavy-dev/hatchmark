@@ -262,7 +262,7 @@ function snapshotCubeResult(
   const at = (instant: string) =>
     instant.length === 10
       ? fromLocal(parseInstant(instant), window.timezone)
-      : parseInstant(instant.slice(0, 26));
+      : parseInstant(instant);
   const inside = (day: number | undefined, instant: string) =>
     day !== undefined &&
     (window.from === undefined ? day >= window.lo : at(instant) >= window.from) &&
