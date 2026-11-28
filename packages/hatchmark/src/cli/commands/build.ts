@@ -12,6 +12,7 @@ import {
   rmdir,
 } from "node:fs/promises";
 import path from "node:path";
+import { fileURLToPath } from "node:url";
 import {
   type DashboardData,
   type DashboardExecutor,
@@ -42,6 +43,7 @@ import {
 } from "../../spec/index.js";
 import type { CommandHelp } from "../help.js";
 import { type CommandContext, type CommandResult, EXIT } from "../io.js";
+import { packageRoot } from "../package-root.js";
 import { usageError } from "../usage.js";
 import { exitCodeFor } from "./check.js";
 
@@ -69,7 +71,6 @@ export const buildHelp: CommandHelp = {
   },
 };
 
-const ASSETS = new URL("../../../assets/", import.meta.url);
 const ASSET_DIR = "_hatchmark";
 const MANIFEST = `${ASSET_DIR}/manifest.json`;
 
@@ -96,7 +97,8 @@ function hashedName(file: string, content: Uint8Array): string {
 
 async function readAsset(relative: string): Promise<Uint8Array> {
   try {
-    return await readFile(new URL(relative, ASSETS));
+    const root = await packageRoot(path.dirname(fileURLToPath(import.meta.url)));
+    return await readFile(path.join(root, "assets", relative));
   } catch {
     throw new Error(
       `bundled asset ${relative} is missing from the hatchmark package; reinstall it, or run pnpm build in a source checkout`,
