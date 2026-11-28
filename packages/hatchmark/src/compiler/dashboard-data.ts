@@ -64,6 +64,57 @@ export interface PartialBucket {
   through?: string;
 }
 
+/**
+ * Why a block shows no target although it names one (RFC 0001 section 7). "filter": a select filter
+ * keeps some values of a column the target has no column for; "segment": a segment is on that the
+ * target cannot follow (its table lacks the segment's columns, or the target lists other segments);
+ * "grain": a flow target with prorate "none" is set at a coarser grain than the block shows.
+ */
+export type TargetHidden = "filter" | "segment" | "grain";
+
+/**
+ * A target at each position of a block's axis (time buckets or categories), same order and length
+ * as the axis, null where it has none. pace is set when a position is partial: the target times the
+ * elapsed share the series' partial bucket gives (flow targets only), null at the other positions.
+ */
+export interface SeriesTarget {
+  values: Value[];
+  pace?: Value[];
+}
+
+/**
+ * The target a chart names. Positional values sit on the series they describe (Series.target): the
+ * metric's series when the block doesn't split, each split series when the target's table has the
+ * split column. values here is the target over every split value, set on split blocks; window is the
+ * target over the block's window, set on category bars whose target's table has no by column.
+ */
+export interface BlockTarget {
+  id: string;
+  /** The target's label, or its id when it sets none. */
+  label: string;
+  metric: string;
+  /** Set when the target does not apply under the active filters, segments or grain: no values. */
+  hidden?: TargetHidden;
+  values?: Value[];
+  pace?: Value[];
+  window?: { value: Value; pace?: number };
+}
+
+/**
+ * A KPI's target over its window (RFC 0001 section 7). Flow: the target over the window, with pace
+ * when the window ends before its period does (a to-date range at the horizon, or a range the
+ * horizon trims). Point-in-time: the target at the window's end. attainment is value / pace, or
+ * value / value of the target without pace; null when either is null or the divisor is 0.
+ */
+export interface KpiTarget {
+  id: string;
+  label: string;
+  value: Value;
+  pace?: number;
+  attainment: Value;
+  hidden?: TargetHidden;
+}
+
 export interface MetricInfo {
   name: string;
   label: string;
@@ -115,6 +166,8 @@ export interface KpiData extends BlockCommon {
    * data (a distinct count or a median): value is null, and the reader needs a preset.
    */
   presetOnly?: true;
+  /** Present when the block names a target. */
+  target?: KpiTarget;
 }
 
 /** One drawn series: a metric, or one value of the split column for a single metric. */
@@ -145,6 +198,8 @@ export interface Series {
    * fraction; null where the value or the total is null or the total is 0.
    */
   share?: Value[];
+  /** The block's target for this series, when it has one (BlockTarget). */
+  target?: SeriesTarget;
 }
 
 /**
@@ -193,7 +248,12 @@ export interface GrainOption {
  */
 export interface GrainSwitch {
   selected: string;
-  options: (GrainOption & { axis: TimeAxis; series: Series[]; totals?: Value[] })[];
+  options: (GrainOption & {
+    axis: TimeAxis;
+    series: Series[];
+    totals?: Value[];
+    target?: BlockTarget;
+  })[];
 }
 
 /** Related series a block colours as one hue family, in the order the spec lists them. */
@@ -212,6 +272,8 @@ export interface LineData extends BlockCommon, StackTotals {
   series: Series[];
   groups?: SeriesGroup[];
   grains?: GrainSwitch;
+  /** Present when the block names a target. */
+  target?: BlockTarget;
 }
 
 export interface BarData extends BlockCommon, StackTotals {
@@ -225,6 +287,8 @@ export interface BarData extends BlockCommon, StackTotals {
   omittedCategories?: number;
   /** Only with a time axis. */
   grains?: GrainSwitch;
+  /** Present when the block names a target. */
+  target?: BlockTarget;
 }
 
 /** One slice of a pie or donut. */

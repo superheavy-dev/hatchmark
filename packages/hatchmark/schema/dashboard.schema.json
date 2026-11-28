@@ -510,6 +510,11 @@
         },
         "sparkline": {
           "type": "boolean"
+        },
+        "target": {
+          "description": "A target id from the targets of the block's metric (with several metrics, the first that defines it). The block's data then carries the target's values; see Targets in docs/metrics.md.",
+          "type": "string",
+          "pattern": "^[a-z][a-z0-9_]*$"
         }
       },
       "required": [
@@ -596,6 +601,11 @@
           "items": {
             "$ref": "#/$defs/SeriesGroup"
           }
+        },
+        "target": {
+          "description": "A target id from the targets of the block's metric (with several metrics, the first that defines it). The block's data then carries the target's values; see Targets in docs/metrics.md.",
+          "type": "string",
+          "pattern": "^[a-z][a-z0-9_]*$"
         },
         "type": {
           "type": "string",
@@ -721,6 +731,11 @@
           "items": {
             "$ref": "#/$defs/SeriesGroup"
           }
+        },
+        "target": {
+          "description": "A target id from the targets of the block's metric (with several metrics, the first that defines it). The block's data then carries the target's values; see Targets in docs/metrics.md.",
+          "type": "string",
+          "pattern": "^[a-z][a-z0-9_]*$"
         },
         "type": {
           "type": "string",
@@ -861,6 +876,11 @@
           "type": "integer",
           "minimum": 1,
           "maximum": 100
+        },
+        "target": {
+          "description": "A target id from the targets of the block's metric (with several metrics, the first that defines it). The block's data then carries the target's values; see Targets in docs/metrics.md.",
+          "type": "string",
+          "pattern": "^[a-z][a-z0-9_]*$"
         }
       },
       "required": [

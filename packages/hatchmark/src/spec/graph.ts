@@ -1,6 +1,7 @@
 import { normalizePath } from "./common.js";
 import type { Source } from "./config.js";
-import type { Filter, Metric } from "./metric.js";
+import type { Block } from "./dashboard.js";
+import type { Filter, Metric, Target } from "./metric.js";
 import type { Project } from "./project.js";
 import { metricDeps } from "./semantics.js";
 
@@ -112,7 +113,50 @@ export function dashboardDependencies(project: Project, dashboard: string): Dash
     for (const dep of metricDeps(metric)) visit(dep);
   };
   for (const name of metricRefs(project, dashboard)) visit(name);
+  const specs = new Map<string, Metric>();
+  for (const [name, file] of project.metrics) if (file.spec) specs.set(name, file.spec);
+  for (const block of project.dashboards.get(dashboard)?.spec?.blocks ?? []) {
+    const table = blockTarget(block, specs)?.target.table;
+    if (table !== undefined) sources.add(table);
+  }
   return { metrics, sources, segments };
+}
+
+/**
+ * The HM4022 note for a block that splits a flow target by days (RFC 0001 section 7), worded the
+ * same in check and in build so the two report it once.
+ */
+export function proratedTargetNote(
+  block: string,
+  target: string,
+  metric: string,
+  unit: string,
+): { message: string; help: string } {
+  return {
+    message: `block "${block}" splits target "${target}" of "${metric}", set per ${unit}, by days: a ${unit} counts by its days inside each bucket or window`,
+    help: "set prorate: none on the target to show it only where its buckets fit whole",
+  };
+}
+
+/**
+ * The target a block names (RFC 0001 section 7) and the metric it belongs to: the first of the
+ * block's metrics, in order, whose targets include the block's target id. Undefined when the block
+ * names none or no metric defines it (HM2022).
+ */
+export function blockTarget(
+  block: Block,
+  metrics: ReadonlyMap<string, Metric>,
+): { metric: string; target: Target; index: number } | undefined {
+  if (!("target" in block) || block.target === undefined) return undefined;
+  const id = block.target;
+  const names = block.type === "kpi" ? [block.metric] : "metrics" in block ? block.metrics : [];
+  for (const metric of names) {
+    const targets = metrics.get(metric)?.targets ?? [];
+    const index = targets.findIndex((t) => t.id === id);
+    const target = targets[index];
+    if (target !== undefined) return { metric, target, index };
+  }
+  return undefined;
 }
 
 /**

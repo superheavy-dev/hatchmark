@@ -52,6 +52,11 @@ const sort = z
   })
   .meta({ id: "Sort" });
 
+const target = identifier.optional().meta({
+  description:
+    "A target id from the targets of the block's metric (with several metrics, the first that defines it). The block's data then carries the target's values; see Targets in docs/metrics.md.",
+});
+
 const kpiBlock = z
   .strictObject({
     ...blockCommon,
@@ -65,6 +70,7 @@ const kpiBlock = z
       .optional()
       .meta({ description: "Defaults to the dashboard period's compare." }),
     sparkline: z.boolean().optional(),
+    target,
   })
   .meta({ id: "KpiBlock" });
 
@@ -110,6 +116,7 @@ const timeSeriesFields = {
   incomplete: incomplete.optional(),
   split: columnName.optional().meta({ description: "Column that splits one metric into series." }),
   groups: groupsField,
+  target,
 };
 
 function grainsField() {
@@ -191,6 +198,7 @@ const barBlock = z
     orientation: z.enum(["vertical", "horizontal"]).optional(),
     sort: sort.optional(),
     limit: z.number().int().min(1).max(100).optional(),
+    target,
   })
   .superRefine((b, ctx) => {
     if ((b.by === undefined) === (b.grain === undefined)) {
