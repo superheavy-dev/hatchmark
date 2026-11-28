@@ -174,7 +174,7 @@ function planReading(
   shift: Comparison,
   oneWindow = false,
   edges?: "clip",
-  unbound = false,
+  allPeriods = false,
 ): Reading {
   const groups = new Map<
     string,
@@ -241,16 +241,18 @@ function planReading(
       dimensions,
       groupingSets,
       window:
-        group.time === undefined || unbound
+        group.time === undefined
           ? { range: "all_time", shift: "none" }
           : {
-              range: ctx.range,
+              range: allPeriods ? "all_time" : ctx.range,
               shift,
               column: group.time,
               horizons: group.horizons,
               ...(edges !== undefined && grainAxis ? { edges } : {}),
             },
-      params: unbound ? [] : paramsForQuery(ctx.params, group.source, group.time),
+      params: paramsForQuery(ctx.params, group.source, group.time).filter(
+        (p) => !allPeriods || p.kind !== "period",
+      ),
     };
     const id = queryId(shape);
     ids.set(key, id);

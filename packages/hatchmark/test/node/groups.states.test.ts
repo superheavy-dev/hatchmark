@@ -1,8 +1,10 @@
+import { readFile } from "node:fs/promises";
+import path from "node:path";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import type { BarData, DashboardData, LineData } from "../../src/compiler/index.js";
 import { DEFAULT_THEME, seriesPaints } from "../../src/render/index.js";
 import { PROJECT_DEFAULTS } from "../../src/spec/index.js";
-import { metric, removeProjects, run, writeProject } from "./fixture.js";
+import { buildProject, metric, removeProjects, run, writeProject } from "./fixture.js";
 
 const CSV = [
   "time,region,channel,va,vb,vc",
@@ -94,7 +96,7 @@ beforeAll(async () => {
     const result = await run(project.root, project.project, name);
     data[name] = result.data;
     problems[name] = result.diagnostics.filter((d) => d.severity === "error");
-    warnings[name] = result.diagnostics.filter((d) => d.code === "HM2030");
+    warnings[name] = result.diagnostics.filter((d) => d.code === "HM2027");
   }
 });
 afterAll(removeProjects);
@@ -124,10 +126,8 @@ describe("series groups across periods, filters and stacks", () => {
     expect(total).toBe(1e15 + 0.0625 + 0.0625);
   });
 
-  it("keeps every ungrouped split value's colour across periods and filters", () => {
-    const states = ["may", "june", "west", "east", "all"].map((name) =>
-      slots(block<LineData>(name, "partial")),
-    );
+  it("keeps every ungrouped split value's colour across periods", () => {
+    const states = ["may", "june", "all"].map((name) => slots(block<LineData>(name, "partial")));
     for (const label of ["U", "V", "W"]) {
       const seen = new Set(states.map((s) => s[label]).filter((v) => v !== undefined));
       expect(seen.size, label).toBe(1);
@@ -165,12 +165,91 @@ describe("series groups across periods, filters and stacks", () => {
     ]);
   });
 
-  it("warns about a split value only when no period or filter has rows for it", () => {
-    for (const name of ["may", "june", "west", "east", "all"]) {
-      expect(warnings[name]?.map((w) => w.message).filter((m) => m.includes("no rows"))).toEqual([
-        'group "Pair" names "G9", which "channel" has no rows for',
-        'group "Pair" names "G8", which "channel" has no rows for',
-      ]);
+  it("never puts a value the page's filters exclude into its HTML", async () => {
+    const period = { start: "2026-05-01", end: "2026-07-01" };
+    const scoped = await writeProject({
+      "hatchmark.yaml": {
+        ...PROJECT_DEFAULTS,
+        name: "Scope",
+        timezone: "UTC",
+        sources: { orders: { type: "csv", path: "data/orders.csv" } },
+      },
+      "data/orders.csv": [
+        "time,region,channel,amount",
+        "2026-05-06,West,Direct,10",
+        "2026-06-07,West,Marketplace,20",
+        "2026-06-08,West,Partners,30",
+        "2026-06-09,East,EastOnlyChannel,987654321",
+        "",
+      ].join("\n"),
+      "metrics/revenue.yaml": metric({
+        label: "Revenue",
+        type: "aggregate",
+        table: "orders",
+        time: "time",
+        aggregate: "sum",
+        column: "amount",
+      }),
+      ...Object.fromEntries(
+        [false, true].map((grouped) => [
+          `dashboards/${grouped ? "grouped" : "plain"}.yaml`,
+          {
+            title: "Scope",
+            period: { asOf: "2026-06-30", range: period, compare: "none" },
+            filters: [
+              { type: "select", id: "region", column: "region", default: "West" },
+              { type: "period", id: "dates", options: [period, "last_30_days"], default: period },
+            ],
+            blocks: [
+              {
+                type: "line",
+                id: "revenue",
+                grain: "month",
+                split: "channel",
+                metrics: ["revenue"],
+                ...(grouped
+                  ? { groups: [{ label: "Owned", series: ["Direct", "Marketplace"] }] }
+                  : {}),
+              },
+            ],
+          },
+        ]),
+      ),
+    });
+    expect((await buildProject(scoped.root)).code).toBe(0);
+    for (const name of ["plain", "grouped"]) {
+      const html = await readFile(path.join(scoped.root, "dist", name, "index.html"), "utf8");
+      expect(html, name).toContain("Partners");
+      expect(html, name).not.toContain("EastOnlyChannel");
+      expect(html, name).not.toContain("987654321");
     }
+    const grouped = await readFile(path.join(scoped.root, "dist", "grouped", "index.html"), "utf8");
+    const payload = JSON.parse(
+      grouped.match(/<script type="application\/json" data-hm-periods>(.*?)<\/script>/s)?.[1] ??
+        "{}",
+    );
+    const domainRows = Object.values(
+      payload.custom.queries as Record<string, { result?: { rows: unknown[][] } }>,
+    ).flatMap((q) => q.result?.rows ?? []);
+    expect(domainRows.length).toBeGreaterThan(0);
+    for (const row of domainRows) expect(row.slice(1).every((v) => v === null)).toBe(true);
+  });
+
+  it("warns about a split value only when no period has rows for it under the page's filters", () => {
+    const missing = (name: string) =>
+      warnings[name]?.map((w) => w.message).filter((m) => m.includes("no rows"));
+    const absent = [
+      'group "Pair" names "G9", which "channel" has no rows for',
+      'group "Pair" names "G8", which "channel" has no rows for',
+    ];
+    for (const name of ["may", "june", "all"]) expect(missing(name), name).toEqual(absent);
+    expect(missing("west")).toEqual([
+      ...absent,
+      'group "Blank" names "(empty)", which "channel" has no rows for',
+    ]);
+    expect(missing("east")).toEqual([
+      'group "Pair" names "G2", which "channel" has no rows for',
+      ...absent,
+    ]);
   });
 });

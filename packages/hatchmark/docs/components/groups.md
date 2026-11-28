@@ -69,7 +69,7 @@ groups:
 
 | Code     | When                                                                                                                                            | Fix                                                                     |
 | -------- | ----------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------- |
-| `HM2030` | Error. A group names a metric that is not in `metrics`. Build warning: a split value has no rows in the source, whatever the period or filters. | Use a name from `metrics` (a close match is offered), or fix the value. |
+| `HM2027` | Error. A group names a metric that is not in `metrics`. Build warning: a split value has no rows in the source, whatever the period or filters. | Use a name from `metrics` (a close match is offered), or fix the value. |
 | `HM3011` | Error. A series is in two groups, or twice in one.                                                                                              | Remove the repeat (the fix, marked unsafe).                             |
 | `HM5030` | Error. A group has more series than a hue family has steps (3).                                                                                 | Split the group, or leave a series ungrouped.                           |
 | `HM5031` | Error. `groups` on a chart with one series (one metric and no `split`).                                                                         | Remove `groups`, or add the related metrics.                            |

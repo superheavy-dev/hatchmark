@@ -561,16 +561,16 @@ class Assembler {
   }
 
   groupWarning(plan: BlockPlan, index: number, step: number, message: string, help: string): void {
-    if (this.diagnostics.some((d) => d.code === "HM2030" && d.message === message)) return;
+    if (this.diagnostics.some((d) => d.code === "HM2027" && d.message === message)) return;
     const file = this.project.dashboards.get(this.plan.dashboard);
     const pointer = `${plan.pointer}/groups/${index}/series/${step}`;
     this.diagnostics.push({
-      code: "HM2030",
+      code: "HM2027",
       severity: "warning",
       message,
       ...(file ? { file: file.file, pointer, ...file.document.locationOf(pointer) } : {}),
       help,
-      docs: docsCommand("HM2030"),
+      docs: docsCommand("HM2027"),
     });
   }
 

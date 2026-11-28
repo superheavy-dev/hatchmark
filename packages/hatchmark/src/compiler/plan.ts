@@ -197,8 +197,8 @@ export interface BlockPlan {
   /** A KPI's metric by month over the current window, when the block asks for a sparkline. */
   sparkline?: Record<string, MeasureExpression>;
   /**
-   * A grouped split block's metrics by split value over all time and without filters: every value
-   * the series can take, so each keeps its colour whichever period or filter is shown.
+   * A grouped split block's metrics by split value under its filters, over every period up to the
+   * as-of: every value the page can show, so each keeps its colour whichever period is shown.
    */
   domain?: Record<string, MeasureExpression>;
   /**

@@ -13,7 +13,13 @@ import {
   type PortableMetric,
 } from "./period-data.js";
 import { rangeKey } from "./periods.js";
-import type { MeasureComponent, PlannedQuery, QueryPlan, QueryResult } from "./plan.js";
+import type {
+  MeasureComponent,
+  MeasureExpression,
+  PlannedQuery,
+  QueryPlan,
+  QueryResult,
+} from "./plan.js";
 import { planDashboard, queryId } from "./planner.js";
 import {
   type DashboardExecutor,
@@ -72,6 +78,21 @@ function cubeFrom(query: PlannedQuery, result: QueryResult, start: number, last:
     }
   }
   return cube;
+}
+
+function expressionQueries(e: MeasureExpression): string[] {
+  return e.op === "ref"
+    ? [e.queryId]
+    : [...expressionQueries(e.numerator), ...expressionQueries(e.denominator)];
+}
+
+function keysOnly(query: PlannedQuery, result: QueryResult): QueryResult {
+  const dims = query.dimensions.length;
+  return {
+    columns: result.columns,
+    rows: result.rows.map((row) => row.map((value, i) => (i < dims ? value : null))),
+    ...(result.groupingSet ? { groupingSet: result.groupingSet } : {}),
+  };
 }
 
 function toKey(value: unknown): Key {
@@ -168,12 +189,25 @@ export async function runPeriodData(
   const last = dayNumber(context.asOf);
   const queries: CustomRangeData["queries"] = {};
   const runs = new Map<string, { query: PlannedQuery; result: QueryResult }>();
+  const shown = new Set(
+    plan.blocks.flatMap((b) =>
+      [b.measures, b.previous, b.sparkline, ...(b.grains ?? []).map((g) => g.measures)].flatMap(
+        (m) => Object.values(m ?? {}).flatMap(expressionQueries),
+      ),
+    ),
+  );
+  const domains = new Set(
+    plan.blocks
+      .flatMap((b) => Object.values(b.domain ?? {}).flatMap(expressionQueries))
+      .filter((id) => !shown.has(id)),
+  );
   try {
     for (const query of plan.queries) {
       const cubeQuery = dayCubeQuery(query);
       if (cubeQuery === undefined) {
         if (queryBounds(query, context) !== undefined) {
-          queries[query.id] = { result: await executor.execute(query, context) };
+          const result = await executor.execute(query, context);
+          queries[query.id] = { result: domains.has(query.id) ? keysOnly(query, result) : result };
         }
         continue;
       }

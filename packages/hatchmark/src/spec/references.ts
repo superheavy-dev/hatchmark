@@ -970,7 +970,7 @@ function checkGroups(
       if (!split && !block.metrics.includes(name)) {
         const listed = new Set(groups.flatMap((other) => other.series.map(String)));
         r.report(
-          "HM2030",
+          "HM2027",
           at,
           `group "${group.label}" names "${name}", which this chart does not draw`,
           {

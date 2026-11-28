@@ -135,8 +135,8 @@ describe("series groups in the engine", () => {
     }
   });
 
-  it("warns once about a split value the data has no rows for (HM2030)", () => {
-    expect(diagnostics.filter((d) => d.code === "HM2030")).toMatchObject([
+  it("warns once about a split value the data has no rows for (HM2027)", () => {
+    expect(diagnostics.filter((d) => d.code === "HM2027")).toMatchObject([
       {
         severity: "warning",
         pointer: "/blocks/2/groups/0/series/1",

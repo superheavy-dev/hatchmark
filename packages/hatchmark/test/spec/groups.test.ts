@@ -82,12 +82,12 @@ describe("series groups", () => {
     });
   });
 
-  it("names an unknown metric with a suggestion (HM2030)", () => {
+  it("names an unknown metric with a suggestion (HM2027)", () => {
     const block = line([{ label: "Revenue", series: ["revenue", "net_revenu"] }]);
     const [d, ...rest] = refs(block);
     expect(rest).toEqual([]);
     expect(d).toMatchObject({
-      code: "HM2030",
+      code: "HM2027",
       severity: "error",
       pointer: "/blocks/0/groups/0/series/1",
       message: 'group "Revenue" names "net_revenu", which this chart does not draw',
@@ -97,7 +97,7 @@ describe("series groups", () => {
     expect(afterFix(block, d?.fix)).toEqual([]);
   });
 
-  it("never suggests a metric another group already lists (HM2030)", () => {
+  it("never suggests a metric another group already lists (HM2027)", () => {
     for (const block of [
       line([{ label: "Revenue", series: ["revenue", "Revenue"] }]),
       line([
@@ -106,7 +106,7 @@ describe("series groups", () => {
       ]),
     ]) {
       const found = refs(block);
-      expect(found.map((d) => d.code)).toEqual(["HM2030"]);
+      expect(found.map((d) => d.code)).toEqual(["HM2027"]);
       const [d] = found;
       if (d?.fix !== undefined) expect(afterFix(block, d.fix)).toEqual([]);
       expect(d?.help ?? "").not.toContain('"revenue"');
