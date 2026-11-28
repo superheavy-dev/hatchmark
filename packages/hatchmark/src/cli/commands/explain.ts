@@ -19,7 +19,13 @@ import {
   createDuckDbExecutor,
   nodeProjectHost,
 } from "../../node/index.js";
-import { blockId, loadProject, type Project, type ProjectConfig } from "../../spec/index.js";
+import {
+  blockId,
+  loadProject,
+  type Project,
+  type ProjectConfig,
+  parseDiagnostics,
+} from "../../spec/index.js";
 import type { CommandHelp } from "../help.js";
 import { type CommandContext, type CommandResult, EXIT } from "../io.js";
 import { usageError } from "../usage.js";
@@ -114,7 +120,10 @@ export async function explain(
     return explainCode(input);
   }
   if (project === undefined || project.config.spec === undefined) {
-    const report = createReport(loadDiagnostics);
+    const report = createReport([
+      ...loadDiagnostics,
+      ...(project === undefined ? [] : parseDiagnostics(project)),
+    ]);
     return { exitCode: EXIT.usage, json: report, human: renderHuman(report, { color: ctx.color }) };
   }
   if (input !== undefined && !project.metrics.has(input)) {
