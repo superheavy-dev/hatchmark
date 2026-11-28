@@ -176,10 +176,8 @@ export function formatRange(
   return text;
 }
 
-/**
- * Runs render and returns every date range text it formatted. Browsers ship other ICU data than
- * the build, so the page embeds these and the browser reuses them through useRanges.
- */
+// Browsers ship different ICU data than the build, so the page embeds the range texts the build
+// formatted.
 export function recordRanges<T>(render: () => T): { result: T; ranges: Record<string, string> } {
   rangeTexts.clear();
   recording = true;
@@ -192,7 +190,6 @@ export function recordRanges<T>(render: () => T): { result: T; ranges: Record<st
   }
 }
 
-/** Makes formatRange return these texts, recorded by recordRanges, for the ranges they cover. */
 export function useRanges(ranges: Record<string, string>): void {
   rangeTexts.clear();
   for (const [key, text] of Object.entries(ranges)) rangeTexts.set(key, text);

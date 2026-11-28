@@ -1,11 +1,3 @@
-// Scatter (#28). A hostile orders
-// table (signed refunds, null amounts and quantities, refunds-only and net-zero countries, four exact
-// ties, New York window edges, 500/501/700-value columns), a DATE source ending Apr 15, a source whose
-// newest value is exactly local midnight and one whose June holds only a partial day run through the real engine
-// and renderer. Every scatter point, its order, limit, cap and warnings are checked against plain SQL
-// on raw rows (the oracle's own DuckDB connection, CSVs read as VARCHAR and cast by hand). Windows are
-// computed here: a point reads x, y and size through the earliest horizon among them. HM_SWEEP=full
-// adds the 700-customer cap and the renderer checks at every responsive layout.
 import path from "node:path";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import type { DashboardData, ScatterData } from "../../src/compiler/dashboard-data.js";
@@ -53,7 +45,6 @@ const COUNTRIES = [
 const CHANNELS = ["Online store", "Marketplace", "Retail partners", ""];
 const iso = (t: number) => `${new Date(t).toISOString().slice(0, 19)}Z`;
 
-// The random draws run in a fixed order from a fixed seed, so the data is the same on every run.
 function data(): Record<string, string> {
   const rand = rng(62);
   const ord = [
@@ -91,29 +82,22 @@ function data(): Record<string, string> {
     const customer = `c${Math.floor(rand() * 720)}`;
     push(at, country, channel, status, amt, qty, customer, 1 + Math.floor(rand() * 12));
   }
-  // Iceland: only refunds (paid metrics have no rows; a ratio of them is undefined).
   push("2026-03-02T15:00:00Z", "Iceland", "Marketplace", "refund", "-120.00", "2", "c9001", 3);
   push("2026-04-02T15:00:00Z", "Iceland", "Online store", "refund", "-80.00", "1", "c9002", 3);
-  // Zeroland: net cancels to exactly 0; revenue 100, 1 paid order.
   push("2026-04-10T12:00:00Z", "Zeroland", "Online store", "paid", "100.00", "1", "c9003", 4);
   push("2026-04-11T12:00:00Z", "Zeroland", "Marketplace", "refund", "-100.00", "1", "c9003", 4);
-  // Nullonly: paid orders whose amount and quantity are all empty.
   push("2026-02-10T12:00:00Z", "Nullonly", "Marketplace", "paid", "", "", "c9004", 5);
   push("2026-02-11T12:00:00Z", "Nullonly", "Marketplace", "paid", "", "", "c9005", 5);
-  // Ties: four countries with identical revenue, orders, items and AOV.
   for (const t of ["TieD", "TieB", "TieC", "TieA"]) {
     push("2026-05-03T12:00:00Z", t, "Marketplace", "paid", "50.00", "2", `c${t}`, 6);
     push("2026-05-04T12:00:00Z", t, "Marketplace", "paid", "50.00", "2", `c${t}`, 6);
   }
-  // Edgeland, New York window edges. In: Jan 1 00:00, Jun 27 23:59, and today's partial day: Jun 28
-  // 00:01 and the newest ordered_at (Jun 28 14:03). Out: Dec 31 23:59.
   push("2026-01-01T05:00:00Z", "Edgeland", "Online store", "paid", "1.00", "1", "c9100", 7);
   push("2026-06-28T03:59:00Z", "Edgeland", "Online store", "paid", "2.00", "1", "c9101", 7);
   push("2026-01-01T04:59:00Z", "Edgeland", "Online store", "paid", "1000.00", "1", "c9102", 7);
   push("2026-06-28T04:01:00Z", "Edgeland", "Online store", "paid", "20000.00", "1", "c9103", 7);
   push("2026-06-28T18:03:00Z", "Edgeland", "Online store", "paid", "300000.00", "1", "c9104", 7);
 
-  // sessions: a DATE source that ends on Apr 15 (complete through the end of that day).
   const ses = ["session_date,country,sessions"];
   for (let d = 0; d < 105; d++) {
     const date = new Date(Date.UTC(2026, 0, 1) + d * 86400e3).toISOString().slice(0, 10);
@@ -121,7 +105,6 @@ function data(): Record<string, string> {
       ses.push(`${date},${c},${20 + Math.floor(rand() * 400)}`);
   }
   ses.push("2026-04-15,Edgeland,7");
-  // store: timestamps whose newest value is exactly local midnight (May 1 00:00 New York).
   const sto = ["sold_at,country,amount"];
   for (let i = 0; i < 400; i++) {
     const day = Math.floor(rand() * 120);
@@ -129,7 +112,6 @@ function data(): Record<string, string> {
     sto.push(`${at},${COUNTRIES[Math.floor(rand() * 6)]},${(5 + rand() * 90).toFixed(2)}`);
   }
   sto.push("2026-05-01T03:59:59Z,Edgeland,3.00", "2026-05-01T04:00:00Z,Edgeland,4000.00");
-  // kiosk: timestamps through Jun 1 10:00 New York, so June holds only a partial day.
   const kio = ["sold_at,country,amount"];
   for (let i = 0; i < 300; i++) {
     const at = iso(Date.UTC(2026, 0, 1, 15) + Math.floor(rand() * 151) * 86400e3);
@@ -389,7 +371,6 @@ const DASHBOARDS: Record<string, unknown> = {
   checks: { title: "Checks", period: YTD, blocks: CHECKS },
 };
 
-// Each metric as (table, aggregate over its rows, filter, additive). A ratio divides its operands.
 type Table = "o" | "s" | "st" | "k";
 interface Leaf {
   t: Table;
@@ -541,8 +522,6 @@ const keyOrder = (a: Key, b: Key) =>
               ? -1
               : 1;
 
-// A to-date range reads through the horizon itself, today's partial day included; any other range
-// ends at the last complete day, the local midnight at or before the horizon.
 function windowOf(period: Period, horizon: string): Window {
   const lastDay = minDate(horizon.slice(0, 10), period.asOfNext);
   const start = period.start(lastDay);
@@ -552,8 +531,6 @@ function windowOf(period: Period, horizon: string): Window {
   return { start, end: addDays(horizon.slice(0, 10), 1), endAt: horizon.replace(" ", "T") };
 }
 
-// The oracle's scatter: one window for x, y and size, ending at the earliest horizon among their
-// sources (or the as-of); points ordered by size (else y) descending, then by key; limit after.
 async function expected(
   block: ScatterBlock,
   period: Period,
@@ -610,7 +587,6 @@ const diagsAt = (res: Built, blocks: { id: string }[], id: string) => {
   return res.diagnostics.filter((d) => d.pointer === p || d.pointer?.startsWith(`${p}/`));
 };
 
-// Every way the engine's scatter differs from the oracle's, as readable lines.
 function compare(
   got: ScatterData | undefined,
   exp: Expected,
@@ -804,8 +780,6 @@ beforeAll(async () => {
     await oracle.run(
       `CREATE TABLE ${t} AS SELECT CAST(sold_at AS TIMESTAMPTZ) AS ts, NULLIF(country, '') AS country, CAST(amount AS DECIMAL(18,2)) AS amount FROM ${csv(f)}`,
     );
-  // Each source's horizon as a New York wall time: just after its newest timestamp (a DATE: the end
-  // of its newest day).
   const after = (t: string) =>
     `strftime((SELECT max(ts) + INTERVAL 1 MICROSECOND FROM ${t}) AT TIME ZONE 'America/New_York', '%Y-%m-%d %H:%M:%S.%f')`;
   const [h] = await oracle.rows(

@@ -7,10 +7,6 @@ import { type Browser, chromium, type Page } from "playwright";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { type DevServer, startDevServer } from "../../src/dev/server.js";
 
-/**
- * hatchmark dev in a real browser: a card swapped in over HMR is interactive again, and the error
- * overlay renders over the page. HATCHMARK_DEV_SCREENSHOTS=<dir> saves the overlay in light and dark.
- */
 const EXAMPLE = fileURLToPath(new URL("../../examples/global-sales/", import.meta.url));
 let browser: Browser;
 let dir: string;
@@ -39,7 +35,6 @@ const edit = async (file: string, change: (text: string) => string) => {
   await writeFile(at, change(await readFile(at, "utf8")));
 };
 
-/** Opens the sales dashboard and waits until the Vite client is connected for HMR. */
 async function open(page: Page, dashboard = "sales"): Promise<void> {
   const connected = page.waitForEvent("console", (m) => m.text().includes("[vite] connected"));
   await page.goto(new URL(`/${dashboard}/`, server.url).href);
@@ -142,7 +137,6 @@ function hexToRgb(hex: string): string {
   return `rgb(${(n >> 16) & 255}, ${(n >> 8) & 255}, ${n & 255})`;
 }
 
-/** A dev server of its own on a fresh copy of the example; change edits the copy before it starts. */
 async function ownServer(change?: (dir: string) => Promise<void>) {
   const root = await mkdtemp(path.join(tmpdir(), "hatchmark-dev-routes-"));
   await cp(EXAMPLE, root, {
@@ -168,7 +162,6 @@ const connected = (page: Page) =>
     timeout: 15_000,
   });
 
-/** The tab comes back by itself to the live dashboard, and a later edit swaps in over HMR. */
 async function expectLiveAgain(page: Page, root: string, restore: () => Promise<void>) {
   const reconnected = connected(page);
   await restore();

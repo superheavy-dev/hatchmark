@@ -273,7 +273,6 @@ export function customRangeDashboard(
   };
 }
 
-/** Whether a metric is, or divides, one a custom range cannot compute. */
 function dependsOn(
   custom: CustomRangeData,
   name: string,

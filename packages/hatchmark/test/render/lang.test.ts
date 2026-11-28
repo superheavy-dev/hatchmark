@@ -12,7 +12,6 @@ const page = (locale: string) =>
     { assets: ASSETS, sources: [] },
   );
 
-/** The text of every td, svg text and span that carries lang, inner markup removed. */
 const marked = (html: string, lang: string) =>
   [
     ...html.matchAll(new RegExp(`<(text|td|span)\\b[^>]*\\blang="${lang}"[^>]*>(.*?)</\\1>`, "g")),

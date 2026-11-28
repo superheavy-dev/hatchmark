@@ -1,11 +1,3 @@
-/**
- * Table behaviour: header buttons sort the rows, and the card's Download CSV button saves the rows
- * as shown. The server renders every cell's raw value in data-v, so sorting compares numbers and
- * the CSV holds full-precision values, never formatted text. Subtotal rows move with their groups,
- * groups sort among themselves by their subtotal, and an Other row stays last in its group; the
- * total row stays in the footer.
- */
-
 interface RowNode {
   row: HTMLTableRowElement | undefined;
   index: number;
@@ -14,16 +6,11 @@ interface RowNode {
 
 const value = (cell: Element | undefined | null): string => cell?.getAttribute("data-v") ?? "";
 
-/** Two key cells hold the same group: equal raw value and equal kind (the number 1000 is not the text "1000"). */
 const sameKey = (a: Element | undefined | null, b: Element | undefined | null): boolean =>
   value(a) === value(b) && a?.getAttribute("data-t") === b?.getAttribute("data-t");
 
 const firstPaint = new WeakMap<HTMLTableRowElement, number>();
 
-/**
- * The tbody rows as a tree: each subtotal row owns the rows after it, down to the next group. A
- * node's index is its row's place at first paint.
- */
 function rowTree(rows: HTMLTableRowElement[]): RowNode {
   const root: RowNode = { row: undefined, index: -1, children: [] };
   const stack: RowNode[] = [root];
@@ -42,10 +29,6 @@ function rowTree(rows: HTMLTableRowElement[]): RowNode {
   return root;
 }
 
-/**
- * Sorts the rows by one column in place: empty values last, numbers before text, text by the
- * build's rank of each value (data-hm-rank), ties in first-paint order.
- */
 export function sortRows(
   table: HTMLTableElement,
   column: number,
@@ -83,10 +66,6 @@ export function sortRows(
   groupRepeats(table);
 }
 
-/**
- * Hides an outer key from sight when the row above has the same outer keys, as the server does;
- * subtotal tables name their groups in the subtotal rows, so their rows keep outer keys hidden.
- */
 function groupRepeats(table: HTMLTableElement): void {
   const body = table.tBodies[0];
   if (!body || body.querySelector("[data-hm-kind=subtotal]")) return;
@@ -114,13 +93,13 @@ function groupRepeats(table: HTMLTableElement): void {
   }
 }
 
-/** One CSV field: quoted when needed, and a text cell that a spreadsheet would run as a formula is prefixed with '. */
+// A text cell a spreadsheet would run as a formula is prefixed with '.
 function field(text: string, isText: boolean): string {
   const safe = isText && /^[=+\-@\t\r]/.test(text) ? `'${text}` : text;
   return /[",\r\n]|^\s|\s$/.test(safe) ? `"${safe.replaceAll('"', '""')}"` : safe;
 }
 
-/** The table as CSV (RFC 4180, CRLF): header, rows in their current order, then the total row. */
+// RFC 4180 CSV with CRLF line ends.
 export function tableCsv(table: HTMLTableElement): string {
   const lines: string[] = [];
   const line = (cells: Iterable<HTMLTableCellElement>, header: boolean) => {
@@ -152,11 +131,8 @@ function download(name: string, text: string): void {
   setTimeout(() => URL.revokeObjectURL(url), 1000);
 }
 
-/**
- * Scrolls a focused header button out from under the pinned key column, which the browser's own
- * focus scrolling does not know about. The pinned column is the first one, or on a narrow screen
- * the innermost key column of a grouped table: whichever header cells stick to the left edge.
- */
+// The browser's focus scrolling ignores the pinned key column, so a focused header can stay
+// under it.
 function revealFocus(wrap: HTMLElement, table: HTMLTableElement): void {
   wrap.addEventListener("focusin", (event) => {
     const target = event.target as HTMLElement;
@@ -171,12 +147,8 @@ function revealFocus(wrap: HTMLElement, table: HTMLTableElement): void {
   });
 }
 
-/**
- * A tall table in page mode (overflow "page", the default alone in its grid row) grows with the page
- * instead of scrolling inside its card, so its header row follows the viewport top and its total row
- * the viewport bottom while the table is on screen. CSS sticky cannot do this, because the card
- * scrolls sideways on a phone and so becomes the sticky container.
- */
+// CSS sticky cannot pin to the viewport here: on a phone the card scrolls sideways, so it
+// becomes the sticky container.
 function pinToViewport(table: HTMLTableElement): void {
   const head = [...(table.tHead?.rows[0]?.cells ?? [])];
   const foot = [...(table.tFoot?.rows[0]?.cells ?? [])];
@@ -205,7 +177,6 @@ function pinToViewport(table: HTMLTableElement): void {
   update();
 }
 
-/** Wires one table card: sortable headers, a polite announcement, and the CSV button. */
 export function wireTable(card: HTMLElement): void {
   const table = card.querySelector<HTMLTableElement>("table.hm-table");
   if (!table) return;

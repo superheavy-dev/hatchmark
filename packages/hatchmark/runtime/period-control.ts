@@ -1,16 +1,3 @@
-/**
- * The period control: a button naming the range shown and a dialog with the presets and, when the
- * page embeds day-grain data, a calendar for any first and last day. Picking a range loads the
- * period engine (runtime/periods.ts) once, which returns the page's blocks drawn for that range;
- * the runtime swaps them in. The range lives in the page URL (?<filter id>=last_7_days or
- * ?<filter id>=2026-01-01..2026-03-31), so a reload or a shared link shows the same range.
- *
- * Keyboard: the presets are a radio group (arrows move and pick). The calendar is a grid: arrows
- * move a day or a week, Home and End go to the week's ends, Page Up and Page Down move a month
- * (with Shift a year), Enter or Space picks the first and then the last day. Escape closes the
- * dialog and returns focus to the button; Tab stays inside the dialog while it is open.
- */
-
 import { formatRange, useRanges } from "../src/render/format.js";
 
 export interface PeriodView {
@@ -46,7 +33,6 @@ function addMonths(day: string, n: number): string {
 
 const monthStart = (day: string) => `${day.slice(0, 7)}-01`;
 
-/** Writes one query parameter into the address without a new history entry; the default removes it. */
 export function writeParam(name: string, value: string | undefined): void {
   try {
     const url = new URL(location.href);
@@ -78,10 +64,6 @@ function loadEngine(src: string): Promise<Engine> {
   return engine;
 }
 
-/**
- * Wires one period control. Returns a refresh that draws the shown range again from the page's
- * current payload, which hatchmark dev replaces after a change; the default range needs nothing.
- */
 export function mountPeriod(root: HTMLElement, redraw: (view: PeriodView) => void): () => void {
   const filter = root.dataset.hmPeriod ?? "period";
   const locale = root.dataset.hmLocale ?? "en-US";

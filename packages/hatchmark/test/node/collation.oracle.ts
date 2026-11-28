@@ -1,8 +1,3 @@
-/**
- * Text keys in the order each locale's collation gives them, written out by hand: German and
- * English sort accented letters with their base letter, Swedish sorts Å, Ä and Ö after Z; case
- * breaks ties lowercase first, and digits compare as numbers ("Item 2" before "Item 10").
- */
 export const NAMES: [string, number][] = [
   ["Zebra", 140],
   ["Item 10", 130],

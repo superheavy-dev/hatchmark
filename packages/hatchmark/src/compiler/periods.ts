@@ -3,11 +3,6 @@ import { nextDay } from "./windows.js";
 
 export { rangeKey } from "../spec/units.js";
 
-/**
- * A period filter's presets and custom ranges for the control and the page URL. Each is addressed
- * by its rangeKey (spec/units.ts): "last_30_days", "month_to_date", or "<first>..<last>".
- */
-
 const DAYS = /^(\d{4}-\d{2}-\d{2})\.\.(\d{4}-\d{2}-\d{2})$/;
 
 /**

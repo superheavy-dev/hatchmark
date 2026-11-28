@@ -1,9 +1,3 @@
-// Edges, incomplete and HM4014 (#29, RFC 0001 section 6.5). CI runs one project and periods P0, P4, P7 and P9; HM_SWEEP=full runs all.
-// Hostile data in America/New_York (DST days, local-midnight rows, a lagging date source, a horizon
-// exactly on a Monday midnight, a horizon inside the repeated fall-back hour) runs through the real
-// engine and renderer. The oracle never calls windows.ts, the planner or the executor: rows come from
-// plain SQL on the CSVs (DuckDB converts the instants to local wall-clock time), windows and buckets
-// are computed here from the RFC's wording, and partial shares are wall-clock arithmetic.
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import type { DashboardData, Value } from "../../src/compiler/dashboard-data.js";
 import { renderFragment } from "../../src/render/page.js";
@@ -123,7 +117,6 @@ function ordersCsv(end: string): string {
         (5 + rand() * 300).toFixed(2),
     );
   }
-  // local-midnight and DST edges: spring forward 2026-03-08 07:00Z, fall back 2026-11-01 06:00Z
   for (const at of [
     "2026-01-01T04:59:59Z",
     "2026-01-01T05:00:00Z",
@@ -157,8 +150,6 @@ function refundsCsv(lastDay: string): string {
   return `${out.join("\n")}\n`;
 }
 
-// At most six grains a block: even dashboards use calendar quarters and years, odd ones shifted
-// anchors (quarters from Feb 1, years from Jul 1).
 const grainsFor = (pi: number): (string | Grain)[] => [
   "day",
   { unit: "week", anchor: "sunday" },
@@ -241,8 +232,6 @@ const PERIODS: Period[] = [
   { asOf: "2026-11-25", range: "last_30_days" },
 ];
 
-// Three projects: orders end mid-Wednesday, exactly at a Monday local midnight, and inside the
-// repeated fall-back hour (01:30 EST, second pass).
 const ALL_PROJECTS = [
   { name: "wed", ordersEnd: "2026-11-18T15:30:00Z", refundsEnd: "2026-11-12" },
   { name: "monday-midnight", ordersEnd: "2026-11-16T05:00:00Z", refundsEnd: "2026-11-10" },
@@ -382,8 +371,6 @@ function context(world: World, period: Period): Ctx {
   if (period.asOf === "latest_data") T = Math.max(...hs);
   else if (period.asOf === "latest_common_data") T = Math.min(...hs);
   else T = midnight(addDays(period.asOf, 1));
-  // T's day: the local date T falls in; an end-of-day bound (a local midnight that is not a row's
-  // own instant) belongs to the day before.
   const local = localOf(T);
   const rowAtT = T === orders.horizon;
   const tDay =
@@ -409,7 +396,6 @@ function context(world: World, period: Period): Ctx {
   return { T, start, end, src: world.src };
 }
 
-/** Measure horizon of one metric: the earliest of T and its source's horizon. */
 const horizonOf = (ctx: Ctx, metric: string) => Math.min(ctx.T, (ctx.src[metric] as Src).horizon);
 function included(ctx: Ctx, metric: string, row: Row): boolean {
   const src = ctx.src[metric] as Src;
@@ -462,12 +448,10 @@ function expected(ctx: Ctx, def: Def, g: Grain): Want {
     const s = buckets[i] as string;
     const e = nextOf(s, g);
     const h = horizonOf(ctx, metric);
-    // a row exactly at a timestamp source's horizon still counts, so its bucket opens at elapsed 0
     const src = ctx.src[metric] as Src;
     if (midnight(s) > h || (midnight(s) === h && !(src.kind === "ts" && h === src.horizon)))
       return { value: false };
     const from = clip && i === 0 && ctx.start > s ? ctx.start : s;
-    // a clipped first bucket whose part inside the window starts at or after the horizon has no value
     if (from !== s && midnight(from) >= h) return { value: false };
     const to = midnight(e) > h ? localOf(h) : e;
     if (from === s && to === e) return { value: true };
@@ -519,8 +503,6 @@ function expected(ctx: Ctx, def: Def, g: Grain): Want {
       return { ...s, values: s.values.map((v, i) => (cut.has(i) ? null : v)), partial: [] };
     });
     if (totals) totals = totals.map((v, i) => (hiddenAt.has(i) ? null : v));
-    // leading buckets go when partial and then empty; trailing ones when empty and partial or past
-    // every series' horizon, so the axis ends on the kept buckets
     const empty = (i: number) => series.every((s) => s.values[i] === null);
     let lo = 0;
     while (lo < buckets.length && hiddenAt.has(lo) && empty(lo)) lo++;
@@ -626,10 +608,6 @@ function compare(where: string, got: Option, want: Want, def: Def): string[] {
   return bad;
 }
 
-/**
- * KPI windows are never snapped. A to-date window reads from its start through the horizon itself,
- * partial day included; any other window is whole local days ending at the last complete day.
- */
 function kpiExpected(ctx: Ctx, metric: string, toDate: boolean): Value {
   const h = horizonOf(ctx, metric);
   if (toDate) {
@@ -731,9 +709,6 @@ for (const p of PROJECTS) {
   });
 }
 
-// A realistic latest_data dashboard where one source lags past the window start.
-// Orders run through Dec 2, 2026 and refunds through Nov 25, so month_to_date is Dec 1 to Dec 2 and
-// refunds' own horizon (end of Nov 25) is before the window starts.
 describe("a source whose horizon is before the window start", () => {
   const days = (from: string, to: string) => {
     const out: string[] = [];

@@ -76,7 +76,6 @@ export function blockingErrors(project: Project, dashboard: string): Diagnostic[
   );
 }
 
-/** The instant a local date starts in the time zone. */
 const startOf = (date: string, timezone: string) => fromLocal(parseInstant(date), timezone);
 
 /**
@@ -560,7 +559,6 @@ function checkedDates(query: PlannedQuery, result: QueryResult): QueryResult {
   return result;
 }
 
-/** HM4004 for each metric a block shows whose float sum or avg reaches ±1e13 (QueryResult.large). */
 function largeResults(
   project: Project,
   dashboard: string,

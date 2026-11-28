@@ -47,32 +47,23 @@ import {
 } from "../spec/index.js";
 import { overlayHtml } from "./overlay.js";
 
-/** The dev client, served through Vite (which compiles it and gives it import.meta.hot). */
 const CLIENT_FILE = fileURLToPath(new URL("../../runtime/dev-client.ts", import.meta.url));
 const CLIENT_ID = "virtual:hatchmark-dev-client";
-/** How long to wait for more file events before rebuilding, so one save rebuilds once. */
 const DEBOUNCE_MS = 20;
-/**
- * The file watcher Vite bundles (chokidar) reports a file change and then ignores that file for
- * 50 ms, so a second save inside that window (a formatter rewriting the file, or a quick undo) gets
- * no event. Every file a rebuild read on an event is checked again this long after the rebuild,
- * and rebuilt once more when it changed meanwhile.
- */
+// Vite's bundled chokidar ignores a file for 50 ms after reporting a change, so a second save
+// inside that window gets no event.
 const RECHECK_MS = 100;
 const INDEX = "/";
 
-/** One card or KPI the dev client replaces: its position in the grid, and its new HTML. */
 export interface CardUpdate {
   index: number;
   kpi?: number;
   html: string;
 }
 
-/** A custom event sent to every open page over Vite's HMR connection. */
 export type DevEvent =
   | {
       event: "hatchmark:update";
-      /** periods: the period filter's new data (the JSON inside data-hm-periods), when it changed. */
       data: { dashboard: string; cards: CardUpdate[]; periods?: string };
     }
   | { event: "hatchmark:reload"; data: { dashboard?: string } }
@@ -82,39 +73,27 @@ export type DevEvent =
 type PageEvent = Extract<DevEvent, { event: "hatchmark:update" | "hatchmark:reload" }>;
 
 export interface DevOptions {
-  /** Absolute project directory. */
   root: string;
   port?: number;
   host?: string;
   open?: boolean;
-  /** Progress and diagnostics for the terminal (stderr). */
   log(text: string): void;
   color?: boolean;
   deps?: BuildDeps;
-  /** Called with every event sent to the pages, for tests and timing. */
   onEvent?(event: DevEvent): void;
 }
 
 export interface DevServer {
-  /** The URL to open: the index, or the only dashboard. */
   url: string;
-  /** Every URL the server listens on. */
   urls: string[];
-  /** The HMR websocket token Vite requires on connect (?token=). */
   token: string;
-  /** Waits until every file change seen so far is rebuilt. */
   idle(): Promise<void>;
   close(): Promise<void>;
 }
 
 interface Rendered {
   data: DashboardData;
-  /**
-   * The page with the grid's contents and the period filter's data cut out: any difference is a
-   * structural change.
-   */
   shell: string;
-  /** The JSON inside data-hm-periods, which an update replaces in place. */
   periods: string;
   items: GridItem[];
   html: string;
@@ -131,12 +110,6 @@ const internal = (error: unknown): Diagnostic => ({
   docs: docsCommand("HM9001"),
 });
 
-/**
- * The changes between two renders of a page as the dev client applies them: the cards (or single
- * KPIs of a strip) whose HTML changed, or undefined when the page must reload because its
- * structure changed: anything outside the grid (header, filters, footer, styles), the blocks or
- * their order, or a card's own element (its type or span, which is layout).
- */
 export function diffPages(before: Rendered, after: Rendered): CardUpdate[] | undefined {
   if (before.shell !== after.shell || before.items.length !== after.items.length) return undefined;
   const open = (html: string) => html.slice(0, html.indexOf(">") + 1);
@@ -160,16 +133,6 @@ export function diffPages(before: Rendered, after: Rendered): CardUpdate[] | und
   return cards;
 }
 
-/**
- * Starts the dev server: Vite with the Hatchmark plugin, serving every dashboard at the URLs build
- * writes (/<dashboard>/, and / as the index when there is more than one) with the same renderer,
- * runtime and fonts. It watches hatchmark.yaml, metrics, segments, dashboards and every data file.
- * On a change it reloads the project, re-runs only the dashboards the change can affect, renders
- * them and compares each card with the page the browser has: changed cards are pushed over HMR,
- * structural changes reload the page. Errors from check or run go to the terminal and over the
- * page, and clear on the next good build. Without a hatchmark.yaml it returns the report instead
- * and starts nothing.
- */
 export async function startDevServer(
   options: DevOptions,
 ): Promise<{ server: DevServer } | { report: DiagnosticReport }> {
@@ -199,7 +162,6 @@ export async function startDevServer(
     vite?.ws.send({ type: "custom", event: message.event, data: message.data });
   };
 
-  /** Every data file the config names, with every source that reads it. */
   const sourcePaths = (spec: ProjectConfig | undefined) => {
     const files = new Map<string, string[]>();
     for (const [name, s] of Object.entries(spec?.sources ?? {})) {

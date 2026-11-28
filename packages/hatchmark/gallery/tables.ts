@@ -1,13 +1,6 @@
 import type { TableData, TableRow, Value } from "../src/compiler/dashboard-data.js";
 import { COUNTRIES, COUNTRY_TABLE, LAST_12, OCT, REGIONS, round } from "./fixtures.js";
 
-/**
- * Table variants for the phase 1 table features: sorting, top N with Other, subtotals, in-cell
- * bars and the sticky header of a tall table. Every number is derived here from per-row parts
- * (revenue, orders, customers), so totals, subtotals, Other rows and shares agree the way the
- * engine computes them: sums add, averages divide summed parts, distinct counts never fold.
- */
-
 type Key = string | null;
 interface Part {
   keys: Key[];
@@ -24,7 +17,6 @@ const countryParts: Part[] = COUNTRIES.map((c) => {
   return { keys: [c.region, c.name], revenue, orders, customers: round(orders * 0.83) };
 });
 
-/** Customers over several rows: a distinct count, so not the sum (repeat buyers across rows). */
 const distinctCustomers = (parts: Part[]) =>
   round(parts.reduce((sum, p) => sum + p.customers, 0) * 0.96);
 
@@ -229,7 +221,6 @@ export const TABLE_BARS_NEGATIVE: TableData = {
   window: LAST_12,
 };
 
-/** US states with rough population weights (millions), for a tall table. */
 const STATES: [string, number][] = [
   ["California", 39.0],
   ["Texas", 30.5],

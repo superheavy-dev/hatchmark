@@ -1,6 +1,3 @@
-// The independent oracle for the period filter tests (periods.*.adversarial.test.ts). DuckDB only reads
-// the raw CSV as text; local days, windows, buckets, groups, sorts and metrics are computed here from the
-// documented semantics, never through the planner, windows.ts, assemble or the executor's SQL builder.
 import path from "node:path";
 import type {
   BarData,
@@ -15,7 +12,6 @@ import { Oracle } from "./fixture.js";
 
 export type Key = string | number | boolean | null;
 export type Row = {
-  /** The instant, epoch milliseconds. */
   t: number | null;
   d: string | null;
   region: string | null;
@@ -29,7 +25,6 @@ export type Row = {
 export type Anchors = { week: string; quarter: string; year: string };
 export type Grain = { unit: string; anchor?: string };
 export type GrainSpec = string | Grain;
-/** Start and end (exclusive): local dates, or an end at a UTC instant YYYY-MM-DDTHH:MM:SS.ffffffZ. */
 export type Window = [string, string];
 export type SpecBlock = {
   type: string;
@@ -46,7 +41,6 @@ export type SpecBlock = {
   percentOfTotal?: string[];
 };
 
-/** The CSV's rows with each timestamp turned into its America/New_York calendar day by Intl. */
 export async function readRows(root: string, timeZone = "America/New_York"): Promise<Row[]> {
   const oracle = await Oracle.open();
   try {
@@ -82,7 +76,6 @@ const iso = (t: number) => new Date(t).toISOString().slice(0, 10);
 const pad = (n: number) => String(n).padStart(2, "0");
 export const addDays = (d: string, n: number) => iso(ms(d) + n * DAY);
 export const daysBetween = (a: string, b: string) => Math.round((ms(b) - ms(a)) / DAY);
-/** Moves a date by whole months, its day clamped to the target month's length. */
 export function addMonths(d: string, n: number): string {
   const [y = 0, m = 1, dd = 1] = d.split("-").map(Number);
   const index = y * 12 + (m - 1) + n;
@@ -106,7 +99,6 @@ export function resolveGrain(g: GrainSpec | undefined, anchors: Anchors): Grain 
 }
 export const grainKey = (g: Grain) => (g.anchor ? `${g.unit}:${g.anchor}` : g.unit);
 
-/** The first day of the bucket holding d. */
 export function bucket(d: string, g: Grain): string {
   if (g.unit === "day") return d;
   if (g.unit === "month") return `${d.slice(0, 8)}01`;
@@ -125,7 +117,6 @@ export function bucket(d: string, g: Grain): string {
   }
   return best;
 }
-/** Every bucket a window touches, in order: the complete spine, empty buckets included. */
 export function spine(w: Window, g: Grain): string[] {
   const out: string[] = [];
   for (let d = w[0]; d < w[1]; d = addDays(d, 1)) {
@@ -154,10 +145,6 @@ const NAMED: Record<string, Range> = {
   last_complete_year: { last_complete: "year" },
 };
 
-/**
- * Moves a window by whole units: whole months (both ends on the 1st) moved by months, quarters or
- * years stay whole months; otherwise the first and last day move, each clamped to its month.
- */
 function shift(w: Window, unit: string, n: number): Window {
   const whole = unit !== "day" && unit !== "week" && w[0].endsWith("-01") && w[1].endsWith("-01");
   return whole
@@ -165,7 +152,6 @@ function shift(w: Window, unit: string, n: number): Window {
     : [addUnits(w[0], unit, n), addDays(addUnits(addDays(w[1], -1), unit, n), 1)];
 }
 
-/** A range's current window and its comparison window, from the documented rules. */
 export function windows(
   range: Range,
   asOf: string,
@@ -199,13 +185,6 @@ export function windows(
   return { current: [s, next], previous: shift([s, next], unit, -count) };
 }
 
-/**
- * A measure's horizon (RFC 0001 sections 6.1 and 6.3): the earlier of the as-of instant T (the end
- * of the as-of local date) and the source horizon, which is the newest instant of the time column
- * over all rows, taken as complete through it (+1 µs, so the newest row counts). at is that instant
- * in UTC microseconds, us its local wall-clock microseconds, and cut the local midnight at or before
- * it, as a date: last N, last complete and explicit KPI and table windows end there (exclusive).
- */
 export type Horizon = { asOf: string; us: bigint; cut: string; at: bigint; timeZone: string };
 export function horizonOf(rows: Row[], asOf: string, timeZone = "America/New_York"): Horizon {
   const newest = rows.reduce((m, r) => (r.t !== null && r.t > m ? r.t : m), -Infinity);
@@ -217,7 +196,6 @@ export function horizonOf(rows: Row[], asOf: string, timeZone = "America/New_Yor
   const us = wallOf(at, timeZone);
   return { asOf: date, us, cut: iso(Number(us / 1000n)), at, timeZone };
 }
-/** A UTC instant (microseconds) as local wall-clock microseconds, by Intl. */
 function wallOf(at: bigint, timeZone: string): bigint {
   const t = Number(at / 1000n);
   const parts = Object.fromEntries(
@@ -244,11 +222,7 @@ function wallOf(at: bigint, timeZone: string): bigint {
   );
   return BigInt(localMs) * 1000n + (at % 1_000_000n);
 }
-/**
- * The UTC instant of a local wall-clock time: of the offsets a day before and a day after, the ones
- * that read back as that wall time; a time repeated by a fall-back takes its later occurrence (as
- * DuckDB does), and a time skipped by a spring-forward takes the offset before the change.
- */
+// Matches DuckDB, which reads a wall time repeated by a fall-back as its later occurrence.
 function fromWall(wall: bigint, timeZone: string): bigint {
   const offset = (at: bigint) => wallOf(at, timeZone) - at;
   const before = wall - offset(wall - DAY_US);
@@ -260,24 +234,12 @@ const instantText = (at: bigint) =>
   `${new Date(Number(at / 1000n)).toISOString().slice(0, 19)}.${String(at % 1_000_000n).padStart(6, "0")}Z`;
 const instantOf = (text: string) =>
   BigInt(Date.parse(`${text.slice(0, 19)}Z`)) * 1000n + BigInt(text.slice(20, 26));
-/** A local date's midnight in wall-clock microseconds. */
 const naive = (d: string) => BigInt(ms(d)) * 1000n;
-/** A wall-clock microsecond count as YYYY-MM-DDTHH:MM:SS.ffffff. */
 function wallText(us: bigint): string {
   const t = new Date(Number(us / 1000n)).toISOString();
   return `${t.slice(0, 19)}.${String(us % 1_000_000n).padStart(6, "0")}`;
 }
 
-/**
- * KPI, table and category windows (RFC 0001 section 6.4), when the horizon is before the range's
- * end. To-date includes today's partial day: it ends at the horizon instant (a date when that is a
- * local midnight), is empty only when the horizon is at or before its start, and its comparison
- * covers the same elapsed local wall-clock time from its own start, never past its written end.
- * The others end at the last complete day before the horizon: last N slides back keeping its days
- * and compares with the same days before it (previous_year moves its first and last day); complete
- * units and explicit ranges end at the cut and compare over the same number of days from the
- * comparison's own start, never past its written end.
- */
 export function ended(
   range: Range,
   h: Horizon,
@@ -344,8 +306,6 @@ export const METRICS: Record<string, (rs: Row[]) => number | null> = {
   min_amount: (rs) => (amounts(rs).length ? Math.min(...amounts(rs)) : null),
   max_amount: (rs) => (amounts(rs).length ? Math.max(...amounts(rs)) : null),
   median_amount: (rs) => median(amounts(rs)),
-  // An additive SQL sum: 0 for a group with rows but no paid amounts, null over no rows at all (the
-  // executor's SQL semantics, which assembly zero-fills for groups and buckets but not for a total).
   net_sql: (rs) => (rs.length ? amounts(rs).reduce((s, a) => s + a, 0) : null),
   spread_sql: (rs) =>
     amounts(rs).length ? Math.max(...amounts(rs)) - Math.min(...amounts(rs)) : null,
@@ -367,7 +327,6 @@ export const inWindow = (rows: Row[], w: Window) => {
 };
 const col = (r: Row, c: string) => (r as unknown as Record<string, Key>)[c] ?? null;
 
-/** Collects compared cells and every difference. */
 export class Diff {
   cells = 0;
   problems: string[] = [];
@@ -393,16 +352,12 @@ export type Context = {
   horizon: Horizon;
   compare?: "previous_period" | "previous_year";
   anchors: Anchors;
-  /** The grain filter's default, if the dashboard has one. */
   grainDefault?: GrainSpec;
-  /** True for a custom range from day cubes: these metrics must be null (presetOnly on KPIs). */
   presetOnly?: Set<string>;
 };
 type Resolved = Context & {
-  /** The range's window as written (time series, the period line). */
   current: Window;
   previous: Window;
-  /** The window ended at the horizon (KPIs, tables, category charts). */
   kpi: { current: Window; previous: Window };
   empty?: "no_complete_day" | "no_data";
 };
@@ -411,11 +366,9 @@ const span = (w: Window, timeZone: string) => {
   const wall = wallOf(instantOf(w[1]), timeZone);
   return { start: w[0], end: addDays(iso(Number(wall / 1000n)), 1), endAt: wallText(wall) };
 };
-/** RFC 0001 section 6.5 leading edge: a series window starts at the start of its first bucket. */
 const snapped = (w: Window, g: Grain): Window => (w[0] < w[1] ? [bucket(w[0], g), w[1]] : w);
 const blind = (ctx: Resolved, m: string) => ctx.presetOnly?.has(m) === true;
 
-/** Checks one DashboardData against the oracle, block by block, per the dashboard spec. */
 export function checkDashboard(
   data: DashboardData,
   blocks: SpecBlock[],
@@ -502,7 +455,6 @@ function checkKpi(b: KpiData, sb: SpecBlock, ctx: Resolved, cur: Row[], diff: Di
 const desc = (a: number | null, b: number | null) =>
   a === null || b === null ? true : a >= b - 1e-9 * Math.max(1, Math.abs(b));
 
-/** Checks the order and membership of shown groups: sorted, and none omitted that beats a shown one. */
 function checkTop(
   at: string,
   shown: Key[][],
@@ -734,11 +686,6 @@ function checkSeries(
   }
 }
 
-/**
- * The bucket the horizon cuts (start before it, end after it), with the share elapsed in local
- * wall-clock time, rounded down to six decimals, the local days it covers and the horizon as local
- * wall-clock time; undefined when none does.
- */
 const DAY_US = 86_400_000_000n;
 function partialOf(buckets: string[], g: Grain, h: Horizon) {
   for (const [index, b] of buckets.entries()) {
@@ -757,14 +704,12 @@ function partialOf(buckets: string[], g: Grain, h: Horizon) {
   return undefined;
 }
 
-/** The embedded PeriodData of a built page. */
 export function periodsOf(html: string): unknown {
   const m = /<script type="application\/json" data-hm-periods>(.*?)<\/script>/s.exec(html);
   if (!m) throw new Error("no data-hm-periods script");
   return JSON.parse(m[1] as string);
 }
 
-/** A seeded generator (mulberry32), so random ranges reproduce. */
 export function seeded(seed: number): () => number {
   let a = seed >>> 0;
   return () => {
@@ -776,7 +721,6 @@ export function seeded(seed: number): () => number {
   };
 }
 
-/** n random ranges inside a span, lengths mixed: short, medium and long. */
 export function randomRanges(
   n: number,
   span: { start: string; end: string },
@@ -795,10 +739,6 @@ export function randomRanges(
   return out;
 }
 
-/**
- * Walks two DashboardData values and reports where they differ: numbers within a relative 1e-9,
- * everything else exactly. skip names keys to ignore at any depth; skipBlocks names block ids.
- */
 export function compareData(
   a: unknown,
   b: unknown,

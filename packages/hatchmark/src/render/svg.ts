@@ -1,7 +1,6 @@
 import type { FontWeight } from "./measure.js";
 import type { ColorKey, Paint } from "./theme.js";
 
-/** Escapes text for HTML and SVG content and attribute values. */
 export function esc(text: string): string {
   return text
     .replaceAll("&", "&amp;")
@@ -10,15 +9,10 @@ export function esc(text: string): string {
     .replaceAll('"', "&quot;");
 }
 
-/**
- * The lang for text that is wholly a value formatted in locale, so screen readers read it in that
- * language; none for English, which the page's own lang already says.
- */
 export function valueLang(locale: string): string | undefined {
   return new Intl.Locale(locale).language === "en" ? undefined : locale;
 }
 
-/** valueLang as an attribute, or nothing. */
 export function langAttr(locale: string): string {
   const lang = valueLang(locale);
   return lang === undefined ? "" : ` lang="${esc(lang)}"`;
@@ -29,17 +23,13 @@ export function scriptJson(value: unknown): string {
   return JSON.stringify(value).replaceAll("<", "\\u003c");
 }
 
-/** Rounds a coordinate to 0.1 px, without "-0", so output is byte-stable. */
 export function r(value: number): number {
   const rounded = Math.round(value * 10) / 10;
   return rounded === 0 ? 0 : rounded;
 }
 
-/**
- * Baseline offset below a line's vertical centre, as a fraction of the font size: half of
- * (ascent - descent) of IBM Plex Sans (1025 and 275 units). Emitting the baseline directly instead of
- * dominant-baseline keeps text in the same place in browsers and rasterisers.
- */
+// IBM Plex Sans has ascent 1025 and descent 275 units. An explicit baseline renders the same in
+// browsers and rasterisers, unlike dominant-baseline.
 export const BASELINE_FROM_CENTER = 0.375;
 
 export interface TextOptions {
@@ -48,13 +38,10 @@ export interface TextOptions {
   anchor?: "start" | "middle" | "end";
   color: ColorKey;
   className?: string;
-  /** Full text for a native tooltip, when content is shortened. */
   title?: string;
-  /** The locale the content is formatted in, when all of it is a formatted value. */
   lang?: string;
 }
 
-/** An SVG text element vertically centred on y. */
 export function svgText(
   paint: Paint,
   x: number,

@@ -142,7 +142,6 @@ function query(extra: Partial<PlannedQuery>): PlannedQuery {
   };
 }
 
-/** Days 0..3 from 2026-03-07 (a Saturday), regions A and null. */
 const CUBE: DayCube = {
   columns: ["region"],
   days: [0, 0, 1, 2, 3],

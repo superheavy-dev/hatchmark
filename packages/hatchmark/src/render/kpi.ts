@@ -10,13 +10,6 @@ import {
 import { bucketLines, partialPositions, timeOf } from "./partial.js";
 import { esc, langAttr, r, scriptJson } from "./svg.js";
 
-/**
- * One KPI cell for a KPI strip: label, headline figure in regular weight, the change with an arrow,
- * a sign and a good or bad colour by the metric's better direction, and a note naming the
- * comparison. null shows as an em dash with a reason; 0 shows as a real zero. A sparkline is a
- * small line chart the runtime drives like any other: crosshair, dot and tooltip on hover, touch and
- * the arrow keys.
- */
 export function renderKpi(block: KpiData, ctx: RenderContext): string {
   const locale = ctx.data.locale;
   const lang = langAttr(locale);

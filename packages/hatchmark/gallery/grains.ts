@@ -12,12 +12,6 @@ import { timeBuckets } from "../src/compiler/windows.js";
 import { grainKey, type ResolvedGrain } from "../src/spec/index.js";
 import { MONTHLY_REVENUE, MONTHS, REGIONS, round, series, span } from "./fixtures.js";
 
-/**
- * Grain-switch samples: Northwind's monthly revenue spread over days (weekday shape plus seeded
- * noise, each month adding up to its MONTHLY_REVENUE total), then summed into week, month, quarter
- * and year buckets with the engine's own bucket spine, the way the engine builds every grain ahead.
- */
-
 function random(seed: number): () => number {
   let state = seed >>> 0;
   return () => {
@@ -30,7 +24,6 @@ const noise = random(20261128);
 const WEEKDAY = [0.94, 1.01, 1.03, 1.04, 1.08, 1.0, 0.9];
 const DAY = 86_400_000;
 
-/** Daily revenue from 2024-11-01 through 2026-10-31, by date. */
 const DAILY = new Map<string, number>();
 MONTHS.forEach((month, i) => {
   const start = Date.parse(month);
@@ -47,10 +40,6 @@ MONTHS.forEach((month, i) => {
   for (const d of days) DAILY.set(d.date, ((MONTHLY_REVENUE[i] as number) * d.weight) / total);
 });
 
-/**
- * One series' values per bucket of a grain over a window, summed from the daily values. The window
- * starts at its first bucket, as edges "snap" (the default) does; clip keeps the window's own start.
- */
 function bucketed(
   window: DateSpan,
   grain: ResolvedGrain,
@@ -69,7 +58,6 @@ function bucketed(
   return { buckets, values };
 }
 
-/** A GrainSwitch over the given grains, with series made by `make` from each grain's buckets. */
 function grainSwitch(
   window: DateSpan,
   grains: ResolvedGrain[],
@@ -96,7 +84,6 @@ function grainSwitch(
   };
 }
 
-/** The block with its selected grain's axis and series at the top level, like the engine writes it. */
 function withGrains<T extends LineData | BarData>(
   block: Omit<T, "axis" | "series">,
   grains: GrainSwitch,
@@ -111,17 +98,14 @@ const MONTH: ResolvedGrain = { unit: "month" };
 const QUARTER: ResolvedGrain = { unit: "quarter", anchor: "01-01" };
 const RETAIL_QUARTER: ResolvedGrain = { unit: "quarter", anchor: "02-01" };
 
-/** Four complete calendar quarters, and seven, so quarter buckets are whole at both edges. */
 const LAST_4Q = span("2025-10-01", "2026-10-01");
 const LAST_7Q = span("2025-01-01", "2026-10-01");
-/** Six complete retail quarters starting on February 1. */
 const RETAIL = span("2025-02-01", "2026-08-01");
 
 const revenue = (window: DateSpan) => (grain: ResolvedGrain) => [
   series("revenue", "Revenue", bucketed(window, grain).values),
 ];
 
-/** Revenue over the last 12 months, switchable by week, month and quarter. */
 export function revenueSwitch(selected: ResolvedGrain): LineData {
   return withGrains<LineData>(
     {
@@ -134,7 +118,6 @@ export function revenueSwitch(selected: ResolvedGrain): LineData {
   );
 }
 
-/** Revenue by region, split, switchable by month and quarter. */
 export const REGION_SWITCH: LineData = withGrains<LineData>(
   {
     type: "line",
@@ -154,7 +137,6 @@ export const REGION_SWITCH: LineData = withGrains<LineData>(
   ),
 );
 
-/** Revenue as time bars, by quarter or by month. */
 export const QUARTER_BARS: BarData = withGrains<BarData>(
   {
     type: "bar",
@@ -167,7 +149,6 @@ export const QUARTER_BARS: BarData = withGrains<BarData>(
   grainSwitch(LAST_7Q, [QUARTER, MONTH], QUARTER, revenue(LAST_7Q)),
 );
 
-/** Calendar and retail (February) quarters side by side: two options of one unit carry their anchors. */
 export const FISCAL_BARS: BarData = withGrains<BarData>(
   {
     type: "bar",
@@ -180,12 +161,6 @@ export const FISCAL_BARS: BarData = withGrains<BarData>(
   grainSwitch(RETAIL, [QUARTER, RETAIL_QUARTER], RETAIL_QUARTER, revenue(RETAIL)),
 );
 
-/**
- * The third quarter with data through Wednesday, Sep 23, 2026, the way the engine writes a series
- * whose horizon cuts its last bucket (RFC 0001 section 6.5): by week (Sep 21 is 3 of 7 days in) or
- * by month (September is 23 of 30). edges "clip" keeps the Jul 1 start, so the first week (Jun 29)
- * is 5 of 7 days in; incomplete "hide" leaves the partial buckets out.
- */
 const Q3_TO_SEP_23 = span("2026-07-01", "2026-09-24");
 
 function incompleteSeries(
@@ -224,7 +199,6 @@ function incompleteSeries(
   };
 }
 
-/** Weekly revenue lines over the partial third quarter: marked (default), clipped, or hidden. */
 export function incompleteLine(
   id: string,
   title: string,
@@ -239,7 +213,6 @@ export function incompleteLine(
   };
 }
 
-/** Monthly revenue bars over the partial third quarter, September marked or hidden. */
 export function incompleteBars(id: string, title: string, options: { hide?: boolean }): BarData {
   return {
     type: "bar",

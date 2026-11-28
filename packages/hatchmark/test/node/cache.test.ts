@@ -28,12 +28,6 @@ import { PROJECT_DEFAULTS, type ProjectConfig } from "../../src/spec/index.js";
 import { fromYaml, toYaml } from "../yaml.js";
 import { copyProject, EXAMPLE, removeProjects } from "./fixture.js";
 
-/**
- * The build cache (src/node/cache.ts). The oracle for every attack is the same build with
- * --no-cache, which runs every query in DuckDB and never reads or writes the cache: a cached build
- * must give the same bytes, file for file.
- */
-
 const roots: string[] = [];
 afterAll(async () => {
   await removeProjects();
@@ -70,7 +64,6 @@ async function cliJson(args: string[]): Promise<{ code: number; json: unknown }>
   return { code, json: JSON.parse(stdout.trim().split("\n").pop() ?? "null") };
 }
 
-/** Builds into out (a fresh directory each time) and returns every output file's SHA-256. */
 async function build(root: string, cache: boolean): Promise<Built> {
   const out = path.join(root, `out-${crypto.randomUUID()}`);
   const { code, json } = await cliJson([
@@ -115,10 +108,8 @@ async function editJson(
   await writeFile(at, toYaml(edit(fromYaml(await readFile(at, "utf8")))));
 }
 
-/** The example's last order, the newest row. */
 const LAST = "105194,2026-10-31T22:54:53Z,C00223,Netherlands,EMEA,Direct,Apparel,paid,66.41";
 
-/** Rewrites one byte-for-byte equal-length value in orders.csv and restores the mtime. */
 async function editInPlace(root: string, from: string, to: string): Promise<void> {
   expect(to.length).toBe(from.length);
   const file = path.join(root, "data", "orders.csv");

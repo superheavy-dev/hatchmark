@@ -1,14 +1,10 @@
 import type { GalleryEntry } from "./entries.js";
 
-/** What the preview was built from. Both fields are absent for a local build. */
 export interface BuildInfo {
-  /** Pull request number; absent for a build of main. */
   pr?: number;
-  /** Full commit sha the site was built from. */
   sha?: string;
 }
 
-/** Everything the static site depends on. */
 export interface SiteInput {
   entries: readonly GalleryEntry[];
   head: string;
@@ -41,7 +37,6 @@ body { margin: 0; background: var(--bg); color: var(--fg); }
 a { color: inherit; }
 code { font-family: "IBM Plex Mono", ui-monospace, monospace; font-size: 12px; color: var(--muted); }`;
 
-/** Escapes text for HTML element content and double-quoted attributes. */
 export function escapeHtml(text: string): string {
   return text
     .replaceAll("&", "&amp;")
@@ -50,7 +45,6 @@ export function escapeHtml(text: string): string {
     .replaceAll('"', "&quot;");
 }
 
-/** One line naming the build, such as `PR #12 · 1a5224b`. */
 export function buildLabel(build: BuildInfo): string {
   const source = build.pr !== undefined ? `PR #${build.pr}` : build.sha ? "main" : "local build";
   return build.sha ? `${source} · ${build.sha.slice(0, 7)}` : source;
@@ -75,7 +69,6 @@ function groupByComponent(entries: readonly GalleryEntry[]): Map<string, Gallery
   return groups;
 }
 
-/** Favicons from assets/brand/, copied to the site root by build.ts. */
 const ICONS = `<link rel="icon" href="/favicon.ico" sizes="32x32">
 <link rel="icon" href="/favicon-16.png" type="image/png" sizes="16x16">
 <link rel="icon" href="/favicon-32.png" type="image/png" sizes="32x32">
@@ -264,10 +257,6 @@ figcaption { display: flex; gap: 8px; align-items: baseline; margin-bottom: 8px;
 .tile { border: 1px solid var(--line); border-radius: 8px; padding: 16px; overflow-x: auto; }
 footer { color: var(--muted); border-top: 1px solid var(--line); padding-top: 12px; }`;
 
-/**
- * Sends a gallery opened outside the shell to the shell, carrying its query string and its fragment as the section, so
- * every link gets the toolbar. Inside the shell's iframe the page is not the top window and stays.
- */
 const GALLERY_REDIRECT = `<script>
 if (window.top === window.self) {
   const section = location.hash.slice(1);
@@ -324,7 +313,6 @@ function notice(title: string, text: string): string {
   );
 }
 
-/** Renders the static site as a map from path (relative to the site root) to file content. */
 export function renderSite(input: SiteInput): Map<string, string> {
   return new Map([
     ["index.html", shell(input)],

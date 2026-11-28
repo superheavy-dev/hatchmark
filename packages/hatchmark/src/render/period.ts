@@ -3,14 +3,6 @@ import { formatSpan } from "./format.js";
 import { esc, langAttr } from "./svg.js";
 import type { Theme } from "./theme.js";
 
-/**
- * The dashboard's period control: a button that names the range shown, opening a dialog with the
- * presets and, when the filter offers custom ranges, a calendar for any first and last day. The
- * server draws the button and the dialog shell; the runtime draws the calendar months and swaps
- * the page's blocks for the chosen range (see runtime/main.ts).
- */
-
-/** What the control shows for a range: the preset's name, and its dates; a range without a name shows its dates as the name. */
 export function periodText(
   filter: PeriodFilter,
   locale: string,
@@ -30,11 +22,6 @@ export function periodText(
   return { name: dates ?? filter.selected, nameIsDates: dates !== undefined };
 }
 
-/**
- * How the custom range fields write a day in the project locale: a Gregorian numeric pattern such
- * as DD.MM.YYYY, and the locale's digits when they are not 0-9. The page embeds both so a browser
- * without that locale's data reads and writes days exactly like the build.
- */
 export function fieldFormat(locale: string): { pattern: string; digits?: string } {
   const tag = Intl.DateTimeFormat.supportedLocalesOf(locale).length > 0 ? locale : "en-US";
   const options = { year: "numeric", month: "2-digit", day: "2-digit", timeZone: "UTC" } as const;
@@ -54,7 +41,6 @@ export function fieldFormat(locale: string): { pattern: string; digits?: string 
   return { pattern, digits: Array.from({ length: 10 }, (_, d) => native.format(d)).join("") };
 }
 
-/** The header caption: the window shown and its comparison, then the currency. */
 export function periodCaption(data: DashboardData): string {
   const locale = data.locale;
   const period = data.period.current
@@ -66,10 +52,6 @@ export function periodCaption(data: DashboardData): string {
 const ICON =
   '<svg class="hm-period-icon" width="14" height="14" viewBox="0 0 14 14" aria-hidden="true" focusable="false"><rect x="1.5" y="2.5" width="11" height="10" rx="1.5" fill="none" stroke="currentColor"/><path d="M1.5 5.5h11M4.5 1v3M9.5 1v3" fill="none" stroke="currentColor" stroke-linecap="round"/></svg>';
 
-/**
- * The control's markup. engine is the URL of the script that recomputes the page for another range;
- * weekStart orders the calendar's weekday columns (0 is Monday).
- */
 export function periodControl(
   data: DashboardData & { periodFilter: PeriodFilter },
   engine: string | undefined,
@@ -94,7 +76,6 @@ export function periodControl(
   return `<div class="hm-period" data-hm-period="${esc(filter.id)}" data-hm-locale="${esc(locale)}"${engine ? ` data-hm-engine="${esc(engine)}"` : ""}><button type="button" class="hm-period-button" aria-haspopup="dialog" aria-expanded="false" aria-controls="${id}"><span class="hm-sr">${esc(filter.label)}: </span>${ICON}<span class="hm-period-name"${nameIsDates ? lang : ""}>${esc(name)}</span>${dates ? `<span class="hm-period-dates"${lang}>${esc(dates)}</span>` : ""}</button><div class="hm-period-panel" id="${id}" role="dialog" aria-label="${esc(filter.label)}" hidden><div class="hm-period-presets" role="radiogroup" aria-label="Presets">${presets}</div>${custom}</div></div>`;
 }
 
-/** The control's styles, in the Default theme's control language (the grain switch's). */
 export function periodStyles(theme: Theme): string {
   const r = theme.radius.control;
   return [
@@ -109,6 +90,5 @@ export function periodStyles(theme: Theme): string {
   ].join("");
 }
 
-/** Below 600 px the dialog spans the page, presets wrap above one calendar month. */
 export const PERIOD_MOBILE =
   ".hm-period{align-self:stretch}.hm-period-button{width:100%}.hm-period-panel{left:0;right:0;flex-direction:column;gap:12px}.hm-period-presets{flex-direction:row;flex-wrap:wrap;min-width:0}.hm-period-presets button{border:1px solid var(--hm-border)}.hm-cal{padding-left:0;border-left:0;padding-top:12px;border-top:1px solid var(--hm-border)}.hm-month+.hm-month{display:none}.hm-days{width:100%}.hm-days button{width:100%;height:36px}.hm-cal-fields label{flex:1;min-width:0}.hm-cal-fields input{width:100%;box-sizing:border-box}";

@@ -49,7 +49,6 @@ const ctx = (root: string): CommandContext => ({
   quiet: false,
 });
 
-/** Stands in for the DuckDB executor and the planner: every dashboard gets the sample data. */
 const deps: BuildDeps = {
   createExecutor: async () => ({
     execute: async () => ({ columns: [], rows: [] }),
@@ -184,7 +183,6 @@ describe("hatchmark build", () => {
   });
 
   describe("never follows a symbolic link", () => {
-    /** A built project and a directory outside it with a hand-written index.html. */
     async function linked(): Promise<{ root: string; dist: string; other: string }> {
       const root = await project();
       const other = await mkdtemp(path.join(tmpdir(), "hatchmark-other-"));
