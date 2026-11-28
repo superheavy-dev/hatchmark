@@ -16,7 +16,7 @@ import {
   resolveGrain,
   sameColumn,
 } from "./common.js";
-import { projectAnchors, type Source } from "./config.js";
+import { isFileSource, projectAnchors, type Source } from "./config.js";
 import {
   type Block,
   blockId,
@@ -215,6 +215,57 @@ function checkColumns(
       expected: list,
       ...(close ? { help: `did you mean "${close}"?` } : {}),
     });
+  }
+}
+
+const UNREADABLE_TYPE = /^(INTERVAL|BLOB|BIT|STRUCT|MAP|UNION|VARIANT)|\]$/;
+const NUMERIC_TYPE =
+  /^(TINYINT|SMALLINT|INTEGER|BIGINT|HUGEINT|UTINYINT|USMALLINT|UINTEGER|UBIGINT|UHUGEINT|FLOAT|DOUBLE|DECIMAL)/;
+const NUMERIC_AGGREGATES = new Set(["sum", "avg", "median", "min", "max"]);
+
+function checkDatabaseTypes(
+  r: Reporter,
+  project: Project,
+  metric: TableMetric,
+  refs: { pointer: string; column: string; range?: Partial<Diagnostic> }[],
+): void {
+  const schema = project.databases.get(metric.table);
+  if (schema === undefined) return;
+  const types = new Map(schema.columns.map((c) => [foldColumn(c.name), c.type]));
+  const decimals = new Set(schema.decimals.map(foldColumn));
+  const numeric = metric.type === "aggregate" && NUMERIC_AGGREGATES.has(metric.aggregate);
+  for (const ref of refs) {
+    const type = types.get(foldColumn(ref.column));
+    if (type === undefined) continue;
+    const at = `column "${ref.column}" of database source "${metric.table}"`;
+    const problem = UNREADABLE_TYPE.test(type)
+      ? `has type ${type}, which Hatchmark does not compare or group`
+      : ref.pointer === "/time" && type !== "DATE" && !type.startsWith("TIMESTAMP")
+        ? `is ${type}, not a date or timestamp`
+        : ref.pointer === "/column" && numeric && !NUMERIC_TYPE.test(type)
+          ? `is ${type}, not a number, so ${metric.type === "aggregate" ? metric.aggregate : "sum"} cannot aggregate it`
+          : undefined;
+    if (problem !== undefined) {
+      r.report("HM2043", ref.pointer, `${at} ${problem}`, {
+        ...(ref.range ?? {}),
+        help: "cast the column in the source's query, or use another column",
+      });
+    } else if (
+      numeric &&
+      (ref.pointer === "/column" || ref.pointer === "/value") &&
+      decimals.has(foldColumn(ref.column))
+    ) {
+      r.report(
+        "HM4080",
+        ref.pointer,
+        `${at} is an exact decimal that the database driver reads as a float, so it is summed with float rules`,
+        {
+          ...(ref.range ?? {}),
+          severity: "warning",
+          help: "declare it with a precision of 38 digits or less, such as numeric(18,2), or cast it in the source's query",
+        },
+      );
+    }
   }
 }
 
@@ -422,7 +473,9 @@ function checkMetrics(project: Project, out: Diagnostic[]): void {
       checkKeyTypes(r, project, metric);
       if (project.config.spec && !sourceSuggestion(r, file, "/table", metric.table, sources))
         continue;
-      checkColumns(r, project, metric.table, tableMetricColumns(r, file, metric, project));
+      const refs = tableMetricColumns(r, file, metric, project);
+      checkColumns(r, project, metric.table, refs);
+      checkDatabaseTypes(r, project, metric, refs);
       checkSnapshot(r, metric, configured);
       checkEvaluationLookups(r, name, metric, configured, metrics);
       if (
@@ -1959,7 +2012,7 @@ function checkDashboard(project: Project, file: SpecFile<"dashboard">, out: Diag
 function checkSourcePaths(project: Project, out: Diagnostic[]): void {
   const config = project.config;
   for (const [name, source] of Object.entries(config.spec?.sources ?? {})) {
-    if (source.type === "lookup" || !GLOB_CHARACTERS.test(source.path)) continue;
+    if (!isFileSource(source) || !GLOB_CHARACTERS.test(source.path)) continue;
     const pointer = `/sources/${name}/path`;
     const renamed = source.path.replace(/[*?[\]]/g, "_");
     const fix = replaceValueFix(

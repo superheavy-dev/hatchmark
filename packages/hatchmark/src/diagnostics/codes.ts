@@ -235,6 +235,31 @@ export const CODES = {
     explanation:
       "A map block's threshold scale sets a midpoint, which makes it diverging: classes below the midpoint take one hue and classes above it the other. That reads only when both sides have as many classes. With an even number of classes, make the midpoint one of the breaks, the middle one; with an odd number, put it inside the middle class, with as many breaks below it as above. For example breaks [-10, -2, 2, 10] with midpoint 0.",
   },
+  HM2040: {
+    title: "database credentials not set",
+    explanation:
+      "A postgres or mysql source names, in env, the environment variable that holds its connection string, and that variable is not set. Connection strings never go in hatchmark.yaml. check then reads the source's columns from the newest local copy in .hatchmark/cache (a note), or, when there is none, leaves its columns unchecked (a warning); build and dev cannot read the rows and stop with an error. Set the variable in the shell or in CI secrets, such as SHOP_DATABASE_URL=postgresql://reader:...@db.example.com:5432/shop.",
+  },
+  HM2041: {
+    title: "database cannot be reached",
+    explanation:
+      "Connecting to a postgres or mysql source failed: the host or port is wrong or not reachable from this machine, the database refused the user or password, the database name is wrong, or it did not answer within 30 seconds. The message carries the driver's reason with every password replaced by ***. Check the connection string in the variable the source's env names, and that a firewall or VPN lets this machine reach the database.",
+  },
+  HM2042: {
+    title: "table not in database",
+    explanation:
+      "The table of a postgres or mysql source is not in the database, or the user cannot see it. A table without a schema is looked up in the connection's default schema (public in PostgreSQL, the database in MySQL); write schema.table for another one. Names are matched exactly as written, so a PostgreSQL table created with capital letters needs them here too. Columns of a table that does exist are checked as for files (HM2018).",
+  },
+  HM2043: {
+    title: "column type Hatchmark cannot read",
+    explanation:
+      "A metric uses a column of a database source whose type does not fit how the metric uses it: a summed or averaged column that is not a number, a time column that is not a date or timestamp, or a column of a type Hatchmark does not compare or group (INTERVAL, BLOB, arrays, structs and maps). UUID, JSON, TIME and enum columns are read as text. Cast the column in the source's query, such as query: SELECT id, amount::numeric(18,2) AS amount FROM orders, or point the metric at another column.",
+  },
+  HM2044: {
+    title: "database extension cannot be loaded",
+    explanation:
+      "Hatchmark reads postgres and mysql sources with DuckDB's postgres and mysql extensions, which DuckDB downloads from extensions.duckdb.org the first time and keeps in ~/.duckdb/extensions. The download or the load failed, usually because the machine is offline or a proxy blocks the host. Let the machine reach extensions.duckdb.org once, or copy the extension files for this DuckDB version and platform into ~/.duckdb/extensions.",
+  },
   HM3001: {
     title: "missing required property",
     explanation:
@@ -439,6 +464,11 @@ export const CODES = {
     title: "metric needs a preset",
     explanation:
       'Informational. A period filter offers custom ranges, which a static page computes in the browser by adding up day-grain aggregates. Distinct counts, medians and SQL metrics not declared additive cannot be added up that way, so for a custom range the page shows them as "—" and says to pick a preset; every preset is computed exactly at build time. Live custom ranges come with hatchmark serve. Set custom: false on the filter to offer presets only.',
+  },
+  HM4080: {
+    title: "exact decimal read as a float",
+    explanation:
+      "A metric aggregates a NUMERIC or DECIMAL column of a database source that the database driver delivers as DOUBLE: a PostgreSQL numeric without a precision, or a NUMERIC or DECIMAL with more than 38 digits. Hatchmark then sums it with the float rules (HM4004): correct to 15 significant digits, so cents can drift once totals near 1e13. Declare the column with a precision of 38 digits or less, such as numeric(18,2), or cast it in the source's query, such as SELECT amount::numeric(18,2) AS amount FROM orders.",
   },
   HM5001: {
     title: "too many points per series",

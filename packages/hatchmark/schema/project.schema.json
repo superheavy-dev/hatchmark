@@ -487,6 +487,344 @@
           "properties": {
             "type": {
               "type": "string",
+              "const": "postgres"
+            },
+            "env": {
+              "type": "string",
+              "pattern": "^[A-Za-z_][A-Za-z0-9_]*$",
+              "description": "The environment variable that holds the connection string, such as SHOP_DATABASE_URL."
+            },
+            "table": {
+              "description": "The table or view to read, as name or schema.name. Set table or query.",
+              "type": "string",
+              "pattern": "^[^.\"'`\\\\\\s]+(\\.[^.\"'`\\\\\\s]+)?$"
+            },
+            "query": {
+              "description": "A SELECT the database runs, in its own SQL dialect. Set table or query.",
+              "type": "string",
+              "minLength": 1
+            },
+            "max_age": {
+              "anyOf": [
+                {
+                  "type": "object",
+                  "properties": {
+                    "minutes": {
+                      "type": "integer",
+                      "minimum": 1,
+                      "maximum": 527040
+                    }
+                  },
+                  "required": [
+                    "minutes"
+                  ],
+                  "additionalProperties": false
+                },
+                {
+                  "type": "object",
+                  "properties": {
+                    "hours": {
+                      "type": "integer",
+                      "minimum": 1,
+                      "maximum": 8784
+                    }
+                  },
+                  "required": [
+                    "hours"
+                  ],
+                  "additionalProperties": false
+                },
+                {
+                  "type": "object",
+                  "properties": {
+                    "days": {
+                      "type": "integer",
+                      "minimum": 1,
+                      "maximum": 366
+                    }
+                  },
+                  "required": [
+                    "days"
+                  ],
+                  "additionalProperties": false
+                }
+              ],
+              "description": "Reuse the local copy of the rows while it is younger than this. Default: build fetches the rows on every run, and dev once per session."
+            },
+            "snapshot": {
+              "description": "The source is a full snapshot per value of this date column; metrics on it must not sum over time.",
+              "type": "string",
+              "minLength": 1
+            },
+            "freshness": {
+              "anyOf": [
+                {
+                  "type": "object",
+                  "properties": {
+                    "column": {
+                      "type": "string",
+                      "minLength": 1,
+                      "description": "Use the latest value of this column instead."
+                    }
+                  },
+                  "required": [
+                    "column"
+                  ],
+                  "additionalProperties": false
+                },
+                {
+                  "type": "object",
+                  "properties": {
+                    "lag": {
+                      "anyOf": [
+                        {
+                          "type": "object",
+                          "properties": {
+                            "days": {
+                              "type": "integer",
+                              "minimum": 1,
+                              "maximum": 366
+                            }
+                          },
+                          "required": [
+                            "days"
+                          ],
+                          "additionalProperties": false
+                        },
+                        {
+                          "type": "object",
+                          "properties": {
+                            "hours": {
+                              "type": "integer",
+                              "minimum": 1,
+                              "maximum": 8784
+                            }
+                          },
+                          "required": [
+                            "hours"
+                          ],
+                          "additionalProperties": false
+                        }
+                      ]
+                    }
+                  },
+                  "required": [
+                    "lag"
+                  ],
+                  "additionalProperties": false
+                },
+                {
+                  "type": "object",
+                  "properties": {
+                    "through": {
+                      "anyOf": [
+                        {
+                          "type": "string",
+                          "const": "as_of"
+                        },
+                        {
+                          "type": "string",
+                          "format": "date",
+                          "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))$"
+                        }
+                      ],
+                      "description": "\"as_of\": complete whenever the build runs; a date: complete through it."
+                    }
+                  },
+                  "required": [
+                    "through"
+                  ],
+                  "additionalProperties": false
+                }
+              ],
+              "description": "How complete the source is. Default: through its latest timestamp, or through the whole latest date of a date column."
+            },
+            "timezone": {
+              "description": "Time zone of timestamps without an offset. Default UTC.",
+              "type": "string"
+            }
+          },
+          "required": [
+            "type",
+            "env"
+          ],
+          "additionalProperties": false,
+          "description": "A table or query in a PostgreSQL database."
+        },
+        {
+          "type": "object",
+          "properties": {
+            "type": {
+              "type": "string",
+              "const": "mysql"
+            },
+            "env": {
+              "type": "string",
+              "pattern": "^[A-Za-z_][A-Za-z0-9_]*$",
+              "description": "The environment variable that holds the connection string, such as SHOP_DATABASE_URL."
+            },
+            "table": {
+              "description": "The table or view to read, as name or schema.name. Set table or query.",
+              "type": "string",
+              "pattern": "^[^.\"'`\\\\\\s]+(\\.[^.\"'`\\\\\\s]+)?$"
+            },
+            "query": {
+              "description": "A SELECT the database runs, in its own SQL dialect. Set table or query.",
+              "type": "string",
+              "minLength": 1
+            },
+            "max_age": {
+              "anyOf": [
+                {
+                  "type": "object",
+                  "properties": {
+                    "minutes": {
+                      "type": "integer",
+                      "minimum": 1,
+                      "maximum": 527040
+                    }
+                  },
+                  "required": [
+                    "minutes"
+                  ],
+                  "additionalProperties": false
+                },
+                {
+                  "type": "object",
+                  "properties": {
+                    "hours": {
+                      "type": "integer",
+                      "minimum": 1,
+                      "maximum": 8784
+                    }
+                  },
+                  "required": [
+                    "hours"
+                  ],
+                  "additionalProperties": false
+                },
+                {
+                  "type": "object",
+                  "properties": {
+                    "days": {
+                      "type": "integer",
+                      "minimum": 1,
+                      "maximum": 366
+                    }
+                  },
+                  "required": [
+                    "days"
+                  ],
+                  "additionalProperties": false
+                }
+              ],
+              "description": "Reuse the local copy of the rows while it is younger than this. Default: build fetches the rows on every run, and dev once per session."
+            },
+            "snapshot": {
+              "description": "The source is a full snapshot per value of this date column; metrics on it must not sum over time.",
+              "type": "string",
+              "minLength": 1
+            },
+            "freshness": {
+              "anyOf": [
+                {
+                  "type": "object",
+                  "properties": {
+                    "column": {
+                      "type": "string",
+                      "minLength": 1,
+                      "description": "Use the latest value of this column instead."
+                    }
+                  },
+                  "required": [
+                    "column"
+                  ],
+                  "additionalProperties": false
+                },
+                {
+                  "type": "object",
+                  "properties": {
+                    "lag": {
+                      "anyOf": [
+                        {
+                          "type": "object",
+                          "properties": {
+                            "days": {
+                              "type": "integer",
+                              "minimum": 1,
+                              "maximum": 366
+                            }
+                          },
+                          "required": [
+                            "days"
+                          ],
+                          "additionalProperties": false
+                        },
+                        {
+                          "type": "object",
+                          "properties": {
+                            "hours": {
+                              "type": "integer",
+                              "minimum": 1,
+                              "maximum": 8784
+                            }
+                          },
+                          "required": [
+                            "hours"
+                          ],
+                          "additionalProperties": false
+                        }
+                      ]
+                    }
+                  },
+                  "required": [
+                    "lag"
+                  ],
+                  "additionalProperties": false
+                },
+                {
+                  "type": "object",
+                  "properties": {
+                    "through": {
+                      "anyOf": [
+                        {
+                          "type": "string",
+                          "const": "as_of"
+                        },
+                        {
+                          "type": "string",
+                          "format": "date",
+                          "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))$"
+                        }
+                      ],
+                      "description": "\"as_of\": complete whenever the build runs; a date: complete through it."
+                    }
+                  },
+                  "required": [
+                    "through"
+                  ],
+                  "additionalProperties": false
+                }
+              ],
+              "description": "How complete the source is. Default: through its latest timestamp, or through the whole latest date of a date column."
+            },
+            "timezone": {
+              "description": "Time zone of timestamps without an offset. Default UTC.",
+              "type": "string"
+            }
+          },
+          "required": [
+            "type",
+            "env"
+          ],
+          "additionalProperties": false,
+          "description": "A table or query in a MySQL or MariaDB database."
+        },
+        {
+          "type": "object",
+          "properties": {
+            "type": {
+              "type": "string",
               "const": "lookup"
             },
             "from": {
@@ -643,7 +981,7 @@
           "description": "The base source with other sources joined on; their columns read as <table>.<column>."
         }
       ],
-      "description": "A table read from a file in the project, or a lookup over others."
+      "description": "A table read from a file in the project or from a database, or a lookup over others."
     }
   }
 }

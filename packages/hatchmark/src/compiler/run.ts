@@ -1,4 +1,4 @@
-import { type Diagnostic, docsCommand } from "../diagnostics/index.js";
+import { type Diagnostic, docsCommand, isDiagnosticCode } from "../diagnostics/index.js";
 import {
   blockId,
   checkReferences,
@@ -69,6 +69,27 @@ function failure(message: string): Diagnostic {
   return { code: "HM2015", severity: "error", message, docs: docsCommand("HM2015") };
 }
 
+const DATA_CODES = new Set(["HM2040", "HM2041", "HM2042", "HM2044"]);
+
+/**
+ * The diagnostic of a failed data read: the executor's own code and help when it gives one (a
+ * database source that cannot be read), else HM2015 with the context prefixed.
+ */
+export function dataFailure(context: string, error: unknown): Diagnostic {
+  const { code, help } = (error ?? {}) as { code?: unknown; help?: unknown };
+  const text = error instanceof Error ? error.message : String(error);
+  if (typeof code === "string" && DATA_CODES.has(code) && isDiagnosticCode(code)) {
+    return {
+      code,
+      severity: "error",
+      message: text,
+      ...(typeof help === "string" ? { help } : {}),
+      docs: docsCommand(code),
+    };
+  }
+  return failure(`${context}${text}`);
+}
+
 /** Errors in the project that keep this dashboard from running: all but other dashboards'. */
 export function blockingErrors(project: Project, dashboard: string): Diagnostic[] {
   const others = new Set(
@@ -104,7 +125,6 @@ export async function executionContext(
   executor: DashboardExecutor,
   now?: Date,
 ): Promise<{ context?: ExecutionContext; diagnostics: Diagnostic[] }> {
-  const message = (error: unknown) => (error instanceof Error ? error.message : String(error));
   const config = project.config;
   const tz = plan.timezone;
   const atSource = (source: string) => {
@@ -153,7 +173,7 @@ export async function executionContext(
       measured.set(h, through);
     }
   } catch (error) {
-    return { diagnostics: [failure(`cannot measure source horizons: ${message(error)}`)] };
+    return { diagnostics: [dataFailure("cannot measure source horizons: ", error)] };
   }
   for (const source of naive) {
     notes.push({
@@ -451,7 +471,6 @@ export async function runDashboardBindings(
     outcomes.push(outcome);
   }
   const snapshots = await snapshotDays(plan, executor, base);
-  const message = (error: unknown) => (error instanceof Error ? error.message : String(error));
   return contexts.map((context, at) => {
     const results = new Map<string, QueryResult>();
     const imprecise = new Map<string, Diagnostic>();
@@ -462,7 +481,7 @@ export async function runDashboardBindings(
         return {
           diagnostics: [
             ...diagnostics,
-            failure(`query on source "${query.source}" failed: ${message(outcome.error)}`),
+            dataFailure(`query on source "${query.source}" failed: `, outcome.error),
           ],
         };
       }

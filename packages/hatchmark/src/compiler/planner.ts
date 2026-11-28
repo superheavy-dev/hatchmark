@@ -8,7 +8,6 @@ import {
   type Comparison,
   type Dashboard,
   DEFAULT_PERIOD,
-  type FileSource,
   type Filter,
   type Grain,
   grainKey,
@@ -23,6 +22,7 @@ import {
   type Source,
   type SpecFile,
   sameColumn,
+  type TableSource,
   timeNature,
 } from "../spec/index.js";
 import { canonicalJson, sha256Hex } from "./hash.js";
@@ -220,7 +220,7 @@ function filterTables(
   measures: PlannedMeasure[],
   params: PlanParam[],
   source: string,
-): Record<string, FileSource> | undefined {
+): Record<string, TableSource> | undefined {
   const names = [
     ...measures
       .flatMap((m) => m.components)
@@ -233,7 +233,7 @@ function filterTables(
   ]
     .flatMap((f) => (f.op === "in_table" || f.op === "not_in_table" ? [f.table] : []))
     .sort();
-  const tables: Record<string, FileSource> = {};
+  const tables: Record<string, TableSource> = {};
   for (const name of names) {
     const source = sources[name];
     if (source !== undefined && source.type !== "lookup") tables[name] = source;

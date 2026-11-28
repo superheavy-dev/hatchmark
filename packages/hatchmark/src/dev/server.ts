@@ -25,7 +25,7 @@ import {
   renderHuman,
 } from "../diagnostics/index.js";
 import { GEOGRAPHY_DATA, usedGeographies } from "../geo/index.js";
-import { createDuckDbExecutor, nodeProjectHost } from "../node/index.js";
+import { createDatabaseStore, createDuckDbExecutor, nodeProjectHost } from "../node/index.js";
 import {
   cssPaint,
   DEFAULT_THEME,
@@ -42,6 +42,7 @@ import {
   CONFIG_FILE,
   checkReferences,
   type GeographyId,
+  isFileSource,
   loadProject,
   type Project,
   type ProjectConfig,
@@ -116,6 +117,8 @@ export interface DevOptions {
   color?: boolean;
   deps?: BuildDeps;
   onEvent?(event: DevEvent): void;
+  /** Where database sources' connection strings come from; process.env when absent. */
+  env?: Readonly<Record<string, string | undefined>>;
 }
 
 export interface DevServer {
@@ -174,7 +177,9 @@ export async function startDevServer(
 ): Promise<{ server: DevServer } | { report: DiagnosticReport }> {
   const root = await realpath(options.root).catch(() => options.root);
   const deps = options.deps ?? { createExecutor: createDuckDbExecutor, runDashboard };
-  const host = nodeProjectHost(root);
+  const env = options.env ?? process.env;
+  const host = nodeProjectHost(root, env);
+  const databases = createDatabaseStore({ root, env });
   const first = await loadProject(host);
   if (first.project === undefined) return { report: createReport(first.diagnostics) };
 
@@ -202,7 +207,7 @@ export async function startDevServer(
   const sourcePaths = (spec: ProjectConfig | undefined) => {
     const files = new Map<string, string[]>();
     for (const [name, s] of Object.entries(spec?.sources ?? {})) {
-      if (s.type === "lookup") continue;
+      if (!isFileSource(s)) continue;
       const file = path.resolve(root, s.path);
       files.set(file, [...(files.get(file) ?? []), name]);
     }
@@ -272,7 +277,7 @@ export async function startDevServer(
       if (configChanged || dataChanged.size > 0 || executor === undefined) {
         await executor?.close();
         executor = undefined;
-        executor = await deps.createExecutor({ root, config: spec });
+        executor = await deps.createExecutor({ root, config: spec, databases });
       }
       const previous = project;
       project = next;

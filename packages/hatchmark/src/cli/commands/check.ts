@@ -15,7 +15,7 @@ import {
   renderHuman,
 } from "../../diagnostics/index.js";
 import { nodeProjectHost } from "../../node/host.js";
-import { createDuckDbExecutor } from "../../node/index.js";
+import { createDatabaseStore, createDuckDbExecutor } from "../../node/index.js";
 import { CONFIG_FILE, checkReferences, loadProject, parseDiagnostics } from "../../spec/index.js";
 import type { CommandHelp } from "../help.js";
 import { type CommandContext, type CommandResult, EXIT, type ExitCode } from "../io.js";
@@ -49,7 +49,7 @@ export const checkHelp: CommandHelp = {
   },
 };
 
-const ENVIRONMENT_CODES = new Set(["HM1001", "HM2010"]);
+const ENVIRONMENT_CODES = new Set(["HM1001", "HM2010", "HM2040", "HM2041", "HM2044"]);
 
 export function exitCodeFor(diagnostics: readonly Diagnostic[], strict: boolean): ExitCode {
   const errors = diagnostics.filter((d) => d.severity === "error");
@@ -67,7 +67,9 @@ export async function check(
   flags: { strict?: boolean; sql?: boolean; explainDefaults?: boolean },
   createExecutor: CreateSqlExecutor = createDuckDbExecutor,
 ): Promise<CommandResult> {
-  const { project, diagnostics: loadDiagnostics } = await loadProject(nodeProjectHost(ctx.root));
+  const { project, diagnostics: loadDiagnostics } = await loadProject(
+    nodeProjectHost(ctx.root, ctx.io.env),
+  );
   if (project === undefined) {
     const report = createReport(loadDiagnostics);
     return { exitCode: EXIT.usage, json: report, human: renderHuman(report, { color: ctx.color }) };
@@ -85,6 +87,7 @@ export async function check(
   diagnostics.push(...explainDefaults(project));
   diagnostics = diagnostics.filter((d) => selected(d.file));
 
+  const databases = createDatabaseStore({ root: ctx.root, env: ctx.io.env, readOnly: true });
   const sql: { dashboard: string; block: string; queries: ExplainedQuery[] }[] = [];
   const config = project.config.spec;
   if (
@@ -92,7 +95,7 @@ export async function check(
     config !== undefined &&
     !diagnostics.some((d) => d.severity === "error")
   ) {
-    const executor = await createExecutor({ root: ctx.root, config });
+    const executor = await createExecutor({ root: ctx.root, config, databases });
     try {
       for (const [name, file] of [...project.dashboards].sort(([a], [b]) => (a < b ? -1 : 1))) {
         if (!selected(file.file)) continue;
@@ -132,7 +135,7 @@ export async function check(
     config !== undefined &&
     !diagnostics.some((d) => d.severity === "error")
   ) {
-    const executor = await createExecutor({ root: ctx.root, config });
+    const executor = await createExecutor({ root: ctx.root, config, databases });
     try {
       for (const [name] of mapped.sort(([a], [b]) => (a < b ? -1 : 1))) {
         const run = await runDashboard(project, name, executor, new Date());
@@ -148,6 +151,7 @@ export async function check(
       await executor.close();
     }
   }
+  await databases.close();
   if (projectErrors || diagnostics.some((d) => d.severity === "error"))
     diagnostics = diagnostics.filter((d) => d.code !== "HM4040");
   const report = createReport(diagnostics);

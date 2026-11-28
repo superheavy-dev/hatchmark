@@ -1,4 +1,4 @@
-import { type Diagnostic, docsCommand } from "../diagnostics/index.js";
+import type { Diagnostic } from "../diagnostics/index.js";
 import type { Project, RangeSpec } from "../spec/index.js";
 import { textComparer } from "./assemble.js";
 import type { DashboardData } from "./dashboard-data.js";
@@ -27,6 +27,7 @@ import type {
 import { planDashboard, queryId } from "./planner.js";
 import {
   type DashboardExecutor,
+  dataFailure,
   executionContext,
   pointMetrics,
   runDashboardBindings,
@@ -314,17 +315,7 @@ export async function runPeriodData(
       }
     }
   } catch (error) {
-    const message = error instanceof Error ? error.message : String(error);
-    return {
-      diagnostics: [
-        {
-          code: "HM2015",
-          severity: "error",
-          message: `day-grain query for custom ranges failed: ${message}`,
-          docs: docsCommand("HM2015"),
-        },
-      ],
-    };
+    return { diagnostics: [dataFailure("day-grain query for custom ranges failed: ", error)] };
   }
   let first = spanStart === undefined ? last + 1 : dayNumber(spanStart);
   for (const { result } of spanStart === undefined ? runs.values() : []) {

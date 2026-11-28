@@ -16,7 +16,9 @@ import {
   type CachedExecutor,
   type CacheProbe,
   createCachedExecutor,
+  createDatabaseStore,
   createDuckDbExecutor,
+  type DatabaseStore,
   nodeProjectHost,
 } from "../../node/index.js";
 import { blockId, loadProject, type Project, type ProjectConfig } from "../../spec/index.js";
@@ -49,6 +51,7 @@ export const explainHelp: CommandHelp = {
 export type CreateSqlExecutor = (options: {
   root: string;
   config: ProjectConfig;
+  databases?: DatabaseStore;
 }) => Promise<SqlExecutor & { close(): Promise<void> }>;
 
 export type ExplainedWithCache = ExplainedQuery & { cache?: CacheProbe };
@@ -109,7 +112,9 @@ export async function explain(
   }
   if (input !== undefined && isDiagnosticCode(input.toUpperCase())) return explainCode(input);
 
-  const { project, diagnostics: loadDiagnostics } = await loadProject(nodeProjectHost(ctx.root));
+  const { project, diagnostics: loadDiagnostics } = await loadProject(
+    nodeProjectHost(ctx.root, ctx.io.env),
+  );
   if (input !== undefined && /^hm\d+$/i.test(input) && !project?.metrics.has(input)) {
     return explainCode(input);
   }
@@ -140,11 +145,13 @@ export async function explain(
     }
   }
   const config = project.config.spec;
+  const databases = createDatabaseStore({ root: ctx.root, env: ctx.io.env, readOnly: true });
   const executor = await createCachedExecutor({
     root: ctx.root,
     config,
-    createInner: (root) => createExecutor({ root, config }),
+    createInner: (root) => createExecutor({ root, config, databases }),
     readOnly: true,
+    databases,
   });
   try {
     return input !== undefined
@@ -152,6 +159,7 @@ export async function explain(
       : await blockSql(ctx, project, dashboard as string, flags.block as string, executor);
   } finally {
     await executor.close();
+    await databases.close();
   }
 }
 
@@ -177,7 +185,18 @@ async function queriesResult(
   }
   const notes = report.warning_count > 0 ? renderHuman(report, { color: ctx.color }) : "";
   const body = queries.length > 0 ? renderQueries(queries) : "-- no queries";
-  const cached = queries.flatMap((q) => (q.cache ? [cacheLine(q.id, q.cache)] : []));
+  const cached = queries.flatMap((q) =>
+    q.cache
+      ? [
+          cacheLine(q.id, q.cache),
+          ...(q.cache.data ?? []).flatMap((d) =>
+            d.fetched_at
+              ? [`--   rows of database source "${d.source}" fetched ${d.fetched_at}`]
+              : [],
+          ),
+        ]
+      : [],
+  );
   const cacheSection =
     cached.length > 0 ? `-- build cache (.hatchmark/cache)\n${cached.join("\n")}` : "";
   return {
