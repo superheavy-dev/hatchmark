@@ -2,9 +2,16 @@ import { describe, expect, it } from "vitest";
 import { explainDefaults } from "../../src/compiler/index.js";
 import { createReport, renderHuman } from "../../src/diagnostics/index.js";
 import { checkReferences } from "../../src/spec/index.js";
-import { CONFIG, projectFrom } from "./helpers.js";
+import { CONFIG, METRICS, projectFrom } from "./helpers.js";
 
-const { weekStart: _, ...noAnchors } = CONFIG;
+const BASE = {
+  ...CONFIG,
+  sources: {
+    ...CONFIG.sources,
+    orders: { ...CONFIG.sources.orders, freshness: { column: "ordered_at" } },
+  },
+};
+const { weekStart: _, ...noAnchors } = BASE;
 
 const dashboard = (blocks: unknown[], period?: unknown) => ({
   title: "Sales",
@@ -20,7 +27,7 @@ function notes(
 ) {
   const d = dashboard(blocks, "period" in options ? options.period : PERIOD);
   const project = projectFrom({
-    config: options.config ?? CONFIG,
+    config: options.config ?? BASE,
     dashboards: {
       d:
         options.filters === undefined || options.filters === false
@@ -291,9 +298,9 @@ describe("check explains the defaults it applies (HM4040)", () => {
         config: { ...noAnchors, anchors: { week: "monday", year: "01-01" } },
       }),
     ).toEqual([]);
-    expect(
-      notes(blocks, { ...options, config: { ...CONFIG, anchors: { year: "01-01" } } }),
-    ).toEqual([]);
+    expect(notes(blocks, { ...options, config: { ...BASE, anchors: { year: "01-01" } } })).toEqual(
+      [],
+    );
   });
 
   it("names the year of a date outside the as-of year", () => {
@@ -320,5 +327,63 @@ describe("check explains the defaults it applies (HM4040)", () => {
         "set anchors: {year: 02-01} for a year from Feb 1, or another quarter start",
       ],
     ]);
+  });
+});
+
+describe("the freshness note (HM4040)", () => {
+  const kpis = (...metrics: string[]) => ({
+    title: "K",
+    period: PERIOD,
+    blocks: metrics.map((metric) => ({ type: "kpi", metric })),
+  });
+  const freshness = (orders: Record<string, unknown>, dashboards: Record<string, unknown>) =>
+    explainDefaults(
+      projectFrom({
+        config: {
+          ...CONFIG,
+          sources: { ...CONFIG.sources, orders: { ...CONFIG.sources.orders, ...orders } },
+        },
+        dashboards,
+      }),
+    ).filter((d) => d.pointer?.startsWith("/sources/"));
+
+  it("names a source a dashboard reads by time once, at its entry in hatchmark.yaml", () => {
+    const ds = freshness({}, { a: kpis("revenue"), b: kpis("orders", "avg_order_value") });
+    expect(ds.map((d) => [d.code, d.severity, d.file, d.pointer, d.message, d.help])).toEqual([
+      [
+        "HM4040",
+        "note",
+        "hatchmark.yaml",
+        "/sources/orders",
+        'uses the default freshness for source "orders": it is complete through its newest timestamp, or through the whole newest date of a date column',
+        "set freshness: {lag: {days: 1}} when its newest day may still be loading, or {through: as_of} for a source that is complete whenever the build runs; freshness: {column: ordered_at} keeps the default and silences this note",
+      ],
+    ]);
+    expect(ds[0]?.range?.start.line).toBeGreaterThan(1);
+  });
+
+  it.each([[{ column: "ordered_at" }], [{ lag: { days: 1 } }], [{ through: "as_of" }]])(
+    "stays quiet once freshness is set to %j",
+    (set) => {
+      expect(freshness({ freshness: set }, { a: kpis("revenue") })).toEqual([]);
+    },
+  );
+
+  it("stays quiet for a source no dashboard reads by time", () => {
+    expect(freshness({}, { a: kpis("merchants") })).toEqual([]);
+  });
+
+  it("offers no column to keep when dashboards read the source by two time columns", () => {
+    const project = projectFrom({
+      metrics: {
+        ...METRICS,
+        shipped: { ...(METRICS.orders as object), label: "Shipped", time: "shipped_at" },
+      },
+      dashboards: { a: kpis("orders", "shipped") },
+    });
+    const [d] = explainDefaults(project).filter((n) => n.pointer === "/sources/orders");
+    expect(d?.help).toBe(
+      "set freshness: {lag: {days: 1}} when its newest day may still be loading, or {through: as_of} for a source that is complete whenever the build runs; any freshness silences this note",
+    );
   });
 });

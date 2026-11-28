@@ -307,8 +307,18 @@ it(
     const counts = { projects: 0, dated: 0 };
     for (let p = 0; p < PROJECTS; p++) {
       const { config, chosen, dashboards } = generate(p, r);
+      const f = rng(10_000 + p)();
+      const freshness =
+        f < 0.4
+          ? undefined
+          : [{ column: "at" }, { lag: { days: 1 } }, { lag: { hours: 6 } }][
+              Math.floor((f - 0.4) / 0.2)
+            ];
       const fixture = await writeProject({
-        "hatchmark.yaml": config,
+        "hatchmark.yaml": {
+          ...config,
+          sources: { orders: { ...config.sources.orders, ...(freshness ? { freshness } : {}) } },
+        },
         "orders.csv": CSV,
         "metrics/orders.yaml": metric({
           type: "aggregate",
@@ -428,6 +438,10 @@ it(
           if (edges[0] !== want)
             wrong.push(["edges dates", p, file, i, A, range, asOf, edges[0], want]);
         });
+      }
+      const fresh = at("hatchmark.yaml", "/sources/orders");
+      if (fresh.length !== (freshness === undefined ? 1 : 0)) {
+        wrong.push(["freshness note", p, freshness, fresh]);
       }
       const configNotes = at("hatchmark.yaml", "/name");
       const set = chosen.anchors ?? {};
