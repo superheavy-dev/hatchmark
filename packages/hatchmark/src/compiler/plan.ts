@@ -56,6 +56,8 @@ export interface PlannedMeasure {
   combine:
     | { op: "identity"; component: string }
     | { op: "divide"; numerator: string; denominator: string };
+  /** The component counting the rows a group has, so an additive SQL metric over none is 0. */
+  rows?: string;
 }
 
 /**

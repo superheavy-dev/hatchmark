@@ -428,7 +428,7 @@ describe("empty and null groups, non-additive metrics, and a select default with
     expect(diff.problems.slice(0, 10)).toEqual([]);
   });
 
-  it.fails("an additive SQL sum is 0, like revenue, over a comparison window before the first data day", () => {
+  it("an additive SQL sum is 0, like revenue, over a comparison window before the first data day", () => {
     const data = customOf(metrics, ["2024-11-01", "2024-12-01"]);
     const k = data.blocks.find((x) => x.id === "k_net_sql");
     expect(k).toMatchObject({ previousValue: 0 });

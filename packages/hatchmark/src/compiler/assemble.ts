@@ -213,11 +213,14 @@ class Assembler {
     const indexed = this.queries.get(queryId);
     const measure = indexed?.query.measures.find((m) => m.metric === metric);
     if (indexed === undefined || measure === undefined) return null;
+    const { combine } = measure;
+    const rowsAt = measure.rows === undefined ? undefined : indexed.components.get(measure.rows);
     const component = (id: string): Value => {
       const at = indexed.components.get(id);
       const reaggregate = measure.components.find((c) => c.id === id)?.reaggregate ?? "none";
       const values = keys.map((key) => {
         const row = indexed.rows.get(key);
+        if (row !== undefined && rowsAt !== undefined && row[rowsAt] === 0) return 0;
         const raw = row === undefined || at === undefined ? null : row[at];
         const value = typeof raw === "number" ? raw : null;
         return value === null && reaggregate === "sum" && row === undefined ? 0 : value;
@@ -229,7 +232,6 @@ class Assembler {
       if (reaggregate === "max") return present.reduce((m, v) => Math.max(m, v));
       return present.reduce((sum, v) => sum + v, 0);
     };
-    const { combine } = measure;
     return combine.op === "identity"
       ? component(combine.component)
       : divide(component(combine.numerator), component(combine.denominator));
