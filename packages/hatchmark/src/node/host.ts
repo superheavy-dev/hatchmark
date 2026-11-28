@@ -39,5 +39,9 @@ export function nodeProjectHost(root: string): ProjectHost {
       const { describeColumns } = await import("./duckdb.js");
       return describeColumns(resolve(file), source);
     },
+    async columnTypes(file, source) {
+      const { describeColumnTypes } = await import("./duckdb.js");
+      return describeColumnTypes(resolve(file), source);
+    },
   };
 }

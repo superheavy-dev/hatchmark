@@ -66,6 +66,11 @@ export interface Project {
    * them (ProjectHost.columns). A source missing from the map has unknown columns.
    */
   columns: Map<string, string[]>;
+  /**
+   * Column names and DuckDB types of the sources an in_table or not_in_table filter compares, when
+   * the host can read them (ProjectHost.columnTypes). A source missing from the map has unknown types.
+   */
+  columnTypes: Map<string, { name: string; type: string }[]>;
 }
 
 /**
@@ -147,6 +152,15 @@ export interface ProjectHost {
    * sources keep unknown columns.
    */
   columns?(file: string, source: FileSource): Promise<string[] | undefined>;
+  /**
+   * Optional: the column names and types of a source as the host's query engine reads it, with the
+   * source's reader options; undefined when it cannot tell. Read only for sources whose columns an
+   * in_table or not_in_table filter compares.
+   */
+  columnTypes?(
+    file: string,
+    source: FileSource,
+  ): Promise<{ name: string; type: string }[] | undefined>;
 }
 
 const FILTER_VALUE_KEYS = new Set(["value", "values", "from", "to"]);
@@ -257,6 +271,7 @@ export async function loadProject(
     segments: new Map(),
     missingData: new Set(),
     columns: new Map(),
+    columnTypes: new Map(),
   };
 
   for (const [kind, key, target] of [
@@ -307,6 +322,10 @@ export async function loadProject(
         const columns = await host.columns(file, source).catch(() => undefined);
         if (columns !== undefined) project.columns.set(name, columns);
       }
+      if (host.columnTypes && typedSources(project).has(name)) {
+        const types = await host.columnTypes(file, source).catch(() => undefined);
+        if (types !== undefined) project.columnTypes.set(name, types);
+      }
       continue;
     }
     project.missingData.add(name);
@@ -322,6 +341,31 @@ export async function loadProject(
     });
   }
   return { project, diagnostics };
+}
+
+function typedSources(project: Project): Set<string> {
+  const out = new Set<string>();
+  const filters = [
+    ...[...project.metrics.values()].flatMap((m) => {
+      const spec = m.spec;
+      return spec && (spec.type === "aggregate" || spec.type === "sql")
+        ? (spec.filters ?? []).map((f) => ({ f, table: spec.table }))
+        : [];
+    }),
+    ...[...project.metrics.values()].flatMap((m) => {
+      const spec = m.spec;
+      if (!spec || (spec.type !== "aggregate" && spec.type !== "sql")) return [];
+      return (spec.segments ?? []).flatMap((s) =>
+        (project.segments.get(s)?.spec?.filters ?? []).map((f) => ({ f, table: spec.table })),
+      );
+    }),
+  ];
+  for (const { f, table } of filters) {
+    if (f.op !== "in_table" && f.op !== "not_in_table") continue;
+    out.add(table);
+    out.add(f.table);
+  }
+  return out;
 }
 
 /** The longest CSV header Hatchmark reads; a longer first record is an error, never a partial list. */

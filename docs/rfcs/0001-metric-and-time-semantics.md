@@ -763,7 +763,7 @@ A segment is a named row filter defined once, `segments/<name>.json` (the direct
 }
 ```
 
-- **In a metric**, `"segments": ["external"]` always applies; it's part of the definition (ARR excludes staff accounts).
+- **In a metric**, `"segments": ["external"]` always applies; it's part of the definition (ARR excludes staff accounts). On a `sql` metric (2026-11-28), segments filter the source rows before its SQL aggregates them, exactly like its own `filters`; the SQL itself is never rewritten.
 - **On a dashboard**, a toggle:
 
 ```json
@@ -775,6 +775,7 @@ Selected segments combine with AND.
 - A segment applies to every source that has its columns, the same rule as select filters, and HM2013 rejects a block where it binds to only some of the sources (a formula would divide filtered by unfiltered). HM2021 is an unknown segment.
 - Composition: segments filter rows before anything else, so point-in-time state, targets (section 7) and tests (`"segments"` on a test) all see the segmented rows. Snapshot points stay filter-independent (section 3.2).
 - Materialization: a segment becomes a boolean grouping column when every component re-aggregates, else one result per combination, exactly like select filters.
+- `in_table` and `not_in_table` (2026-11-28) compile to `EXISTS` / `NOT EXISTS` over the key table, as section 3.9 says: null keys match nothing and duplicate keys count once, so a null value fails `in_table` and passes `not_in_table`. The column and the key must have comparable types: equal types compare directly, integers of any width compare exactly (as `HUGEINT`), and any other pair (an integer against a `DOUBLE`, `FLOAT` or `DECIMAL`, a number against text, a date against anything else) is HM2029, an error naming both types, never a coercion. A cached result is keyed on the key table's file as well as the source's.
 
 ## 9. Granularity switching
 
@@ -1108,6 +1109,7 @@ New or changed codes, all in `src/diagnostics/codes.ts`:
 | HM2021        | error           | unknown segment                                                                                                                                                                                                                                                                              |
 | HM2022        | error           | unknown target id                                                                                                                                                                                                                                                                            |
 | HM2023        | error           | a test's `data` swaps a source the metric doesn't read                                                                                                                                                                                                                                       |
+| HM2029        | error           | in_table or not_in_table compares a column with a key column of a type it does not compare                                                                                                                                                                                                   |
 | HM3005        | error           | value malformed, now including an anchor that isn't a weekday or a valid `MM-DD` from 01 to 28                                                                                                                                                                                               |
 | HM3007        | error           | conflicting properties, now including `active` with `time`, `trailing` with `over_time`, `entity` without `last`/`first`, `over_time` without `time`, `grain` not in `grains`, a quarter anchor inconsistent with the year anchor, `prorate: "days"` on a flow that doesn't add up over time |
 | HM3010        | error           | formula or row expression syntax error, with line, column and length                                                                                                                                                                                                                         |

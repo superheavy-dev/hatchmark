@@ -119,16 +119,26 @@ export async function createDuckDbExecutor(options: {
     return loading;
   };
 
-  const planned = (query: PlannedQuery): Promise<LoadedSource> => {
-    const configured = options.config.sources[query.source];
-    if (configured === undefined || canonicalJson(configured) !== canonicalJson(query.input)) {
+  const current = (name: string, input: FileSource): Promise<LoadedSource> => {
+    const configured = options.config.sources[name];
+    if (configured === undefined || canonicalJson(configured) !== canonicalJson(input)) {
       return Promise.reject(
         new Error(
-          `source "${query.source}" in this plan differs from hatchmark.yaml; plan the dashboard again`,
+          `source "${name}" in this plan differs from hatchmark.yaml; plan the dashboard again`,
         ),
       );
     }
-    return load(query.source);
+    return load(name);
+  };
+
+  const planned = async (query: PlannedQuery): Promise<LoadedSource> => {
+    const source = await current(query.source, query.input);
+    if (query.tables === undefined) return source;
+    const tables: Record<string, SqlSource> = {};
+    for (const [name, input] of Object.entries(query.tables)) {
+      tables[name] = await current(name, input);
+    }
+    return { ...source, tables };
   };
 
   return {
@@ -154,6 +164,29 @@ export async function createDuckDbExecutor(options: {
       instance.closeSync();
     },
   };
+}
+
+/**
+ * The column names and types of a file source as the executor loads it, with its reader options,
+ * for ProjectHost.columnTypes. Opens a short-lived in-memory database; undefined when the file
+ * cannot be read.
+ */
+export async function describeColumnTypes(
+  file: string,
+  source: FileSource,
+): Promise<{ name: string; type: string }[] | undefined> {
+  const instance = await DuckDBInstance.create(":memory:");
+  const connection = await instance.connect();
+  try {
+    const { sql, values } = readerSql(source, [file], false);
+    const reader = await connection.runAndReadAll(`DESCRIBE SELECT * FROM ${sql}`, values);
+    return reader.getRows().map((row) => ({ name: String(row[0]), type: String(row[1]) }));
+  } catch {
+    return undefined;
+  } finally {
+    connection.closeSync();
+    instance.closeSync();
+  }
 }
 
 /**

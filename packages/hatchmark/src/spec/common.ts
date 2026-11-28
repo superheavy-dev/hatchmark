@@ -213,3 +213,26 @@ export function customIssue(
 
 /** Characters DuckDB expands as a glob in a file path (HM2016). */
 export const GLOB_CHARACTERS = /[*?[]/;
+
+const INTEGER_TYPES = new Set([
+  "TINYINT",
+  "SMALLINT",
+  "INTEGER",
+  "BIGINT",
+  "HUGEINT",
+  "UTINYINT",
+  "USMALLINT",
+  "UINTEGER",
+  "UBIGINT",
+]);
+
+/**
+ * How an in_table or not_in_table filter compares a column of one DuckDB type with a key column of
+ * another: "same" for equal types, "integer" for two integer types of different widths (compared
+ * as HUGEINT), and undefined for any other pair, which check rejects (HM2029) rather than coerce.
+ */
+export function keyComparison(column: string, key: string): "same" | "integer" | undefined {
+  if (column === key) return "same";
+  if (INTEGER_TYPES.has(column) && INTEGER_TYPES.has(key)) return "integer";
+  return undefined;
+}

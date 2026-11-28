@@ -72,6 +72,17 @@ Metric filters and dashboard select filters compare a column with a value:
   `not_null` filter.
 - `eq`, `in`, `gt`, `gte`, `lt`, `lte` and `between` never match null.
 - Column names match case-insensitively for ASCII letters, as DuckDB resolves them.
+- `in_table` keeps rows whose column value appears in another source's key column, and
+  `not_in_table` keeps the rest. A null value fails `in_table` and passes `not_in_table`, and null
+  keys match nothing, so a blank line in an exclusion list never drops a row. Duplicate keys count
+  once. The two columns must have comparable types: integers of any width match each other
+  exactly, text matches text, and columns of one type match each other. Any other pair, such as
+  integer ids against a text, decimal or floating-point key column, is an error (HM2029) that names
+  both types, because converting either side could make different values match.
+- A segment (`segments/<name>.yaml`) is a named list of filters. A metric's `segments` add those
+  filters to the metric's own, on aggregate and sql metrics alike, so "External revenue" with `segments: [external]` reads exactly the
+  rows its filters and every segment's filters keep. A result that reads a key table is cached
+  against that table's file too, so editing the list recomputes it.
 
 ## Groups, totals and empty values
 

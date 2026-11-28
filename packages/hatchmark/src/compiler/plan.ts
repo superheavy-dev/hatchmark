@@ -115,6 +115,11 @@ export interface PlannedQuery {
    * the query reads, so they are part of its id and of the plan hash.
    */
   input: FileSource;
+  /**
+   * The sources that in_table and not_in_table filters read, by name, as hatchmark.yaml declares
+   * them; absent when the query has no such filter.
+   */
+  tables?: Record<string, FileSource>;
   /** Aggregate and SQL metrics on this source; ratios combine measures in BlockPlan.measures. */
   measures: PlannedMeasure[];
   dimensions: PlannedDimension[];

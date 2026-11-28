@@ -210,16 +210,12 @@ describe("explain", () => {
         sources: { orders: { type: "csv", path: "data/orders.csv" } },
       },
       "data/orders.csv": "ordered_at,status\n2026-01-01,paid\n",
-      "segments/paid.yaml": {
-        label: "Paid",
-        filters: [{ column: "status", op: "eq", value: "paid" }],
-      },
       "metrics/paid.yaml": metric({
         type: "aggregate",
         table: "orders",
         aggregate: "count",
         time: "ordered_at",
-        segments: ["paid"],
+        scale: 100,
       }),
       "dashboards/d.yaml": { title: "D", blocks: [{ type: "kpi", id: "k", metric: "paid" }] },
     });
