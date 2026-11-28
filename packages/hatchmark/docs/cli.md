@@ -130,8 +130,8 @@ file order (`--limit <n>`, default 5, `0` for none). A lookup source is not a fi
 sources it joins.
 
 `hatchmark data query "<sql>"` runs one SELECT statement. Each file source is a table named after the
-source; only the sources the query names as tables are loaded (a CTE of the same name hides the
-source). The query cannot read files other than the sources or write anything: any other statement,
+source, and `sources` lists them; a CTE of the same name hides the source. A missing or unreadable
+source gives `HM2010` or `HM2015` only when the query reads it. The query cannot read files other than the sources or write anything: any other statement,
 more than one statement, or a file access gives `HM0008`, and nothing runs. A DuckDB error gives
 `HM0009` with DuckDB's message. At most `--limit` rows print (default 100, at most 10000), and
 `truncated` says whether the query had more. Values are DuckDB's, before the rounding `build` applies

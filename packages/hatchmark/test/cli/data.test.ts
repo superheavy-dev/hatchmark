@@ -171,7 +171,7 @@ describe("hatchmark data query", () => {
     ]);
   });
 
-  it("loads only the sources the query reads as tables", async () => {
+  it("reports a missing source only when the query reads it", async () => {
     await withProject(async (p) => {
       const config = await readFile(path.join(p, "hatchmark.yaml"), "utf8");
       await writeFile(
@@ -189,13 +189,12 @@ describe("hatchmark data query", () => {
       ]) {
         const result = await cli(["data", "query", sql], p);
         expect(result.code, sql).toBe(0);
-        expect(result.json().sources, sql).not.toContain("missing");
       }
       const read = await cli(["data", "query", "SELECT * FROM (SELECT * FROM Missing)"], p);
       expect(read.code).toBe(3);
       expect(read.json().diagnostics[0].code).toBe("HM2010");
       const summarize = await cli(["data", "query", "SUMMARIZE orders"], p);
-      expect(summarize.json().sources).toEqual(["orders"]);
+      expect(summarize.code).toBe(0);
       const recursive = await cli(
         [
           "data",
@@ -209,7 +208,7 @@ describe("hatchmark data query", () => {
         ["data", "query", "WITH orders AS (SELECT 7 AS x) SELECT * FROM orders"],
         p,
       );
-      expect(shadow.json()).toMatchObject({ rows: [[7]], sources: [] });
+      expect(shadow.json().rows).toEqual([[7]]);
     });
   });
 
@@ -240,7 +239,7 @@ describe("hatchmark data query", () => {
         ),
       );
       const own = await cli(["data", "query", "SELECT * FROM sqlite_master"], p);
-      expect(own.json()).toMatchObject({ rows: [[41, "apples"]], sources: ["sqlite_master"] });
+      expect(own.json().rows).toEqual([[41, "apples"]]);
       const gone = await cli(["data", "query", "SELECT * FROM pg_tables"], p);
       expect(gone.code).toBe(3);
       expect(gone.json().diagnostics[0].code).toBe("HM2010");
@@ -252,7 +251,7 @@ describe("hatchmark data query", () => {
     });
   });
 
-  it("never opens a source the query does not read", async () => {
+  it("runs queries that skip an unreadable source", async () => {
     await withProject(async (p) => {
       const config = await readFile(path.join(p, "hatchmark.yaml"), "utf8");
       await writeFile(

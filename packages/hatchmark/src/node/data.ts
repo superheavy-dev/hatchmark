@@ -159,9 +159,10 @@ export async function openDataSession(options: { root: string; config: ProjectCo
     },
 
     /**
-     * Runs one SELECT over the file sources. File access is limited to the sources' files before
-     * anything else runs. A source is loaded only when DuckDB's binder reports its name as a missing
-     * table, so a query opens just the files it reads; missing names a source whose file is absent.
+     * Runs one SELECT over the file sources. File access is limited to the sources' files, and every
+     * readable source is registered as a view before the query binds, so a source named like a
+     * DuckDB catalog view still reads the source. A missing or unreadable source is a view that
+     * fails with its reason when the query reads it.
      */
     async query(
       sql: string,
@@ -190,31 +191,18 @@ export async function openDataSession(options: { root: string; config: ProjectCo
       }
       const count = parsed.statements?.length ?? 0;
       if (count !== 1) throw new QueryRejected(`the query has ${count} statements`);
-      const byName = new Map(options.sources.map((name) => [name.toLowerCase(), name]));
       const read: string[] = [];
-      const register = async (name: string) => {
-        const { relation } = await load(name);
-        await connection.run(
-          `CREATE TEMP VIEW ${quote(name)} AS SELECT * EXCLUDE ("__hm_ord") FROM ${relation} ORDER BY "__hm_ord"`,
-        );
-        read.push(name);
-      };
-      const builtIn = new Set(
-        (
-          await connection.runAndReadAll(
-            "SELECT lower(view_name) FROM duckdb_views() UNION SELECT lower(table_name) FROM duckdb_tables()",
-          )
-        )
-          .getRows()
-          .map((row) => String(row[0])),
-      );
       const unavailable = new Map<string, Error>();
-      for (const name of options.sources.filter((s) => builtIn.has(s.toLowerCase()))) {
+      for (const name of options.sources) {
         if (options.missing.has(name)) {
           unavailable.set(name, new MissingSource(name));
         } else {
           try {
-            await register(name);
+            const { relation } = await load(name);
+            await connection.run(
+              `CREATE TEMP VIEW ${quote(name)} AS SELECT * EXCLUDE ("__hm_ord") FROM ${relation} ORDER BY "__hm_ord"`,
+            );
+            read.push(name);
             continue;
           } catch (error) {
             unavailable.set(name, error as Error);
@@ -224,33 +212,27 @@ export async function openDataSession(options: { root: string; config: ProjectCo
           `CREATE TEMP VIEW ${quote(name)} AS SELECT error('${UNAVAILABLE}${name}') AS unavailable`,
         );
       }
-      for (;;) {
-        try {
-          const prepared = await connection.prepare(sql);
-          if (prepared.statementType !== StatementType.SELECT) {
-            throw new QueryRejected("the query is not a SELECT statement");
-          }
-          const reader = await prepared.streamAndReadUntil(options.limit + 1);
-          const types = reader.columnTypes();
-          return {
-            sources: read.sort(),
-            columns: reader.columnNames().map((name, i) => ({ name, type: String(types[i]) })),
-            rows: jsonRows(reader, options.limit),
-            truncated: reader.currentRowCount > options.limit,
-          };
-        } catch (error) {
-          if (error instanceof QueryRejected || error instanceof SourceReadError) throw error;
-          const message = (error as Error).message;
-          const blocked = [...unavailable].find(([name]) =>
-            message.includes(`${UNAVAILABLE}${name}`),
-          );
-          if (blocked !== undefined) throw blocked[1];
-          const table = /Table with name (.+?) does not exist/.exec(message)?.[1];
-          const name = table === undefined ? undefined : byName.get(table.toLowerCase());
-          if (name === undefined || read.includes(name)) throw permission(error as Error);
-          if (options.missing.has(name)) throw new MissingSource(name);
-          await register(name);
+      try {
+        const prepared = await connection.prepare(sql);
+        if (prepared.statementType !== StatementType.SELECT) {
+          throw new QueryRejected("the query is not a SELECT statement");
         }
+        const reader = await prepared.streamAndReadUntil(options.limit + 1);
+        const types = reader.columnTypes();
+        return {
+          sources: read.sort(),
+          columns: reader.columnNames().map((name, i) => ({ name, type: String(types[i]) })),
+          rows: jsonRows(reader, options.limit),
+          truncated: reader.currentRowCount > options.limit,
+        };
+      } catch (error) {
+        if (error instanceof QueryRejected) throw error;
+        const message = (error as Error).message;
+        const blocked = [...unavailable].find(([name]) =>
+          message.includes(`${UNAVAILABLE}${name}`),
+        );
+        if (blocked !== undefined) throw blocked[1];
+        throw permission(error as Error);
       }
     },
 
