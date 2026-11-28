@@ -1,6 +1,7 @@
 import type { DashboardData } from "../src/compiler/dashboard-data.js";
 import { customRangeDashboard, type PeriodData } from "../src/compiler/period-data.js";
 import { parseDaysKey } from "../src/compiler/periods.js";
+import { useRanges } from "../src/render/format.js";
 import { renderDashboardBlocks } from "../src/render/page.js";
 import { periodCaption, periodText } from "../src/render/period.js";
 
@@ -22,7 +23,12 @@ export interface PeriodView {
   presetOnly: string[];
 }
 
-function view(payload: PeriodData, requested: string): PeriodView | undefined {
+function view(
+  payload: PeriodData,
+  requested: string,
+  ranges: Record<string, string> = {},
+): PeriodView | undefined {
+  useRanges(ranges);
   const days = parseDaysKey(requested);
   const key = requested;
   let data: DashboardData | undefined = payload.presets[key];

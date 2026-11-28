@@ -116,7 +116,7 @@ it("names the metric that ends at an earlier horizon and the untimed one, each m
     refunds: { start: "2026-11-01", end: "2026-11-03", endAt: "2026-11-02T13:00:00.000001" },
   });
   expect(block.allTime).toEqual(["units"]);
-  expect(subtitle).toBe("Nov 1 – Nov 4, 2026, through 6:03 PM");
+  expect(subtitle).toBe("Nov 1 – 4, 2026, through 6:03 PM");
   expect(notes).toEqual({
     refunds: "Data through Nov 2, 2026, 1:00 PM · 2 days behind",
     units: "All time",
@@ -130,7 +130,7 @@ it("takes the window from the first dated metric when the first metric has no ti
     end: "2026-11-05",
     endAt: "2026-11-04T18:03:00.000001",
   });
-  expect(subtitle).toBe("Nov 1 – Nov 4, 2026, through 6:03 PM");
+  expect(subtitle).toBe("Nov 1 – 4, 2026, through 6:03 PM");
   expect(notes).toEqual({ units: "All time" });
 });
 
@@ -166,7 +166,7 @@ it("says which metric has no data in the period while the others fill the rows",
   });
   expect(block.emptyMetrics).toEqual({ lapsed: "no_data" });
   expect(values.A).toEqual({ revenue: 705, lapsed: null });
-  expect(subtitle).toBe("Nov 1 – Nov 4, 2026, through 6:03 PM");
+  expect(subtitle).toBe("Nov 1 – 4, 2026, through 6:03 PM");
   expect(notes).toEqual({ lapsed: "No data in this period" });
 });
 
@@ -184,7 +184,7 @@ it("takes the main window from most metrics and marks the column that reads anot
   expect(block.windows).toEqual({
     refunds: { start: "2026-11-01", end: "2026-11-03", endAt: "2026-11-02T13:00:00.000001" },
   });
-  expect(subtitle).toBe("Nov 1 – Nov 4, 2026, through 6:03 PM");
+  expect(subtitle).toBe("Nov 1 – 4, 2026, through 6:03 PM");
   expect(notes).toEqual({ refunds: "Data through Nov 2, 2026, 1:00 PM · 2 days behind" });
   expect(sortDescribed).toEqual(["refunds"]);
   expect(described).toBe(true);
@@ -194,7 +194,7 @@ it("keeps the plain window and no marker when every metric shares it", async () 
   const { subtitle, described, notes } = await table(["revenue", "orders"], "month_to_date", {
     orders: sum("sales", "units", "Orders"),
   });
-  expect(subtitle).toBe("Nov 1 – Nov 4, 2026, through 6:03 PM");
+  expect(subtitle).toBe("Nov 1 – 4, 2026, through 6:03 PM");
   expect(notes).toEqual({});
   expect(described).toBe(true);
 });
@@ -215,7 +215,7 @@ it.each(["month_to_date", "all_time"])(
         (SELECT sum(amount) FROM ${raw("refunds")} WHERE ${start}"at" < ${end("refunds", "2026-11-02")}
           AND market = 'A') AS refunds`);
     expect(values.A).toEqual({ constructor: expected?.sales, refunds: expected?.refunds });
-    expect(subtitle).toBe(allTime ? "through Nov 3, 2026" : "Nov 1 – Nov 4, 2026, through 6:03 PM");
+    expect(subtitle).toBe(allTime ? "through Nov 3, 2026" : "Nov 1 – 4, 2026, through 6:03 PM");
     expect(notes).toEqual({
       refunds: `Data through ${allTime ? "Nov 1, 2026" : "Nov 2, 2026, 1:00 PM"} · 2 days behind`,
     });

@@ -11,6 +11,8 @@
  * dialog and returns focus to the button; Tab stays inside the dialog while it is open.
  */
 
+import { formatRange, useRanges } from "../src/render/format.js";
+
 export interface PeriodView {
   key: string;
   blocks: string;
@@ -21,7 +23,7 @@ export interface PeriodView {
 }
 
 interface Engine {
-  view(payload: unknown, key: string): PeriodView | undefined;
+  view(payload: unknown, key: string, ranges: Record<string, string>): PeriodView | undefined;
 }
 
 const DAY = 86_400_000;
@@ -86,6 +88,10 @@ export function mountPeriod(root: HTMLElement, redraw: (view: PeriodView) => voi
   const presets = [...root.querySelectorAll<HTMLButtonElement>("[data-hm-preset]")];
   const cal = root.querySelector<HTMLElement>(".hm-cal");
   if (!button || !panel) return () => {};
+  const ranges: Record<string, string> = JSON.parse(
+    document.querySelector("script[data-hm-ranges]")?.textContent ?? "{}",
+  );
+  useRanges(ranges);
   const initial = presets.find((b) => b.getAttribute("aria-checked") === "true")?.dataset.hmPreset;
   const fallback = initial ?? presets[0]?.dataset.hmPreset ?? "";
   let shown = fallback;
@@ -189,7 +195,7 @@ export function mountPeriod(root: HTMLElement, redraw: (view: PeriodView) => voi
     if (status) {
       status.textContent =
         state.start && state.end
-          ? `${short.format(toDate(state.start))} \u2013 ${short.format(toDate(state.end))}, ${Math.round((toDate(state.end) - toDate(state.start)) / DAY) + 1} days`
+          ? `${formatRange(new Date(toDate(state.start)), new Date(toDate(state.end)), locale, { day: true, year: true })}, ${Math.round((toDate(state.end) - toDate(state.start)) / DAY) + 1} days`
           : state.start
             ? "Pick the last day"
             : "Pick the first day";
@@ -272,7 +278,7 @@ export function mountPeriod(root: HTMLElement, redraw: (view: PeriodView) => voi
     if (!src || !payload) return;
     grid?.setAttribute("aria-busy", "true");
     try {
-      const view = (await loadEngine(src)).view(JSON.parse(payload), key);
+      const view = (await loadEngine(src)).view(JSON.parse(payload), key, ranges);
       if (view === undefined) throw new RangeError(`no range "${key}"`);
       shown = view.key;
       check(view.key);

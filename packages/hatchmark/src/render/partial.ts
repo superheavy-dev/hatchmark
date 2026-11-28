@@ -1,6 +1,6 @@
 import type { BarData, LineData } from "../compiler/dashboard-data.js";
 import { isNumber, type RenderContext } from "./chart.js";
-import { formatBucket, formatDay, parseDate } from "./format.js";
+import { formatBucket, formatDay, formatRange, parseDate } from "./format.js";
 import { r } from "./svg.js";
 import type { ColorKey, Paint } from "./theme.js";
 
@@ -78,17 +78,9 @@ export function partialPositions(
 function coveredLabel(from: string, to: string, asOf: string, locale: string): string {
   const start = parseDate(from);
   const end = parseDate(plusDays(to, -1));
-  const year = (d: Date) => d.getUTCFullYear();
-  const day = new Intl.DateTimeFormat(locale, { day: "numeric", timeZone: "UTC" });
-  if (year(start) !== year(end)) {
-    return `${formatDay(start, locale)} \u2013 ${formatDay(end, locale)}`;
-  }
-  const suffix = year(start) === Number(asOf.slice(0, 4)) ? "" : `, ${year(start)}`;
-  if (from === iso(end)) return `${formatDay(start, locale, false)}${suffix}`;
-  if (start.getUTCMonth() === end.getUTCMonth()) {
-    return `${formatDay(start, locale, false)}\u2013${day.format(end)}${suffix}`;
-  }
-  return `${formatDay(start, locale, false)} \u2013 ${formatDay(end, locale, false)}${suffix}`;
+  const asOfYear = Number(asOf.slice(0, 4));
+  const year = start.getUTCFullYear() !== asOfYear || end.getUTCFullYear() !== asOfYear;
+  return formatRange(start, end, locale, { day: true, year });
 }
 
 export const timeOf = (endAt: string, locale: string) =>

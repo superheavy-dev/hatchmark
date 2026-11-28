@@ -216,7 +216,7 @@ function span(from: string, last: string, asOfYear: string): string {
   const y = from.slice(0, 4) === asOfYear ? "" : ", " + from.slice(0, 4);
   if (from === last) return md(from) + y;
   if (from.slice(0, 7) === last.slice(0, 7))
-    return md(from) + "\u2013" + Number(last.slice(8, 10)) + y;
+    return md(from) + " \u2013 " + Number(last.slice(8, 10)) + y;
   return md(from) + " \u2013 " + md(last) + y;
 }
 function clock(h: string): string {

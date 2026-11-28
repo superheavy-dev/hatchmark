@@ -28,25 +28,25 @@ describe("partial buckets", () => {
   it("gives the tooltip a date line and a status line; one line in the readout, table and description", () => {
     const { block, data } = variant("line-incomplete-mark");
     const runtime = chartRuntimeData(block, ctx(data));
-    expect(runtime.headers.slice(-2)).toEqual(["Week of Sep 14, 2026", "Sep 21\u201323"]);
+    expect(runtime.headers.slice(-2)).toEqual(["Week of Sep 14, 2026", "Sep 21 \u2013 23"]);
     expect(runtime.status?.slice(-2)).toEqual(["", "In progress \u00B7 3 of 7 days"]);
     expect(runtime.heads).toBeUndefined();
     expect(chartTable(block, ctx(data), "c")).toContain(
-      '<th scope="row">Sep 21\u201323 \u00B7 in progress (3 of 7 days)</th>',
+      '<th scope="row">Sep 21 \u2013 23 \u00B7 in progress (3 of 7 days)</th>',
     );
     expect(describeChart(block, ctx(data))).toContain(
-      "Sep 21\u201323 \u00B7 in progress (3 of 7 days).",
+      "Sep 21 \u2013 23 \u00B7 in progress (3 of 7 days).",
     );
   });
 
   it("names a clipped first week a partial week, from the window's start", () => {
     const { block, data } = variant("line-edges-clip");
     const runtime = chartRuntimeData(block, ctx(data));
-    expect(runtime.headers[0]).toBe("Jul 1\u20135");
+    expect(runtime.headers[0]).toBe("Jul 1 \u2013 5");
     expect(runtime.status?.[0]).toBe("Partial week \u00B7 5 of 7 days");
     expect(runtime.heads).toBeUndefined();
     expect(describeChart(block, ctx(data))).toContain(
-      "Jul 1\u20135 \u00B7 partial week (5 of 7 days).",
+      "Jul 1 \u2013 5 \u00B7 partial week (5 of 7 days).",
     );
   });
 
@@ -58,7 +58,7 @@ describe("partial buckets", () => {
       return chartRuntimeData(b, ctx({ ...data, asOf })).headers.at(-1);
     };
     const shifted = block.axis.buckets.map((_, i, all) => all[i] as string);
-    expect(moved(shifted, "2027-01-04")).toBe("Sep 21\u201323, 2026");
+    expect(moved(shifted, "2027-01-04")).toBe("Sep 21 \u2013 23, 2026");
   });
 
   it("names a point-in-time metric's partial bucket as of the horizon, not in progress", () => {

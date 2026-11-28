@@ -89,13 +89,11 @@ describe("hatchmark init and check", () => {
     ).toEqual([
       ["HM4040", "note", "dashboards/sales.yaml", "/blocks/4/grain"],
       ["HM4040", "note", "dashboards/sales.yaml", "/blocks/4/grain"],
-      ["HM4040", "note", "hatchmark.yaml", "/name"],
     ]);
     const human = await cli(["check", "--cwd", "shop", "--format", "human"], { cwd });
     expect(human.code).toBe(0);
     expect(human.stdout.trim().split("\n\n")).toEqual([
       "note[HM4040]: dashboards/sales.yaml: 2 default definitions, run hatchmark check --explain-defaults",
-      "note[HM4040]: hatchmark.yaml: 1 default definition, run hatchmark check --explain-defaults",
       "ok: 0 errors, 0 warnings",
     ]);
     expect((await cli(["check", "--cwd", "shop", "--strict"], { cwd })).code).toBe(0);
@@ -104,7 +102,7 @@ describe("hatchmark init and check", () => {
       { cwd },
     );
     expect(explained.code).toBe(0);
-    expect(explained.stdout.match(/^note\[HM4040\]: uses /gm)).toHaveLength(3);
+    expect(explained.stdout.match(/^note\[HM4040\]: uses /gm)).toHaveLength(2);
     const csv = await readFile(path.join(cwd, "shop/data/orders.csv"), "utf8");
     await writeFile(path.join(cwd, "shop/data/orders.csv"), `${csv.split("\n")[0]}\n`);
     const failed = await cli(["check", "--cwd", "shop", "--sql", "--json"], { cwd });
@@ -184,6 +182,20 @@ describe("hatchmark init and check", () => {
     expect(refreshed).not.toContain("## Stale");
     expect(refreshed.endsWith("<!-- hatchmark:end -->\nAfter.\n")).toBe(true);
     expect(refreshed.match(/hatchmark:start/g)).toHaveLength(1);
+  });
+
+  it("writes the week anchor of the project locale, Sunday for en-US", async () => {
+    const cwd = await tempDir();
+    await cli(["init", "shop"], { cwd });
+    await cli(["init", "bare", "--template", "minimal"], { cwd });
+    for (const project of ["shop", "bare"]) {
+      const text = await readFile(path.join(cwd, project, "hatchmark.yaml"), "utf8");
+      expect(fromYaml(text), project).toMatchObject({
+        locale: "en-US",
+        anchors: { week: "sunday" },
+      });
+      expect(text, project).not.toContain("weekStart");
+    }
   });
 
   it("creates a minimal project that checks clean", async () => {

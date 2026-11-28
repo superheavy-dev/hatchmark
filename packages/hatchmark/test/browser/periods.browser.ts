@@ -5,8 +5,11 @@ import { type Browser, chromium, type Page } from "playwright";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import type { DashboardData, KpiData } from "../../src/compiler/dashboard-data.js";
 import { runDashboard } from "../../src/compiler/index.js";
+import type { PeriodData } from "../../src/compiler/period-data.js";
 import { createDuckDbExecutor } from "../../src/node/index.js";
+import { formatSpan } from "../../src/render/format.js";
 import { formatValue } from "../../src/render/index.js";
+import { periodCaption } from "../../src/render/period.js";
 import { buildProject, EXAMPLE, loadAt, removeProjects, writeExample } from "../node/fixture.js";
 import { fromYaml } from "../yaml.js";
 
@@ -81,7 +84,7 @@ describe("period control", () => {
     expect(focused).toBe("last_7_days");
     await page.keyboard.press("Enter");
     await settled(page);
-    expect(await caption(page)).toContain("Oct 25 – Oct 31, 2026");
+    expect(await caption(page)).toContain("Oct 25 \u2013 31, 2026");
     expect(new URL(page.url()).searchParams.get("period")).toBe("last_7_days");
     expect(await button.getAttribute("aria-expanded")).toBe("false");
     expect(await page.evaluate(() => document.activeElement?.className)).toBe("hm-period-button");
@@ -91,7 +94,7 @@ describe("period control", () => {
 
     await page.reload();
     await settled(page);
-    expect(await caption(page)).toContain("Oct 25 – Oct 31, 2026");
+    expect(await caption(page)).toContain("Oct 25 \u2013 31, 2026");
     expect(await page.locator("[data-hm-preset=last_7_days]").getAttribute("aria-checked")).toBe(
       "true",
     );
@@ -118,12 +121,12 @@ describe("period control", () => {
     await page.keyboard.press("End");
     await page.keyboard.press("Enter");
     expect(await page.locator(".hm-cal-status").textContent()).toContain(
-      "Sep 9, 2026 – Oct 10, 2026, 32 days",
+      "Sep 9 \u2013 Oct 10, 2026, 32 days",
     );
     await page.locator("[data-hm-cal=apply]").click();
     await settled(page);
     expect(new URL(page.url()).searchParams.get("period")).toBe("2026-09-09..2026-10-10");
-    expect(await caption(page)).toContain("Sep 9 – Oct 10, 2026");
+    expect(await caption(page)).toContain("Sep 9 \u2013 Oct 10, 2026");
     const data = await sql({ start: "2026-09-09", end: "2026-10-11" });
     for (const [label, metric] of [
       ["Revenue", "revenue"],
@@ -158,7 +161,7 @@ describe("period control", () => {
       const { page, errors } = await open(`?period=${encodeURIComponent(bad)}`);
       await page.waitForTimeout(300);
       await settled(page);
-      expect(await caption(page)).toContain("Nov 2025 – Oct 2026");
+      expect(await caption(page)).toContain("Nov 2025 \u2013 Oct 2026");
       expect(new URL(page.url()).searchParams.get("period")).toBeNull();
       expect(errors).toEqual([]);
       await page.close();
@@ -302,4 +305,86 @@ describe("period control", () => {
     expect(box && box.x >= 0 && box.x + box.width <= 390).toBe(true);
     await page.close();
   });
+});
+
+describe("range text the browser redraws, in a fr-FR browser", () => {
+  for (const locale of ["en-US", "ja-JP", "ko-KR", "is-IS"]) {
+    it(`is the text the build wrote for the same range, in ${locale}`, async () => {
+      const explorer = fromYaml(
+        await readFile(path.join(EXAMPLE, "dashboards/explorer.yaml"), "utf8"),
+      );
+      const at = await writeExample({ locale }, { explorer });
+      expect((await buildProject(at)).code).toBe(0);
+      const built = path.join(at, "dist", "explorer", "index.html");
+      const html = await readFile(built, "utf8");
+      const json = html.match(/<script type="application\/json" data-hm-periods>(.*?)<\/script>/s);
+      const periods: PeriodData = JSON.parse(json?.[1] ?? "null");
+      const page = await browser.newPage({
+        locale: "fr-FR",
+        viewport: { width: 1280, height: 1000 },
+      });
+      await page.goto(`file://${built}`);
+      const button = page.locator(".hm-period-button");
+      const shown = () => button.locator(".hm-period-dates").textContent();
+      const first = { caption: await caption(page), dates: await shown() };
+      const presets = await page.evaluate(() =>
+        [...document.querySelectorAll<HTMLElement>(".hm-period-presets [data-hm-preset]")].map(
+          (b) => ({
+            key: b.dataset.hmPreset ?? "",
+            dates: b.querySelector(".hm-period-dates")?.textContent ?? null,
+            checked: b.getAttribute("aria-checked") === "true",
+          }),
+        ),
+      );
+      expect(presets.filter((p) => p.dates).length).toBeGreaterThan(3);
+      const pick = async (key: string) => {
+        await button.click();
+        await page.locator(`[data-hm-preset="${key}"]`).click();
+        await settled(page);
+      };
+      for (const preset of presets.filter((p) => !p.checked && p.dates)) {
+        await pick(preset.key);
+        expect(await shown(), preset.key).toBe(preset.dates);
+        const data = periods.presets[preset.key];
+        if (!data) throw new Error(`no preset data for ${preset.key}`);
+        expect(await caption(page), preset.key).toBe(periodCaption(data));
+      }
+      const start = presets.find((p) => p.checked);
+      if (!start) throw new Error("no selected preset");
+      await pick(start.key);
+      expect({ caption: await caption(page), dates: await shown() }).toEqual(first);
+
+      const week = periods.presets.last_7_days?.period.current;
+      if (!week) throw new Error("no last_7_days range");
+      const last = new Date(Date.parse(`${week.end}T00:00:00Z`) - 86_400_000)
+        .toISOString()
+        .slice(0, 10);
+      await button.click();
+      await page.locator("[data-hm-edge=start]").fill(week.start);
+      await page.locator("[data-hm-edge=end]").fill(last);
+      const typed = formatSpan(week, locale);
+      await expect
+        .poll(() => page.locator(".hm-cal-status").textContent())
+        .toBe(`${typed}, 7 days`);
+      await page.locator("[data-hm-cal=apply]").click();
+      await settled(page);
+      expect(await button.textContent()).toContain(typed);
+      expect(await caption(page)).toBe(periodCaption(periods.presets.last_7_days as DashboardData));
+
+      const shorter = new Date(Date.parse(`${last}T00:00:00Z`) - 86_400_000)
+        .toISOString()
+        .slice(0, 10);
+      await button.click();
+      await page.locator("[data-hm-edge=start]").fill(week.start);
+      await page.locator("[data-hm-edge=end]").fill(shorter);
+      const status = page.locator(".hm-cal-status");
+      await expect.poll(() => status.textContent()).toMatch(/, 6 days$/);
+      const live = (await status.textContent())?.replace(/, 6 days$/, "") ?? "";
+      await page.locator("[data-hm-cal=apply]").click();
+      await settled(page);
+      expect(await button.textContent()).toContain(live);
+      expect((await caption(page))?.startsWith(live)).toBe(true);
+      await page.close();
+    });
+  }
 });

@@ -147,6 +147,52 @@ export const formatDay = (date: Date, locale: string, withYear = true): string =
       : { month: "short", day: "numeric" },
   ).format(date);
 
+const rangeTexts = new Map<string, string>();
+let recording = false;
+
+export function formatRange(
+  start: Date,
+  last: Date,
+  locale: string,
+  fields: { day: boolean; year: boolean },
+): string {
+  const key = `${locale} ${start.toISOString().slice(0, 10)} ${last.toISOString().slice(0, 10)} ${fields.day ? "d" : ""}${fields.year ? "y" : ""}`;
+  const known = rangeTexts.get(key);
+  if (known !== undefined) return known;
+  // ICU puts thin spaces around the range dash and Chromium prints plain spaces there.
+  const text = dateFormat(locale, {
+    month: "short",
+    ...(fields.day ? { day: "numeric" } : {}),
+    ...(fields.year ? { year: "numeric" } : {}),
+  })
+    .formatRange(start, last)
+    .replaceAll("\u2009", " ");
+  if (recording) rangeTexts.set(key, text);
+  return text;
+}
+
+/**
+ * Runs render and returns every date range text it formatted. Browsers ship other ICU data than
+ * the build, so the page embeds these and the browser reuses them through useRanges.
+ */
+export function recordRanges<T>(render: () => T): { result: T; ranges: Record<string, string> } {
+  rangeTexts.clear();
+  recording = true;
+  try {
+    const result = render();
+    return { result, ranges: Object.fromEntries(rangeTexts) };
+  } finally {
+    recording = false;
+    rangeTexts.clear();
+  }
+}
+
+/** Makes formatRange return these texts, recorded by recordRanges, for the ranges they cover. */
+export function useRanges(ranges: Record<string, string>): void {
+  rangeTexts.clear();
+  for (const [key, text] of Object.entries(ranges)) rangeTexts.set(key, text);
+}
+
 const quarter = (date: Date): string => `Q${Math.floor(date.getUTCMonth() / 3) + 1}`;
 
 const calendarStart = (date: Date, grain: "quarter" | "year") =>
@@ -195,21 +241,16 @@ const addDays = (date: Date, days: number): Date => new Date(date.getTime() + da
 export function formatSpan(span: DateSpan, locale: string): string {
   const start = parseDate(span.start);
   const end = parseDate(span.end);
-  const last = addDays(end, -1);
   const months =
     (end.getUTCFullYear() - start.getUTCFullYear()) * 12 + end.getUTCMonth() - start.getUTCMonth();
-  if (start.getUTCDate() === 1 && end.getUTCDate() === 1 && months > 0) {
-    if (months === 12 && start.getUTCMonth() === 0) return String(start.getUTCFullYear());
-    if (months === 3 && start.getUTCMonth() % 3 === 0) {
-      return `${quarter(start)} ${start.getUTCFullYear()}`;
-    }
-    if (months === 1) return formatMonth(start, locale, true);
-    const sameYear = start.getUTCFullYear() === last.getUTCFullYear();
-    return `${formatMonth(start, locale, !sameYear)} \u2013 ${formatMonth(last, locale, true)}`;
+  const wholeMonths = start.getUTCDate() === 1 && end.getUTCDate() === 1 && months > 0;
+  if (wholeMonths && months === 12 && start.getUTCMonth() === 0) {
+    return String(start.getUTCFullYear());
   }
-  if (span.start === formatIso(last)) return formatDay(start, locale);
-  const sameYear = start.getUTCFullYear() === last.getUTCFullYear();
-  return `${formatDay(start, locale, !sameYear)} \u2013 ${formatDay(last, locale)}`;
+  if (wholeMonths && months === 3 && start.getUTCMonth() % 3 === 0) {
+    return `${quarter(start)} ${start.getUTCFullYear()}`;
+  }
+  return formatRange(start, addDays(end, -1), locale, { day: !wholeMonths, year: true });
 }
 
 export function formatPreviousSpan(
@@ -234,10 +275,6 @@ export function formatPreviousSpan(
 
 export const formatDate = (date: string, locale: string): string =>
   formatDay(parseDate(date), locale);
-
-function formatIso(date: Date): string {
-  return date.toISOString().slice(0, 10);
-}
 
 export function formatKey(key: string | number | boolean | null, locale: string): string {
   if (key === null) return "(empty)";
