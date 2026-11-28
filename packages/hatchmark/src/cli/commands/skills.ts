@@ -334,7 +334,9 @@ export async function discardSkillInstall(staged: StagedSkills): Promise<void> {
   await remove(staged.created);
 }
 
-export async function commitSkillInstall(staged: StagedSkills): Promise<CommandResult | undefined> {
+export async function commitSkillInstall(
+  staged: StagedSkills,
+): Promise<{ problem: string } | { warnings: string[] }> {
   const swapped: { dir: string; old: string | undefined }[] = [];
   let current = "";
   try {
@@ -362,10 +364,18 @@ export async function commitSkillInstall(staged: StagedSkills): Promise<CommandR
     await discardSkillInstall(staged);
     const code = fsErrorCode(error);
     if (code === undefined) throw error;
-    return refuse([`${current} cannot be written (${code})`]);
+    return { problem: `${current} cannot be written (${code})` };
   }
-  for (const { old } of swapped) if (old !== undefined) await rm(old, { recursive: true });
-  return undefined;
+  const warnings: string[] = [];
+  for (const { old } of swapped) {
+    if (old === undefined) continue;
+    await rm(old, { recursive: true }).catch((error: { code?: unknown }) => {
+      warnings.push(
+        `the new copy is installed, but the previous copy at ${old} could not be removed (${String(error.code ?? error)}); delete it so agents do not load it as a second skill`,
+      );
+    });
+  }
+  return { warnings };
 }
 
 export function shellQuote(arg: string): string {
@@ -467,8 +477,8 @@ export async function skills(
   if (!Array.isArray(plans)) return plans;
   const staged = await stageSkillInstall(plans);
   if (!("staged" in staged)) return staged;
-  const failed = await commitSkillInstall(staged);
-  if (failed !== undefined) return failed;
+  const committed = await commitSkillInstall(staged);
+  if ("problem" in committed) return refuse([committed.problem]);
   const list = plans.map(({ location, status }) => ({
     agent: location.agent,
     scope: location.scope,
@@ -477,10 +487,17 @@ export async function skills(
   }));
   return {
     exitCode: EXIT.ok,
-    json: { format_version: "1", ok: true, version: VERSION, skills: list },
+    json: {
+      format_version: "1",
+      ok: true,
+      version: VERSION,
+      skills: list,
+      warnings: committed.warnings,
+    },
     human: [
       `Hatchmark agent skill ${VERSION}:`,
       ...list.map((s) => `  ${s.status.padEnd(9)}  ${s.path}  (${s.agent}, ${s.scope})`),
+      ...committed.warnings.map((w) => `warning: ${w}`),
     ].join("\n"),
   };
 }

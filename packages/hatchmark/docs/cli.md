@@ -228,8 +228,11 @@ Hatchmark's and tells an untouched copy from an edited one:
   with the path and the error.
 
 Install checks every target first, then writes each new copy into a staging directory next to its
-target, then swaps the copies in. If anything fails it removes what it staged, puts back any copy it
-had moved aside, and writes nothing.
+target, then swaps the copies in. If anything fails before every copy is in place, it removes what
+it staged, puts back any copy it had moved aside, and writes nothing. Once the new copies are in
+place the install has succeeded (exit 0). It then deletes the previous copies; one it cannot delete
+is named in `warnings` (human output: a `warning:` line), so you can remove the leftover
+`.hatchmark-old-*` directory yourself.
 
 ```json
 {
@@ -259,7 +262,9 @@ copy of another version), `modified` (changed since it was installed), `foreign`
 Hatchmark), `blocked` (install would refuse a symlink or special file there) or `unreadable`;
 the last two carry a `detail` with the path. Status reads through the same checks as install, so it
 never opens a FIFO or follows a symlink. `hatchmark init --skills` stages the skill before init
-writes anything and installs it at project scope for both agents. `hatchmark doctor` warns about
+writes anything and installs it at project scope for both agents. If the skill then cannot be swapped
+in, init exits 2 with `HM0010` saying that it wrote the project, and its JSON and human output still
+list the project files it `created`, `updated` or left `unchanged`, with an empty `skills` list. `hatchmark doctor` warns about
 every `stale` copy, project or user, and prints the `hatchmark skills install --agent <agent>
 --scope <scope>` command that refreshes it, shell-quoted so it can be pasted as is; for a
 `modified` copy it prints the same command with `--force`. It never suggests an install for a

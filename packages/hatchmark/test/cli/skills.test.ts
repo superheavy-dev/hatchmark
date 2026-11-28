@@ -5,8 +5,10 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import { parse } from "yaml";
+import { exitCodeFor } from "../../src/cli/commands/check.js";
 import { stampVersion } from "../../src/cli/commands/skills.js";
 import { run } from "../../src/cli/main.js";
+import type { Diagnostic, DiagnosticCode } from "../../src/diagnostics/index.js";
 
 const PACKAGE = path.resolve(import.meta.dirname, "../..");
 const BUNDLE = path.join(PACKAGE, "skills/hatchmark");
@@ -18,7 +20,9 @@ const POSIX_USER = process.platform !== "win32" && process.getuid?.() !== 0;
 
 const dirs: string[] = [];
 const locked: string[] = [];
+const immutable: string[] = [];
 afterEach(async () => {
+  for (const dir of immutable.splice(0)) execFileSync("chflags", ["nouchg", dir]);
   for (const dir of locked.splice(0)) await chmod(dir, 0o755).catch(() => undefined);
   for (const dir of dirs.splice(0)) await rm(dir, { recursive: true, force: true });
 });
@@ -162,6 +166,68 @@ describe("the bundled skill", () => {
     expect(seen).toBeGreaterThan(20);
   });
 
+  it("states check's exit-code rule exactly as check applies it", async () => {
+    const text = await readFile(path.join(BUNDLE, "references/diagnostics.md"), "utf8");
+    const rules = [...text.matchAll(/^ {2}(\d)\. (\d) (when|otherwise)(.*(?:\n {5}.*)*)/gm)].map(
+      ([, step, exit, , rest = ""]) => ({
+        step: Number(step),
+        exit: Number(exit),
+        rest: rest.replace(/\s+/g, " "),
+      }),
+    );
+    expect(rules.map((r) => [r.step, r.exit])).toEqual([
+      [1, 2],
+      [2, 3],
+      [3, 1],
+      [4, 0],
+    ]);
+    expect(rules[0]?.rest).toBe(
+      " any error is in `hatchmark.yaml` and is not an environment error.",
+    );
+    expect(rules[2]?.rest).toBe(" there is any other error, or any warning with `--strict`.");
+    const environment = new Set(rules[1]?.rest.match(/HM\d{4}/g));
+    expect(rules[1]?.rest).toMatch(/^ every error is an environment error:/);
+    expect(environment.size).toBeGreaterThan(0);
+
+    type D = Pick<Diagnostic, "code" | "severity" | "file">;
+    const stated = (diagnostics: D[], strict: boolean) => {
+      const errors = diagnostics.filter((d) => d.severity === "error");
+      if (errors.some((d) => d.file === "hatchmark.yaml" && !environment.has(d.code))) return 2;
+      if (errors.length > 0 && errors.every((d) => environment.has(d.code))) return 3;
+      if (errors.length > 0 || (strict && diagnostics.some((d) => d.severity === "warning")))
+        return 1;
+      return 0;
+    };
+    const err = (code: DiagnosticCode, file: string): D => ({ code, severity: "error", file });
+    const sets: D[][] = [
+      [],
+      [{ code: "HM4040", severity: "warning", file: "dashboards/sales.yaml" }],
+      [err("HM3003", "metrics/revenue.yaml")],
+      [err("HM3003", "hatchmark.yaml")],
+      [err("HM2010", "hatchmark.yaml")],
+      [err("HM1001", "data/orders.csv")],
+      [err("HM2010", "hatchmark.yaml"), err("HM1001", "data/other.csv")],
+      [err("HM2010", "hatchmark.yaml"), err("HM3003", "metrics/revenue.yaml")],
+      [err("HM2010", "hatchmark.yaml"), err("HM3003", "hatchmark.yaml")],
+      [err("HM3003", "metrics/revenue.yaml"), err("HM3003", "hatchmark.yaml")],
+      [err("HM2003", "dashboards/sales.yaml"), { code: "HM4001", severity: "warning" }],
+    ];
+    for (const diagnostics of sets) {
+      for (const strict of [false, true]) {
+        expect(
+          exitCodeFor(
+            diagnostics.map((d) => ({ ...d, message: "", docs: "" })),
+            strict,
+          ),
+          JSON.stringify({ diagnostics, strict }),
+        ).toBe(stated(diagnostics, strict));
+      }
+    }
+    expect(
+      stated([err("HM2010", "hatchmark.yaml"), err("HM3003", "metrics/revenue.yaml")], false),
+    ).toBe(1);
+  });
+
   it("is in the published files", async () => {
     const manifest = JSON.parse(await readFile(path.join(PACKAGE, "package.json"), "utf8"));
     expect(manifest.files).toContain("skills");
@@ -201,6 +267,7 @@ describe("hatchmark skills install", () => {
           status: "created",
         },
       ],
+      warnings: [],
     });
     await expectBundle(path.join(root, ".claude/skills/hatchmark"));
     await expectBundle(path.join(root, ".agents/skills/hatchmark"));
@@ -345,6 +412,48 @@ describe("hatchmark skills install", () => {
     expect(fresh.code).toBe(2);
     expect(await readdir(root)).toEqual([".agents"]);
   });
+
+  it.skipIf(!POSIX_USER)(
+    "reports success with a warning when the previous copy cannot be removed",
+    async () => {
+      for (const force of [true, false]) {
+        const { root } = await project();
+        await cli(["skills", "install", "--agent", "claude"], { cwd: root });
+        const dir = path.join(root, ".claude/skills/hatchmark");
+        if (force) await writeFile(path.join(dir, "local.md"), "mine\n");
+        else await setManifestVersion(dir, "0.0.0-old");
+        await chmod(path.join(dir, "references"), 0o555);
+
+        const out = await cli(
+          ["skills", "install", "--agent", "claude", ...(force ? ["--force"] : [])],
+          {
+            cwd: root,
+          },
+        );
+        const leftovers = (await readdir(path.join(root, ".claude/skills")))
+          .filter((name) => name.startsWith(".hatchmark-old-"))
+          .map((name) => path.join(root, ".claude/skills", name));
+        for (const old of leftovers) locked.push(path.join(old, "references"));
+        expect(out.code, `force: ${force}`).toBe(0);
+        expect(leftovers).toHaveLength(1);
+        expect(out.json()).toMatchObject({
+          ok: true,
+          skills: [{ path: dir, status: "updated" }],
+          warnings: [expect.stringContaining(leftovers[0] ?? "")],
+        });
+        await expectBundle(dir);
+        const human = await run(["skills", "install", "--agent", "claude", "--format", "human"], {
+          stdout: () => {},
+          stderr: () => {},
+          cwd: root,
+          env: {},
+          stdoutIsTTY: false,
+          isAgent: async () => false,
+        });
+        expect(human).toBe(0);
+      }
+    },
+  );
 
   it.skipIf(!POSIX_USER)("reports a directory it cannot read as unreadable", async () => {
     const { root } = await project();
@@ -500,6 +609,53 @@ describe("hatchmark init --skills", () => {
     expect(out.json().diagnostics[0].code).toBe("HM0010");
     expect(await readdir(path.join(cwd, "shop"))).toEqual([".claude"]);
   });
+
+  it.skipIf(process.platform !== "darwin" || !POSIX_USER)(
+    "says which project files it wrote when the skill cannot be swapped in",
+    async () => {
+      const cwd = await tempDir();
+      const root = path.join(cwd, "shop");
+      await mkdir(root);
+      await cli(["skills", "install", "--agent", "claude"], { cwd: root });
+      const dir = path.join(root, ".claude/skills/hatchmark");
+      await writeFile(path.join(dir, "local.md"), "mine\n");
+      const before = await tree(dir);
+      execFileSync("chflags", ["uchg", dir]);
+      immutable.push(dir);
+
+      let stdout = "";
+      const io = {
+        stdout: (t: string) => {
+          stdout += t;
+        },
+        stderr: () => {},
+        cwd,
+        env: {},
+        stdoutIsTTY: false,
+        isAgent: async () => false,
+      };
+      expect(await run(["init", "shop", "--skills", "--force", "--json"], io)).toBe(2);
+      const json = JSON.parse(stdout);
+      expect(json.diagnostics[0].code).toBe("HM0010");
+      expect(json.diagnostics[0].message).toContain(`init wrote the project in ${json.root}`);
+      expect(stdout).not.toContain("nothing was written");
+      expect(json.created).toContain("hatchmark.yaml");
+      expect(json.skills).toEqual([]);
+      for (const file of json.created) {
+        expect(await readFile(path.join(root, file), "utf8"), file).not.toBe("");
+      }
+      expect(await tree(dir)).toEqual(before);
+      expect(await readdir(root)).not.toContain(".agents");
+      expect((await readdir(path.join(root, ".claude/skills"))).sort()).toEqual(["hatchmark"]);
+
+      stdout = "";
+      await rm(path.join(root, "hatchmark.yaml"));
+      expect(await run(["init", "shop", "--skills", "--force", "--format", "human"], io)).toBe(2);
+      expect(stdout).toContain("init wrote the project");
+      expect(stdout).toContain("created    hatchmark.yaml");
+      expect(stdout).not.toContain("nothing was written");
+    },
+  );
 
   it.skipIf(!POSIX_USER)("writes nothing when the skill cannot be staged", async () => {
     const cwd = await tempDir();

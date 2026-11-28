@@ -265,8 +265,28 @@ export async function init(
     throw error;
   }
   if (staged !== undefined) {
-    const failed = await commitSkillInstall(staged);
-    if (failed !== undefined) return failed;
+    const committed = await commitSkillInstall(staged);
+    if ("problem" in committed) {
+      const failed = usageError(
+        "HM0010",
+        `init wrote the project in ${target}, but could not install the agent skill; the skill directories are as they were`,
+        {
+          expected: [committed.problem],
+          help: "fix the path, then run hatchmark skills install to add the skill",
+        },
+      );
+      const written = [
+        ...created.map((f) => `  created    ${f}`),
+        ...updated.map((f) => `  updated    ${f}`),
+        ...unchanged.map((f) => `  unchanged  ${f}`),
+      ];
+      return {
+        exitCode: failed.exitCode,
+        json: { ...(failed.json as object), root: target, created, updated, unchanged, skills: [] },
+        human: [failed.human, "", `Project files in ${target}:`, ...written].join("\n"),
+      };
+    }
+    notes.push(...committed.warnings);
   }
   const skills = skillPlans.map(({ location, status }) => ({
     agent: location.agent,
