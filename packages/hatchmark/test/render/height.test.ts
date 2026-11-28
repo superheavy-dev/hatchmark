@@ -112,7 +112,7 @@ describe("height presets", () => {
       `@container hm (max-width:599.98px){.hm-kpi[data-hm-height=compact] .hm-kpi-value{font-size:${tokens.compact.phone.kpiSize}px`,
     );
     expect(mixed).toContain(
-      `@container hm (min-width:1024px){.hm-strip[data-hm-height=tall] .hm-kpi-value{font-size:${tokens.tall.desktop.kpiSize}px`,
+      `@container hm (min-width:1024px){.hm-strip[data-hm-height=tall] .hm-kpi .hm-kpi-value{font-size:${tokens.tall.desktop.kpiSize}px`,
     );
     expect(mixed.match(/<style>/g)).toHaveLength(3);
     const uniform = strip("height-kpi-tall");
@@ -152,8 +152,13 @@ describe("height presets", () => {
     );
     const { total: __, ...untotalled } = compact as TableData;
     expect(html(data, [untotalled])).toContain(
-      `.hm-table-wrap[data-hm-height=compact].hm-tall{max-height:${body}px}`,
+      `.hm-table-wrap[data-hm-height=compact].hm-tall.hm-nofoot{max-height:${body}px}`,
     );
+    expect(wrap(untotalled)?.[0]).toBe(" hm-tall hm-nofoot");
+    const { height: ___, ...legacy } = untotalled;
+    const plain = html(data, [{ ...legacy, overflow: "scroll" }]);
+    expect(plain).not.toContain("hm-nofoot");
+    expect(plain).not.toContain("data-hm-height");
   });
 
   it("renders a standalone SVG at the block's preset for desktop and phone", () => {

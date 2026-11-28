@@ -61,6 +61,31 @@ beforeAll(async () => {
       renderDashboardPage({ ...tables, blocks }, { assets: { runtime: "hatchmark.js", fonts } }),
     );
   }
+  const compact = { ...(tables.blocks[0] as TableData), span: 6 };
+  const { total: _, ...untotalled } = { ...compact, id: `${compact.id}_bare` };
+  for (const [name, blocks] of [
+    ["height-tables-totals-first", [compact, untotalled]],
+    ["height-tables-totals-last", [untotalled, compact]],
+  ] as const) {
+    await writeFile(
+      path.join(dir, `${name}.html`),
+      renderDashboardPage(
+        { ...tables, blocks: [...blocks] },
+        { assets: { runtime: "hatchmark.js", fonts } },
+      ),
+    );
+  }
+  const kpis = variant("height-strip").blocks;
+  await writeFile(
+    path.join(dir, "height-strips.html"),
+    renderDashboardPage(
+      {
+        ...tables,
+        blocks: [kpis[0], kpis[1], { ...compact, span: 12 }, kpis[3]] as DashboardData["blocks"],
+      },
+      { assets: { runtime: "hatchmark.js", fonts } },
+    ),
+  );
 });
 
 afterAll(async () => {
@@ -230,7 +255,9 @@ describe.each(DEVICES)("height presets at $device width", ({ device, viewport })
         );
         expect(wraps.map((w) => w.scrolls)).toEqual([true, true, true]);
         (["compact", "default", "tall"] as const).forEach((preset, i) => {
-          expect(wraps[i]?.rows, preset).toBeCloseTo(tokens[preset][device].tableRows, 0);
+          const rows = tokens[preset][device].tableRows;
+          const legacy = preset === "default" && name === "height-table-untotalled";
+          expect(wraps[i]?.rows, preset).toBeCloseTo(legacy ? rows + 1 : rows, 0);
         });
       } finally {
         await page.close();
@@ -251,6 +278,49 @@ describe.each(DEVICES)("height presets at $device width", ({ device, viewport })
       expect(compact).toEqual({ tfoot: false, scrolls: true });
     } finally {
       await page.close();
+    }
+  });
+
+  it.each(["height-tables-totals-first", "height-tables-totals-last"])(
+    "compact tables with and without totals keep their own caps on one page (%s)",
+    async (name) => {
+      const caps = async (file: string) => {
+        const page = await open(file, viewport);
+        try {
+          return await page.evaluate(() =>
+            Object.fromEntries(
+              [...document.querySelectorAll<HTMLElement>(".hm-table-wrap")]
+                .reverse()
+                .map((w) => [w.querySelector("tfoot") ? "totals" : "bare", w.clientHeight]),
+            ),
+          );
+        } finally {
+          await page.close();
+        }
+      };
+      const alone = { ...(await caps("height-table")), ...(await caps("height-table-untotalled")) };
+      const together = await caps(name);
+      expect(together.totals).toBeGreaterThan(together.bare as number);
+      expect(together.totals).toBeCloseTo(alone.totals as number, 0);
+      expect(together.bare).toBeCloseTo(alone.bare as number, 0);
+    },
+  );
+
+  it("a later KPI strip does not undo the levelling of an earlier one", async () => {
+    const widths = device === "desktop" ? [viewport, { ...viewport, width: 1024 }] : [viewport];
+    for (const size of widths) {
+      const page = await open("height-strips", size);
+      try {
+        const sizes = await page.evaluate(() =>
+          [...document.querySelectorAll(".hm-kpi-value")].map((v) => getComputedStyle(v).fontSize),
+        );
+        const expected = (
+          device === "desktop" ? ["tall", "tall", "compact"] : ["compact", "tall", "compact"]
+        ).map((p) => `${tokens[p as HeightPreset][device].kpiSize}px`);
+        expect(sizes, String(size.width)).toEqual(expected);
+      } finally {
+        await page.close();
+      }
     }
   });
 

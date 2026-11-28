@@ -11,19 +11,10 @@ export function tableOverflow(block: TableData, alone: boolean): "page" | "scrol
   return block.overflow ?? (alone && block.height === undefined ? "page" : "scroll");
 }
 
-/**
- * The preset a scrolling table's scroll area is sized by, when the page's own rule (the default
- * preset with a total row) does not fit it: a non-default preset, or default without a total row.
- */
-export function tableHeight(
-  block: TableData,
-  alone: boolean,
-  theme: Theme,
-): HeightPreset | undefined {
-  if (tableOverflow(block, alone) === "page") return undefined;
-  const preset = block.height ?? "default";
-  if (preset !== "default") return preset;
-  return block.total || block.rows.length <= tableRowLimit(theme, preset) ? undefined : preset;
+/** The non-default height preset a scrolling table is drawn at, if any. */
+export function tableHeight(block: TableData, alone: boolean): "compact" | "tall" | undefined {
+  if (tableOverflow(block, alone) === "page" || block.height === undefined) return undefined;
+  return block.height === "default" ? undefined : block.height;
 }
 
 /** Rows past which a table at this preset scrolls (or, in page mode, pins its header and total row). */
@@ -325,10 +316,10 @@ export function renderTable(
   const empty =
     block.rows.length === 0 ? `<p class="hm-table-note">No rows in this period.</p>` : "";
   const overflow = tableOverflow(block, alone);
-  const preset = tableHeight(block, alone, ctx.theme);
+  const preset = tableHeight(block, alone);
   const tall =
     block.rows.length > tableRowLimit(ctx.theme, preset ?? "default")
-      ? ` hm-tall${overflow === "page" ? " hm-grow" : ""}`
+      ? ` hm-tall${overflow === "page" ? " hm-grow" : ""}${preset && !block.total ? " hm-nofoot" : ""}`
       : "";
   return `<div class="hm-table-wrap${tall}"${preset ? ` data-hm-height="${preset}"` : ""} tabindex="0" role="region" aria-labelledby="hm-${esc(block.id)}-t"><table${described ? ` aria-describedby="hm-${esc(block.id)}-s"` : ""} class="hm-table${grouped ? (block.subtotals ? " hm-ma" : " hm-mb") : ""}${grouped && block.subtotals && width > 2 ? " hm-deep" : ""}"><thead><tr>${head}</tr></thead><tbody>${rows}</tbody>${total}</table></div>${empty}${note}`;
 }

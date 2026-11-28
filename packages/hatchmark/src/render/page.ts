@@ -370,16 +370,16 @@ function grainCard(
 
 /** The scroll area's height for a table with a non-default preset: header, rows and any total row. */
 function tableStyle(block: TableData, ctx: RenderContext, alone: boolean): string {
-  const preset = tableHeight(block, alone, ctx.theme);
+  const preset = tableHeight(block, alone);
   if (preset === undefined) return "";
   const row = ctx.theme.density.tableRow;
-  const footer = block.total ? row : 0;
+  const [footer, foot] = block.total ? [row, ""] : [0, ".hm-nofoot"];
   return heightStyle(
     ctx.theme,
     preset,
     (h, scope) =>
-      `.hm-table-wrap${scope}.hm-tall{max-height:${row - 4 + Math.round(h.tableRows * row) + footer}px}`,
-    ".hm-table-wrap&.hm-tall{max-height:none}",
+      `.hm-table-wrap${scope}.hm-tall${foot}{max-height:${row - 4 + Math.round(h.tableRows * row) + footer}px}`,
+    `.hm-table-wrap&.hm-tall${foot}{max-height:none}`,
   );
 }
 
@@ -419,7 +419,7 @@ function strip(kpis: KpiData[], ctx: RenderContext, height: HeightPreset): GridI
     .map((p) => heightStyle(ctx.theme, p, (h, scope) => kpiRules(h, `.hm-kpi${scope}`)));
   const level =
     presets.length > 1
-      ? `<style>@container hm ${GRID_QUERY}{${kpiRules(ctx.theme.height[height].desktop, `.hm-strip[data-hm-height=${height}]`)}}</style>`
+      ? `<style>@container hm ${GRID_QUERY}{${kpiRules(ctx.theme.height[height].desktop, `.hm-strip[data-hm-height=${height}] .hm-kpi`)}}</style>`
       : "";
   const sized =
     tiles.length === 0 && level === ""
