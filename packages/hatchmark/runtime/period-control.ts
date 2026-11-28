@@ -325,6 +325,7 @@ export function mountPeriod(
     } catch {
       if (mine !== turn) return;
       wanted = shown;
+      if (again && key !== shown) void choose(shown, false, true);
       if (!announce) writeParam(filter, undefined);
       else if (status) status.textContent = "This range is not available on this page";
     } finally {

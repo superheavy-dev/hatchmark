@@ -191,6 +191,24 @@ describe("segment toggle", () => {
     });
   }
 
+  for (const range of ["bogus", "2024-01-01..2024-01-02"]) {
+    it(`drops ?period=${range} and shows the segment combination's default range`, async () => {
+      const valid = await open("periods", "?segments=americas");
+      await settled(valid.page);
+      const want = await valid.page.locator(".hm-kpi-value").allTextContents();
+      await valid.page.close();
+
+      const { page, errors } = await open("periods", `?segments=americas&period=${range}`);
+      await settled(page);
+      await expect.poll(() => page.locator(".hm-kpi-value").allTextContents()).toEqual(want);
+      expect(new URL(page.url()).searchParams.get("period")).toBeNull();
+      expect(new URL(page.url()).searchParams.get("segments")).toBe("americas");
+      expect(await chip(page, "americas").getAttribute("aria-pressed")).toBe("true");
+      expect(errors).toEqual([]);
+      await page.close();
+    });
+  }
+
   it("tells none of the segments apart from a segment named none", async () => {
     const { states } = await embedded("named-none");
     const { page, errors } = await open("named-none");
