@@ -9,6 +9,7 @@ import {
 } from "./format.js";
 import { bucketLines, partialPositions, timeOf } from "./partial.js";
 import { esc, langAttr, r, scriptJson } from "./svg.js";
+import { hiddenParts, kpiJudgement, percentText } from "./target.js";
 
 export function renderKpi(block: KpiData, ctx: RenderContext): string {
   const locale = ctx.data.locale;
@@ -142,7 +143,73 @@ export function renderKpi(block: KpiData, ctx: RenderContext): string {
     `<div class="hm-kpi-figure"${lang}><span class="hm-kpi-value${block.value === null ? " hm-null" : ""}">${esc(value)}</span>${delta}</div>`,
     `<div class="hm-kpi-note">${esc(note)}</div>`,
     spark,
+    kpiTarget(block, ctx),
     table,
     "</div>",
   ].join("");
+}
+
+const JUDGED = { ahead: "Ahead", even: "On track", behind: "Behind" } as const;
+
+function kpiTarget(block: KpiData, ctx: RenderContext): string {
+  const target = block.target;
+  if (target === undefined) return "";
+  const locale = ctx.data.locale;
+  const lang = langAttr(locale);
+  const metric = metricOf(ctx, block.metric);
+  const value = (v: number) => formatValue(v, metric, locale, "headline");
+  const muted = (text: string) => `<span class="hm-kt-muted">${esc(text)}</span>`;
+  const shell = (
+    state: string,
+    lead: string,
+    goal: string,
+    extra: { side?: string; fill?: string; spoken?: string } = {},
+  ) => {
+    const hide = extra.spoken === undefined ? "" : ' aria-hidden="true"';
+    return [
+      `<div class="hm-kt" data-hm-t="${state}">`,
+      extra.spoken === undefined ? "" : `<div class="hm-sr">${esc(extra.spoken)}</div>`,
+      `<div class="hm-kt-row"${hide}><span class="hm-kt-lead">${lead}</span>${extra.side ?? ""}</div>`,
+      `<div class="hm-kt-bar" aria-hidden="true">${extra.fill ?? ""}</div>`,
+      `<div class="hm-kt-note"${hide}${goal ? `${lang} title="${esc(goal)}"` : ""}>${esc(goal)}</div>`,
+      "</div>",
+    ].join("");
+  };
+  if (target.hidden !== undefined) {
+    const { lead, reason } = hiddenParts(target.label, target.hidden);
+    return shell("none", muted(lead), `${reason.charAt(0).toUpperCase()}${reason.slice(1)}`);
+  }
+  if (!isNumber(target.value))
+    return shell("none", muted(`No ${target.label} for this period`), "");
+  const pace = target.pace;
+  const goal = `${isNumber(pace ?? null) ? `Pace ${value(pace as number)} · ` : ""}${target.label} ${value(target.value)}`;
+  const judged = kpiJudgement(block.value, target, metric.better);
+  if (judged === undefined)
+    return shell("none", muted("No value to compare with the target"), goal);
+  const word = judged === "neutral" ? "" : JUDGED[judged];
+  const side = word
+    ? `<span class="hm-kt-word hm-${judged === "behind" ? "bad" : "good"}">${esc(word)}</span>`
+    : "";
+  const told = word ? `, ${word.toLowerCase()}` : "";
+  const against = pace ?? target.value;
+  const share = target.attainment;
+  if (share === null) {
+    return shell(judged, muted(against <= 0 ? "Target is zero or below" : "No attainment"), goal, {
+      side,
+      spoken: `${metric.label} ${value(block.value as number)}${told}; ${goal}`,
+    });
+  }
+  const percent = percentText(share, locale);
+  const of = isNumber(pace ?? null) ? "of pace" : "of target";
+  const width = Math.max(0, Math.min(1, share)) * 100;
+  return shell(
+    judged,
+    `<span class="hm-kt-att"${lang}>${esc(percent)}</span> <span class="hm-kt-muted hm-kt-of">${esc(of)}</span>`,
+    goal,
+    {
+      side,
+      fill: `<span class="hm-kt-fill" style="width:${r(width)}%"></span>${share > 1 ? '<span class="hm-kt-over"></span>' : ""}`,
+      spoken: `${metric.label} is at ${percent} ${of}${told}; ${goal}`,
+    },
+  );
 }

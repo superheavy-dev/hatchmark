@@ -15,6 +15,14 @@ import { bucketLines, bucketName, partialPositions } from "./partial.js";
 import { isPie, pieCuts, pieEmptyText, pieItems, pieNote } from "./pie.js";
 import { scatterOrder, scatterPoints } from "./scatter.js";
 import { esc, langAttr } from "./svg.js";
+import {
+  type ChartTargets,
+  chartTargets,
+  describeTargets,
+  percentText,
+  type TargetRuntime,
+  targetRuntime,
+} from "./target.js";
 import { type SeriesPaint, seriesPaints } from "./theme.js";
 
 type ChartBlock = LineData | BarData;
@@ -134,6 +142,8 @@ export function describeChart(
   if (series.length > 3) parts.push(`${series.length - 3} more series in the data table.`);
   const partial = partialPositions(block, ctx);
   for (const i of partial.keys()) parts.push(`${bucketLines(block, i, ctx, partial).line}.`);
+  const targets = describeTargets(chartTargets(block, ctx), names, ctx);
+  if (targets) parts.push(targets);
   return parts.join(" ");
 }
 
@@ -189,7 +199,62 @@ export function chartTable(
     )
     .join("");
   const cols = block.groups ? groupedCols(block, totals !== undefined) : "";
-  return `<div class="hm-sr"><table><caption>${esc(caption)}</caption>${cols}<thead>${head}</thead><tbody>${rows}</tbody></table></div>`;
+  const table = `<div class="hm-sr"><table><caption>${esc(caption)}</caption>${cols}<thead>${head}</thead><tbody>${rows}</tbody></table></div>`;
+  return table + targetTable(block, ctx, caption, names);
+}
+
+function targetTable(
+  block: ChartBlock,
+  ctx: RenderContext,
+  caption: string,
+  names: readonly string[],
+): string {
+  const targets = chartTargets(block, ctx);
+  if (targets === undefined || targets.hidden !== undefined) return "";
+  const lang = langAttr(ctx.data.locale);
+  const locale = ctx.data.locale;
+  const value = (v: Value | undefined) =>
+    isNumber(v) ? formatValue(v, targets.metric, locale, "full") : "\u2014";
+  const columns = targets.tracks.flatMap((t) => [
+    { head: t.label, cell: (i: number) => value(t.values[i]) },
+    ...(t.pace?.some(isNumber)
+      ? [{ head: `${t.label} pace`, cell: (i: number) => value(t.pace?.[i]) }]
+      : []),
+    {
+      head: `${t.label} attained`,
+      cell: (i: number) => {
+        const a = t.attainment[i];
+        return isNumber(a) ? percentText(a, locale) : "\u2014";
+      },
+    },
+  ]);
+  const windowTable = targetWindowTable(targets, caption, ctx);
+  if (columns.length === 0) return windowTable;
+  const corner =
+    block.axis.kind === "time" ? "Period" : esc(block.axis.column.replaceAll("_", " "));
+  const rows = names
+    .map(
+      (name, i) =>
+        `<tr><th scope="row">${esc(name)}</th>${columns.map((c) => `<td${lang}>${esc(c.cell(i))}</td>`).join("")}</tr>`,
+    )
+    .join("");
+  return `<div class="hm-sr"><table><caption>${esc(`${caption}: ${targets.label}`)}</caption><thead><tr><th scope="col">${corner}</th>${columns.map((c) => `<th scope="col">${esc(c.head)}</th>`).join("")}</tr></thead><tbody>${rows}</tbody></table></div>${windowTable}`;
+}
+
+function targetWindowTable(targets: ChartTargets, caption: string, ctx: RenderContext): string {
+  const w = targets.window;
+  if (w === undefined) return "";
+  const locale = ctx.data.locale;
+  const value = (v: Value | undefined) =>
+    isNumber(v) ? formatValue(v, targets.metric, locale, "full") : "\u2014";
+  const a = w.attainment;
+  const cells = [
+    ["Target", value(w.value)],
+    ...(isNumber(w.pace ?? null) ? [["Pace to date", value(w.pace)]] : []),
+    ["Attained", isNumber(a) ? percentText(a, locale) : "\u2014"],
+  ] as const;
+  const lang = langAttr(locale);
+  return `<div class="hm-sr"><table><caption>${esc(`${caption}: ${targets.label} for the period`)}</caption><thead><tr>${cells.map(([h]) => `<th scope="col">${h}</th>`).join("")}</tr></thead><tbody><tr>${cells.map(([, c]) => `<td${lang}>${esc(c)}</td>`).join("")}</tr></tbody></table></div>`;
 }
 
 function groupedHead(block: ChartBlock, corner: string, total: boolean): string {
@@ -255,6 +320,7 @@ export interface ChartRuntimeData {
   heads?: string[];
   status?: string[];
   totalStatus?: string[];
+  targets?: TargetRuntime[];
 }
 
 export function chartRuntimeData(
@@ -328,7 +394,14 @@ export function chartRuntimeData(
           totalStatus: lines.map((l, i) => (totalPartial(block, i) ? (l.status ?? "") : "")),
         }
       : {}),
+    ...goalRows(block, ctx),
   };
+}
+
+function goalRows(block: ChartBlock, ctx: RenderContext): { targets?: TargetRuntime[] } {
+  const n = block.axis.kind === "time" ? block.axis.buckets.length : block.axis.categories.length;
+  const targets = targetRuntime(chartTargets(block, ctx), n, ctx);
+  return targets === undefined ? {} : { targets };
 }
 
 function describePie(block: PieData, ctx: RenderContext): string {

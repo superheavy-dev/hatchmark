@@ -31,6 +31,7 @@ interface RuntimeChart {
   heads?: string[];
   status?: string[];
   totalStatus?: string[];
+  targets?: { label: string; text: string[]; pace?: string[]; att?: string[] }[];
 }
 
 const SVG_NS = "http://www.w3.org/2000/svg";
@@ -120,6 +121,16 @@ function attach(figure: HTMLElement, chart: RuntimeChart): void {
         show(svg.querySelector(`.hm-rd-${k}`), !partial);
       }
     });
+    chart.targets?.forEach((target, j) => {
+      for (const [kind, texts] of [
+        ["v", target.text],
+        ["p", target.pace],
+        ["a", target.att],
+      ] as const) {
+        const node = svg.querySelector(`.hm-rt${kind}-${j}`);
+        if (node) node.textContent = texts?.[index] ?? "";
+      }
+    });
   };
 
   const tooltip = (index: number): HTMLDivElement => {
@@ -173,6 +184,25 @@ function attach(figure: HTMLElement, chart: RuntimeChart): void {
       row.append(name, value);
       tip.append(row);
       if (status) tip.append(element("div", "hm-tip-s hm-tip-ts", status));
+    }
+    let first = true;
+    for (const target of chart.targets ?? []) {
+      const text = target.text[index];
+      if (!text) continue;
+      const row = element("div", first ? "hm-tip-r hm-tip-tt" : "hm-tip-r");
+      first = false;
+      const name = element("span", "hm-tip-n");
+      name.append(element("i", "hm-tip-tg"), target.label);
+      row.append(name, element("span", "hm-tip-v", text));
+      tip.append(row);
+      const detail = (label: string, value: string | undefined) => {
+        if (!value) return;
+        const line = element("div", "hm-tip-r hm-tip-tr");
+        line.append(element("span", "hm-tip-n", label), element("span", "hm-tip-v", value));
+        tip?.append(line);
+      };
+      detail("Pace to date", target.pace?.[index]);
+      detail("Attained", target.att?.[index]);
     }
     tip.style.display = "flex";
     return tip;

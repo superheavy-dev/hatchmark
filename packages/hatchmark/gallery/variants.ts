@@ -67,6 +67,7 @@ import {
   TABLE_TOP_OTHER,
   TABLE_WINDOWS,
 } from "./tables.js";
+import { TARGETS } from "./targets.js";
 
 export interface GalleryVariant {
   component:
@@ -1771,6 +1772,7 @@ export const GALLERY: GalleryVariant[] = [
   ...GROUPS,
   ...HEIGHTS,
   ...MAPS,
+  ...TARGETS,
 ];
 
 export type { KpiData };

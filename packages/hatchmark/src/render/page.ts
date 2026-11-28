@@ -308,13 +308,14 @@ function grainCard(
   const id = `hm-${block.id}-t`;
   const { selected, options } = block.grains;
   const panels = options.map((o) => {
-    const { totals: _, ...rest } = block;
+    const { totals: _, target: __, ...rest } = block;
     const variant = {
       ...rest,
       id: `${block.id}-${o.key.replace(":", "-")}`,
       axis: o.axis,
       series: o.series,
       ...(o.totals === undefined ? {} : { totals: o.totals }),
+      ...(o.target === undefined ? {} : { target: o.target }),
     } as LineData | BarData;
     const { title, subtitle } = blockHeading(variant, ctx);
     const hidden = o.key === selected ? "" : " hidden";
@@ -485,6 +486,28 @@ function tileStyles(theme: Theme): string {
   ].join("\n");
 }
 
+/** Whether a block names a target, so the page needs the target styles. */
+export function usesTargets(data: DashboardData): boolean {
+  return data.blocks.some(
+    (b) =>
+      ("target" in b && b.target !== undefined) ||
+      ("grains" in b && b.grains?.options.some((o) => o.target !== undefined) === true),
+  );
+}
+
+function targetStyles(theme: Theme): string {
+  const meter = theme.target.meterHeight;
+  const line = theme.target.line;
+  return [
+    `.hm-kt{display:flex;flex-direction:column;gap:4px;margin-top:8px;font-size:12px;line-height:16px;container:hm-kt/inline-size}@container hm-kt (max-width:180px){.hm-kt-of{display:none}}.hm-kt-row{display:flex;justify-content:space-between;align-items:baseline;gap:8px;min-height:16px;min-width:0}.hm-kt-lead{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}`,
+    `.hm-kt-att{font-weight:500;color:var(--hm-text)}.hm-kt-muted{color:var(--hm-text-muted)}.hm-kt-word{font-weight:500;white-space:nowrap}`,
+    `.hm-kt-bar{position:relative;height:${meter}px;margin-right:${2 * meter}px;border-radius:${meter / 2}px;background:var(--hm-grid)}.hm-kt-fill,.hm-kt-over{position:absolute;top:0;bottom:0;border-radius:${meter / 2}px;background:var(--hm-c1)}.hm-kt-fill{left:0}.hm-kt-over{right:-${2 * meter}px;width:${meter}px}`,
+    `.hm-kt:is([data-hm-t=ahead],[data-hm-t=even]) :is(.hm-kt-fill,.hm-kt-over){background:var(--hm-good)}.hm-kt[data-hm-t=behind] :is(.hm-kt-fill,.hm-kt-over){background:var(--hm-bad)}`,
+    `.hm-kt-note{min-height:16px;color:var(--hm-text-subtle);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}`,
+    `.hm-tip i.hm-tip-tg{width:10px;height:0;border-radius:0;background:none;border-top:${line.width}px dashed var(${cssVar(line.color)})}.hm-tip-tr .hm-tip-n{padding-left:16px}.hm-tip-tt{padding-top:6px;border-top:1px solid var(--hm-border)}`,
+  ].join("");
+}
+
 export function usesGroups(data: DashboardData): boolean {
   return data.blocks.some((b) => "groups" in b && b.groups !== undefined);
 }
@@ -494,12 +517,19 @@ export interface PageFeatures {
   segments?: boolean;
   maps?: boolean;
   tiles?: boolean;
+  targets?: boolean;
 }
 
 export function pageStyles(
   assets: PageAssets,
   theme: Theme = DEFAULT_THEME,
-  { groups = false, segments = false, maps = false, tiles = false }: PageFeatures = {},
+  {
+    groups = false,
+    segments = false,
+    maps = false,
+    tiles = false,
+    targets = false,
+  }: PageFeatures = {},
 ): string {
   const d = theme.density;
   const fonts = FONT_FILES.filter((f) => assets.fonts[f.file] !== undefined)
@@ -596,6 +626,7 @@ export function pageStyles(
     ...(groups ? [groupStyles(theme)] : []),
     ...(segments ? [segmentStyles(theme)] : []),
     ...(tiles ? [tileStyles(theme)] : []),
+    ...(targets ? [targetStyles(theme)] : []),
   ].join("\n");
 }
 
@@ -725,6 +756,7 @@ function dashboardPage(data: DashboardData, options: PageOptions): string {
       segments: data.segmentFilter !== undefined,
       maps: data.blocks.some((b) => b.type === "map"),
       tiles: data.blocks.some((b) => b.type === "map" && b.shape === "tiles"),
+      targets: usesTargets(data),
     }),
     body,
   );

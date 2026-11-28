@@ -237,8 +237,16 @@ describe("target series", () => {
       { type: "bar", id: "total", metrics: ["revenue"], by: "region", target: "inline" },
     ]);
     const per = chart<BarData>(data, "per");
-    expect(per.series[0]?.target).toEqual({ values: [155, 155], pace: [75, 75] });
-    expect(chart<BarData>(data, "total").target?.window).toEqual({ value: 310, pace: 150 });
+    expect(per.series[0]?.target).toEqual({
+      values: [155, 155],
+      pace: [75, 75],
+      attainment: per.series[0]?.values.map((v) => (v as number) / 75),
+    });
+    expect(chart<BarData>(data, "total").target?.window).toEqual({
+      value: 310,
+      pace: 150,
+      attainment: 1,
+    });
   });
 
   it("shows a non-additive flow target only at its own grain", async () => {

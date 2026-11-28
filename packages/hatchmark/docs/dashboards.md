@@ -93,8 +93,9 @@ Metric names in blocks are metric file names (see [metrics.md](metrics.md)); col
 `split` are source columns. `line`, `area` and `bar` blocks with several series take `groups` to colour
 related series as one hue family ([components/groups.md](components/groups.md)). `kpi`, `line`,
 `area` and `bar` blocks take `target: <id>`, one of the targets of the block's metric (with several
-metrics, the first that defines it; see [metrics.md](metrics.md#targets)). Its values are in the
-block's data; they are not drawn yet.
+metrics, the first that defines it; see [metrics.md](metrics.md#targets)). Each component shows it
+its own way: see [KPI](components/kpi.md#targets), [line and area](components/line.md#targets)
+and [bar](components/bar.md#targets).
 
 ### Heights
 

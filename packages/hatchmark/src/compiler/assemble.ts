@@ -113,6 +113,10 @@ function divide(a: Value, b: Value): Value {
   return a === null || b === null || b === 0 ? null : a / b;
 }
 
+function attainment(value: Value, against: Value): Value {
+  return against === null || against <= 0 ? null : divide(value, against);
+}
+
 const TYPE_RANK = { boolean: 0, number: 1, string: 2 } as const;
 
 type CompareText = (a: string, b: string) => number;
@@ -871,6 +875,10 @@ class Assembler {
     series: Series[],
     axis: TimeAxis | CategoryAxis,
     grain: ResolvedGrain | undefined,
+    actual: {
+      total?: (metric: string, i: number) => Value;
+      window?: (metric: string) => Value;
+    } = {},
   ): { series: Series[]; target?: BlockTarget } {
     const [entry] = Object.entries(plan.targets ?? {});
     if (entry === undefined) return { series };
@@ -891,6 +899,10 @@ class Assembler {
     const clip = axis.kind === "time" && block.edges === "clip" ? axis.window.start : undefined;
     let prorated = false;
     const cells: Value[] = [];
+    const attained = (target: SeriesTarget, value: (i: number) => Value): SeriesTarget => ({
+      ...target,
+      attainment: target.values.map((t, i) => attainment(value(i), target.pace?.[i] ?? t)),
+    });
     const at = (select: Record<string, Key>): SeriesTarget => {
       const found =
         axis.kind === "time" && grain !== undefined
@@ -910,13 +922,19 @@ class Assembler {
     const own = split === undefined || dims.includes(split);
     const targeted = series.map((s) => {
       if (!positional || !own || s.metric !== metric) return s;
-      return { ...s, target: at(split === undefined ? {} : { [split]: s.splitValue ?? null }) };
+      const found = at(split === undefined ? {} : { [split]: s.splitValue ?? null });
+      return { ...s, target: attained(found, (i) => s.values[i] ?? null) };
     });
     const target: BlockTarget = { ...head };
     if (positional && split !== undefined) {
-      const total = at({});
+      const total = attained(at({}), (i) =>
+        series.some((s) => s.metric === metric && s.values[i] !== null)
+          ? (actual.total?.(metric, i) ?? null)
+          : null,
+      );
       target.values = total.values;
       if (total.pace) target.pace = total.pace;
+      if (total.attainment) target.attainment = total.attainment;
     }
     if (!positional) {
       const window = this.windowTarget(planned, expression, {});
@@ -925,6 +943,7 @@ class Assembler {
       target.window = {
         value: window.value,
         ...(window.pace === undefined ? {} : { pace: window.pace }),
+        attainment: attainment(actual.window?.(metric) ?? null, window.pace ?? window.value),
       };
     }
     this.targetNotes(plan, planned, metric, prorated, cells, axis.kind === "time");
@@ -944,7 +963,7 @@ class Assembler {
       ...head,
       value: found.value,
       ...(found.pace === undefined ? {} : { pace: found.pace }),
-      attainment: divide(value, found.pace ?? found.value),
+      attainment: attainment(value, found.pace ?? found.value),
     };
   }
 
@@ -1055,10 +1074,19 @@ class Assembler {
       plan,
       block.split === undefined
         ? this.metricSeries(block.metrics, plan.measures, axis.buckets)
-        : this.splitSeries(first, plan.measures[first], axis.buckets, stack ? 2 : 1, 2),
+        : this.splitSeries(
+            first,
+            plan.measures[first],
+            axis.buckets,
+            stack || block.target !== undefined ? 2 : 1,
+            2,
+          ),
     ).map((one) => this.cut(one, plan.measures[one.metric], axis.buckets, grain, clip(axis)));
     const shown = this.incomplete(block, plan, axis, series);
-    const targeted = this.chartTarget(block, plan, shown.series, shown.axis, grain);
+    const targeted = this.chartTarget(block, plan, shown.series, shown.axis, grain, {
+      total: (metric, i) =>
+        this.evaluate(plan.measures[metric], 1, [shown.axis.buckets[i] ?? null, null]),
+    });
     const stacked = this.cutTotals(
       this.stacked(
         stack,
@@ -1121,7 +1149,10 @@ class Assembler {
           : this.metricSeries(block.metrics, plan.measures, axis.buckets)
         ).map((one) => this.cut(one, plan.measures[one.metric], axis.buckets, grain, clip(axis))),
       );
-      const targeted = this.chartTarget(block, plan, shown.series, shown.axis, grain);
+      const targeted = this.chartTarget(block, plan, shown.series, shown.axis, grain, {
+        total: (metric, i) =>
+          this.evaluate(plan.measures[metric], 1, [shown.axis.buckets[i] ?? null, null]),
+      });
       const { series, extra } = this.cutTotals(
         stacked(targeted.series, shown.axis.buckets),
         expressions,
@@ -1165,6 +1196,10 @@ class Assembler {
         : this.metricSeries(block.metrics, plan.measures, shown),
       axis,
       undefined,
+      {
+        window: (metric) =>
+          this.evaluate(plan.measures[metric], split ? 3 : 1, split ? [null, null] : [null]),
+      },
     );
     const { series, extra } = stacked(targeted.series, shown);
     const omitted = sorted.length - shown.length;

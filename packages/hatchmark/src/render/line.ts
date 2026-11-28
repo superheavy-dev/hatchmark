@@ -33,6 +33,14 @@ import {
   partialRegion,
 } from "./partial.js";
 import { r, svgLine, svgText } from "./svg.js";
+import {
+  chartTargets,
+  paceMarker,
+  targetDash,
+  targetExtent,
+  targetKey,
+  targetRuntime,
+} from "./target.js";
 import { type SeriesPaint, seriesPaints } from "./theme.js";
 
 export const DIRECT_LABEL_MIN_PLOT = 320;
@@ -112,8 +120,11 @@ export function renderLine(
   const shown = (k: number) => (block.percent ? SHARE : metricOf(ctx, series[k]?.metric ?? ""));
   const bands = stackBands(block);
   const plotted = bands.upper;
-  const values = plotted.flat().filter(isNumber);
-  const empty = values.length === 0;
+  const goals = chartTargets(block, ctx);
+  const seriesValues = plotted.flat().filter(isNumber);
+  const empty = seriesValues.length === 0;
+  const values = empty ? seriesValues : [...seriesValues, ...targetExtent(goals)];
+  const key = goals && !empty ? targetKey(ctx, goals, size.width, "line") : { svg: "", height: 0 };
 
   const nameStyle = { size: CAPTION, weight: 500 } as const;
   const directName = (k: number) => seriesName(block, k);
@@ -137,7 +148,7 @@ export function renderLine(
   const top0 = 8;
   const valueAxis = (height: number) =>
     block.percent ? shareAxis(values, height, locale) : yAxis(values, height, metric, locale);
-  const provisional = valueAxis(size.height - top0 - bottomBand);
+  const provisional = valueAxis(size.height - top0 - bottomBand - key.height);
   const left = empty ? 0 : provisional.labelWidth + 8;
   const direct =
     !empty &&
@@ -237,12 +248,61 @@ export function renderLine(
       );
       x += width + LEGEND_GAP;
     });
+    const goalRows = targetRuntime(goals, block.axis.buckets.length, ctx) ?? [];
+    const at = (texts: string[] | undefined) => texts?.[last] ?? "";
+    const widest = (texts: string[] | undefined) =>
+      Math.max(0, ...(texts ?? []).map((t) => textWidth(t, style)));
+    goalRows.forEach((goal, j) => {
+      row++;
+      const cy = row * LEGEND_ROW + LABEL_LINE / 2;
+      const name = truncateEnd(
+        goal.label,
+        size.width - LEGEND_NAME_X - 6 - widest(goal.text),
+        style,
+      );
+      parts.push(
+        `<line x1="0" y1="${r(cy)}" x2="10" y2="${r(cy)}"${paint.attrs(undefined, ctx.theme.target.line.color)}${targetDash(ctx)}/>`,
+        svgText(paint, LEGEND_NAME_X + 2, cy, name, {
+          ...style,
+          color: "textMuted",
+          ...(name === goal.label ? {} : { title: goal.label }),
+        }),
+        svgText(paint, LEGEND_NAME_X + 2 + textWidth(name, style) + 6, cy, at(goal.text), {
+          ...style,
+          color: "text",
+          className: `hm-rtv-${j}`,
+          lang: ctx.data.locale,
+        }),
+      );
+      let dx = LEGEND_NAME_X + 2;
+      for (const [label, texts, kind] of [
+        ["Pace to date", goal.pace, "p"],
+        ["Attained", goal.att, "a"],
+      ] as const) {
+        if (texts === undefined || !texts.some((t) => t !== "")) continue;
+        const width = textWidth(label, style) + 6 + widest(texts);
+        if (dx > LEGEND_NAME_X + 2 && dx + width > size.width) dx = LEGEND_NAME_X + 2;
+        if (dx === LEGEND_NAME_X + 2) row++;
+        const ry = row * LEGEND_ROW + LABEL_LINE / 2;
+        parts.push(
+          svgText(paint, dx, ry, label, { ...style, color: "textMuted" }),
+          svgText(paint, dx + textWidth(label, style) + 6, ry, at(texts), {
+            ...style,
+            color: "text",
+            className: `hm-rt${kind}-${j}`,
+            lang: ctx.data.locale,
+          }),
+        );
+        dx += width + LEGEND_GAP;
+      }
+    });
     legendHeight = row * LEGEND_ROW + LABEL_LINE;
-    readout = `<g class="hm-readout">${parts.join("")}</g>`;
+    readout = `<g class="hm-readout"${key.height > 0 ? ` transform="translate(0,${key.height})"` : ""}>${parts.join("")}</g>`;
   }
 
-  const top = legendHeight > 0 ? legendHeight + 16 : top0;
-  const height = top + size.height - top0;
+  const above = legendHeight > 0 ? legendHeight + 16 : top0;
+  const top = above + key.height;
+  const height = above + size.height - top0;
   const plotBottom = height - bottomBand;
   const axis = valueAxis(plotBottom - top);
   const [d0, d1] = axis.domain;
@@ -259,7 +319,7 @@ export function renderLine(
   const step = n > 1 ? plotWidth / (n - 1) : 0;
   const x = (i: number) => (n > 1 ? plotLeft + i * step : plotLeft + plotWidth / 2);
 
-  const parts: string[] = [readout];
+  const parts: string[] = [key.svg, readout];
   const slot = (i: number): [number, number] => [
     i > 0 ? (x(i - 1) + x(i)) / 2 : plotLeft,
     i < n - 1 ? (x(i) + x(i + 1)) / 2 : plotRight,
@@ -346,6 +406,8 @@ export function renderLine(
       }
     }
   }
+  const drawnTracks = empty ? [] : (goals?.tracks ?? []).filter((t) => t.drawn);
+  const goalLine = ctx.theme.target.line;
   for (let k = series.length - 1; k >= 0; k--) {
     const vals = plotted[k] as Value[];
     const path = d3line<Value>()
@@ -369,6 +431,31 @@ export function renderLine(
     }
   }
 
+  for (const track of drawnTracks) {
+    const path = d3line<Value>()
+      .defined((v) => isNumber(v))
+      .x((_, i) => x(i))
+      .y((v) => y(v as number))
+      .digits(1)(track.values);
+    if (path) {
+      parts.push(
+        `<path d="${path}"${paint.attrs("none", goalLine.color, "hm-target")}${targetDash(ctx)} stroke-linejoin="round"/>`,
+      );
+    }
+    track.values.forEach((v, i) => {
+      if (isNumber(v) && !isNumber(track.values[i - 1]) && !isNumber(track.values[i + 1])) {
+        const half = Math.min(6, step / 2 || 6);
+        parts.push(
+          svgLine(paint, x(i) - half, y(v), x(i) + half, y(v), goalLine.color, targetDash(ctx)),
+        );
+      }
+    });
+  }
+  for (const track of drawnTracks) {
+    track.pace?.forEach((p, i) => {
+      if (isNumber(p)) parts.push(paceMarker(ctx, x(i), y(p)));
+    });
+  }
   parts.push(
     ...timeLabels(block.axis, x, locale, 0, size.width).map((label) =>
       svgText(paint, label.x, plotBottom + 16, label.text, {
