@@ -13,6 +13,7 @@ import type {
 } from "../compiler/dashboard-data.js";
 import type { PeriodData } from "../compiler/period-data.js";
 import type { SegmentData } from "../compiler/segment-build.js";
+import { tileGeography } from "../geo/us-tiles.js";
 import { type HeightPreset, layoutItems, MIN_CHART_SPAN } from "../spec/layout.js";
 import type { GeographyId } from "../spec/units.js";
 import { barCategories, barHeight, renderBar } from "./bar.js";
@@ -360,7 +361,9 @@ function mapCard(block: MapData, ctx: RenderContext): string {
   const widths = LAYOUTS.map(
     (layout) => cardWidth(layout, span, ctx.theme) - 2 * ctx.theme.density.cardPadding - 2,
   );
-  const body = mapBody(block, ctx, title, widths, ctx.geographies?.[block.geo]);
+  const geography =
+    block.shape === "tiles" ? tileGeography(block.tile ?? "square") : ctx.geographies?.[block.geo];
+  const body = mapBody(block, ctx, title, widths, geography);
   return `<section class="hm-card hm-map-card" style="--span:${span}" aria-labelledby="${esc(id)}"><header class="hm-card-head"><h2 id="${esc(id)}">${esc(title)}</h2>${subtitle ? `<p>${esc(subtitle)}</p>` : ""}</header>${body}</section>`;
 }
 

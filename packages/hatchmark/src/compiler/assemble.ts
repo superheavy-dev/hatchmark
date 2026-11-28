@@ -994,6 +994,7 @@ class Assembler {
       ...common,
       type: "map",
       geo: block.geo,
+      ...(block.shape === "tiles" ? { shape: "tiles", tile: block.tile ?? "square" } : {}),
       metric: block.value,
       column: block.region,
       pair: block.pair ?? "bars",

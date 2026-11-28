@@ -147,6 +147,27 @@ describe("map in a browser", () => {
     },
   );
 
+  it.each([
+    ["map-us-tiles-square", 1440, false],
+    ["map-us-tiles-hex", 1440, false],
+    ["map-us-tiles-narrow", 390, true],
+  ] as const)(
+    "%s at %i px: labelled tiles that link to the tooltip and the bar list",
+    async (name, width, touch) => {
+      const page = await open(name, width, touch);
+      expect(await page.locator("svg[data-hm-kind=map] .hm-regions [data-hm-r]").count()).toBe(52);
+      const labels = await page.locator(".hm-map-tiles text >> visible=true").allTextContents();
+      expect(labels).toHaveLength(52);
+      expect(labels).toContain("TX");
+      const tx = await box(page, 'svg[data-hm-kind=map] [data-hm-r="TX"]');
+      if (touch) await page.touchscreen.tap(tx.x + tx.width / 2, tx.y + tx.height / 2);
+      else await page.mouse.move(tx.x + tx.width / 2, tx.y + tx.height / 2);
+      expect(await page.locator(".hm-tip-h").textContent()).toBe("Texas");
+      expect(await page.locator(".hm-map-list li.hm-on").getAttribute("data-hm-r")).toBe("TX");
+      await page.close();
+    },
+  );
+
   it("keeps the note under the bar list beside the map", async () => {
     const page = await open("map-world-rate", 1440);
     const list = await box(page, ".hm-map-list");
@@ -155,7 +176,7 @@ describe("map in a browser", () => {
     await page.close();
   });
 
-  it.each(["map-us-rate", "map-world-rate", "map-us-narrow"])(
+  it.each(["map-us-rate", "map-world-rate", "map-us-narrow", "map-us-tiles-narrow"])(
     "%s at 390 px: list under the map, no leader labels, nothing wider than the page",
     async (name) => {
       const page = await open(name, 390);

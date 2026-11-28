@@ -220,6 +220,16 @@ export const CODES = {
     explanation:
       "A map block's threshold scale sets a midpoint, which makes it diverging: classes below the midpoint take one hue and classes above it the other. That reads only when both sides have as many classes. With an even number of classes, make the midpoint one of the breaks, the middle one; with an odd number, put it inside the middle class, with as many breaks below it as above. For example breaks [-10, -2, 2, 10] with midpoint 0.",
   },
+  HM2033: {
+    title: "tile map of a geography without tiles",
+    explanation:
+      'shape: "tiles" draws one equal tile per region, laid out roughly as the regions lie. Hatchmark has a tile layout for us-states only: 50 states, DC and Puerto Rico. A world map has too many countries of too many sizes for one readable grid, so world-countries draws its boundaries; remove shape or set geo: us-states.',
+  },
+  HM2034: {
+    title: "tile set on a map that draws boundaries",
+    explanation:
+      'tile chooses the tile of shape: "tiles" (square or hex). On a map that draws its boundaries it has no effect. Add shape: tiles, or remove tile.',
+  },
   HM3001: {
     title: "missing required property",
     explanation:
