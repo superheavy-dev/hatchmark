@@ -17,7 +17,8 @@ export function usageError(
     | "HM0006"
     | "HM0007"
     | "HM0008"
-    | "HM0009",
+    | "HM0009"
+    | "HM0010",
   message: string,
   extra: { help?: string; expected?: string[]; input?: string } = {},
 ): CommandResult {

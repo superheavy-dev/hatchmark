@@ -10,6 +10,7 @@ import { doctor, doctorHelp } from "./commands/doctor.js";
 import { explain, explainHelp } from "./commands/explain.js";
 import { init, initHelp } from "./commands/init.js";
 import { schema, schemaHelp } from "./commands/schema.js";
+import { skills, skillsHelp } from "./commands/skills.js";
 import { version, versionHelp } from "./commands/version.js";
 import { type CommandHelp, GLOBAL_OPTIONS, renderCommandHelp, renderTopHelp } from "./help.js";
 import {
@@ -48,12 +49,18 @@ const GLOBAL: Options = {
 const COMMANDS: Record<string, Command> = {
   init: {
     help: initHelp,
-    options: { template: { type: "string" }, name: { type: "string" }, force: { type: "boolean" } },
+    options: {
+      template: { type: "string" },
+      name: { type: "string" },
+      force: { type: "boolean" },
+      skills: { type: "boolean" },
+    },
     run: (ctx, positionals, flags) =>
       init(ctx, positionals, {
         ...(typeof flags.template === "string" ? { template: flags.template } : {}),
         ...(typeof flags.name === "string" ? { name: flags.name } : {}),
         force: flags.force === true,
+        skills: flags.skills === true,
       }),
   },
   check: {
@@ -120,6 +127,16 @@ const COMMANDS: Record<string, Command> = {
       explain(ctx, positionals, {
         ...(typeof flags.dashboard === "string" ? { dashboard: flags.dashboard } : {}),
         ...(typeof flags.block === "string" ? { block: flags.block } : {}),
+      }),
+  },
+  skills: {
+    help: skillsHelp,
+    options: { agent: { type: "string" }, scope: { type: "string" }, force: { type: "boolean" } },
+    run: (ctx, positionals, flags) =>
+      skills(ctx, positionals, {
+        ...(typeof flags.agent === "string" ? { agent: flags.agent } : {}),
+        ...(typeof flags.scope === "string" ? { scope: flags.scope } : {}),
+        force: flags.force === true,
       }),
   },
   version: { help: versionHelp, options: {}, run: (ctx) => version(ctx) },

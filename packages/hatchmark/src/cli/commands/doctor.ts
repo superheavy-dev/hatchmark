@@ -6,11 +6,12 @@ import { VERSION } from "../../version.js";
 import type { CommandHelp } from "../help.js";
 import { type CommandContext, type CommandResult, EXIT } from "../io.js";
 import { packageRoot } from "../package-root.js";
+import { homeDir, installCommand, skillCopies, skillLocations } from "./skills.js";
 
 export const doctorHelp: CommandHelp = {
   name: "doctor",
   summary:
-    "Check that this machine can run Hatchmark: Node.js, bundled docs and schemas, project config.",
+    "Check that this machine can run Hatchmark: Node.js, bundled docs and schemas, project config, agent skill version.",
   usage: "hatchmark doctor",
   options: [],
   example: {
@@ -78,6 +79,26 @@ export async function doctor(ctx: CommandContext): Promise<CommandResult> {
     detail: config
       ? `${CONFIG_FILE} found in ${ctx.root}`
       : `no ${CONFIG_FILE} in ${ctx.root}; run hatchmark init to create a project`,
+  });
+
+  const copies = (await skillCopies(skillLocations(ctx.root, homeDir(ctx.io.env)))).filter(
+    (c) => c.status === "current" || c.status === "stale",
+  );
+  const stale = copies.filter((c) => c.status === "stale");
+  checks.push({
+    name: "skills",
+    status: stale.length === 0 ? "ok" : "warn",
+    detail:
+      stale.length > 0
+        ? stale
+            .map(
+              (c) =>
+                `${c.dir} is the agent skill of hatchmark ${c.version}, not ${VERSION}; run ${installCommand(ctx, c.agent, c.scope)}`,
+            )
+            .join("; ")
+        : copies.length > 0
+          ? `agent skill ${VERSION} at ${copies.map((c) => c.dir).join(", ")}`
+          : "no Hatchmark agent skill installed; hatchmark skills install adds one for coding agents",
   });
 
   const ok = checks.every((c) => c.status !== "fail");

@@ -51,6 +51,11 @@ export const CODES = {
     explanation:
       "DuckDB could not parse, bind or run the query given to hatchmark data query; the message is DuckDB's. Each file source is a table named after the source, with the columns hatchmark data describe <source> lists. Files outside the sources cannot be read, and the session time zone is UTC.",
   },
+  HM0010: {
+    title: "cannot install the agent skill",
+    explanation:
+      "hatchmark skills install, or hatchmark init --skills, wrote nothing because a skill directory it writes cannot be written safely. Either a path on the way, such as .claude, .claude/skills or a file inside the hatchmark skill directory, is a symlink or something else that is not a regular file or directory (Hatchmark never writes through a symlink, even with --force), or a hatchmark skill directory exists that Hatchmark did not write: its SKILL.md has no metadata.hatchmark-version. The diagnostic lists the paths. Move or remove them, pass --force to replace a directory Hatchmark did not write, or choose another --agent or --scope. With --scope user, HOME must be set.",
+  },
   HM1001: {
     title: "file cannot be read",
     explanation:

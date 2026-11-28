@@ -15,12 +15,13 @@ import {
   sampleOrdersCsv,
 } from "../sample.js";
 import { usageError } from "../usage.js";
+import { applySkillInstall, planSkillInstall, skillLocations } from "./skills.js";
 
 export const initHelp: CommandHelp = {
   name: "init",
   summary:
     "Create a project: hatchmark.yaml with every setting written out, sample US data, and an AGENTS.md block.",
-  usage: "hatchmark init [dir] [--template sample|minimal] [--name <name>] [--force]",
+  usage: "hatchmark init [dir] [--template sample|minimal] [--name <name>] [--skills] [--force]",
   options: [
     {
       flag: "[dir]",
@@ -32,6 +33,11 @@ export const initHelp: CommandHelp = {
         "sample (default): orders data, four metrics and a dashboard. minimal: config only.",
     },
     { flag: "--name <name>", description: "Project name. Default: the directory name." },
+    {
+      flag: "--skills",
+      description:
+        "Also install the Hatchmark agent skill for every supported agent, as hatchmark skills install does.",
+    },
     { flag: "--force", description: "Overwrite files init writes if they already exist." },
   ],
   example: {
@@ -96,7 +102,7 @@ function markerLines(text: string): { starts: number[]; ends: number[]; stray: n
 export async function init(
   ctx: CommandContext,
   positionals: string[],
-  flags: { template?: string; name?: string; force?: boolean },
+  flags: { template?: string; name?: string; force?: boolean; skills?: boolean },
 ): Promise<CommandResult> {
   const [dir, ...rest] = positionals;
   if (rest.length > 0)
@@ -156,6 +162,14 @@ export async function init(
       },
     );
   }
+
+  const skillPlans = flags.skills
+    ? await planSkillInstall(
+        skillLocations(target, undefined, undefined, ["project"]),
+        flags.force === true,
+      )
+    : [];
+  if (!Array.isArray(skillPlans)) return skillPlans;
 
   const block = agentsBlock(VERSION);
   const agents = await readOptional(path.join(target, "AGENTS.md"));
@@ -232,6 +246,14 @@ export async function init(
     );
   }
 
+  await applySkillInstall(skillPlans);
+  const skills = skillPlans.map(({ location, status }) => ({
+    agent: location.agent,
+    scope: location.scope,
+    path: location.dir,
+    status,
+  }));
+
   const relative = path.relative(ctx.io.cwd, requested) || ".";
   const next = relative === "." ? ["hatchmark check"] : [`hatchmark check --cwd ${relative}`];
   const human = [
@@ -239,6 +261,9 @@ export async function init(
     ...created.map((f) => `  created    ${f}`),
     ...updated.map((f) => `  updated    ${f}`),
     ...unchanged.map((f) => `  unchanged  ${f}`),
+    ...skills.map(
+      (s) => `  ${s.status.padEnd(9)}  ${path.relative(target, s.path)}/ (${s.agent} skill)`,
+    ),
     ...notes.map((n) => `note: ${n}`),
     "",
     `Next: ${next.join("; ")}`,
@@ -254,6 +279,7 @@ export async function init(
       updated,
       unchanged,
       notes,
+      ...(flags.skills ? { skills } : {}),
       next,
     },
     human,

@@ -7,7 +7,7 @@ example. [README.md](README.md) lists every docs page; the files a project holds
 
 | Command                                   | What it does                                                                                                                                                                                                                                                                                             |
 | ----------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `init [dir]`                              | Creates a project: `hatchmark.yaml` with every setting written out, sample US orders data, four metrics, a dashboard, and a Hatchmark block in `AGENTS.md`.                                                                                                                                              |
+| `init [dir]`                              | Creates a project: `hatchmark.yaml` with every setting written out, sample US orders data, four metrics, a dashboard, and a Hatchmark block in `AGENTS.md`. `--skills` also installs the agent skill.                                                                                                    |
 | `check [paths...]`                        | Checks YAML syntax, spec shape, and references between files and to data columns. Paths are relative to `--cwd`. `hatchmark.yaml` is always checked first, whatever the paths. `--sql` also prints every block's SQL. `--explain-defaults` prints each HM4040 default note instead of one line per file. |
 | `data describe <source>`                  | Prints a source's columns with their type, null and distinct counts, the min and max of time and number columns, the row count and the first rows. See [data](#data).                                                                                                                                    |
 | `data query "<sql>"`                      | Runs one read-only SELECT over the project's file sources and prints at most `--limit` rows (default 100). See [data](#data).                                                                                                                                                                            |
@@ -18,8 +18,10 @@ example. [README.md](README.md) lists every docs page; the files a project holds
 | `explain <code>`                          | Explains a diagnostic code such as `HM2003` and how to fix it.                                                                                                                                                                                                                                           |
 | `explain <metric>`                        | Prints the SQL that build runs for a metric. See [Printing the SQL](#printing-the-sql).                                                                                                                                                                                                                  |
 | `explain --dashboard <name> --block <id>` | Prints the SQL of one block. See [Printing the SQL](#printing-the-sql).                                                                                                                                                                                                                                  |
+| `skills install`                          | Installs or refreshes the Hatchmark agent skill for Claude Code and Codex. See [skills](#skills).                                                                                                                                                                                                        |
+| `skills status`                           | Shows each agent skill directory, project and user, and the version of the Hatchmark skill in it. See [skills](#skills).                                                                                                                                                                                 |
 | `version`                                 | Prints the Hatchmark and Node.js versions.                                                                                                                                                                                                                                                               |
-| `doctor`                                  | Checks that this machine can run Hatchmark: Node.js, bundled docs and schemas, project config.                                                                                                                                                                                                           |
+| `doctor`                                  | Checks that this machine can run Hatchmark: Node.js, bundled docs and schemas, project config, and whether an installed agent skill matches this version.                                                                                                                                                |
 
 ## Output
 
@@ -117,6 +119,7 @@ HM2015 error on that dashboard. A block the planner leaves out, such as a metric
 | `HM0007` | `dev` could not finish watching the project within 15 seconds, usually because a directory cannot be read; the diagnostic names the file system error. Exits 3.                                                                                                                                                                                                                                                                                                                                                                                                                                   |
 | `HM0008` | `data query` got something other than exactly one SELECT, or the query reads or writes a file that is not a source. Nothing ran. Exits 2.                                                                                                                                                                                                                                                                                                                                                                                                                                                         |
 | `HM0009` | `data query` failed in DuckDB; the message is DuckDB's. An unknown table lists the source names. Exits 2.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                         |
+| `HM0010` | `skills install` (or `init --skills`) found a symlink or another entry that is not a regular file or directory on the way to a skill directory or inside it, or a `hatchmark` skill directory whose `SKILL.md` has no `metadata.hatchmark-version` (Hatchmark did not write it), or `--scope user` without `HOME`. It wrote nothing. The diagnostic lists the paths. `--force` replaces a directory Hatchmark did not write; nothing writes through a symlink. Exits 2.                                                                                                                           |
 
 ## data
 
@@ -164,6 +167,9 @@ writes to an existing `CLAUDE.md`. When that file does not include `@AGENTS.md`,
 In `AGENTS.md` it replaces the block between exactly one `<!-- hatchmark:start -->` line and one
 later `<!-- hatchmark:end -->` line, each alone on its line (surrounding spaces are fine), or appends a block when there are no marker lines. With any
 other combination, including marker text that shares a line with anything else, it changes nothing and reports `HM0005` with the marker lines.
+`--skills` also installs the agent skill into `.claude/skills/hatchmark/` and `.agents/skills/hatchmark/`, as
+`hatchmark skills install` does (see [skills](#skills)); `--force` then also replaces a skill directory Hatchmark did not write.
+The result gains a `skills` list only with that flag.
 
 ## docs
 
@@ -181,6 +187,70 @@ so what it prints always matches the version that runs your project, offline.
   `section` to print it, its `title`, the `line` in the page and a `snippet`.
 
 JSON results carry `version`. A page or section result has `topic`, `path`, `title` and `content`.
+
+## skills
+
+Hatchmark ships an [Agent Skills](https://agentskills.io/specification) package in the installed
+package (`node_modules/hatchmark/skills/hatchmark/`): a short `SKILL.md` with the workflow for
+coding agents (look at the data, write one YAML file per thing, `hatchmark check --json` after every
+edit, `hatchmark explain`, `hatchmark docs`) and `references/` pages that point into these docs.
+Agents load it when a task is about Hatchmark dashboards, metrics or sources.
+
+`hatchmark skills install [--agent claude|codex] [--scope project|user] [--force]` copies it into
+the directories each agent reads skills from:
+
+| `--agent` | `--scope project` (default, under `--cwd`) | `--scope user` (under `HOME`) |
+| --------- | ------------------------------------------ | ----------------------------- |
+| `claude`  | `.claude/skills/hatchmark/`                | `~/.claude/skills/hatchmark/` |
+| `codex`   | `.agents/skills/hatchmark/`                | `~/.agents/skills/hatchmark/` |
+
+Claude Code reads skills from `.claude/skills/` and `~/.claude/skills/`. OpenAI Codex reads
+`.agents/skills/` from the working directory up to the repository root and `~/.agents/skills/`;
+that directory is the cross-agent convention other Agent Skills tools, such as GitHub Copilot in
+VS Code, read too. Without `--agent`, install writes both.
+
+The installed `SKILL.md` is the bundled one with `metadata: { hatchmark-version: "<version>" }`
+added to its front matter, always the version of the CLI that wrote it; every other file is copied
+byte for byte. That field marks a directory as Hatchmark's:
+
+- A directory that does not exist is `created`.
+- A Hatchmark copy with the same files is `unchanged`. Any other Hatchmark copy, such as one from
+  another version, is `updated`: install replaces the whole directory, so files the bundle no longer
+  has go away.
+- A `hatchmark` skill directory without the field was not written by Hatchmark. Install refuses it
+  with `HM0010` unless you pass `--force`, which replaces it.
+- A symlink or anything else that is not a regular file or directory on the way to the skill
+  directory or inside it (such as `.claude/skills` linked elsewhere) gives `HM0010`, even with
+  `--force`. Install checks every target first, so on an error it writes nothing.
+
+```json
+{
+  "format_version": "1",
+  "ok": true,
+  "version": "0.0.0",
+  "skills": [
+    {
+      "agent": "claude",
+      "scope": "project",
+      "path": "/work/shop/.claude/skills/hatchmark",
+      "status": "created"
+    },
+    {
+      "agent": "codex",
+      "scope": "project",
+      "path": "/work/shop/.agents/skills/hatchmark",
+      "status": "unchanged"
+    }
+  ]
+}
+```
+
+`hatchmark skills status` lists each of the four directories (or those `--agent` and `--scope`
+pick) with `status` `missing`, `current`, `stale` (another version) or `foreign` (not written
+by Hatchmark) and the `version` of the copy. `hatchmark init --skills` installs at project scope
+for both agents as part of init. `hatchmark doctor` warns about every Hatchmark copy, project or
+user, whose version differs from the running CLI and names the `hatchmark skills install` command
+that refreshes it; no copy is not a warning.
 
 ## dev
 
