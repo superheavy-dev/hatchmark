@@ -245,6 +245,8 @@ describe("hatchmark data query", () => {
         "SELECT count(*) FROM pg_tables",
         "SELECT id FROM pg_tables",
         "SELECT 1 FROM orders WHERE EXISTS (SELECT 1 FROM pg_tables)",
+        "SELECT count(*) FROM orders o JOIN pg_tables t ON true",
+        "SELECT count(*) FROM orders o LEFT JOIN (SELECT * FROM pg_tables) t ON false",
       ]) {
         const gone = await cli(["data", "query", sql], p);
         expect(gone.code, sql).toBe(3);
