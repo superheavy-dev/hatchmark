@@ -6,6 +6,7 @@ import {
 } from "../../diagnostics/index.js";
 import {
   type DataSession,
+  MissingSource,
   nodeProjectHost,
   openDataSession,
   QueryRejected,
@@ -127,19 +128,20 @@ export async function data(
   }
   const session = await openDataSession({ root: ctx.root, config });
   try {
-    const used =
-      kind === "describe"
-        ? [arg]
-        : await session
-            .tables(arg)
-            .then((names) => fileSources.filter((s) => names.includes(s.toLowerCase())));
-    const missing = diagnostics.filter(
-      (d) => d.code === "HM2010" && used.some((name) => d.pointer === `/sources/${name}/path`),
+    const missingFile = (name: string) =>
+      diagnostics.filter((d) => d.code === "HM2010" && d.pointer === `/sources/${name}/path`);
+    if (kind === "describe") {
+      const missing = missingFile(arg);
+      if (missing.length > 0) return report(ctx, missing);
+      return await describe(session, config, arg, limit);
+    }
+    const missing = new Set(fileSources.filter((name) => missingFile(name).length > 0));
+    return await query(ctx, session, arg, { sources: fileSources, missing, limit }).catch(
+      (error: unknown) => {
+        if (error instanceof MissingSource) return report(ctx, missingFile(error.source));
+        throw error;
+      },
     );
-    if (missing.length > 0) return report(ctx, missing);
-    return kind === "describe"
-      ? await describe(session, config, arg, limit)
-      : await query(ctx, session, arg, used, limit);
   } catch (error) {
     if (error instanceof SourceReadError) {
       return report(
@@ -237,16 +239,16 @@ async function query(
   ctx: CommandContext,
   session: DataSession,
   sql: string,
-  used: string[],
-  limit: number,
+  options: { sources: readonly string[]; missing: ReadonlySet<string>; limit: number },
 ): Promise<CommandResult> {
-  const result = await session.query(sql, used, limit);
+  const { limit } = options;
+  const { sources, ...result } = await session.query(sql, options);
   const note = result.truncated
     ? `first ${result.rows.length} rows shown; more rows exist (raise --limit, at most ${MAX_LIMIT}, or aggregate)`
     : `${result.rows.length} row${result.rows.length === 1 ? "" : "s"}`;
   return {
     exitCode: EXIT.ok,
-    json: { format_version: "1", sql, sources: used, limit, ...result },
+    json: { format_version: "1", sql, sources, limit, ...result },
     human: ctx.quiet
       ? ""
       : `${table(

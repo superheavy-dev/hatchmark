@@ -9,6 +9,7 @@ export {
 export {
   columnKind,
   type DataSession,
+  MissingSource,
   openDataSession,
   QueryRejected,
   SourceReadError,

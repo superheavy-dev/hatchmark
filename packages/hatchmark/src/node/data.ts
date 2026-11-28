@@ -43,6 +43,11 @@ export interface QueryResultRows {
 
 export class SourceReadError extends Error {}
 export class QueryRejected extends Error {}
+export class MissingSource extends Error {
+  constructor(readonly source: string) {
+    super(`source "${source}" has no data file`);
+  }
+}
 
 export function columnKind(type: string): ColumnKind {
   if (/^(DATE|TIMESTAMP)/.test(type)) return "time";
@@ -67,30 +72,6 @@ function toNumber(value: JsonValue, integer: boolean): JsonValue {
   return String(n) === written.replace(/^(-?)0+(?=\d)/, "$1") ? n : value;
 }
 
-type Ast = { [key: string]: unknown };
-
-function baseTables(node: unknown, scope: ReadonlySet<string>, out: Set<string>): void {
-  if (Array.isArray(node)) {
-    for (const item of node) baseTables(item, scope, out);
-    return;
-  }
-  if (node === null || typeof node !== "object") return;
-  const ast = node as Ast;
-  if (ast.type === "BASE_TABLE" && ast.schema_name === "" && ast.catalog_name === "") {
-    const name = String(ast.table_name).toLowerCase();
-    if (!scope.has(name)) out.add(name);
-  }
-  const ctes = ((ast.cte_map as Ast | undefined)?.map ?? []) as { key: string; value: unknown }[];
-  const inner = new Set(scope);
-  for (const cte of ctes) {
-    baseTables(cte.value, inner, out);
-    inner.add(cte.key.toLowerCase());
-  }
-  for (const [key, value] of Object.entries(ast)) {
-    if (key !== "cte_map") baseTables(value, inner, out);
-  }
-}
-
 function jsonRows(reader: DuckDBResultReader, limit = Number.POSITIVE_INFINITY): JsonValue[][] {
   const types = reader.columnTypes();
   return (reader.getRowsJson() as JsonValue[][]).slice(0, limit).map((row) =>
@@ -107,8 +88,7 @@ function jsonRows(reader: DuckDBResultReader, limit = Number.POSITIVE_INFINITY):
 /**
  * A read-only view of a project's file sources for exploring data: each source is loaded once,
  * with the reader options build uses, into a table named after the source. The session time zone
- * is UTC. Once the sources a query reads are loaded, file system access is switched off and the
- * configuration locked, so a query can read only those tables.
+ * is UTC.
  */
 export async function openDataSession(options: { root: string; config: ProjectConfig }) {
   const instance = await DuckDBInstance.create(":memory:");
@@ -116,12 +96,17 @@ export async function openDataSession(options: { root: string; config: ProjectCo
   await connection.run("SET TimeZone = 'UTC'");
   await connection.run("SET preserve_insertion_order = true");
   const loaded = new Map<string, LoadedSource>();
+  const sourceFile = (name: string) =>
+    path.join(
+      options.root,
+      ...normalizePath((options.config.sources[name] as FileSource).path).split("/"),
+    );
 
   const load = async (name: string): Promise<LoadedSource> => {
     const existing = loaded.get(name);
     if (existing) return existing;
     const source = options.config.sources[name] as FileSource;
-    const file = path.join(options.root, ...normalizePath(source.path).split("/"));
+    const file = sourceFile(name);
     try {
       const table = await loadSource(connection, name, source, file);
       loaded.set(name, table);
@@ -172,66 +157,67 @@ export async function openDataSession(options: { root: string; config: ProjectCo
     },
 
     /**
-     * The tables a query reads by unqualified name, lower case, CTE names excluded. Rejects
-     * anything but one SELECT statement, as DuckDB parses it.
+     * Runs one SELECT over the file sources. File access is limited to the sources' files before
+     * anything else runs. A source is loaded only when DuckDB's binder reports its name as a missing
+     * table, so a query opens just the files it reads; missing names a source whose file is absent.
      */
-    async tables(sql: string): Promise<string[]> {
+    async query(
+      sql: string,
+      options: { sources: readonly string[]; missing: ReadonlySet<string>; limit: number },
+    ): Promise<QueryResultRows & { sources: string[] }> {
       if (sql.replace(/[\s;]/g, "") === "") throw new QueryRejected("the query is empty");
-      const reader = await connection.runAndReadAll("SELECT json_serialize_sql($sql)", { sql });
-      const parsed = JSON.parse(String(reader.getRows()[0]?.[0])) as {
-        error: boolean;
-        error_type?: string;
-        error_message?: string;
-        statements?: unknown[];
-      };
+      const files = options.sources
+        .filter((name) => !options.missing.has(name))
+        .map((name) => sourceFile(name));
+      await connection.run(
+        `SET allowed_paths = [${files.map((f) => `'${f.replaceAll("'", "''")}'`).join(", ")}]`,
+      );
+      await lock(connection);
+      const parsed = JSON.parse(
+        String(
+          (
+            await connection.runAndReadAll("SELECT json_serialize_sql($sql)", { sql })
+          ).getRows()[0]?.[0],
+        ),
+      ) as { error: boolean; error_type?: string; error_message?: string; statements?: unknown[] };
       if (parsed.error) {
         if (parsed.error_type === "not implemented") {
           throw new QueryRejected("the query is not a SELECT statement");
         }
         throw new Error(parsed.error_message ?? "the query cannot be parsed");
       }
-      const statements = parsed.statements ?? [];
-      if (statements.length !== 1) {
-        throw new QueryRejected(`the query has ${statements.length} statements`);
+      const count = parsed.statements?.length ?? 0;
+      if (count !== 1) throw new QueryRejected(`the query has ${count} statements`);
+      const byName = new Map(options.sources.map((name) => [name.toLowerCase(), name]));
+      const read: string[] = [];
+      for (;;) {
+        try {
+          const prepared = await connection.prepare(sql);
+          if (prepared.statementType !== StatementType.SELECT) {
+            throw new QueryRejected("the query is not a SELECT statement");
+          }
+          const reader = await prepared.streamAndReadUntil(options.limit + 1);
+          const types = reader.columnTypes();
+          return {
+            sources: read.sort(),
+            columns: reader.columnNames().map((name, i) => ({ name, type: String(types[i]) })),
+            rows: jsonRows(reader, options.limit),
+            truncated: reader.currentRowCount > options.limit,
+          };
+        } catch (error) {
+          if (error instanceof QueryRejected || error instanceof SourceReadError) throw error;
+          const message = (error as Error).message;
+          const table = /Table with name (.+?) does not exist/.exec(message)?.[1];
+          const name = table === undefined ? undefined : byName.get(table.toLowerCase());
+          if (name === undefined || read.includes(name)) throw permission(error as Error);
+          if (options.missing.has(name)) throw new MissingSource(name);
+          const { relation } = await load(name);
+          await connection.run(
+            `CREATE TEMP VIEW ${quote(name)} AS SELECT * EXCLUDE ("__hm_ord") FROM ${relation} ORDER BY "__hm_ord"`,
+          );
+          read.push(name);
+        }
       }
-      const out = new Set<string>();
-      baseTables(statements, new Set(), out);
-      return [...out].sort();
-    },
-
-    async query(sql: string, sources: readonly string[], limit: number): Promise<QueryResultRows> {
-      for (const name of sources) {
-        const { relation } = await load(name);
-        await connection.run(
-          `CREATE TEMP VIEW ${quote(name)} AS SELECT * EXCLUDE ("__hm_ord") FROM ${relation} ORDER BY "__hm_ord"`,
-        );
-      }
-      await lock(connection);
-      const extracted = await connection.extractStatements(sql).catch((error: Error) => {
-        throw new Error(error.message.replace(/^Failed to extract statements: /, ""));
-      });
-      if (extracted.count !== 1) {
-        throw new QueryRejected(
-          extracted.count === 0
-            ? "the query is empty"
-            : `the query has ${extracted.count} statements`,
-        );
-      }
-      const prepared = await extracted.prepare(0).catch((error: Error) => {
-        throw permission(error);
-      });
-      if (prepared.statementType !== StatementType.SELECT) {
-        throw new QueryRejected("the query is not a SELECT statement");
-      }
-      const reader = await prepared.streamAndReadUntil(limit + 1).catch((error: Error) => {
-        throw permission(error);
-      });
-      const types = reader.columnTypes();
-      return {
-        columns: reader.columnNames().map((name, i) => ({ name, type: String(types[i]) })),
-        rows: jsonRows(reader, limit),
-        truncated: reader.currentRowCount > limit,
-      };
     },
 
     async close(): Promise<void> {

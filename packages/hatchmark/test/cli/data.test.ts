@@ -196,6 +196,52 @@ describe("hatchmark data query", () => {
       expect(read.json().diagnostics[0].code).toBe("HM2010");
       const summarize = await cli(["data", "query", "SUMMARIZE orders"], p);
       expect(summarize.json().sources).toEqual(["orders"]);
+      const recursive = await cli(
+        [
+          "data",
+          "query",
+          "WITH RECURSIVE missing(x) AS (SELECT 1 UNION ALL SELECT x + 1 FROM missing WHERE x < 3) SELECT * FROM missing ORDER BY x",
+        ],
+        p,
+      );
+      expect(recursive.json().rows).toEqual([[1], [2], [3]]);
+      const shadow = await cli(
+        ["data", "query", "WITH orders AS (SELECT 7 AS x) SELECT * FROM orders"],
+        p,
+      );
+      expect(shadow.json()).toMatchObject({ rows: [[7]], sources: [] });
+    });
+  });
+
+  it("resolves the names DuckDB accepts for a source table", async () => {
+    for (const table of [
+      "orders",
+      "ORDERS",
+      "main.orders",
+      "temp.orders",
+      "temp.main.orders",
+      '"orders"',
+    ]) {
+      const result = await cli(["data", "query", `SELECT count(*) AS n FROM ${table}`]);
+      expect(result.code, table).toBe(0);
+      expect(result.json().rows, table).toEqual([[1500]]);
+    }
+  });
+
+  it("never opens a source the query does not read", async () => {
+    await withProject(async (p) => {
+      const config = await readFile(path.join(p, "hatchmark.yaml"), "utf8");
+      await writeFile(
+        path.join(p, "hatchmark.yaml"),
+        config.replace(
+          "sources:\n",
+          "sources:\n  broken:\n    type: parquet\n    path: data/orders.csv\n",
+        ),
+      );
+      const other = await cli(["data", "query", "SELECT count(*) FROM orders"], p);
+      expect(other.json()).toMatchObject({ rows: [[1500]], sources: ["orders"] });
+      const broken = await cli(["data", "query", "SELECT * FROM broken"], p);
+      expect(broken.json().diagnostics[0].code).toBe("HM2015");
     });
   });
 
