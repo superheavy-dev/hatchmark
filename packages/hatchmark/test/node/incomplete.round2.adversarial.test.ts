@@ -74,6 +74,55 @@ async function sumDays(root: string, source: string, tz: string, from: string, t
 }
 const days = (from: string, to: string) => (Date.parse(to) - Date.parse(from)) / 86_400_000;
 
+function addMonths(date: string, months: number): string {
+  const [y, m, d] = date.split("-").map(Number) as [number, number, number];
+  const first = new Date(Date.UTC(y, m - 1 + months, 1));
+  const last = new Date(Date.UTC(first.getUTCFullYear(), first.getUTCMonth() + 1, 0)).getUTCDate();
+  first.setUTCDate(Math.min(d, last));
+  return first.toISOString().slice(0, 10);
+}
+
+async function toDateOracle(
+  root: string,
+  tz: string,
+  horizon: string,
+  start: string,
+  shiftedStart: string,
+  shiftedEnd: string,
+) {
+  const [r] = await oracle.rows(`
+    WITH src AS (SELECT CAST("at" AS TIMESTAMPTZ) AS t, v FROM read_csv('${path.join(root, "orders.csv")}')),
+    bounds AS (
+      SELECT
+        timezone('${tz}', TIMESTAMP '${start}') AS cur_from,
+        TIMESTAMPTZ '${horizon}' AS cur_to,
+        timezone('${tz}', TIMESTAMPTZ '${horizon}') AS h_wall,
+        timezone('${tz}', TIMESTAMP '${shiftedStart}') AS prev_from,
+        least(
+          TIMESTAMP '${shiftedStart}' + (timezone('${tz}', TIMESTAMPTZ '${horizon}') - TIMESTAMP '${start}'),
+          TIMESTAMP '${shiftedEnd}') AS prev_wall
+    )
+    SELECT
+      (SELECT coalesce(sum(v), 0) FROM src WHERE t >= cur_from AND t < cur_to) AS value,
+      (SELECT coalesce(sum(v), 0) FROM src
+        WHERE t >= prev_from AND t < timezone('${tz}', prev_wall)) AS previous,
+      strftime(h_wall, '%Y-%m-%dT%H:%M:%S.%f') AS h_wall,
+      strftime(prev_wall, '%Y-%m-%dT%H:%M:%S.%f') AS prev_wall
+    FROM bounds`);
+  return {
+    value: Number(r?.value),
+    previous: Number(r?.previous),
+    hWall: String(r?.h_wall),
+    prevWall: String(r?.prev_wall),
+  };
+}
+
+const TO_DATE_MONTHS: Record<string, number> = {
+  month_to_date: 1,
+  quarter_to_date: 3,
+  year_to_date: 12,
+};
+
 describe("a slid last N months or weeks keeps its length (RFC 6.4)", () => {
   for (const [range, label, asOf] of [
     ["last_12_months", "12 months", "2026-02-15"],
@@ -100,7 +149,7 @@ describe("a slid last N months or weeks keeps its length (RFC 6.4)", () => {
   }
 });
 
-describe("R2 invariants (a) whole local days ending at the last complete day, (b) same number of days", () => {
+describe("R2 invariants: last N, complete and explicit ranges read whole local days to the last complete day over the same number of days; to-date ranges read through the horizon and compare the same elapsed time", () => {
   const tz = "America/New_York";
   const ranges: unknown[] = [
     "last_7_days",
@@ -115,7 +164,6 @@ describe("R2 invariants (a) whole local days ending at the last complete day, (b
     { start: "2026-10-20", end: "2026-12-10" },
     "all_time",
   ];
-  const clamp: string[] = [];
   for (const last of ["2026-11-01T05:30:00Z", "2026-11-26T19:03:00Z", "2026-11-26T05:00:00Z"]) {
     for (const range of ranges) {
       for (const compare of ["previous_period", "previous_year"]) {
@@ -139,6 +187,46 @@ describe("R2 invariants (a) whole local days ending at the last complete day, (b
           }
           const cur = k.current;
           const prev = k.previous;
+          const months = typeof range === "string" ? TO_DATE_MONTHS[range] : undefined;
+          if (months !== undefined) {
+            const [y, m] = hDay.split("-").map(Number) as [number, number];
+            const start =
+              months === 1
+                ? `${hDay.slice(0, 7)}-01`
+                : months === 3
+                  ? `${y}-${String(m - ((m - 1) % 3)).padStart(2, "0")}-01`
+                  : `${y}-01-01`;
+            const back = compare === "previous_year" ? 12 : months;
+            const nextDay = new Date(Date.parse(`${hDay}T00:00:00Z`) + 86_400_000)
+              .toISOString()
+              .slice(0, 10);
+            const shiftedEnd = addMonths(nextDay, -back);
+            const newest = hourly("2025-01-01T00:00:00Z", last).at(-1)?.[0] ?? "";
+            const horizon = newest.replace(/\.(\d{3})Z$/, ".$1001Z");
+            const o = await toDateOracle(
+              root,
+              tz,
+              horizon,
+              start,
+              addMonths(start, -back),
+              shiftedEnd,
+            );
+            expect(cur).toEqual({ start, end: nextDay, endAt: o.hWall });
+            const clamped = o.prevWall >= `${shiftedEnd}T00:00:00.000000`;
+            expect(prev).toEqual(
+              clamped
+                ? { start: addMonths(start, -back), end: shiftedEnd }
+                : {
+                    start: addMonths(start, -back),
+                    end: addMonths(nextDay, -back),
+                    endAt: o.prevWall,
+                  },
+            );
+            expect(k.value).toBe(o.value);
+            expect(k.value).toBeGreaterThan(0);
+            expect(k.previousValue).toBe(o.previous);
+            return;
+          }
           expect(cur?.endAt).toBeUndefined();
           expect(cur?.startAt).toBeUndefined();
           expect(prev?.endAt).toBeUndefined();
@@ -154,32 +242,30 @@ describe("R2 invariants (a) whole local days ending at the last complete day, (b
           );
           const dc = days(cur?.start ?? "", cur?.end ?? "");
           const dp = days(prev?.start ?? "", prev?.end ?? "");
-          if (typeof range === "string" && range.endsWith("_to_date")) {
-            if (dc !== dp) clamp.push(`${range} ${compare} ${hDay}: ${dc} vs ${dp}`);
-          } else if (cut || !(typeof range === "string" && range.startsWith("last_complete"))) {
+          if (cut || !(typeof range === "string" && range.startsWith("last_complete"))) {
             expect(dp).toBe(dc);
           }
         });
       }
     }
   }
-  afterAll(() => {
-    if (clamp.length > 0)
-      console.log(`to-date day counts differ (RFC day clamp):\n${clamp.join("\n")}`);
-  });
 });
 
-describe("R2 note: to-date comparisons map the date with the RFC day clamp, not the day count", () => {
-  it("R2-4 year_to_date vs previous_year through Mar 14, 2028 covers 74 days against 73", async () => {
+describe("R2 note: to-date comparisons cover the same elapsed time, cut by the RFC day clamp", () => {
+  it("R2-4 year_to_date vs previous_year through 2 p.m. on Mar 15, 2028 covers 74 days and 15 hours against 74 days, clamped to the same date last year", async () => {
     const { block } = await dashboard({
       sources: { orders: csv(hourly("2027-01-01T00:00:00Z", "2028-03-15T14:00:00Z")) },
       period: { asOf: "latest_data", range: "year_to_date", compare: "previous_year" },
       blocks: [{ type: "kpi", id: "k", metric: "orders" }],
     });
     const k = block<KpiData>("k");
-    expect(k.current).toEqual({ start: "2028-01-01", end: "2028-03-15" });
-    expect(k.previous).toEqual({ start: "2027-01-01", end: "2027-03-15" });
-    expect([k.value, k.previousValue]).toEqual([74 * 24, 73 * 24]);
+    expect(k.current).toEqual({
+      start: "2028-01-01",
+      end: "2028-03-16",
+      endAt: "2028-03-15T14:00:00.000001",
+    });
+    expect(k.previous).toEqual({ start: "2027-01-01", end: "2027-03-16" });
+    expect([k.value, k.previousValue]).toEqual([74 * 24 + 15, 74 * 24]);
   });
 });
 

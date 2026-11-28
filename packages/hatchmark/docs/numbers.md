@@ -36,10 +36,15 @@ ZONE` value is converted to it. A timestamp without an offset (`2026-01-31 18:30
   ending at the last complete day, the local midnight at or before the horizon: data through
   2:03 p.m. Nov 26 counts through Nov 25. `last N` days, weeks, months, quarters or years slides
   back by whole days to end there, keeping the number of days it has when the data is complete, and compares with the same number of days before it (a
-  shift moves its first and last day); every other range ends there, and its comparison covers the
-  same days (Nov 1 to Nov 25 against Oct 1 to Oct 25). An `all_time` window ends there too, so
+  shift moves its first and last day); a last complete unit or an explicit range ends there, and its
+  comparison covers the same days. A to-date range (`month_to_date`, `year_to_date`,
+  `{to_date: …}`) instead reads through the horizon itself, so the current day's rows count as they
+  arrive: the value is marked in progress with the time it reads through, and the comparison covers
+  the same elapsed time of the previous unit (Nov 1 to Nov 26, 2:03 p.m. against Oct 1 to Oct 26,
+  2:03 p.m.). An `all_time` window ends there too, so
   rows after a fixed as-of are ignored. With timestamp data the newest day is left out until it is
-  complete. A window with no complete day yet, such as month-to-date on the 1st, shows no value
+  complete. A window with no complete day yet, such as a last complete unit or an explicit range whose
+  first day isn't complete, shows no value
   rather than 0 (`empty: "no_complete_day"`, note HM4024).
 - **Buckets.** Time series bucket by local date; weeks start on the week anchor, and quarters and
   years on their `MM-DD` anchors (hatchmark.yaml `anchors`, or a block's `{ unit, anchor }`

@@ -626,9 +626,20 @@ function compare(where: string, got: Option, want: Want, def: Def): string[] {
   return bad;
 }
 
-/** KPI windows are whole local days ending at the last complete day and are never snapped. */
-function kpiExpected(ctx: Ctx, metric: string): Value {
+/**
+ * KPI windows are never snapped. A to-date window reads from its start through the horizon itself,
+ * partial day included; any other window is whole local days ending at the last complete day.
+ */
+function kpiExpected(ctx: Ctx, metric: string, toDate: boolean): Value {
   const h = horizonOf(ctx, metric);
+  if (toDate) {
+    if (h <= midnight(ctx.start)) return null;
+    let total = 0;
+    for (const row of (ctx.src[metric] as Src).rows) {
+      if (row.date >= ctx.start && included(ctx, metric, row)) total += row.a;
+    }
+    return total;
+  }
   let lastEnd = localOf(h).slice(0, 10);
   if (midnight(lastEnd) > h) lastEnd = addDays(lastEnd, -1);
   const end = lastEnd < ctx.end ? lastEnd : ctx.end;
@@ -709,7 +720,7 @@ for (const p of PROJECTS) {
         if (!(r === "last_30_days" || (typeof r === "object" && r !== null && "last" in r))) {
           for (const metric of ["revenue", "refunds"]) {
             const k = blocks.find((x) => x.id === `k_${metric}`);
-            const want = kpiExpected(ctx, metric);
+            const want = kpiExpected(ctx, metric, typeof r === "string" && r.endsWith("_to_date"));
             if (!close(k?.value ?? null, want)) bad.push(`k_${metric} ${k?.value} != ${want}`);
           }
         }

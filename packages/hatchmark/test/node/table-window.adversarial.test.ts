@@ -231,17 +231,19 @@ const words = (start: string, end: string) => {
     ? `${day(start)}, ${start.slice(0, 4)}`
     : `${day(start)} – ${day(last)}, ${last.slice(0, 4)}`;
 };
-type Horizon = { end: string; midday: boolean; micros: number; lastDate: string };
+type Horizon = { end: string; midday: boolean; micros: number; lastDate: string; wall: string };
 type Effective =
   | { untimed: true }
   | { empty: "no_data" | "no_complete_day" }
-  | { start?: string; end: string };
+  | { start?: string; end: string; endAt?: string; micros?: number };
 
 async function oracleFor(root: string, c: Case) {
   const oracle = await Oracle.open();
   const read = (s: string) => `read_csv('${path.join(root, `${s}.csv`)}')`;
   const local = (t: Time) =>
     t.date ? `"${t.column}"` : `CAST(timezone('${TZ}', "${t.column}"::TIMESTAMPTZ) AS DATE)`;
+  const instant = (t: Time) =>
+    t.date ? `timezone('${TZ}', CAST("${t.column}" AS TIMESTAMP))` : `"${t.column}"::TIMESTAMPTZ`;
   const horizons = new Map<string, Horizon>();
   const horizonOf = async (t: Time): Promise<Horizon> => {
     const key = `${t.source}.${t.column}`;
@@ -256,12 +258,14 @@ async function oracleFor(root: string, c: Case) {
       SELECT CAST(CAST(timezone('${TZ}', through) AS DATE) AS VARCHAR) AS end_day,
         CAST(CAST(timezone('${TZ}', through - INTERVAL 1 MICROSECOND) AS DATE) AS VARCHAR) AS last_date,
         strftime(timezone('${TZ}', through), '%H:%M:%S.%f') <> '00:00:00.000000' AS midday,
+        strftime(timezone('${TZ}', through), '%Y-%m-%dT%H:%M:%S.%f') AS wall,
         epoch_us(through) AS micros FROM h`);
     const h = {
       end: String(row?.end_day),
       lastDate: String(row?.last_date),
       midday: Boolean(row?.midday),
       micros: Number(row?.micros),
+      wall: String(row?.wall),
     };
     horizons.set(key, h);
     return h;
@@ -309,9 +313,14 @@ async function oracleFor(root: string, c: Case) {
     const b = base();
     if (b === "all") return { end };
     if (end >= b.end) return b;
+    if (c.range === "month_to_date") {
+      if (midday ? end < b.start : end <= b.start) return { empty: "no_data" };
+      return midday
+        ? { start: b.start, end: addDays(end, 1), endAt: h.wall, micros: h.micros }
+        : { start: b.start, end };
+    }
     if (end <= b.start) return { empty: midday && end === b.start ? "no_complete_day" : "no_data" };
     if (c.range === "last_7_days") return { start: addDays(end, -7), end };
-    if (c.range === "month_to_date") return { start: `${addDays(end, -1).slice(0, 8)}01`, end };
     return { start: b.start, end };
   };
   const windows = Object.fromEntries(c.metrics.map((m) => [m, effective(m)])) as Record<
@@ -319,9 +328,9 @@ async function oracleFor(root: string, c: Case) {
     Effective
   >;
 
-  type Dated = { start?: string; end: string };
+  type Dated = { start?: string; end: string; endAt?: string; micros?: number };
   const isDated = (w: Effective): w is Dated => "end" in w;
-  const keyOf = (w: Dated) => `${w.start ?? ""}|${w.end}`;
+  const keyOf = (w: Dated) => `${w.start ?? ""}|${w.end}|${w.endAt ?? ""}`;
   const counts = new Map<string, { w: Dated; n: number }>();
   for (const m of c.metrics) {
     const w = windows[m] as Effective;
@@ -335,14 +344,21 @@ async function oracleFor(root: string, c: Case) {
       main = w;
       most = n;
     }
-  const through = (w: Dated) => words(addDays(w.end, -1), w.end);
+  const clock = (at: string) => {
+    const h = Number(at.slice(11, 13));
+    return `${h % 12 === 0 ? 12 : h % 12}:${at.slice(14, 16)} ${h < 12 ? "AM" : "PM"}`;
+  };
+  const through = (w: Dated) =>
+    w.endAt === undefined
+      ? words(addDays(w.end, -1), w.end)
+      : `${words(w.endAt.slice(0, 10), addDays(w.endAt.slice(0, 10), 1))}, ${clock(w.endAt)}`;
   const allEmpty = c.metrics.every((m) => "empty" in (windows[m] as Effective));
   const subtitle = allEmpty
     ? undefined
     : main === undefined
       ? "all time"
       : main.start
-        ? words(main.start, main.end)
+        ? `${words(main.start, main.end)}${main.endAt === undefined ? "" : `, through ${clock(main.endAt)}`}`
         : `through ${through(main)}`;
   const behind = (w: Dated) => {
     const days = main ? (Date.parse(main.end) - Date.parse(w.end)) / 86_400_000 : 0;
@@ -369,7 +385,12 @@ async function oracleFor(root: string, c: Case) {
     if (!s) throw new Error(m);
     if ("empty" in w) return {} as Record<string, number | null>;
     const conds = [
-      ...(s.time && "end" in w ? [`${local(s.time)} < DATE '${w.end}'`] : []),
+      ...(s.time && "end" in w && w.micros === undefined
+        ? [`${local(s.time)} < DATE '${w.end}'`]
+        : []),
+      ...(s.time && "micros" in w && w.micros !== undefined
+        ? [`epoch_us(${instant(s.time)}) < ${w.micros}`]
+        : []),
       ...(s.time && "end" in w && w.start ? [`${local(s.time)} >= DATE '${w.start}'`] : []),
       ...(s.filter ? [`${s.filter[0]} = '${s.filter[1]}'`] : []),
     ];
@@ -418,7 +439,11 @@ async function attack(c: Case) {
     expect(engine.notes).toEqual(want.notes);
     expect(engine.sortDescribed).toEqual(c.metrics.filter((m) => Object.hasOwn(want.notes, m)));
     if (want.main?.start)
-      expect(engine.block.window).toEqual({ start: want.main.start, end: want.main.end });
+      expect(engine.block.window).toEqual({
+        start: want.main.start,
+        end: want.main.end,
+        ...(want.main.endAt ? { endAt: want.main.endAt } : {}),
+      });
     else if (want.main) expect(engine.block.through).toBe(addDays(want.main.end, -1));
     else expect([engine.block.window, engine.block.through]).toEqual([undefined, undefined]);
     return { ...engine, want };
@@ -443,20 +468,31 @@ it("last 7 days: sources ending mid-day, at local midnight, and on the DST day",
   ]);
 });
 
-it("month to date: untimed first, a source with no complete day, a source ending at midnight", async () => {
-  const { want } = await attack({
+it("month to date: untimed first, a source inside its first day, a source whose newest row is at midnight", async () => {
+  const { want, block } = await attack({
     metrics: ["units", "returns", "revenue", "refunds"],
     range: "month_to_date",
     asOf: "2026-11-05",
   });
   expect([want.subtitle, want.notes]).toEqual([
-    "Nov 1 – Nov 3, 2026",
+    "Nov 1, 2026, through 11:30 PM",
     {
       units: "All time",
-      returns: "No complete day yet",
-      refunds: "Data through Nov 2, 2026 · 1 day behind",
+      revenue: "Data through Nov 4, 2026, 6:03 PM",
+      refunds: "Data through Nov 3, 2026, 12:00 AM",
     },
   ]);
+  expect(block.window).toEqual({
+    start: "2026-11-01",
+    end: "2026-11-02",
+    endAt: "2026-11-01T23:30:00.000001",
+  });
+  expect(block.windows).toEqual({
+    revenue: { start: "2026-11-01", end: "2026-11-05", endAt: "2026-11-04T18:03:00.000001" },
+    refunds: { start: "2026-11-01", end: "2026-11-04", endAt: "2026-11-03T00:00:00.000001" },
+  });
+  const a = block.rows.find((r) => r.keys[0] === "A")?.values;
+  expect([a?.returns, a?.revenue, a?.refunds]).toEqual([8, 16 + 64 + 256 + 512, 4 + 16 + 32]);
 });
 
 it("all time with a fixed as-of before the newest data groups the metrics it caps", async () => {
@@ -490,15 +526,19 @@ it("latest_data names the stale metric; latest_common_data keeps one window", as
     asOf: "latest_data",
   });
   expect([latest.want.subtitle, latest.want.notes]).toEqual([
-    "Nov 1 – Nov 3, 2026",
-    { refunds: "Data through Nov 2, 2026 · 1 day behind" },
+    "Nov 1 – Nov 4, 2026, through 6:03 PM",
+    { refunds: "Data through Nov 3, 2026, 12:00 AM · 1 day behind" },
   ]);
   const common = await attack({
     metrics: ["revenue", "refunds"],
     range: "month_to_date",
     asOf: "latest_common_data",
   });
-  expect([common.want.subtitle, common.want.notes]).toEqual(["Nov 1 – Nov 2, 2026", {}]);
+  expect([common.want.subtitle, common.want.notes]).toEqual([
+    "Nov 1 – Nov 3, 2026, through 12:00 AM",
+    {},
+  ]);
+  expect(common.block.window?.endAt).toBe("2026-11-03T00:00:00.000001");
 });
 
 it("ratios across two sources read through the most stale operand, in either position", async () => {
@@ -508,8 +548,11 @@ it("ratios across two sources read through the most stale operand, in either pos
     asOf: "2026-11-05",
   });
   expect([want.subtitle, want.notes]).toEqual([
-    "Nov 1 – Nov 2, 2026",
-    { revenue: "Data through Nov 3, 2026" },
+    "Nov 1 – Nov 3, 2026, through 12:00 AM",
+    {
+      revenue: "Data through Nov 4, 2026, 6:03 PM",
+      per_ticket: "Data through Nov 2, 2026 · 1 day behind",
+    },
   ]);
 });
 
@@ -532,18 +575,28 @@ it("two time columns of one source, and a ratio between them", async () => {
     asOf: "2026-11-05",
   });
   expect([want.subtitle, want.notes]).toEqual([
-    "Nov 1, 2026",
-    { placed: "Data through Nov 3, 2026" },
+    "Nov 1 – Nov 2, 2026, through 3:00 PM",
+    { placed: "Data through Nov 4, 2026, 10:00 AM" },
   ]);
 });
 
-it("a date column complete through the same day as a timestamp source keeps one window", async () => {
+it("a date column reads whole days next to a timestamp source's partial day, and shares its window when cut at the same midnight", async () => {
   const { want } = await attack({
     metrics: ["revenue", "daily"],
     range: "month_to_date",
     asOf: "2026-11-05",
   });
-  expect([want.subtitle, want.notes]).toEqual(["Nov 1 – Nov 3, 2026", {}]);
+  expect([want.subtitle, want.notes]).toEqual([
+    "Nov 1 – Nov 4, 2026, through 6:03 PM",
+    { daily: "Data through Nov 3, 2026 · 1 day behind" },
+  ]);
+  const common = await attack({
+    metrics: ["revenue", "daily"],
+    range: "month_to_date",
+    asOf: "latest_common_data",
+  });
+  expect([common.want.subtitle, common.want.notes]).toEqual(["Nov 1 – Nov 3, 2026", {}]);
+  expect(common.block.window).toEqual({ start: "2026-11-01", end: "2026-11-04" });
 });
 
 it("a metric filter that drops the newest row keeps the source's horizon", async () => {
@@ -553,8 +606,8 @@ it("a metric filter that drops the newest row keeps the source's horizon", async
     asOf: "2026-11-05",
   });
   expect([want.subtitle, want.notes]).toEqual([
-    "Nov 1 – Nov 3, 2026",
-    { refunds: "Data through Nov 2, 2026 · 1 day behind" },
+    "Nov 1 – Nov 4, 2026, through 6:03 PM",
+    { refunds: "Data through Nov 3, 2026, 12:00 AM · 1 day behind" },
   ]);
 });
 
@@ -566,8 +619,8 @@ it("a freshness lag moves only that source's window", async () => {
     lagDays: { sales: 2 },
   });
   expect([want.subtitle, want.notes]).toEqual([
-    "Nov 1 – Nov 2, 2026",
-    { revenue: "Data through Nov 1, 2026 · 1 day behind" },
+    "Nov 1 – Nov 3, 2026, through 12:00 AM",
+    { revenue: "Data through Nov 2, 2026, 6:03 PM · 1 day behind" },
   ]);
 });
 
@@ -613,8 +666,9 @@ it("an empty metric next to untimed ones only", async () => {
     metrics: ["units", "returns"],
     range: "month_to_date",
     asOf: "2026-11-05",
+    lagDays: { returns: 2 },
   });
-  expect([want.subtitle, want.notes]).toEqual(["all time", { returns: "No complete day yet" }]);
+  expect([want.subtitle, want.notes]).toEqual(["all time", { returns: "No data in this period" }]);
 });
 
 it("subtotals, Other and the total read each metric's own window", async () => {
@@ -662,12 +716,21 @@ it("subtotals, Other and the total read each metric's own window", async () => {
 });
 
 it("every window empty: the empty state, no span and no description", async () => {
-  const { block, subtitle, described } = await build({
+  const toDate = await build({
     metrics: ["returns"],
     range: "month_to_date",
     asOf: "2026-11-05",
+    lagDays: { returns: 2 },
   });
-  expect(block.empty).toBe("no_complete_day");
-  expect(subtitle).toBeUndefined();
-  expect(described).toBe(false);
+  expect(toDate.block.empty).toBe("no_data");
+  expect(toDate.subtitle).toBeUndefined();
+  expect(toDate.described).toBe(false);
+  const explicit = await build({
+    metrics: ["returns"],
+    range: { start: "2026-11-01", end: "2026-11-08" },
+    asOf: "2026-11-05",
+  });
+  expect(explicit.block.empty).toBe("no_complete_day");
+  expect(explicit.subtitle).toBeUndefined();
+  expect(explicit.described).toBe(false);
 });

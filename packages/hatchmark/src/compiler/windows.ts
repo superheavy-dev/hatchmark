@@ -7,7 +7,15 @@ import type {
   TimeGrain,
 } from "../spec/index.js";
 import { PERIOD_RANGES, TIME_GRAINS, WEEKDAYS } from "../spec/units.js";
-import { DAY_US, formatInstant, formatWall, fromLocal, parseInstant, toLocal } from "./instants.js";
+import {
+  DAY_US,
+  formatInstant,
+  formatWall,
+  fromLocal,
+  isRepeated,
+  parseInstant,
+  toLocal,
+} from "./instants.js";
 import type { ExecutionContext, PlannedParam, PlannedQuery } from "./plan.js";
 
 /**
@@ -298,10 +306,44 @@ export function windowAt(
 ): WindowBounds | undefined {
   const bounds = endedWindow(query, context, horizon);
   const time = query.dimensions.find((d) => d.kind === "time");
-  if (time?.kind !== "time" || query.window.edges === "clip" || bounds?.kind !== "bounded")
-    return bounds;
-  if (bounds.start === bounds.end || bounds.start.endsWith("Z")) return bounds;
-  return { ...bounds, start: bucketStart(bounds.start, time.grain) };
+  const snapped =
+    time?.kind !== "time" ||
+    query.window.edges === "clip" ||
+    bounds?.kind !== "bounded" ||
+    bounds.start === bounds.end ||
+    bounds.start.endsWith("Z")
+      ? bounds
+      : { ...bounds, start: bucketStart(bounds.start, time.grain) };
+  return settled(snapped, context.timezone, horizon);
+}
+
+/**
+ * A window bound as the instant it stands for: a date at a midnight that a fall-back repeats is
+ * its later occurrence (RFC 0001 section 6.2); any other bound is returned unchanged, so an
+ * instant is never moved.
+ */
+export function exactBound(bound: string, timezone: string): string {
+  if (bound.endsWith("Z") || !isRepeated(parseInstant(bound), timezone)) return bound;
+  return formatInstant(fromLocal(parseInstant(bound), timezone));
+}
+
+function settled(
+  bounds: WindowBounds | undefined,
+  timezone: string | undefined,
+  horizon: bigint | undefined,
+): WindowBounds | undefined {
+  if (bounds === undefined || timezone === undefined) return bounds;
+  const instant = (bound: string) => boundInstant(bound, timezone);
+  const end = (bound: string) =>
+    horizon !== undefined && instant(bound) > horizon
+      ? formatInstant(horizon)
+      : exactBound(bound, timezone);
+  if (bounds.kind === "unbounded") {
+    return bounds.end === undefined ? bounds : { ...bounds, end: end(bounds.end) };
+  }
+  const start = exactBound(bounds.start, timezone);
+  const stop = end(bounds.end);
+  return { kind: "bounded", start, end: instant(start) >= instant(stop) ? start : stop };
 }
 
 function endedWindow(
@@ -323,7 +365,10 @@ function endedWindow(
   const hw = toLocal(horizon, tz);
   const day = formatWall(hw).slice(0, 10);
   const timeAxis = query.dimensions.some((d) => d.kind === "time");
-  const exact = formatWall(hw).endsWith("T00:00:00.000000") ? day : formatInstant(horizon);
+  const exact =
+    formatWall(hw).endsWith("T00:00:00.000000") && fromLocal(hw, tz) === horizon
+      ? day
+      : formatInstant(horizon);
   if (range === "all_time") return { kind: "unbounded", end: timeAxis ? exact : day };
   const base = resolveRange(range, "none", context.asOf, anchors);
   if (base?.kind !== "bounded" || target.kind !== "bounded") return target;
@@ -339,7 +384,13 @@ function endedWindow(
         : base.start;
     return hw <= parseInstant(first) ? empty : { kind: "bounded", start: first, end: exact };
   }
-  if (timeAxis) {
+  const toDate = "to_date" in spec;
+  if (toDate && window.shift === "none") {
+    return hw <= parseInstant(base.start)
+      ? empty
+      : { kind: "bounded", start: base.start, end: exact };
+  }
+  if (timeAxis || toDate) {
     const start = parseInstant(base.start);
     if (hw <= start) return { ...target, end: target.start };
     const from = parseInstant(target.start);
@@ -360,7 +411,6 @@ function endedWindow(
     return resolveRange(slid, window.shift, context.asOf, anchors);
   }
   if (day <= base.start) return window.shift === "none" ? empty : { ...target, end: target.start };
-  if ("to_date" in spec) return resolveRange(range, window.shift, previousDay(day), anchors);
   if (window.shift === "none") return { kind: "bounded", start: base.start, end: day };
   const end = format(addDays(parse(target.start), daysBetween(base.start, day)));
   return end < target.end ? { kind: "bounded", start: target.start, end } : target;

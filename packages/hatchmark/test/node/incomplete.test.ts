@@ -58,7 +58,7 @@ const rows = (...pairs: [string, number][]) =>
   `at,v\n${pairs.map(([at, v]) => `${at},${v}`).join("\n")}\n`;
 
 describe("windows end at the measure's horizon", () => {
-  it("reads a to-date range through the last complete day and compares the same days", async () => {
+  it("reads a to-date range through the horizon instant and compares the same elapsed time", async () => {
     const { block } = await dashboard({
       sources: {
         orders: rows(
@@ -74,12 +74,11 @@ describe("windows end at the measure's horizon", () => {
     });
     const kpi = block<KpiData>("orders");
     expect(kpi).toMatchObject({
-      value: 8,
-      previousValue: 1,
-      current: { start: "2026-11-01", end: "2026-11-26" },
-      previous: { start: "2026-10-01", end: "2026-10-26" },
+      value: 8 + 16,
+      previousValue: 1 + 2,
+      current: { start: "2026-11-01", end: "2026-11-27", endAt: "2026-11-26T14:03:00.000001" },
+      previous: { start: "2026-10-01", end: "2026-10-27", endAt: "2026-10-26T14:03:00.000001" },
     });
-    expect(kpi.current).not.toHaveProperty("endAt");
   });
 
   it("slides last N days back to end at a lagging source's horizon, keeping its length", async () => {
@@ -213,7 +212,14 @@ describe("windows at the horizon against SQL written here", () => {
   const hourly = (count: number) =>
     rows(...Array.from({ length: count }, (_, h): [string, number] => [at(h), (h % 7) + 1]));
   const ranges: [string, unknown, string, string, string, string][] = [
-    ["mtd", "month_to_date", "2026-11-01", "2026-11-29", "2026-10-01", "2026-10-29"],
+    [
+      "mtd",
+      "month_to_date",
+      "2026-11-01",
+      "2026-11-29 14:30:00.000001",
+      "2026-10-01",
+      "2026-10-29 14:30:00.000001",
+    ],
     ["l7", { last: 7, unit: "day" }, "2026-11-22", "2026-11-29", "2026-11-15", "2026-11-22"],
     ["l2m", { last: 2, unit: "month" }, "2026-09-29", "2026-11-29", "2026-07-30", "2026-09-29"],
   ];
@@ -242,13 +248,13 @@ describe("windows at the horizon against SQL written here", () => {
   }
 });
 
-describe("whole days in KPIs, instants in series", () => {
+describe("whole days in last N KPIs, instants in series and to-date KPIs", () => {
   const between = (pairs: [string, number][], from: string, to: string) =>
     pairs
       .filter(([at]) => Date.parse(at) >= Date.parse(from) && Date.parse(at) < Date.parse(to))
       .reduce((n, [, v]) => n + v, 0);
 
-  it("cuts a series inside the repeated hour of a fall-back day by instant", async () => {
+  it("cuts a series and a to-date KPI inside the repeated hour of a fall-back day by instant", async () => {
     const pairs: [string, number][] = [
       ["2026-11-01T05:40:00Z", 1],
       ["2026-11-01T05:50:00Z", 2],
@@ -270,16 +276,46 @@ describe("whole days in KPIs, instants in series", () => {
     expect(expected).toBe(11);
     expect(block<LineData>("l").series[0]?.values[0]).toBe(expected);
     expect(block<KpiData>("k")).toMatchObject({
-      value: null,
-      empty: "no_complete_day",
-      current: { start: "2026-11-01", end: "2026-11-01" },
+      value: expected,
+      current: { start: "2026-11-01", end: "2026-11-02", endAt: "2026-11-01T01:45:00.000001" },
     });
+    expect(block<KpiData>("k")).not.toHaveProperty("empty");
+  });
+
+  it("reads month to date on the 1st through the partial day, and compares the same elapsed time", async () => {
+    const pairs: [string, number][] = [
+      ["2026-10-01T08:00:00Z", 4],
+      ["2026-10-01T10:00:00Z", 8],
+      ["2026-10-31T12:00:00Z", 1],
+      ["2026-11-01T09:00:00Z", 2],
+    ];
+    const { block, diagnostics } = await dashboard({
+      sources: { orders: rows(...pairs) },
+      period: { asOf: "latest_data", range: "month_to_date", compare: "previous_period" },
+      blocks: [
+        { type: "kpi", id: "k", metric: "orders" },
+        { type: "table", id: "t", by: ["v"], metrics: ["orders"] },
+      ],
+    });
+    expect(block<KpiData>("k")).toMatchObject({
+      value: between(pairs, "2026-11-01T00:00:00Z", "2026-11-01T09:00:00.001Z"),
+      previousValue: between(pairs, "2026-10-01T00:00:00Z", "2026-10-01T09:00:00.001Z"),
+      current: { start: "2026-11-01", end: "2026-11-02", endAt: "2026-11-01T09:00:00.000001" },
+      previous: { start: "2026-10-01", end: "2026-10-02", endAt: "2026-10-01T09:00:00.000001" },
+    });
+    expect(block<KpiData>("k")).toMatchObject({ value: 2, previousValue: 4 });
+    expect(block<TableData>("t").rows).toEqual([{ keys: [2], values: { orders: 2 } }]);
+    expect(diagnostics).toEqual([]);
   });
 
   it("shows no value, never 0, for a KPI or table with no complete day yet", async () => {
     const { block, diagnostics } = await dashboard({
       sources: { orders: rows(["2026-10-31T12:00:00Z", 1], ["2026-11-01T09:00:00Z", 2]) },
-      period: { asOf: "latest_data", range: "month_to_date", compare: "previous_period" },
+      period: {
+        asOf: "latest_data",
+        range: { start: "2026-11-01", end: "2026-12-01" },
+        compare: "previous_period",
+      },
       blocks: [
         { type: "kpi", id: "k", metric: "orders" },
         { type: "table", id: "t", by: ["v"], metrics: ["orders"] },
@@ -311,7 +347,7 @@ describe("whole days in KPIs, instants in series", () => {
   it("fills a table from its other metrics when one metric's window is empty, in either order", async () => {
     const { block } = await dashboard({
       sources: {
-        stale: rows(["2026-11-01T09:00:00Z", 20]),
+        stale: rows(["2026-10-31T09:00:00Z", 20]),
         fresh: rows(["2026-11-01T10:00:00Z", 5], ["2026-11-03T10:00:00Z", 7]),
       },
       period: { asOf: "2026-11-03", range: "month_to_date", compare: "none" },
@@ -320,10 +356,15 @@ describe("whole days in KPIs, instants in series", () => {
         { type: "table", id: "b", by: ["v"], metrics: ["fresh", "stale"], totals: true },
       ],
     });
-    for (const id of ["a", "b"]) {
+    const five = [[5], { stale: null, fresh: 5 }];
+    const seven = [[7], { stale: null, fresh: 7 }];
+    for (const [id, order] of [
+      ["a", [five, seven]],
+      ["b", [seven, five]],
+    ] as const) {
       const table = block<TableData>(id);
-      expect(table.rows.map((r) => [r.keys, r.values])).toEqual([[[5], { stale: null, fresh: 5 }]]);
-      expect(table.total?.values).toEqual({ stale: null, fresh: 5 });
+      expect(table.rows.map((r) => [r.keys, r.values])).toEqual(order);
+      expect(table.total?.values).toEqual({ stale: null, fresh: 12 });
       expect(table).not.toHaveProperty("empty");
     }
   });
@@ -394,5 +435,155 @@ describe("whole days in KPIs, instants in series", () => {
     });
     expect(block<LineData>("l").series[0]?.values).toEqual([2, 4]);
     expect(block<KpiData>("k").value).toBe(2);
+  });
+});
+
+describe("to-date cutoffs at zone edges", () => {
+  it("keeps the first of two midnights in a year-to-date window that ends at the repeated one", async () => {
+    const { block } = await dashboard({
+      timezone: "America/Havana",
+      sources: {
+        orders: rows(
+          ["2026-01-01T06:00:00Z", 1],
+          ["2026-11-01T04:30:00Z", 2],
+          ["2026-11-01T06:00:00Z", 4],
+        ),
+      },
+      period: { asOf: "2026-10-31", range: "year_to_date", compare: "none" },
+      blocks: [{ type: "kpi", id: "orders", metric: "orders" }],
+    });
+    const [sql] = await oracle.rows(
+      "SELECT sum(v) AS v FROM (VALUES (TIMESTAMPTZ '2026-01-01T06:00:00Z', 1), (TIMESTAMPTZ '2026-11-01T04:30:00Z', 2), (TIMESTAMPTZ '2026-11-01T06:00:00Z', 4)) t(ts, v) WHERE ts >= TIMESTAMPTZ '2026-01-01T05:00:00Z' AND ts < TIMESTAMPTZ '2026-11-01T05:00:00Z'",
+    );
+    expect(Number(sql?.v)).toBe(3);
+    expect(block<KpiData>("orders").value).toBe(3);
+  });
+
+  it("fills a year-to-date KPI in its first minute east of UTC, with no HM4024", async () => {
+    const { block, diagnostics } = await dashboard({
+      timezone: "Asia/Katmandu",
+      sources: {
+        orders: rows(
+          ["2024-12-31T18:15:00Z", 4],
+          ["2025-12-31T10:00:00Z", 1],
+          ["2025-12-31T18:15:00Z", 2],
+        ),
+      },
+      period: { asOf: "latest_data", range: "year_to_date", compare: "previous_period" },
+      blocks: [{ type: "kpi", id: "orders", metric: "orders" }],
+    });
+    expect(block<KpiData>("orders")).toMatchObject({ value: 2, previousValue: 4 });
+    expect(block<KpiData>("orders").empty).toBeUndefined();
+    expect(diagnostics.map((d) => d.code)).not.toContain("HM4024");
+  });
+
+  it("never compares a to-date window past the window section 6.2 gives its as-of date", async () => {
+    const { block } = await dashboard({
+      sources: {
+        orders: rows(
+          ["2027-03-01T12:00:00Z", 1],
+          ["2027-03-02T10:00:00Z", 2],
+          ["2028-03-01T13:59:00Z", 8],
+        ),
+      },
+      period: { asOf: "latest_data", range: "year_to_date", compare: "previous_period" },
+      blocks: [{ type: "kpi", id: "orders", metric: "orders" }],
+    });
+    expect(block<KpiData>("orders")).toMatchObject({
+      value: 8,
+      previousValue: 1,
+      previous: { start: "2027-01-01", end: "2027-03-02" },
+    });
+    expect(block<KpiData>("orders").previous?.endAt).toBeUndefined();
+  });
+});
+
+describe("window bounds at a midnight that a fall-back repeats, against DuckDB", () => {
+  const sum = async (where: string, data: [string, number][]) => {
+    const [row] = await oracle.rows(
+      `SELECT coalesce(sum(v), 0) AS v FROM (VALUES ${data.map(([at, v]) => `(TIMESTAMPTZ '${at}', ${v})`).join(", ")}) t(ts, v) WHERE ${where}`,
+    );
+    return Number(row?.v);
+  };
+
+  it("ends a comparison at the later of two midnights", async () => {
+    const data: [string, number][] = [
+      ["2024-06-01T12:00:00Z", 2],
+      ["2024-11-03T04:30:00Z", 4],
+      ["2024-11-03T06:00:00Z", 8],
+      ["2025-06-01T12:00:00Z", 1],
+      ["2025-11-05T12:00:00Z", 16],
+    ];
+    const { block } = await dashboard({
+      timezone: "America/Havana",
+      sources: { orders: rows(...data) },
+      period: { asOf: "2025-11-02", range: "year_to_date", compare: "previous_period" },
+      blocks: [{ type: "kpi", id: "orders", metric: "orders" }],
+    });
+    const previous = await sum(
+      "ts >= timezone('America/Havana', TIMESTAMP '2024-01-01') AND ts < timezone('America/Havana', TIMESTAMP '2024-11-03')",
+      data,
+    );
+    expect(previous).toBe(6);
+    expect(block<KpiData>("orders")).toMatchObject({ value: 1, previousValue: previous });
+  });
+
+  it("starts a day window at the later of two midnights", async () => {
+    const data: [string, number][] = [
+      ["2024-11-03T04:30:00Z", 4],
+      ["2024-11-03T06:00:00Z", 8],
+      ["2024-11-03T20:00:00Z", 16],
+    ];
+    const { block } = await dashboard({
+      timezone: "America/Havana",
+      sources: { orders: rows(...data) },
+      period: { asOf: "latest_data", range: { to_date: "day" }, compare: "none" },
+      blocks: [{ type: "kpi", id: "orders", metric: "orders" }],
+    });
+    const value = await sum("ts >= timezone('America/Havana', TIMESTAMP '2024-11-03')", data);
+    expect(value).toBe(24);
+    expect(block<KpiData>("orders").value).toBe(value);
+  });
+
+  it("reads a horizon at the later midnight as the end of the day before, in charts and KPIs alike", async () => {
+    const data: [string, number][] = [
+      ["2024-11-02T12:00:00Z", 2],
+      ["2024-11-03T04:59:59.999999Z", 4],
+    ];
+    const total = await sum(
+      "ts >= timezone('America/Havana', TIMESTAMP '2024-01-01') AND ts < timezone('America/Havana', TIMESTAMP '2024-11-03')",
+      data,
+    );
+    expect(total).toBe(6);
+    const built = async (incomplete: string) =>
+      dashboard({
+        timezone: "America/Havana",
+        sources: { orders: rows(...data) },
+        period: { asOf: "latest_data", range: { last: 2, unit: "day" }, compare: "none" },
+        blocks: [{ type: "line", id: "trend", metrics: ["orders"], grain: "day", incomplete }],
+      });
+    for (const incomplete of ["mark", "show"]) {
+      const { data: page, block, diagnostics } = await built(incomplete);
+      expect(page?.asOf).toBe("2024-11-02");
+      const line = block<LineData>("trend");
+      expect(line.axis.kind === "time" ? line.axis.buckets : []).toEqual([
+        "2024-11-01",
+        "2024-11-02",
+      ]);
+      expect(line.series[0]?.values).toEqual([0, 2]);
+      expect(line.series[0]?.partial).toBeUndefined();
+      expect(diagnostics.map((d) => d.code)).not.toContain("HM4014");
+    }
+    const ytd = await dashboard({
+      timezone: "America/Havana",
+      sources: { orders: rows(...data) },
+      period: { asOf: "latest_data", range: "year_to_date", compare: "none" },
+      blocks: [{ type: "kpi", id: "orders", metric: "orders" }],
+    });
+    expect(ytd.block<KpiData>("orders")).toMatchObject({
+      value: total,
+      current: { start: "2024-01-01", end: "2024-11-03" },
+    });
+    expect(ytd.block<KpiData>("orders").current?.endAt).toBeUndefined();
   });
 });

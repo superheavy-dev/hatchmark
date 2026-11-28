@@ -182,9 +182,9 @@ beforeAll(async () => {
   });
   csv = path.join(project.root, "data/orders.csv");
   const [end] = await oracle.rows(
-    `SELECT strftime(least(date_trunc('day', max(${LOCAL})), TIMESTAMP '2026-07-01'), '%Y-%m-%d %H:%M:%S') AS d FROM read_csv('${csv}')`,
+    `SELECT epoch_us(least(max(ordered_at) + INTERVAL 1 MICROSECOND, TIMESTAMPTZ '2026-07-01 04:00:00+00')) AS us FROM read_csv('${csv}')`,
   );
-  CATEGORY = `${LOCAL} >= TIMESTAMP '2026-01-01' AND ${LOCAL} < TIMESTAMP '${end?.d}'`;
+  CATEGORY = `${LOCAL} >= TIMESTAMP '2026-01-01' AND epoch_us(ordered_at) < ${end?.us}`;
   stacked = await run(project.root, project.project, "stacked");
 });
 afterAll(async () => {
@@ -216,6 +216,10 @@ describe("stacked blocks against a SQL oracle", () => {
        FROM read_csv('${csv}') WHERE ${CATEGORY} GROUP BY region, channel`,
       ["region", "channel"],
     );
+    const [partial] = await oracle.rows(
+      `SELECT count(*) AS n FROM read_csv('${csv}') WHERE ${CATEGORY} AND order_id = 9001`,
+    );
+    expect(Number(partial?.n)).toBe(1);
     if (b.axis.kind !== "category") throw new Error("category axis expected");
     expect(new Set(b.axis.categories)).toEqual(
       new Set([...totals.keys()].map((k) => JSON.parse(k)[0])),

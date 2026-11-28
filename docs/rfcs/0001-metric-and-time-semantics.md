@@ -656,6 +656,7 @@ Timezone rules:
 
 - Timestamps with an offset are instants. Naive timestamps are UTC unless the source sets `"timezone": "America/Chicago"`; HM4016 (note) asks the question when a non-UTC project reads naive timestamps. Date columns are local dates and never shift.
 - Day buckets are 23 or 25 local hours on DST days. `elapsed` uses local wall-clock time, so 2 p.m. is 14/24 of the day on any day.
+- A local wall time is turned into an instant (a window bound, a day lag, a comparison cutoff) the way DuckDB reads a naive timestamp. A time that a fall-back change repeats is its later occurrence: 1:30 a.m. on Nov 1, 2026 in New York is 1:30 a.m. EST (06:30 UTC). A time that a spring-forward change skips is read with the offset before the change: 2:30 a.m. on Mar 8, 2026 in New York is 3:30 a.m. EDT.
 - A week belongs to the bucket of its first day and is labelled by it ("Week of Nov 22"). There is no week numbering, so no ISO week 53 question.
 
 ### 6.3 Resolving `latest_data`
@@ -673,21 +674,21 @@ Settled edge cases:
 
 `resolveRange()` stays the definition of each range in whole local dates. The horizon trims it:
 
-| Range kind         | When the measure horizon is before the window end                                                         | Comparison                                                                   |
-| ------------------ | --------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------- |
-| to-date            | value through the last complete day (Nov 1 to Nov 25 when the horizon is Nov 26, 2:03 p.m.)               | the previous unit through the same day (Oct 1 to Oct 25); day clamp as today |
-| last N units       | the window **slides back** to end at the last complete day, keeping its length ("30 days through Nov 25") | the same length before it, from the slid window                              |
-| last complete unit | value marked partial, "through Oct 28"                                                                    | the comparison unit trimmed to the same number of days                       |
-| all_time           | through the last complete day                                                                             | none                                                                         |
+| Range kind         | When the measure horizon is before the window end                                                                      | Comparison                                                                                                     |
+| ------------------ | ---------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------- |
+| to-date            | value through the horizon itself, the partial current day included and marked in progress (Nov 1 to Nov 26, 2:03 p.m.) | the previous unit through the same elapsed local time (Oct 1 to Oct 26, 2:03 p.m.), never past that unit's end |
+| last N units       | the window **slides back** to end at the last complete day, keeping its length ("30 days through Nov 25")              | the same length before it, from the slid window                                                                |
+| last complete unit | value marked partial, "through Oct 28"                                                                                 | the comparison unit trimmed to the same number of days                                                         |
+| all_time           | through the last complete day                                                                                          | none                                                                                                           |
 
 For point-in-time metrics "through the horizon" means "at the horizon": ARR now vs ARR at the same elapsed point of the previous unit.
 
 Settled readings of the table:
 
-- KPI, table and category windows are whole local days ending at the last complete day: the local midnight at or before the horizon. A horizon at 2:03 p.m. Nov 26 ends them at the end of Nov 25, so the number doesn't drift as rows arrive during the day and no bound falls inside a day. A timestamp source's newest day is therefore left out until a row after it arrives or the as-of is set past it.
+- Except for to-date ranges, KPI, table and category windows are whole local days ending at the last complete day: the local midnight at or before the horizon. A horizon at 2:03 p.m. Nov 26 ends them at the end of Nov 25, so the number doesn't drift as rows arrive during the day and no bound falls inside a day. A timestamp source's newest day is therefore left out until a row after it arrives or the as-of is set past it.
 - Every `{ "last": N, "unit": … }` range slides, in days, weeks, months, quarters and years alike. It slides back by whole days and keeps the number of days `resolveRange()` gives it when the data is complete: `last_12_months` as of Oct 31 is Nov 1 to Oct 31 (365 days), and with orders through 6:54 p.m. Oct 31 it is Oct 31 a year earlier through Oct 30, still 365 days. One hour less data never lengthens the window. It then compares like an explicit range of those dates: previous_period is the same number of days just before it, and a shift moves its first and last day (section 6.2). A window that needs no slide keeps section 6.2's comparison (previous_period moves an anchored last N months back N months).
-- A to-date range is the range as of the last complete day, with that day's comparison and section 6.2's day clamp, so the two can differ by a day (year-to-date through Mar 14, 2028 covers 74 days against 73). A last complete unit or explicit `{ start, end }` range ends at the last complete day, and its comparison covers the same number of days from its own start, never past the end of the comparison window as written; a month shift that clamps that window (Mar 28 to 31 shifted a month is Feb 28 alone) bounds it too.
-- A KPI or table whose ended window is empty, such as month-to-date on the 1st, shows no value, never 0: `value` (and the comparison over an empty window) is null, the block carries `empty: "no_complete_day"`, and check notes HM4024. A window that starts after the data ends is `empty: "no_data"` with HM4013.
+- A to-date range ends at the horizon instant (2026-11-27): the current day's rows count as they arrive, and the value is marked in progress with the time it reads through. Its comparison covers the same elapsed local time of the previous unit, from that unit's start, but never past the window section 6.2 gives that comparison for the as-of date, so a complete day compares exactly as before (month-to-date through 2:03 p.m. Mar 31 compares with all of February; year-to-date through 2 p.m. Mar 1, 2028 compares with Jan 1 to Mar 1, 2027). The instant is turned into a wall time and back as section 6.2 says, so a horizon inside a repeated fall-back hour stays exact, and a window bound at a midnight that a fall-back repeats is its later occurrence. A horizon whose local wall time is midnight ends the day before it, so a complete day that ends at a repeated midnight reads as complete, with no in-progress time, and its as-of date is that day. A last complete unit or explicit `{ start, end }` range ends at the last complete day, and its comparison covers the same number of days from its own start, never past the end of the comparison window as written; a month shift that clamps that window (Mar 28 to 31 shifted a month is Feb 28 alone) bounds it too.
+- A KPI or table whose ended window is empty, such as a last complete unit or an explicit `{ start, end }` range whose first day isn't complete yet, shows no value, never 0: `value` (and the comparison over an empty window) is null, the block carries `empty: "no_complete_day"`, and check notes HM4024. A window that starts after the data ends is `empty: "no_data"` with HM4013.
 - A measure's horizon is the earliest of T and the horizons of every time column it reads, so a ratio ends at its laggiest operand.
 - Time-series blocks never slide: the axis is the dashboard's window, ending at T, and each series ends at its own measure horizon instant (no value at or after it, its cut bucket partial, with the share elapsed in local wall-clock time). A sparkline is a time series, so its sum can differ from its KPI. That horizon is compared as a UTC instant, so a cutoff inside a repeated fall-back hour stays exact.
 
@@ -705,31 +706,31 @@ Sliding a rolling window is the default. `period.rollingLag: "trim"` keeps the w
 
 The look comes from the default theme's partial tokens; this RFC fixes the behaviour, not the pixels. **Option B, hatched period (2026-11-27):** a partial flow bucket gets a hairline hatch across its slot; the line stays solid into a hollow end point; the area slice and partial bars are hatched in the series colour. This replaces the dashed last segment. The previous-period comparison line keeps its dash.
 
-| Component            | Flow metric, partial bucket                                                                                              | Point-in-time metric, partial bucket                                      |
-| -------------------- | ------------------------------------------------------------------------------------------------------------------------ | ------------------------------------------------------------------------- |
-| Line, area           | hairline hatch on the bucket's slot; line solid into a hollow end point; area slice hatched in the series colour         | solid line, hollow end point                                              |
-| Bar (incl. stacked)  | every part (all stack parts): series tint, series hatch (dropped under 6 px), 1 px series outline                        | normal bar, hollow outline marker                                         |
-| Tooltip (all charts) | two lines: "Nov 1–26", then "In progress · 26 of 30 days" (a clipped first bucket: "Partial month · …")                  | two lines: "Nov 2026", then "As of Nov 26, 2:03 PM"                       |
-| KPI                  | value labelled "Nov 1–26" or "through Oct 28" when trimmed; delta vs the same elapsed span, with the span in its tooltip | "as of Nov 26"; delta vs the same point last period                       |
-| KPI sparkline        | last point hollow, no hatch (too small for one)                                                                          | same                                                                      |
-| Table with time rows | partial row muted with "(in progress)"; total row labelled "through Nov 26"                                              | partial row labelled "as of"; total = last row's value, labelled "Ending" |
-| Text block           | `{{metric.through}}` inserts the horizon date                                                                            | same                                                                      |
-| Dashboard header     | "Data through Nov 26, 2026, 2:03 PM ET"; when sources differ by a day or more, "Usage through Nov 25" beneath            |                                                                           |
+| Component            | Flow metric, partial bucket                                                                                                                                                    | Point-in-time metric, partial bucket                                      |
+| -------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ------------------------------------------------------------------------- |
+| Line, area           | hairline hatch on the bucket's slot; line solid into a hollow end point; area slice hatched in the series colour                                                               | solid line, hollow end point                                              |
+| Bar (incl. stacked)  | every part (all stack parts): series tint, series hatch (dropped under 6 px), 1 px series outline                                                                              | normal bar, hollow outline marker                                         |
+| Tooltip (all charts) | two lines: "Nov 1–26", then "In progress · 26 of 30 days" (a clipped first bucket: "Partial month · …")                                                                        | two lines: "Nov 2026", then "As of Nov 26, 2:03 PM"                       |
+| KPI                  | value labelled "Nov 1–26" or "through Oct 28" when trimmed; a to-date value adds "in progress (through 2:03 PM)"; delta vs the same elapsed span, with the span in its tooltip | "as of Nov 26"; delta vs the same point last period                       |
+| KPI sparkline        | last point hollow, no hatch (too small for one)                                                                                                                                | same                                                                      |
+| Table with time rows | partial row muted with "(in progress)"; total row labelled "through Nov 26"; a column whose window ends inside a day: "Data through Nov 26, 2026, 2:03 PM"                     | partial row labelled "as of"; total = last row's value, labelled "Ending" |
+| Text block           | `{{metric.through}}` inserts the horizon date                                                                                                                                  | same                                                                      |
+| Dashboard header     | "Data through Nov 26, 2026, 2:03 PM ET"; when sources differ by a day or more, "Usage through Nov 25" beneath                                                                  |                                                                           |
 
 Accessibility: the hatch or hollow point is never the only signal; the tooltip, the table and the SVG's accessible description say "in progress" or "as of".
 
 ### 6.7 What check says
 
-| Code   | Severity | When                                                                                                                           |
-| ------ | -------- | ------------------------------------------------------------------------------------------------------------------------------ |
-| HM4010 | warning  | a source's horizon is more than one day behind the dashboard's as-of; names the source, both dates and the fix (`freshness`)   |
-| HM4011 | error    | `latest_data` has no source to resolve from                                                                                    |
-| HM4012 | warning  | a column's newest value is more than a day after the build machine's clock (future-dated rows); names that value and the clock |
-| HM4013 | warning  | a block's window has no data before its horizon (a KPI that would be empty)                                                    |
-| HM4014 | warning  | `incomplete: "show"` on a flow whose last bucket is partial                                                                    |
-| HM4015 | warning  | a snapshot source has a bucket with no snapshot, or its last snapshot in a complete bucket isn't on the bucket's last day      |
-| HM4016 | note     | naive timestamps in a project whose timezone isn't UTC                                                                         |
-| HM4024 | note     | a KPI or table window with no complete day yet (month-to-date on the 1st): it shows no value until a day is complete           |
+| Code   | Severity | When                                                                                                                                                              |
+| ------ | -------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| HM4010 | warning  | a source's horizon is more than one day behind the dashboard's as-of; names the source, both dates and the fix (`freshness`)                                      |
+| HM4011 | error    | `latest_data` has no source to resolve from                                                                                                                       |
+| HM4012 | warning  | a column's newest value is more than a day after the build machine's clock (future-dated rows); names that value and the clock                                    |
+| HM4013 | warning  | a block's window has no data before its horizon (a KPI that would be empty)                                                                                       |
+| HM4014 | warning  | `incomplete: "show"` on a flow whose last bucket is partial                                                                                                       |
+| HM4015 | warning  | a snapshot source has a bucket with no snapshot, or its last snapshot in a complete bucket isn't on the bucket's last day                                         |
+| HM4016 | note     | naive timestamps in a project whose timezone isn't UTC                                                                                                            |
+| HM4024 | note     | a KPI or table window with no complete day yet (a last complete unit or explicit range whose first day isn't complete): it shows no value until a day is complete |
 
 ## 7. Goals and targets
 

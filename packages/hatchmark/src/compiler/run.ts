@@ -23,6 +23,7 @@ import {
   formatInstant,
   formatWall,
   fromLocal,
+  lastWallBefore,
   parseInstant,
   toLocal,
 } from "./instants.js";
@@ -39,6 +40,7 @@ import {
 } from "./plan.js";
 import { planDashboard } from "./planner.js";
 import {
+  boundInstant,
   bucketEnd,
   bucketStart,
   measureHorizon,
@@ -163,6 +165,7 @@ export async function executionContext(
   }
 
   let instant: bigint;
+  let fixedAsOf: string | undefined;
   const asOfRule = plan.period.asOf;
   if (asOfRule === "latest_data" || asOfRule === "latest_common_data") {
     const voting = plan.horizons
@@ -201,8 +204,9 @@ export async function executionContext(
       };
     }
     instant = startOf(nextDay(asOfRule), tz);
+    fixedAsOf = asOfRule;
   }
-  const lastDay = toLocal(instant - 1n, tz);
+  const lastDay = lastWallBefore(instant, tz);
   if (
     lastDay < parseInstant(SUPPORTED_DATES.first) ||
     lastDay >= parseInstant(nextDay(SUPPORTED_DATES.last))
@@ -215,7 +219,7 @@ export async function executionContext(
       ],
     };
   }
-  const asOf = formatWall(lastDay).slice(0, 10);
+  const asOf = fixedAsOf ?? formatWall(lastDay).slice(0, 10);
 
   const horizonOf = (h: PlannedHorizon) => measured.get(h) ?? (h.votes ? undefined : instant);
   const horizons = plan.horizons.flatMap((h): SourceHorizon[] => {
@@ -293,7 +297,10 @@ export async function executionContext(
       current.length > 0 &&
       current.every((query) => {
         const bounds = query && queryBounds(query, context);
-        return bounds?.kind === "bounded" && parseInstant(bounds.start) >= parseInstant(bounds.end);
+        return (
+          bounds?.kind === "bounded" &&
+          boundInstant(bounds.start, tz) >= boundInstant(bounds.end, tz)
+        );
       });
     if (!empty) continue;
     const location = file
@@ -358,7 +365,10 @@ export async function executionContext(
               const start = bounds.kind === "bounded" ? local(bounds.start) : undefined;
               if (start !== undefined && at <= start) return false;
               const end = bounds.end === undefined ? at : local(bounds.end);
-              const last = formatWall((end < at ? end : at) - 1n).slice(0, 10);
+              const last = formatWall(end < at ? end - 1n : lastWallBefore(horizon, tz)).slice(
+                0,
+                10,
+              );
               const bucket = bucketStart(last, grain);
               return (
                 (start !== undefined && start > parseInstant(bucket)) ||

@@ -415,23 +415,28 @@ const DASHBOARDS: Record<string, unknown> = {
   checks: { title: "Checks", period: MTD, blocks: CHECKS },
 };
 
-type Window = [string, string];
+type Window = [string, string] | [string, string, string];
 const day = (s: string) => s.slice(0, 10);
 const addDays = (d: string, n: number) =>
   new Date(Date.parse(`${d}T00:00:00Z`) + n * 86400e3).toISOString().slice(0, 10);
 const asOfOf = (h: string) => (h.endsWith("00:00:00") ? addDays(day(h), -1) : day(h));
-function rangeWindow(range: string, asOf: string, end: string): Window {
-  const cap = addDays(asOf, 1) < end ? addDays(asOf, 1) : end;
+function rangeWindow(range: string, asOf: string, horizon: string): Window {
+  const rangeEnd = addDays(asOf, 1);
+  const cap = horizon < rangeEnd ? day(horizon) : rangeEnd;
+  const toDate = (start: string): Window =>
+    horizon >= rangeEnd || horizon.endsWith("00:00:00.000000")
+      ? [start, cap]
+      : [start, addDays(day(horizon), 1), horizon];
   const y = asOf.slice(0, 4);
   const m = asOf.slice(5, 7);
   const monthStart = `${y}-${m}-01`;
   switch (range) {
     case "month_to_date":
-      return [monthStart, cap];
+      return toDate(monthStart);
     case "quarter_to_date":
-      return [`${y}-${pad(Math.floor((Number(m) - 1) / 3) * 3 + 1)}-01`, cap];
+      return toDate(`${y}-${pad(Math.floor((Number(m) - 1) / 3) * 3 + 1)}-01`);
     case "year_to_date":
-      return [`${y}-01-01`, cap];
+      return toDate(`${y}-01-01`);
     case "last_7_days":
       return [addDays(cap, -7), cap];
     case "last_30_days":
@@ -446,8 +451,8 @@ function rangeWindow(range: string, asOf: string, end: string): Window {
   throw new Error(range);
 }
 const LOCAL = (col: string) => `(${col} AT TIME ZONE '${TZ}')`;
-const tsWin = ([s, e]: Window) =>
-  `${LOCAL("ts")} >= TIMESTAMP '${s}' AND ${LOCAL("ts")} < TIMESTAMP '${e}'`;
+const tsWin = ([s, e, h]: Window) =>
+  `${LOCAL("ts")} >= TIMESTAMP '${s}' AND ${LOCAL("ts")} < TIMESTAMP '${h ?? e}'`;
 const dWin = ([s, e]: Window) => `d >= DATE '${s}' AND d < DATE '${e}'`;
 
 const TYPE_RANK: Record<string, number> = { boolean: 0, number: 1, string: 2 };
@@ -480,9 +485,10 @@ interface OraclePie {
 let oracle: Oracle;
 let project: Awaited<ReturnType<typeof writeProject>>;
 let H: { orders: string; ties: string; returns: string };
+let HZ: typeof H;
 let asOfLatest: string;
 let main: Built;
-const end = (src: keyof typeof H) => day(H[src]);
+const end = (src: keyof typeof H) => HZ[src];
 
 async function oraclePie(o: {
   table: string;
@@ -565,7 +571,15 @@ function comparePie(
     if (Math.abs(sum - 1) > 1e-9) bad.push(`shares sum ${sum}`);
   }
   const w = opts.window;
-  if (w && w[0] !== "0001-01-01" && !(b.window?.start === w[0] && b.window?.end === w[1]))
+  if (
+    w &&
+    w[0] !== "0001-01-01" &&
+    !(
+      b.window?.start === w[0] &&
+      b.window?.end === w[1] &&
+      b.window?.endAt === w[2]?.replace(" ", "T")
+    )
+  )
     bad.push(`window ${JSON.stringify(b.window)} vs [${w})`);
   if (opts.diags && opts.pointer !== undefined) {
     const here = opts.diags.filter((d) => d.pointer?.startsWith(`${opts.pointer}/`));
@@ -622,6 +636,10 @@ beforeAll(async () => {
     ties: String(h?.t),
     returns: `${addDays(String(h?.r), 1)} 00:00:00`,
   };
+  const [z] = await oracle.rows(
+    `SELECT strftime(${LOCAL("(SELECT max(ts) + INTERVAL 1 MICROSECOND FROM o)")}, '%Y-%m-%d %H:%M:%S.%f') AS o, strftime(${LOCAL("(SELECT max(ts) + INTERVAL 1 MICROSECOND FROM ti)")}, '%Y-%m-%d %H:%M:%S.%f') AS t`,
+  );
+  HZ = { orders: String(z?.o), ties: String(z?.t), returns: `${H.returns}.000000` };
   asOfLatest = asOfOf([H.orders, H.returns, H.ties].sort().at(-1) ?? "");
   main = await dash("main");
 }, 60_000);
@@ -636,6 +654,11 @@ describe("pie and donut against a SQL oracle", () => {
       orders: "2026-11-26 14:03:00",
       ties: "2026-11-26 14:03:00",
       returns: "2026-11-21 00:00:00",
+    });
+    expect(HZ).toEqual({
+      orders: "2026-11-26 14:03:00.000001",
+      ties: "2026-11-26 14:03:00.000001",
+      returns: "2026-11-21 00:00:00.000000",
     });
     expect(asOfLatest).toBe("2026-11-26");
   });
@@ -686,7 +709,7 @@ describe("pie and donut against a SQL oracle", () => {
   it("main (month to date): every pie matches SQL, with HM5011 and HM4061 exactly when SQL says", async () => {
     expect(main.data, JSON.stringify(main.diagnostics.map((d) => d.code))).toBeDefined();
     const W = rangeWindow("month_to_date", asOfLatest, end("orders"));
-    expect(W).toEqual(["2026-11-01", "2026-11-26"]);
+    expect(W).toEqual(["2026-11-01", "2026-11-27", "2026-11-26 14:03:00.000001"]);
     const cases: [string, string, string, number][] = [
       ["rev_country", REV, "country", 5],
       ["rev_country_12", REV, "country", 12],
@@ -713,10 +736,9 @@ describe("pie and donut against a SQL oracle", () => {
     }
   });
 
-  it("main: Lateland is not a category, Refundia is a listed negative, Zeroland no slice, keys keep their types", () => {
+  it("main: Lateland, sold on today's partial day, is a category, Refundia is a listed negative, Zeroland no slice, keys keep their types", () => {
     const wide = pieOf(main.data, "rev_country_12");
-    const listed = [...(wide?.slices ?? []), ...(wide?.excluded?.negative ?? [])];
-    expect(listed.map((s) => s.key)).not.toContain("Lateland");
+    expect(wide?.slices.find((s) => s.key === "Lateland")?.value).toBe(5000);
     const net = pieOf(main.data, "net_country");
     expect(net?.excluded?.negative.map((x) => x.key)).toContain("Refundia");
     expect(net?.slices.map((s) => s.key)).not.toContain("Zeroland");
@@ -871,9 +893,9 @@ describe("pie and donut against a SQL oracle", () => {
     expect(n?.other).toBeUndefined();
   });
 
-  it("New York local-midnight and fall-back edges: 1 + 2 + 4 + 8 in, Oct 31 23:59 and Nov 26 00:00 out", async () => {
+  it("New York local-midnight and fall-back edges: 1 + 2 + 4 + 8 in, Oct 31 23:59 out, today's partial day from Nov 26 00:00 in", async () => {
     const e = pieOf((await dash("edges")).data, "edges");
-    expect({ total: e?.total, whole: e?.whole }).toEqual({ total: 15, whole: 15 });
+    expect({ total: e?.total, whole: e?.whole }).toEqual({ total: 31, whole: 31 });
   });
 
   it("an all-negative donut states its real total and never claims there is no data", async () => {
@@ -908,16 +930,24 @@ describe("pie and donut against a SQL oracle", () => {
     expect(warning?.help ?? "").not.toMatch(/"stack"/);
   });
 
-  it('no complete day: no slices, no Other, total null, no window, and no "No ... in this period"', async () => {
+  it('the first day of the month reads today\'s partial day: its slices, total and window match SQL, with no HM4024 and no "No ... in this period"', async () => {
     const e = await dash("early");
+    await oracle.run(
+      `CREATE OR REPLACE TABLE ea AS SELECT CAST("at" AS TIMESTAMPTZ) AS ts, cat, CAST(amount AS DOUBLE) AS amount FROM read_csv('${path.join(project.root, "data/early.csv")}', all_varchar = true)`,
+    );
+    const [z] = await oracle.rows(
+      `SELECT strftime(${LOCAL("(SELECT max(ts) + INTERVAL 1 MICROSECOND FROM ea)")}, '%Y-%m-%d %H:%M:%S.%f') AS h`,
+    );
+    const w = rangeWindow("month_to_date", asOfOf(String(z?.h)), String(z?.h));
+    expect(w).toEqual(["2026-11-01", "2026-11-02", "2026-11-01 09:00:00.000001"]);
+    const o = await oraclePie({ table: "ea", value: "sum(amount)", by: "cat", where: tsWin(w) });
+    expect(o.total).toBe(5);
+    expect(e.diagnostics.map((d) => d.code)).not.toContain("HM4024");
     for (const id of ["early", "early_pie"]) {
       const b = pieOf(e.data, id);
       expect(b, id).toBeDefined();
-      expect(b?.slices).toEqual([]);
-      expect(b?.other).toBeUndefined();
-      expect(b?.total).toBeNull();
-      expect(b?.window).toBeUndefined();
-      expect(b?.empty).toBe("no_complete_day");
+      expect(comparePie(b, o, { window: w }), id).toEqual([]);
+      expect(b?.empty).toBeUndefined();
     }
     if (e.data === undefined) throw new Error("early did not build");
     expect(renderFragment(e.data)).not.toMatch(/No early amount in this period/);

@@ -1,7 +1,7 @@
 // Scatter (#28). A hostile orders
 // table (signed refunds, null amounts and quantities, refunds-only and net-zero countries, four exact
 // ties, New York window edges, 500/501/700-value columns), a DATE source ending Apr 15, a source whose
-// horizon is exactly local midnight and one with no complete day in June run through the real engine
+// newest value is exactly local midnight and one whose June holds only a partial day run through the real engine
 // and renderer. Every scatter point, its order, limit, cap and warnings are checked against plain SQL
 // on raw rows (the oracle's own DuckDB connection, CSVs read as VARCHAR and cast by hand). Windows are
 // computed here: a point reads x, y and size through the earliest horizon among them. HM_SWEEP=full
@@ -105,8 +105,8 @@ function data(): Record<string, string> {
     push("2026-05-03T12:00:00Z", t, "Marketplace", "paid", "50.00", "2", `c${t}`, 6);
     push("2026-05-04T12:00:00Z", t, "Marketplace", "paid", "50.00", "2", `c${t}`, 6);
   }
-  // Edgeland, New York window edges. In: Jan 1 00:00 and Jun 27 23:59. Out: Dec 31 23:59, Jun 28
-  // 00:01 and the horizon row itself (Jun 28 14:03, the newest ordered_at).
+  // Edgeland, New York window edges. In: Jan 1 00:00, Jun 27 23:59, and today's partial day: Jun 28
+  // 00:01 and the newest ordered_at (Jun 28 14:03). Out: Dec 31 23:59.
   push("2026-01-01T05:00:00Z", "Edgeland", "Online store", "paid", "1.00", "1", "c9100", 7);
   push("2026-06-28T03:59:00Z", "Edgeland", "Online store", "paid", "2.00", "1", "c9101", 7);
   push("2026-01-01T04:59:00Z", "Edgeland", "Online store", "paid", "1000.00", "1", "c9102", 7);
@@ -129,7 +129,7 @@ function data(): Record<string, string> {
     sto.push(`${at},${COUNTRIES[Math.floor(rand() * 6)]},${(5 + rand() * 90).toFixed(2)}`);
   }
   sto.push("2026-05-01T03:59:59Z,Edgeland,3.00", "2026-05-01T04:00:00Z,Edgeland,4000.00");
-  // kiosk: timestamps through Jun 1 10:00 New York, so June has no complete day.
+  // kiosk: timestamps through Jun 1 10:00 New York, so June holds only a partial day.
   const kio = ["sold_at,country,amount"];
   for (let i = 0; i < 300; i++) {
     const at = iso(Date.UTC(2026, 0, 1, 15) + Math.floor(rand() * 151) * 86400e3);
@@ -451,11 +451,13 @@ const addDays = (d: string, n: number) =>
 
 interface Period {
   start: (end: string) => string;
-  endFor: (t: Table) => string;
+  asOfNext: string;
+  toDate: boolean;
 }
 interface Window {
   start: string;
   end: string;
+  endAt?: string;
 }
 interface Expected {
   window: Window;
@@ -498,7 +500,7 @@ async function perKey(
   const value = def.f ? def.agg.replace(/\)$/, `) FILTER (WHERE ${f})`) : def.agg;
   const out = new Map<string, number | null>();
   for (const r of await oracle.rows(
-    `SELECT ${by} AS k, count(*) FILTER (WHERE ${f}) AS n, ${value} AS v FROM ${def.t} WHERE ${local} >= TIMESTAMP '${w.start}' AND ${local} < TIMESTAMP '${w.end}' AND ${base} GROUP BY 1`,
+    `SELECT ${by} AS k, count(*) FILTER (WHERE ${f}) AS n, ${value} AS v FROM ${def.t} WHERE ${local} >= TIMESTAMP '${w.start}' AND ${local} < TIMESTAMP '${w.endAt ?? w.end}' AND ${base} GROUP BY 1`,
   )) {
     const v =
       Number(r.n) === 0
@@ -534,6 +536,17 @@ const keyOrder = (a: Key, b: Key) =>
             ? -1
             : 1;
 
+// A to-date range reads through the horizon itself, today's partial day included; any other range
+// ends at the last complete day, the local midnight at or before the horizon.
+function windowOf(period: Period, horizon: string): Window {
+  const lastDay = minDate(horizon.slice(0, 10), period.asOfNext);
+  const start = period.start(lastDay);
+  if (!period.toDate || horizon >= period.asOfNext) return { start, end: lastDay };
+  if (horizon <= start) return { start, end: start };
+  if (horizon.endsWith(" 00:00:00.000000")) return { start, end: horizon.slice(0, 10) };
+  return { start, end: addDays(horizon.slice(0, 10), 1), endAt: horizon.replace(" ", "T") };
+}
+
 // The oracle's scatter: one window for x, y and size, ending at the earliest horizon among their
 // sources (or the as-of); points ordered by size (else y) descending, then by key; limit after.
 async function expected(
@@ -542,8 +555,7 @@ async function expected(
   filters: Partial<Record<Table, string>> = {},
 ): Promise<Expected> {
   const ms = [...new Set([block.x, block.y, ...(block.size ? [block.size] : [])])];
-  const end = minDate(...ms.flatMap(tablesOf).map((t) => period.endFor(t)));
-  const window = { start: period.start(end), end };
+  const window = windowOf(period, minDate(...ms.flatMap(tablesOf).map((t) => H[t])));
   if (window.start >= window.end)
     return { window, points: [], omittedPoints: 0, omittedCategories: 0 };
   const vals = new Map<string, Map<string, number | null>>();
@@ -576,7 +588,8 @@ async function expected(
 }
 const ytd = (asOfNext: string): Period => ({
   start: () => "2026-01-01",
-  endFor: (t) => minDate(H[t], asOfNext),
+  asOfNext,
+  toDate: true,
 });
 
 const close = (a: unknown, e: number | null | undefined, tol = 1e-9) =>
@@ -786,11 +799,12 @@ beforeAll(async () => {
     await oracle.run(
       `CREATE TABLE ${t} AS SELECT CAST(sold_at AS TIMESTAMPTZ) AS ts, NULLIF(country, '') AS country, CAST(amount AS DECIMAL(18,2)) AS amount FROM ${csv(f)}`,
     );
-  // Last complete day per source: local midnight at or before the horizon (a DATE: the day after).
-  const day = (t: string) =>
-    `strftime(date_trunc('day', (SELECT max(ts) FROM ${t}) AT TIME ZONE 'America/New_York'), '%Y-%m-%d')`;
+  // Each source's horizon as a New York wall time: just after its newest timestamp (a DATE: the end
+  // of its newest day).
+  const after = (t: string) =>
+    `strftime((SELECT max(ts) + INTERVAL 1 MICROSECOND FROM ${t}) AT TIME ZONE 'America/New_York', '%Y-%m-%d %H:%M:%S.%f')`;
   const [h] = await oracle.rows(
-    `SELECT ${day("o")} AS o, strftime((SELECT max(d) FROM s) + 1, '%Y-%m-%d') AS s, ${day("st")} AS st, ${day("k")} AS k`,
+    `SELECT ${after("o")} AS o, strftime(CAST((SELECT max(d) FROM s) + 1 AS TIMESTAMP), '%Y-%m-%d %H:%M:%S.%f') AS s, ${after("st")} AS st, ${after("k")} AS k`,
   );
   H = { o: String(h?.o), s: String(h?.s), st: String(h?.st), k: String(h?.k) };
   main = await run(project.root, project.project, "main");
@@ -801,8 +815,13 @@ afterAll(async () => {
 });
 
 describe("scatter against a SQL oracle", () => {
-  it("the oracle's hand-computed window ends match the data", () => {
-    expect(H).toEqual({ o: "2026-06-28", s: "2026-04-16", st: "2026-05-01", k: "2026-06-01" });
+  it("the oracle's hand-computed horizons match the data", () => {
+    expect(H).toEqual({
+      o: "2026-06-28 14:03:00.000001",
+      s: "2026-04-16 00:00:00.000000",
+      st: "2026-05-01 00:00:00.000001",
+      k: "2026-06-01 10:00:00.000001",
+    });
   });
 
   it("check: HM5020 for x = y, HM5021 for size = x or y, an unknown size is an error, span 2 is HM2024", () => {
@@ -829,16 +848,26 @@ describe("scatter against a SQL oracle", () => {
     expect(bad).toEqual({});
   });
 
-  it("main: window edges, a ratio of sums, refunds-only, the null group, a midnight horizon", () => {
+  it("main: window edges, today's partial day, a ratio of sums, refunds-only, the null group, a newest value at midnight", () => {
     const basic = blockOf(main.data, "basic");
     const pt = (b: ScatterData | undefined, k: Key) => b?.points.find((p) => p.key === k);
-    expect(pt(basic, "Edgeland")?.size).toBe(3);
+    expect(pt(basic, "Edgeland")?.size).toBe(320003);
+    expect(basic?.window).toEqual({
+      start: "2026-01-01",
+      end: "2026-06-29",
+      endAt: "2026-06-28T14:03:00.000001",
+    });
     const us = pt(basic, "United States");
     expect(Math.abs(Number(us?.y) - Number(us?.size) / Number(us?.x))).toBeLessThan(1e-9);
     expect(pt(basic, "Iceland")).toBeUndefined();
     expect(basic?.omittedPoints ?? 0).toBeGreaterThanOrEqual(1);
     expect(pt(basic, null)?.label).toBe("(empty)");
-    expect(pt(blockOf(main.data, "store_mid"), "Edgeland")?.y).toBe(3);
+    expect(pt(blockOf(main.data, "store_mid"), "Edgeland")?.y).toBe(4003);
+    expect(blockOf(main.data, "store_mid")?.window).toEqual({
+      start: "2026-01-01",
+      end: "2026-05-02",
+      endAt: "2026-05-01T00:00:00.000001",
+    });
     expect(blockOf(main.data, "mixed_sources")?.window).toEqual({
       start: "2026-01-01",
       end: "2026-04-16",
@@ -878,7 +907,8 @@ describe("scatter against a SQL oracle", () => {
   it("periods: a last_30_days period filter default, latest_data and latest_common_data", async () => {
     const last30: Period = {
       start: (end) => addDays(end, -30),
-      endFor: (t) => minDate(H[t], "2026-07-01"),
+      asOfNext: "2026-07-01",
+      toDate: false,
     };
     expect(
       (
@@ -893,34 +923,39 @@ describe("scatter against a SQL oracle", () => {
     expect((await checkCase("common", COMMON, ytd("2026-04-16"))).bad).toEqual({});
   });
 
-  it("month to date in June: a metric with no complete day (HM4024) or no data (HM4013) empties the scatter", async () => {
-    const mtd: Period = {
-      start: () => "2026-06-01",
-      endFor: (t) => (H[t] <= "2026-06-01" ? "2026-06-01" : minDate(H[t], "2026-07-01")),
-    };
+  it("month to date in June: sources that end before June empty the scatter (HM4013); one that has only today's partial day plots it", async () => {
+    const mtd: Period = { start: () => "2026-06-01", asOfNext: "2026-07-01", toDate: true };
     const { res, bad } = await checkCase("mtd", MTD, mtd);
     expect(bad).toEqual({});
-    for (const b of MTD_SCATTERS) {
-      const blk = blockOf(res.data, b.id);
-      expect(blk?.points, b.id).toEqual([]);
-      expect(blk?.window, b.id).toBeUndefined();
-      const code = { no_complete_day: "HM4024", no_data: "HM4013" }[String(blk?.empty)];
-      expect(code, `${b.id} empty=${blk?.empty}`).toBeDefined();
-      expect(
-        diagsAt(res, MTD, b.id).map((d) => d.code),
-        b.id,
-      ).toContain(code);
+    for (const id of ["m_kiosk", "m_mixed"]) {
+      const blk = blockOf(res.data, id);
+      expect(blk?.window, id).toEqual({
+        start: "2026-06-01",
+        end: "2026-06-02",
+        endAt: "2026-06-01T10:00:00.000001",
+      });
+      expect(blk?.empty, id).toBeUndefined();
+      expect(blk?.points.find((p) => p.key === "Edgeland")?.x, id).toBe(1);
     }
+    expect(blockOf(res.data, "m_kiosk")?.points.map((p) => [p.key, p.y])).toEqual([
+      ["Edgeland", 11],
+    ]);
+    for (const id of ["m_store", "m_sessions"]) {
+      const blk = blockOf(res.data, id);
+      expect(blk?.points, id).toEqual([]);
+      expect(blk?.window, id).toBeUndefined();
+      expect(blk?.empty, id).toBe("no_data");
+      expect(
+        diagsAt(res, MTD, id).map((d) => d.code),
+        id,
+      ).toContain("HM4013");
+    }
+    expect(res.diagnostics.map((d) => d.code)).not.toContain("HM4024");
     if (res.data === undefined) throw new Error("mtd did not build");
     expect(renderProblems(res.data)).toEqual([]);
     const html = renderFragment(res.data);
-    for (const b of MTD_SCATTERS) {
-      const text =
-        blockOf(res.data, b.id)?.empty === "no_complete_day"
-          ? "No complete day yet"
-          : "No data in this period";
-      expect(sectionOf(html, b.id), b.id).toContain(text);
-    }
+    for (const id of ["m_store", "m_sessions"])
+      expect(sectionOf(html, id), id).toContain("No data in this period");
   });
 
   it("the renderer: tooltip JSON, hidden table, linear axes, sqrt radius and the subtitle counts", () => {

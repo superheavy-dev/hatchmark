@@ -91,7 +91,7 @@ function coveredLabel(from: string, to: string, asOf: string, locale: string): s
   return `${formatDay(start, locale, false)} \u2013 ${formatDay(end, locale, false)}${suffix}`;
 }
 
-const timeOf = (endAt: string, locale: string) =>
+export const timeOf = (endAt: string, locale: string) =>
   new Intl.DateTimeFormat(locale, { hour: "numeric", minute: "2-digit", timeZone: "UTC" }).format(
     new Date(`${endAt.slice(0, 19)}Z`),
   );
