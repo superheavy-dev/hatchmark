@@ -5,6 +5,7 @@ import { build, buildHelp } from "./commands/build.js";
 import { check, checkHelp } from "./commands/check.js";
 import { data, dataHelp } from "./commands/data.js";
 import { dev, devHelp } from "./commands/dev.js";
+import { docs, docsHelp } from "./commands/docs.js";
 import { doctor, doctorHelp } from "./commands/doctor.js";
 import { explain, explainHelp } from "./commands/explain.js";
 import { init, initHelp } from "./commands/init.js";
@@ -101,6 +102,15 @@ const COMMANDS: Record<string, Command> = {
             ...(typeof flags.host === "string" ? { host: flags.host } : {}),
             open: flags.open === true,
           }),
+  },
+  docs: {
+    help: docsHelp,
+    options: { search: { type: "string" }, limit: { type: "string" } },
+    run: (_ctx, positionals, flags) =>
+      docs(positionals, {
+        ...(typeof flags.search === "string" ? { search: flags.search } : {}),
+        ...(typeof flags.limit === "string" ? { limit: flags.limit } : {}),
+      }),
   },
   schema: { help: schemaHelp, options: {}, run: (ctx, positionals) => schema(ctx, positionals) },
   explain: {

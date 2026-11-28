@@ -1,6 +1,7 @@
 # Hatchmark docs
 
-Start with [cli.md](cli.md) for the commands. Then, in the order you write the files:
+Start with [cli.md](cli.md) for the commands. `hatchmark docs` prints these pages from the
+installed version, and `hatchmark docs --search "<words>"` searches them. Then, in the order you write the files:
 
 - [project.md](project.md): `hatchmark.yaml` and data sources, and what to do after `init --template minimal`.
 - [metrics.md](metrics.md): `metrics/<name>.yaml`: aggregate, ratio and SQL metrics, filters, formats.
