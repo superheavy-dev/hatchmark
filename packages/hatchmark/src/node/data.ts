@@ -42,6 +42,8 @@ export interface QueryResultRows {
 }
 
 export class SourceReadError extends Error {}
+
+const UNAVAILABLE = "hatchmark: source not available: ";
 export class QueryRejected extends Error {}
 export class MissingSource extends Error {
   constructor(readonly source: string) {
@@ -190,6 +192,38 @@ export async function openDataSession(options: { root: string; config: ProjectCo
       if (count !== 1) throw new QueryRejected(`the query has ${count} statements`);
       const byName = new Map(options.sources.map((name) => [name.toLowerCase(), name]));
       const read: string[] = [];
+      const register = async (name: string) => {
+        const { relation } = await load(name);
+        await connection.run(
+          `CREATE TEMP VIEW ${quote(name)} AS SELECT * EXCLUDE ("__hm_ord") FROM ${relation} ORDER BY "__hm_ord"`,
+        );
+        read.push(name);
+      };
+      const builtIn = new Set(
+        (
+          await connection.runAndReadAll(
+            "SELECT lower(view_name) FROM duckdb_views() UNION SELECT lower(table_name) FROM duckdb_tables()",
+          )
+        )
+          .getRows()
+          .map((row) => String(row[0])),
+      );
+      const unavailable = new Map<string, Error>();
+      for (const name of options.sources.filter((s) => builtIn.has(s.toLowerCase()))) {
+        if (options.missing.has(name)) {
+          unavailable.set(name, new MissingSource(name));
+        } else {
+          try {
+            await register(name);
+            continue;
+          } catch (error) {
+            unavailable.set(name, error as Error);
+          }
+        }
+        await connection.run(
+          `CREATE TEMP VIEW ${quote(name)} AS SELECT error('${UNAVAILABLE}${name}') AS unavailable`,
+        );
+      }
       for (;;) {
         try {
           const prepared = await connection.prepare(sql);
@@ -207,15 +241,15 @@ export async function openDataSession(options: { root: string; config: ProjectCo
         } catch (error) {
           if (error instanceof QueryRejected || error instanceof SourceReadError) throw error;
           const message = (error as Error).message;
+          const blocked = [...unavailable].find(([name]) =>
+            message.includes(`${UNAVAILABLE}${name}`),
+          );
+          if (blocked !== undefined) throw blocked[1];
           const table = /Table with name (.+?) does not exist/.exec(message)?.[1];
           const name = table === undefined ? undefined : byName.get(table.toLowerCase());
           if (name === undefined || read.includes(name)) throw permission(error as Error);
           if (options.missing.has(name)) throw new MissingSource(name);
-          const { relation } = await load(name);
-          await connection.run(
-            `CREATE TEMP VIEW ${quote(name)} AS SELECT * EXCLUDE ("__hm_ord") FROM ${relation} ORDER BY "__hm_ord"`,
-          );
-          read.push(name);
+          await register(name);
         }
       }
     },

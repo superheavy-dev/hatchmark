@@ -228,6 +228,30 @@ describe("hatchmark data query", () => {
     }
   });
 
+  it("reads a source named like a DuckDB catalog view instead of the view", async () => {
+    await withProject(async (p) => {
+      await writeFile(path.join(p, "data/catalog.csv"), "id,label\n41,apples\n");
+      const config = await readFile(path.join(p, "hatchmark.yaml"), "utf8");
+      await writeFile(
+        path.join(p, "hatchmark.yaml"),
+        config.replace(
+          "sources:\n",
+          "sources:\n  sqlite_master:\n    type: csv\n    path: data/catalog.csv\n  pg_tables:\n    type: csv\n    path: data/gone.csv\n  duckdb_tables:\n    type: parquet\n    path: data/catalog.csv\n",
+        ),
+      );
+      const own = await cli(["data", "query", "SELECT * FROM sqlite_master"], p);
+      expect(own.json()).toMatchObject({ rows: [[41, "apples"]], sources: ["sqlite_master"] });
+      const gone = await cli(["data", "query", "SELECT * FROM pg_tables"], p);
+      expect(gone.code).toBe(3);
+      expect(gone.json().diagnostics[0].code).toBe("HM2010");
+      const unreadable = await cli(["data", "query", "SELECT * FROM duckdb_tables"], p);
+      expect(unreadable.json().diagnostics[0].code).toBe("HM2015");
+      expect((await cli(["data", "query", "SELECT count(*) FROM orders"], p)).json().rows).toEqual([
+        [1500],
+      ]);
+    });
+  });
+
   it("never opens a source the query does not read", async () => {
     await withProject(async (p) => {
       const config = await readFile(path.join(p, "hatchmark.yaml"), "utf8");
