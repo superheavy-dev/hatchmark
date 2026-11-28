@@ -46,3 +46,16 @@ What it draws:
   stacked bars, each series' share and the total, recomputed from rows. With several series each
   row starts with a square in its colour; a single series' tooltip has none.
 - A null category is a real group and shows as "(empty)".
+
+## Targets
+
+`target: plan` names one of the metric's [targets](../metrics.md#targets).
+
+- A bar whose category or month has a target gets a tick across it in the text colour, with a halo
+  in the card colour so it stays visible over the bar. Grouped bars get a tick each; a stacked bar
+  gets one for the total. A hollow diamond marks the pace in a partial bucket.
+- A target without a `by` column is a target for the whole window, not for each bar: a dashed rule
+  across the plot, keyed "FY plan for the period", with its pace as a diamond at the end.
+- Value labels move past a tick or diamond they would cross.
+- The tooltip, the description and the screen-reader table add the target, the pace and the
+  attainment. A hidden target draws nothing and the key says why.

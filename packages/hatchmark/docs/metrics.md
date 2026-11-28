@@ -155,8 +155,8 @@ rules.
 ## Targets
 
 A target is a goal for a metric, set once in the metric file so every block that shows the metric
-can show it. A block names one with `target: <id>` (kpi, line, area and bar blocks). Targets don't
-draw yet: the block's data carries their values for the component that will.
+can show it. A block names one with `target: <id>` (kpi, line, area and bar blocks): a KPI shows its
+attainment and a progress bar, a line or area a dashed target line, and a bar a target tick.
 
 ```yaml
 targets:

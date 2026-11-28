@@ -35,3 +35,23 @@ What it draws:
   each month's value in the same tooltip as the line chart.
 - An undefined value shows `—` with "No data in this period"; a real zero shows `$0`. With no
   previous value the note says "No Sep data to compare" and there is no change.
+
+## Targets
+
+`target: plan` names one of the metric's [targets](../metrics.md#targets). Three rows under the
+note show it, the same three in every state so cards in a row line up and a card keeps its height
+when a filter changes:
+
+- The attainment ("103% of pace", or "of target" without a pace) and, for a metric whose `better`
+  is `up` or `down`, "Ahead" or "Behind" in the good or bad colour. Attainment is the value over the
+  pace while the period is in progress, else over the target. On a narrow card "of pace" drops and
+  the note keeps the reference.
+- A progress bar filled to the attainment. Past 100% the bar stays full and a dot after its end
+  marks the overflow.
+- The pace and the target: "Pace $1.14M · FY plan $1.86M". A note too long for the card is cut at
+  the end, with the full text on hover.
+
+With no attainment the first row says why: "Target is zero or below", "No value to compare with the
+target", "No FY plan for this period", or "FY plan hidden" with the reason on the note ("A segment is
+on that the target can't follow"). Screen readers hear one sentence: "Revenue is at 103% of pace,
+ahead; Pace $1.14M · FY plan $1.86M".

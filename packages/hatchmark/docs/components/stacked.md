@@ -65,3 +65,9 @@ Every other field is the [bar](bar.md) or [area](line.md) block's: `by` or `grai
 | `HM4061` | Build warning. A 100% stack has negative values, so the shares no longer add up to 100%.                                                             | Use `stack: true` or grouped bars, or a metric that cannot be negative.                 |
 
 Stacking one metric without a split draws one series, so there is nothing to check.
+
+## Targets
+
+A stacked area or bar draws the total target over the stack ([line](line.md#targets),
+[bar](bar.md#targets)); a per-series target would sit on a stacked segment, so it is in the tooltip
+only. A 100% stack draws no target, since its axis is a share.

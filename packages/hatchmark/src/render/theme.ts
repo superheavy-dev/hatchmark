@@ -114,6 +114,19 @@ export interface Theme {
     pointRadius: number;
     pointRing: number;
   };
+  /** Targets (RFC 0001 section 7): the target line, the tick across a bar, the pace marker, the KPI meter. */
+  target: {
+    line: { color: ChromeColor; width: number; dash: string };
+    tick: {
+      color: ChromeColor;
+      width: number;
+      overhang: number;
+      halo: ChromeColor;
+      haloWidth: number;
+    };
+    pace: { size: number; ring: number };
+    meterHeight: number;
+  };
 }
 
 export interface GroupTheme {
@@ -207,6 +220,25 @@ export const DEFAULT_THEME: Theme = {
     barHatchMin: 6,
     pointRadius: defaultTokens.chart.partial.point.radius,
     pointRing: defaultTokens.chart.partial.point.ring,
+  },
+  target: {
+    line: {
+      color: defaultTokens.chart.target.line.color as ChromeColor,
+      width: defaultTokens.chart.target.line.width,
+      dash: defaultTokens.chart.target.line.dash,
+    },
+    tick: {
+      color: defaultTokens.chart.target.tick.color as ChromeColor,
+      width: defaultTokens.chart.target.tick.width,
+      overhang: defaultTokens.chart.target.tick.overhang,
+      halo: defaultTokens.chart.target.tick.halo as ChromeColor,
+      haloWidth: defaultTokens.chart.target.tick.haloWidth,
+    },
+    pace: {
+      size: defaultTokens.chart.target.pace.size,
+      ring: defaultTokens.chart.target.pace.ring,
+    },
+    meterHeight: defaultTokens.chart.target.meter.height,
   },
 };
 

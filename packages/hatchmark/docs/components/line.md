@@ -44,3 +44,23 @@ What it draws:
   browser. Two options with the same unit name their anchors ("Year from Jan 1", "Year from Jul 1").
 - Missing values leave a gap. A window with no data keeps the axis and says "No revenue in this
   period".
+
+## Targets
+
+`target: plan` names one of the metric's [targets](../metrics.md#targets) and draws it as a
+dashed line in the muted text colour, keyed above the plot ("-- FY plan"), so it reads as a target
+without relying on colour.
+
+- Each series that has a target gets its own dashed line. The line breaks where the target has no
+  value, and a target value with no neighbour is a short dash.
+- In the partial bucket the target is the whole bucket's; a hollow diamond marks the pace, the target
+  times the share of the bucket that has elapsed, and the key adds "Pace to date".
+- A split line has a target per series when the target table has the split column. The total over
+  every split value is drawn only where the chart shows a total, on a stacked area; on separate
+  lines it is in the tooltip. A 100% stack draws no target.
+- A target hidden by a filter, a segment or the grain draws nothing, and the key says why: "FY plan
+  hidden: a segment is on that the target can't follow".
+- The value axis grows to hold the target. The tooltip adds the target, the pace and the attainment
+  under the series; the description and the screen-reader table add the same.
+- Grain switches, period presets, custom ranges and segment toggles redraw the target from the
+  data the page carries.

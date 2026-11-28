@@ -23,6 +23,14 @@ import { thinTicks } from "./labels.js";
 import { textWidth, truncateEnd, wrapLines } from "./measure.js";
 import { hatchDefs, hollowPoint, partialBar, partialId } from "./partial.js";
 import { r, svgLine, svgText } from "./svg.js";
+import {
+  type ChartTargets,
+  chartTargets,
+  paceMarker,
+  targetDash,
+  targetExtent,
+  targetKey,
+} from "./target.js";
 import { type ColorKey, type Paint, type SeriesPaint, seriesPaints, type Theme } from "./theme.js";
 
 const BAR_THICKNESS = 10;
@@ -167,6 +175,21 @@ export function barRowHeight(
   return Math.max(rows.barRow, Math.min(rows.barRowMax, Math.floor(chartHeight / n)));
 }
 
+function goalKey(block: BarData, ctx: RenderContext, width: number, empty: boolean) {
+  const goals = chartTargets(block, ctx);
+  const key = goals && !empty ? targetKey(ctx, goals, width, "tick") : { svg: "", height: 0 };
+  return { goals, key };
+}
+
+const hasValues = (block: BarData) => block.series.some((s) => s.values.some(isNumber));
+
+function goalReach(goals: ChartTargets | undefined, i: number, k?: number): number[] {
+  return (goals?.tracks ?? [])
+    .filter((t) => t.drawn && (k === undefined || t.series === k))
+    .flatMap((t) => [t.values[i] ?? null, t.pace?.[i] ?? null])
+    .filter(isNumber);
+}
+
 export function barHeight(
   block: BarData,
   ctx: RenderContext,
@@ -174,7 +197,9 @@ export function barHeight(
   chartHeight: number,
   rows: BarRows,
 ): number {
-  const key = drawKey(cssLessPaint, keyItems(block, ctx.theme), width).height;
+  const key =
+    drawKey(cssLessPaint, keyItems(block, ctx.theme), width).height +
+    goalKey(block, ctx, width, !hasValues(block)).key.height;
   if (block.orientation === "vertical") return chartHeight + Math.max(0, key - KEY_ROW);
   const names = barCategories(block, ctx.data.locale);
   const wraps = rowNames(names, width).wrapped.some((w) => w.lines.length > 1);
@@ -205,8 +230,17 @@ export function renderBar(
   const valueAxis = (height: number) =>
     block.percent ? shareAxis(ends, height, locale) : yAxis(ends, height, metric, locale);
   const ext = extents(block, stacked);
-  const ends = ext.flat().flat();
-  const empty = !series.some((s) => s.values.some(isNumber));
+  const empty = !hasValues(block);
+  const { goals, key: goalRow } = goalKey(block, ctx, size.width, empty);
+  const goalPad = Math.max(
+    ctx.theme.target.tick.width / 2 + ctx.theme.target.tick.haloWidth,
+    ctx.theme.target.pace.size / 2,
+  );
+  const clear = (end: number, reach: number[], neg: boolean) => {
+    const far = neg ? Math.min(end, ...reach) : Math.max(end, ...reach);
+    return { far, pad: far === end ? 0 : goalPad };
+  };
+  const ends = [...ext.flat().flat(), ...(empty ? [] : targetExtent(goals))];
   const totals = labelValues(block, stacked);
   const totalText = totals?.map((v) =>
     isNumber(v) ? formatValue(v, metric, locale, "compact") : "",
@@ -214,7 +248,15 @@ export function renderBar(
   const paints = seriesPaints(ctx.theme, series, block.groups?.length);
   const strokeOf = (k: number) => (paints[k] as SeriesPaint).stroke;
   const fillOf = (k: number) => (paints[k] as SeriesPaint).fill;
-  const key = drawKey(paint, keyItems(block, ctx.theme), size.width);
+  const seriesKey = drawKey(paint, keyItems(block, ctx.theme), size.width);
+  const key = {
+    height: goalRow.height + seriesKey.height,
+    svg:
+      goalRow.svg +
+      (goalRow.height > 0 && seriesKey.svg
+        ? `<g transform="translate(0,${goalRow.height})">${seriesKey.svg}</g>`
+        : seriesKey.svg),
+  };
   const parts: string[] = [key.svg];
   const label = block.title ?? series.map((s) => s.label).join(", ");
   const partial = series.map((s) =>
@@ -311,8 +353,14 @@ export function renderBar(
         if (grouped && showValues) {
           const text = (valueTexts[k] as string[])[i] as string;
           const neg = b < 0;
+          const { far, pad } = clear(
+            b,
+            goalReach(goals, i, series.length > 1 ? k : undefined),
+            neg,
+          );
+          const gap = VALUE_GAP + pad;
           parts.push(
-            svgText(paint, scale(b) + (neg ? -VALUE_GAP : VALUE_GAP), cy + offset, text, {
+            svgText(paint, scale(far) + (neg ? -gap : gap), cy + offset, text, {
               ...valueStyle,
               anchor: neg ? "end" : "start",
               color: "textMuted",
@@ -328,10 +376,12 @@ export function renderBar(
             ? Math.max(...ext.map((e) => (e[i] as [number, number])[1]), 0)
             : total;
           const neg = !stacked && total < 0;
+          const { far, pad } = clear(neg ? total : end, goalReach(goals, i), neg);
+          const gap = VALUE_GAP + pad;
           parts.push(
             svgText(
               paint,
-              scale(neg ? total : end) + (neg ? -VALUE_GAP : VALUE_GAP),
+              scale(far) + (neg ? -gap : gap),
               cy,
               (totalText as string[])[i] as string,
               {
@@ -349,6 +399,24 @@ export function renderBar(
       parts.push(svgLine(paint, zero, top, zero, top + n * rowH, "baseline"));
     }
     parts.push(...marks);
+    if (!empty && goals) {
+      parts.push(
+        ...goalMarks(ctx, goals, n, grouped, series.length, {
+          position: scale,
+          across: (i, k) => {
+            const thick = grouped ? GROUPED_THICKNESS : BAR_THICKNESS;
+            const cy = top + i * rowH + rowH / 2;
+            const offset =
+              k === undefined || !grouped
+                ? 0
+                : (k - (series.length - 1) / 2) * (GROUPED_THICKNESS + 2);
+            return [cy + offset - thick / 2, cy + offset + thick / 2];
+          },
+          span: [top, top + n * rowH],
+          horizontal: true,
+        }),
+      );
+    }
     if (empty) parts.push(emptyNote(paint, series, ctx, size.width / 2, top + (n * rowH) / 2));
     return svgRoot(
       size,
@@ -421,7 +489,9 @@ export function renderBar(
             ? Math.max(...ext.map((e) => (e[i] as [number, number])[1]), 0)
             : Math.min(...ext.map((e) => (e[i] as [number, number])[1]), 0)
           : total;
-        const ly = total >= 0 ? y(end) - 4 - LABEL_LINE / 2 : y(end) + 4 + LABEL_LINE / 2;
+        const { far, pad } = clear(end, goalReach(goals, i), total < 0);
+        const ly =
+          total >= 0 ? y(far) - 4 - pad - LABEL_LINE / 2 : y(far) + 4 + pad + LABEL_LINE / 2;
         parts.push(
           svgText(paint, x0 + bw / 2, ly, (totalText as string[])[i] as string, {
             ...valueStyle,
@@ -435,6 +505,22 @@ export function renderBar(
   });
 
   parts.push(...marks);
+  if (!empty && goals) {
+    const groupedBars = multi && !stacked;
+    parts.push(
+      ...goalMarks(ctx, goals, n, groupedBars, series.length, {
+        position: y,
+        across: (i, k) => {
+          const x0 = band(i) as number;
+          if (k === undefined || !groupedBars) return [x0, x0 + bw];
+          const x = x0 + (inner(k) as number);
+          return [x, x + inner.bandwidth()];
+        },
+        span: [plotLeft, plotRight],
+        horizontal: false,
+      }),
+    );
+  }
   const centre = (i: number) => (band(i) as number) + bw / 2;
   if (block.axis.kind === "time") {
     parts.push(
@@ -489,4 +575,68 @@ export function renderBar(
     parts.join(""),
     standalone,
   );
+}
+
+function goalMarks(
+  ctx: RenderContext,
+  goals: ChartTargets,
+  n: number,
+  grouped: boolean,
+  seriesCount: number,
+  geometry: {
+    position: (v: number) => number;
+    across: (i: number, k: number | undefined) => [number, number];
+    span: [number, number];
+    horizontal: boolean;
+  },
+): string[] {
+  const { paint, theme } = ctx;
+  const tick = theme.target.tick;
+  const { position, across, span, horizontal } = geometry;
+  const line = (a: number, b: number, at: number, stroke: string) =>
+    horizontal
+      ? `<line x1="${r(at)}" y1="${r(a)}" x2="${r(at)}" y2="${r(b)}"${stroke}/>`
+      : `<line x1="${r(a)}" y1="${r(at)}" x2="${r(b)}" y2="${r(at)}"${stroke}/>`;
+  const halo = `${paint.attrs(undefined, tick.halo)} stroke-width="${tick.width + 2 * tick.haloWidth}"`;
+  const ink = `${paint.attrs(undefined, tick.color, "hm-target")} stroke-width="${tick.width}"`;
+  const out: string[] = [];
+  for (const track of goals.tracks) {
+    if (!track.drawn) continue;
+    const k = grouped && seriesCount > 1 ? track.series : undefined;
+    for (let i = 0; i < n; i++) {
+      const v = track.values[i];
+      const [a, b] = across(i, k);
+      if (isNumber(v)) {
+        const at = position(v);
+        out.push(
+          line(a - tick.overhang, b + tick.overhang, at, halo),
+          line(a - tick.overhang, b + tick.overhang, at, ink),
+        );
+      }
+      const pace = track.pace?.[i];
+      if (isNumber(pace)) {
+        const mid = (a + b) / 2;
+        out.push(
+          horizontal ? paceMarker(ctx, position(pace), mid) : paceMarker(ctx, mid, position(pace)),
+        );
+      }
+    }
+  }
+  const w = goals.window;
+  if (w && isNumber(w.value)) {
+    const at = position(w.value);
+    out.push(
+      line(
+        span[0],
+        span[1],
+        at,
+        `${paint.attrs(undefined, theme.target.line.color, "hm-target")}${targetDash(ctx)}`,
+      ),
+    );
+    if (isNumber(w.pace ?? null)) {
+      const p = position(w.pace as number);
+      out.push(horizontal ? paceMarker(ctx, p, span[1]) : paceMarker(ctx, span[1] - 4, p));
+    }
+  }
+  return out;
 }
