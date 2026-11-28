@@ -98,7 +98,12 @@ describe("ratio scope", () => {
       blocks: [{ type: "kpi", metric: "conversion" }],
     };
     expect(diagnostics(dashboard, { orders: ["region"], sessions: ["region"] })).toEqual([]);
-    expect(diagnostics(dashboard, { orders: ["x"], sessions: ["y"] })).toEqual([]);
+    expect(
+      diagnostics(dashboard, { orders: ["x"], sessions: ["y"] }).map((d) => [d.code, d.pointer]),
+    ).toEqual([["HM2030", "/filters/0/column"]]);
+    expect(
+      diagnostics(dashboard, { orders: ["x"], sessions: ["y"] }).map((d) => d.severity),
+    ).toEqual(["warning"]);
   });
 
   it("B1: checks multi-source line charts and text blocks too", () => {

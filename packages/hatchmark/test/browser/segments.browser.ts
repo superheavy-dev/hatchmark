@@ -276,6 +276,29 @@ describe("segment toggle", () => {
     await page.close();
   });
 
+  for (const [query, canonical] of [
+    ["?segments=americas,americas", "americas"],
+    ["?segments=americas,paid_marketing", "paid_marketing,americas"],
+    ["?segments=paid_marketing,americas,paid_marketing", "paid_marketing,americas"],
+  ] as const) {
+    it(`rewrites ${query} to its canonical form`, async () => {
+      const { page, errors } = await open("toggles", query);
+      await settled(page);
+      await expect.poll(() => new URL(page.url()).searchParams.get("segments")).toBe(canonical);
+      expect(errors).toEqual([]);
+      await page.close();
+    });
+  }
+
+  it("leaves the default combination out of the URL however it is spelled", async () => {
+    const { page, errors } = await open("named-none", "?segments=americas,americas");
+    await settled(page);
+    await expect.poll(() => new URL(page.url()).searchParams.get("segments")).toBeNull();
+    expect(await chip(page, "americas").getAttribute("aria-pressed")).toBe("true");
+    expect(errors).toEqual([]);
+    await page.close();
+  });
+
   it("tells none of the segments apart from a segment named none", async () => {
     const { states } = await embedded("named-none");
     const { page, errors } = await open("named-none");

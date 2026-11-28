@@ -179,10 +179,14 @@ export function notBuiltYet(
 function filterTables(
   sources: Record<string, Source>,
   measures: PlannedMeasure[],
+  segmentFilters: Filter[] = [],
 ): Record<string, FileSource> | undefined {
-  const names = measures
-    .flatMap((m) => m.components)
-    .flatMap((c) => [...c.filters, ...(c.anyOf ?? []).flatMap((s) => s.filters)])
+  const names = [
+    ...measures
+      .flatMap((m) => m.components)
+      .flatMap((c) => [...c.filters, ...(c.anyOf ?? []).flatMap((s) => s.filters)]),
+    ...segmentFilters,
+  ]
     .flatMap((f) => (f.op === "in_table" || f.op === "not_in_table" ? [f.table] : []))
     .sort();
   const tables: Record<string, FileSource> = {};
@@ -286,7 +290,15 @@ function planReading(
         );
       return measure ? [measure] : [];
     });
-    const tables = filterTables(ctx.sources, measures);
+    const tables = filterTables(
+      ctx.sources,
+      measures,
+      ctx.params.flatMap((param) =>
+        param.kind === "segment"
+          ? param.segments.filter((s) => s.sources.includes(group.source)).flatMap((s) => s.filters)
+          : [],
+      ),
+    );
     const shape: Omit<PlannedQuery, "id"> = {
       source: group.source,
       input,
@@ -455,14 +467,20 @@ function planBlockAt(
   }
 
   const shown = shownMetrics(block);
-  const toggled = ctx.params.some(
+  const lookupKeys = ctx.params.some(
     (p) =>
       p.kind === "segment" &&
-      p.segments.some((s) => s.filters.some((f) => f.op === "in_table" || f.op === "not_in_table")),
+      p.segments.some((s) =>
+        s.filters.some(
+          (f) =>
+            (f.op === "in_table" || f.op === "not_in_table") &&
+            ctx.sources[f.table]?.type === "lookup",
+        ),
+      ),
   );
   for (const name of shown) {
-    const feature = toggled
-      ? "a segment filter with in_table filters"
+    const feature = lookupKeys
+      ? "a segment filter with in_table on a lookup source"
       : notBuiltYet(name, ctx.metrics, ctx.sources);
     if (feature === undefined) continue;
     return {

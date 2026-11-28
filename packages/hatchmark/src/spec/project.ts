@@ -6,7 +6,13 @@ import {
   type SpecDocument,
   type SpecNode,
 } from "../diagnostics/index.js";
-import { GLOB_CHARACTERS, IDENTIFIER_PATTERN, normalizePath, plainAggregate } from "./common.js";
+import {
+  GLOB_CHARACTERS,
+  hasColumn,
+  IDENTIFIER_PATTERN,
+  normalizePath,
+  plainAggregate,
+} from "./common.js";
 import type { FileSource } from "./config.js";
 import { PROJECT_DEFAULTS, type ProjectConfig, projectConfigSchema } from "./config.js";
 import { type Dashboard, dashboardSchema } from "./dashboard.js";
@@ -368,6 +374,21 @@ function typedSources(project: Project): Set<string> {
   for (const { spec } of project.metrics.values()) {
     if (spec?.type === "sql" && spec.additive && plainAggregate(spec.sql)?.fn === "sum") {
       out.add(spec.table);
+    }
+  }
+  const toggled = [...project.dashboards.values()].flatMap((d) =>
+    (d.spec?.filters ?? []).flatMap((filter) =>
+      filter.type === "segment"
+        ? filter.segments.flatMap((s) => project.segments.get(s)?.spec?.filters ?? [])
+        : [],
+    ),
+  );
+  for (const f of toggled) {
+    if (f.op !== "in_table" && f.op !== "not_in_table") continue;
+    out.add(f.table);
+    for (const source of Object.keys(project.config.spec?.sources ?? {})) {
+      const columns = project.columns.get(source);
+      if (columns === undefined || hasColumn(columns, f.column)) out.add(source);
     }
   }
   return out;

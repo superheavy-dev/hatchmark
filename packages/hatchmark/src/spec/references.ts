@@ -316,28 +316,36 @@ function checkSources(project: Project, out: Diagnostic[]): void {
   }
 }
 
-function checkKeyTypes(r: Reporter, project: Project, metric: TableMetric): void {
+function checkKeyType(
+  r: Reporter,
+  project: Project,
+  table: string,
+  filter: Filter,
+  pointer: string,
+): void {
+  if (filter.op !== "in_table" && filter.op !== "not_in_table") return;
   const typeOf = (source: string, name: string) =>
     project.columnTypes.get(source)?.find((c) => sameColumn(c.name, name))?.type;
-  const check = (filter: Filter, pointer: string) => {
-    if (filter.op !== "in_table" && filter.op !== "not_in_table") return;
-    const own = typeOf(metric.table, filter.column);
-    const key = typeOf(filter.table, filter.key);
-    if (own === undefined || key === undefined || keyComparison(own, key) !== undefined) return;
-    r.report(
-      "HM2029",
-      pointer,
-      `${filter.op} compares column "${filter.column}" (${own}) of "${metric.table}" with key "${filter.key}" (${key}) of "${filter.table}"`,
-      {
-        help: `store both columns with the same type: integers of any width match each other and text matches text; cast one side where the data is written, or read it with another type`,
-      },
-    );
-  };
+  const own = typeOf(table, filter.column);
+  const key = typeOf(filter.table, filter.key);
+  if (own === undefined || key === undefined || keyComparison(own, key) !== undefined) return;
+  r.report(
+    "HM2029",
+    pointer,
+    `${filter.op} compares column "${filter.column}" (${own}) of "${table}" with key "${filter.key}" (${key}) of "${filter.table}"`,
+    {
+      help: `store both columns with the same type: integers of any width match each other and text matches text; cast one side where the data is written, or read it with another type`,
+    },
+  );
+}
+
+function checkKeyTypes(r: Reporter, project: Project, metric: TableMetric): void {
   (metric.filters ?? []).forEach((f, i) => {
-    check(f, `/filters/${i}`);
+    checkKeyType(r, project, metric.table, f, `/filters/${i}`);
   });
   (metric.segments ?? []).forEach((name, i) => {
-    for (const f of project.segments.get(name)?.spec?.filters ?? []) check(f, `/segments/${i}`);
+    for (const f of project.segments.get(name)?.spec?.filters ?? [])
+      checkKeyType(r, project, metric.table, f, `/segments/${i}`);
   });
 }
 
@@ -1494,19 +1502,55 @@ function checkDashboard(project: Project, file: SpecFile<"dashboard">, out: Diag
     }
   });
 
-  dashboard.blocks.forEach((block, index) => {
+  const configured = project.config.spec?.sources ?? {};
+  const blockSources = dashboard.blocks.map((block) => {
     const names =
       block.type === "text"
         ? [...block.markdown.matchAll(TEXT_REFERENCE)].flatMap(
             (m) => TEXT_REFERENCE_BODY.exec((m[1] ?? "").trim())?.[1] ?? [],
           )
         : blockMetricRefs(block).map((ref) => ref.name);
-    const configured = project.config.spec?.sources ?? {};
-    const sources = new Set(
+    return new Set(
       names
         .flatMap((name) => [...metricSources(project, name)])
         .filter((s) => Object.hasOwn(configured, s)),
     );
+  });
+  const read = [...new Set(blockSources.flatMap((s) => [...s]))].sort();
+  const covers = (columns: string[]) => (source: string) =>
+    columns.every((c) => columnsOf(project, source)?.has(foldColumn(c)) === true);
+  if (read.length > 0 && read.every((s) => columnsOf(project, s) !== undefined)) {
+    (dashboard.filters ?? []).forEach((filter, i) => {
+      if (filter.type === "select" && !read.some(covers([filter.column]))) {
+        r.report(
+          "HM2030",
+          `/filters/${i}/column`,
+          `filter "${filter.id}" reads column "${filter.column}", which no source of this dashboard has (${read.join(", ")})`,
+          {
+            severity: "warning",
+            help: "name a column one of the dashboard's sources has, or remove the filter",
+          },
+        );
+      }
+      if (filter.type !== "segment") return;
+      filter.segments.forEach((name, j) => {
+        const columns = (project.segments.get(name)?.spec?.filters ?? []).map((f) => f.column);
+        if (columns.length === 0 || read.some(covers(columns))) return;
+        r.report(
+          "HM2030",
+          `/filters/${i}/segments/${j}`,
+          `segment "${name}" of filter "${filter.id}" filters on ${columns.map((c) => `"${c}"`).join(", ")}, which no source of this dashboard has (${read.join(", ")})`,
+          {
+            severity: "warning",
+            help: "toggle segments whose columns a source of this dashboard has, or remove it",
+          },
+        );
+      });
+    });
+  }
+
+  dashboard.blocks.forEach((block, index) => {
+    const sources = blockSources[index] ?? new Set<string>();
     if (sources.size < 2) return;
     const list = [...sources].sort();
     for (const filter of dashboard.filters ?? []) {
@@ -1698,6 +1742,14 @@ function checkDashboard(project: Project, file: SpecFile<"dashboard">, out: Diag
       }
       segmentFilter ??= filter.id;
       checkSegmentRefs(r, project, file, filter.segments, `/filters/${i}/segments`);
+      filter.segments.forEach((name, j) => {
+        const filters = project.segments.get(name)?.spec?.filters ?? [];
+        const columns = filters.map((f) => f.column);
+        const bound = read.filter((s) => columnsOf(project, s) === undefined || covers(columns)(s));
+        for (const f of filters)
+          for (const source of bound)
+            checkKeyType(r, project, source, f, `/filters/${i}/segments/${j}`);
+      });
       filter.segments.forEach((name, j) => {
         if (filter.segments.indexOf(name) !== j) {
           r.report("HM3007", `/filters/${i}/segments/${j}`, `segment "${name}" is listed twice`, {
