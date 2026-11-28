@@ -75,7 +75,7 @@ export function lowerFirst(text: string): string {
 export const isNumber = (v: Value | undefined): v is number =>
   typeof v === "number" && Number.isFinite(v);
 
-// hi - lo can overflow to Infinity for finite doubles; halving first cannot, and is exact.
+// Subtracting two finite doubles can overflow; halving before subtraction avoids that.
 export function fraction(v: number, lo: number, hi: number): number {
   return (v / 2 - lo / 2) / (hi / 2 - lo / 2);
 }
