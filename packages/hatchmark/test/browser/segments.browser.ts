@@ -9,7 +9,6 @@ import { formatValue } from "../../src/render/index.js";
 import { buildProject, removeProjects, writeExample } from "../node/fixture.js";
 import { toYaml } from "../yaml.js";
 
-/** The segment toggle on built pages: pressed state, numbers per combination, URL state. */
 const SEGMENTS = {
   paid_marketing: {
     label: "Paid marketing",

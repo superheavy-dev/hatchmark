@@ -120,7 +120,6 @@ async function segmentRun(dashboard: string) {
   }
 }
 
-/** Plain SQL over the CSV: the KPIs over a block's own window with the segments' conditions ANDed. */
 async function expectKpis(data: DashboardData, selected: readonly string[], label: string) {
   const span = kpi(data, "revenue").current;
   if (span === undefined) throw new Error("no window");

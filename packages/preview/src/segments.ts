@@ -3,11 +3,6 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { stringify } from "yaml";
 
-/**
- * Dashboards that show every variant of the segment filter on the global-sales sample data, built
- * into the preview's segments/ folder: toggles alone, toggles with one segment on by default, and
- * toggles next to period presets, and toggles next to the calendar and the grain filter.
- */
 const KPIS = [
   { type: "kpi", id: "revenue", metric: "revenue", sparkline: true },
   { type: "kpi", id: "orders", metric: "orders" },
