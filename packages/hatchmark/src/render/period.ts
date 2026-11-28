@@ -58,6 +58,7 @@ export function periodControl(
   data: DashboardData & { periodFilter: PeriodFilter },
   engine: string | undefined,
   weekStart: number,
+  geo: string[] = [],
 ): string {
   const filter = data.periodFilter;
   const locale = data.locale;
@@ -75,7 +76,7 @@ export function periodControl(
   const custom = filter.custom
     ? `<div class="hm-cal" data-hm-min="${esc(filter.custom.start)}" data-hm-end="${esc(filter.custom.end)}" data-hm-week="${weekStart}" data-hm-pattern="${esc(field.pattern)}"${field.digits ? ` data-hm-digits="${esc(field.digits)}"` : ""}><p class="hm-cal-title" id="${id}-c">Custom range</p><div class="hm-cal-fields"><label>Start<input type="text" inputmode="numeric" autocomplete="off" placeholder="${esc(field.pattern)}" data-hm-edge="start"${lang}></label><label>End<input type="text" inputmode="numeric" autocomplete="off" placeholder="${esc(field.pattern)}" data-hm-edge="end"${lang}></label></div><div class="hm-cal-months"></div><p class="hm-cal-status" aria-live="polite"></p><div class="hm-cal-actions"><button type="button" data-hm-cal="cancel">Cancel</button><button type="button" class="hm-primary" data-hm-cal="apply" disabled>Apply</button></div></div>`
     : "";
-  return `<div class="hm-period" data-hm-period="${esc(filter.id)}" data-hm-locale="${esc(locale)}"${engine ? ` data-hm-engine="${esc(engine)}"` : ""}><button type="button" class="hm-period-button" aria-haspopup="dialog" aria-expanded="false" aria-controls="${id}"><span class="hm-sr">${esc(filter.label)}: </span>${ICON}<span class="hm-period-name"${nameIsDates ? lang : ""}>${esc(name)}</span>${dates ? `<span class="hm-period-dates"${lang}>${esc(dates)}</span>` : ""}</button><div class="hm-period-panel" id="${id}" role="dialog" aria-label="${esc(filter.label)}" hidden><div class="hm-period-presets" role="radiogroup" aria-label="Presets">${presets}</div>${custom}</div></div>`;
+  return `<div class="hm-period" data-hm-period="${esc(filter.id)}" data-hm-locale="${esc(locale)}"${engine ? ` data-hm-engine="${esc(engine)}"` : ""}${geo.length > 0 ? ` data-hm-geo="${esc(geo.join(" "))}"` : ""}><button type="button" class="hm-period-button" aria-haspopup="dialog" aria-expanded="false" aria-controls="${id}"><span class="hm-sr">${esc(filter.label)}: </span>${ICON}<span class="hm-period-name"${nameIsDates ? lang : ""}>${esc(name)}</span>${dates ? `<span class="hm-period-dates"${lang}>${esc(dates)}</span>` : ""}</button><div class="hm-period-panel" id="${id}" role="dialog" aria-label="${esc(filter.label)}" hidden><div class="hm-period-presets" role="radiogroup" aria-label="Presets">${presets}</div>${custom}</div></div>`;
 }
 
 export function periodStyles(theme: Theme): string {

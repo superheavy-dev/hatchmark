@@ -67,4 +67,11 @@ export function rangeKey(range: RangeSpec): string {
   return `last_complete_${range.last_complete}`;
 }
 
+export const GEOGRAPHIES = ["us-states", "world-countries"] as const;
+export type GeographyId = (typeof GEOGRAPHIES)[number];
+export const MAP_SCALE_TYPES = ["quantile", "threshold", "linear"] as const;
+export const MAP_MIN_CLASSES = 3;
+export const MAP_MAX_CLASSES = 7;
+export const MAP_DEFAULT_CLASSES = 5;
+
 export const PIE_DEFAULT_LIMIT = 5;

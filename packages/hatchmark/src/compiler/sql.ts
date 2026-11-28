@@ -1,4 +1,12 @@
-import { type Filter, keyComparison, parseTemporal, sameColumn, WEEKDAYS } from "../spec/index.js";
+import { matchRegion, notDrawnIds, regionKeySql } from "../geo/aliases.js";
+import {
+  type Filter,
+  type GeographyId,
+  keyComparison,
+  parseTemporal,
+  sameColumn,
+  WEEKDAYS,
+} from "../spec/index.js";
 import { canonicalJson } from "./hash.js";
 import { segmentValues, selectValues } from "./params.js";
 import type { ExecutionContext, MeasureComponent, PlannedQuery } from "./plan.js";
@@ -139,6 +147,29 @@ function anyEqual(
     .join(" OR ")})`;
 }
 
+function sameRegion(
+  source: SqlSource,
+  name: string,
+  geo: GeographyId,
+  values: (string | number | boolean)[],
+  context: ExecutionContext,
+  sql: Sql,
+): string {
+  const ids = new Set<string>();
+  const raw: (string | number | boolean)[] = [];
+  for (const value of values) {
+    const match = matchRegion(geo, value);
+    if (match.kind === "matched" || match.kind === "not_drawn") ids.add(match.id);
+    else raw.push(value);
+  }
+  const key = regionKeySql(geo, quote(column(source, name).name));
+  const parts = [
+    ...(ids.size > 0 ? [`${key} IN (${[...ids].map((id) => sql.bind(id)).join(", ")})`] : []),
+    ...(raw.length > 0 ? [anyEqual(source, name, raw, context, sql)] : []),
+  ];
+  return `(${parts.join(" OR ")})`;
+}
+
 function filterSql(source: SqlSource, filter: Filter, context: ExecutionContext, sql: Sql): string {
   const q = quote(column(source, filter.column).name);
   switch (filter.op) {
@@ -220,6 +251,12 @@ function dimensionSql(
   context: ExecutionContext,
   sql: Sql,
 ): string {
+  if (dimension.kind === "time" && dimension.filters !== undefined) {
+    const { filters, ...plain } = dimension;
+    const bucket = dimensionSql(source, plain, context, sql);
+    const when = filters.map((f) => filterSql(source, f, context, sql));
+    return when.length === 0 ? bucket : `CASE WHEN ${when.join(" AND ")} THEN ${bucket} END`;
+  }
   if (dimension.kind === "time") {
     const local = `CAST(${localTime(source, dimension.column, context.timezone, sql)} AS DATE)`;
     const { grain } = dimension;
@@ -237,6 +274,7 @@ function dimensionSql(
   }
   const { name, type } = column(source, dimension.column);
   const q = quote(name);
+  if (dimension.kind === "region") return regionKeySql(dimension.geo, q);
   if (type === "VARCHAR" || type === "BOOLEAN" || type === "DATE" || NUMERIC.test(type)) return q;
   if (type.startsWith("DECIMAL")) return `CAST(${q} AS DOUBLE)`;
   if (isTimestamp(type)) {
@@ -300,11 +338,8 @@ function builtQuery(
   if (bounds === undefined) {
     throw new Error(`range "${query.window.range}" has no "${query.window.shift}" window`);
   }
-  if (
-    query.window.column !== undefined &&
-    (bounds.kind === "bounded" || bounds.end !== undefined)
-  ) {
-    const column = query.window.column;
+  const windowOn = (column: string | undefined): string[] => {
+    if (column === undefined || !(bounds.kind === "bounded" || bounds.end !== undefined)) return [];
     const [start, end] = [bounds.kind === "bounded" ? bounds.start : undefined, bounds.end];
     const local = [start, end].some((v) => v !== undefined && !v.endsWith("Z"))
       ? localTime(source, column, context.timezone, sql)
@@ -313,9 +348,13 @@ function builtQuery(
       value.endsWith("Z")
         ? `${instant(source, column, context.timezone, sql)} ${op} CAST(${sql.bind(value)} AS TIMESTAMPTZ)`
         : `${local} ${op} CAST(${sql.bind(value)} AS DATE)`;
-    if (start !== undefined) where.push(compare(start, ">="));
-    if (end !== undefined) where.push(compare(end, "<"));
-  }
+    return [
+      ...(start === undefined ? [] : [compare(start, ">=")]),
+      ...(end === undefined ? [] : [compare(end, "<")]),
+    ];
+  };
+  const perSet = query.measures.some((m) => m.components.some((c) => c.anyOf !== undefined));
+  if (!perSet) where.push(...windowOn(query.window.column));
   for (const param of query.params) {
     if (param.kind === "segment") {
       const on = segmentValues(param, context.bindings);
@@ -327,7 +366,12 @@ function builtQuery(
     }
     if (param.kind !== "select") continue;
     const values = selectValues(param, context.bindings);
-    if (values.length > 0) where.push(anyEqual(source, param.column, values, context, sql));
+    if (values.length === 0) continue;
+    where.push(
+      param.geo === undefined
+        ? anyEqual(source, param.column, values, context, sql)
+        : sameRegion(source, param.column, param.geo, values, context, sql),
+    );
   }
 
   const components = query.measures.flatMap((m) => m.components);
@@ -348,6 +392,14 @@ function builtQuery(
   const measureSql = components.map((c) => {
     const inWhere = shared !== undefined;
     const filters = inWhere ? [] : c.filters.map((f) => filterSql(source, f, context, sql));
+    const any = (c.anyOf ?? []).map((set) => {
+      const parts = [
+        ...windowOn(set.time),
+        ...set.filters.map((f) => filterSql(source, f, context, sql)),
+      ];
+      return parts.length > 0 ? `(${parts.join(" AND ")})` : "TRUE";
+    });
+    if (any.length > 0) filters.push(`(${any.join(" OR ")})`);
     const clause = filters.length > 0 ? ` FILTER (WHERE ${filters.join(" AND ")})` : "";
     const aggregate = `${aggregateSql(c, source)}${clause}`;
     return c.aggregate === "sum" ? `coalesce(${aggregate}, 0)` : aggregate;
@@ -357,6 +409,15 @@ function builtQuery(
   const dims = query.dimensions.map(
     (d, i) => `, ${dimensionSql(source, d, context, sql)} AS ${dimRefs[i]}`,
   );
+  query.dimensions.forEach((d, i) => {
+    if (d.kind !== "region" || d.unmatched === "keep") return;
+    const hidden = notDrawnIds(d.geo).map((id) => `'${id}'`);
+    where.push(
+      hidden.length === 0
+        ? `${dimRefs[i]} IS NOT NULL`
+        : `${dimRefs[i]} NOT IN (${hidden.join(", ")})`,
+    );
+  });
   const grouped = dimRefs.length > 0;
   const at = (id: string) => measureSql[components.findIndex((c) => c.id === id)];
   const floatSum = (id: string) => {

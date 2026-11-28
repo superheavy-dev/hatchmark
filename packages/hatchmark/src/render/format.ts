@@ -76,6 +76,30 @@ export function formatValue(
   );
 }
 
+/** A value in scientific notation with at most digits significant digits, in the metric's unit. */
+export function formatScientific(
+  value: number,
+  metric: Pick<MetricInfo, "format">,
+  locale: string,
+  digits: number,
+): string {
+  const f = metric.format;
+  const unit =
+    f.type === "percent"
+      ? { style: "percent" }
+      : f.type === "currency"
+        ? { style: "currency", currency: f.currency }
+        : {};
+  return minus(
+    numberFormat(locale, {
+      ...unit,
+      signDisplay: "negative",
+      notation: "scientific",
+      maximumSignificantDigits: digits,
+    } as Intl.NumberFormatOptions).format(value),
+  );
+}
+
 export function formatTicks(
   ticks: number[],
   metric: Pick<MetricInfo, "format">,

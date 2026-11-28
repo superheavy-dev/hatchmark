@@ -23,6 +23,7 @@ import {
   docsCommand,
   renderHuman,
 } from "../diagnostics/index.js";
+import { GEOGRAPHY_DATA, usedGeographies } from "../geo/index.js";
 import { createDuckDbExecutor, nodeProjectHost } from "../node/index.js";
 import {
   cssPaint,
@@ -39,6 +40,7 @@ import { esc } from "../render/svg.js";
 import {
   CONFIG_FILE,
   checkReferences,
+  type GeographyId,
   loadProject,
   type Project,
   type ProjectConfig,
@@ -143,7 +145,7 @@ export async function startDevServer(
   const first = await loadProject(host);
   if (first.project === undefined) return { report: createReport(first.diagnostics) };
 
-  const assets = await bundledAssets(true);
+  const assets = await bundledAssets(true, Object.keys(GEOGRAPHY_DATA) as GeographyId[]);
   let project: Project | undefined;
   let config: ProjectConfig | undefined;
   let executor: (DashboardExecutor & { close(): Promise<void> }) | undefined;
@@ -174,13 +176,20 @@ export async function startDevServer(
   };
 
   const render = ({ data, periods, segments }: Page): Rendered => {
+    const geographies = usedGeographies(data.blocks);
     const html = renderDashboardPage(data, {
       assets: assets.assetsFrom("../"),
       sources: config ? sourceNames(config) : [],
+      geographies,
       ...(periods ? { periods } : {}),
       ...(segments ? { segments } : {}),
     });
-    const items = gridItems(data.blocks, { data, theme: DEFAULT_THEME, paint: cssPaint });
+    const items = gridItems(data.blocks, {
+      data,
+      theme: DEFAULT_THEME,
+      paint: cssPaint,
+      geographies,
+    });
     const grid = `<main class="hm-grid">${items.map((i) => i.html).join("")}</main>`;
     const at = html.indexOf(grid);
     const cut = at < 0 ? html : `${html.slice(0, at)}${html.slice(at + grid.length)}`;

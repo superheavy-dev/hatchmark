@@ -1,4 +1,11 @@
-import type { Anchors, Comparison, Format, RangeSpec, TimeGrain } from "../spec/index.js";
+import type {
+  Anchors,
+  Comparison,
+  Format,
+  GeographyId,
+  RangeSpec,
+  TimeGrain,
+} from "../spec/index.js";
 import type { HeightPreset } from "../spec/layout.js";
 import type { SourceHorizon } from "./horizons.js";
 
@@ -380,7 +387,71 @@ export interface ScatterData extends BlockCommon {
   empty?: EmptyWindow;
 }
 
-export type BlockData = KpiData | LineData | BarData | PieData | TableData | ScatterData;
+/** One region of a map with rows in the window. */
+export interface MapRegion {
+  /** The region id: USPS code for us-states, ISO 3166-1 alpha-3 for world-countries. */
+  id: string;
+  /** The metric over the rows of every value that matched this region, recomputed from rows. */
+  value: Value;
+  /** 1 for the highest value; ties share a rank (1, 2, 2, 4). Absent when value is null. */
+  rank?: number;
+  /** value / MapData.total, as a fraction, for additive metrics only; absent otherwise. */
+  share?: number;
+  /** The colour class, 0 for the lowest; absent when value is null (drawn as no data). */
+  class?: number;
+}
+
+/** One distinct value of a map's region column, and the region it joined. */
+export interface MapMatch {
+  key: string | number | boolean | null;
+  /** The drawn region the value matched; null when it matched none or a region the map does not draw. */
+  region: string | null;
+  /** Rows in the window with this value, summed over every source the value metric reads. */
+  rows: number;
+  value: Value;
+}
+
+/**
+ * The classes a map colours by. breaks are the lower bounds of classes 1..n-1, ascending: a value
+ * equal to a break falls in the class above it. A diverging scale (midpoint set) colours classes
+ * below the midpoint with one hue and above it with the other; with an odd number of classes the
+ * middle class straddles the midpoint and is neutral.
+ */
+export interface MapScale {
+  type: "quantile" | "threshold" | "linear";
+  classes: number;
+  breaks: number[];
+  midpoint?: number;
+  /** The lowest and highest region value; absent when no region has a value. */
+  domain?: [number, number];
+}
+
+/**
+ * A choropleth map: one metric by region, every region computed once from all rows that matched
+ * it (values naming the same region in different ways are grouped in SQL, never summed). Rows whose
+ * value matches no drawn region are left out of regions and total, and listed in match.
+ */
+export interface MapData extends BlockCommon {
+  type: "map";
+  geo: GeographyId;
+  metric: string;
+  column: string;
+  pair: "bars" | "none";
+  /** Regions with rows, highest value first, null values last, ties by id. */
+  regions: MapRegion[];
+  /** The metric over every matched row (SQL ROLLUP's grand total over the drawn regions). */
+  total: Value;
+  /** True when the metric adds up across regions, so shares of total are meaningful. */
+  additive: boolean;
+  scale: MapScale;
+  /** Every distinct value of the region column in the window, in key order. */
+  match: MapMatch[];
+  window?: DateSpan;
+  /** Set when the window is empty: no regions, and the total is null. */
+  empty?: EmptyWindow;
+}
+
+export type BlockData = KpiData | LineData | BarData | PieData | TableData | ScatterData | MapData;
 
 /** One preset of a period filter. */
 export interface PeriodOption {

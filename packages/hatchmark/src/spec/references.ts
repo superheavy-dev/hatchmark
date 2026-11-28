@@ -907,6 +907,8 @@ function blockMetricRefs(block: Block): { pointer: string; name: string }[] {
         { pointer: "/y", name: block.y },
         ...(block.size === undefined ? [] : [{ pointer: "/size", name: block.size }]),
       ];
+    case "map":
+      return [{ pointer: "/value", name: block.value }];
     case "text":
       return [];
   }
@@ -1170,6 +1172,45 @@ function checkScatter(r: Reporter, block: Block & { type: "scatter" }, base: str
   }
 }
 
+function checkMap(
+  r: Reporter,
+  block: Block & { type: "map" },
+  base: string,
+  metrics: ReadonlyMap<string, Metric>,
+): void {
+  const metric = metrics.get(block.value);
+  if (metric !== undefined && groupAdditive(block.value, metrics)) {
+    r.report(
+      "HM5040",
+      `${base}/value`,
+      `"${block.value}" adds up across rows, so a filled map of it mostly shows where most people or customers are`,
+      {
+        severity: "warning",
+        label: "a sum or count colours large regions darkest",
+        help: `map a ratio instead, such as "${block.value}" per customer or per capita (a ratio metric with numerator: ${block.value}); bubble maps, which suit totals, are not available yet`,
+      },
+    );
+  }
+  const scale = block.scale;
+  if (scale?.midpoint === undefined || scale.breaks === undefined) return;
+  const { breaks, midpoint } = scale;
+  const below = breaks.filter((b) => b < midpoint).length;
+  const above = breaks.filter((b) => b > midpoint).length;
+  const on = breaks.includes(midpoint);
+  const centred = on ? below === above : below === above && breaks.length % 2 === 0;
+  if (!centred) {
+    r.report(
+      "HM2032",
+      `${base}/scale/midpoint`,
+      `midpoint ${midpoint} does not sit in the middle of the breaks [${breaks.join(", ")}]`,
+      {
+        label: "a diverging scale needs as many classes on each side of its midpoint",
+        help: "with an even number of classes make the midpoint the middle break; with an odd number put it inside the middle class, with as many breaks below it as above",
+      },
+    );
+  }
+}
+
 function checkDashboard(project: Project, file: SpecFile<"dashboard">, out: Diagnostic[]): void {
   const dashboard = file.spec;
   if (dashboard === undefined) return;
@@ -1264,7 +1305,8 @@ function checkDashboard(project: Project, file: SpecFile<"dashboard">, out: Diag
         block.type === "bar" ||
         block.type === "pie" ||
         block.type === "donut" ||
-        block.type === "scatter") &&
+        block.type === "scatter" ||
+        block.type === "map") &&
       block.span !== undefined &&
       block.span < MIN_CHART_SPAN
     ) {
@@ -1372,6 +1414,7 @@ function checkDashboard(project: Project, file: SpecFile<"dashboard">, out: Diag
     if (block.type === "line" || block.type === "area" || block.type === "bar") {
       checkGroups(r, file, block, base);
     }
+    if (block.type === "map") checkMap(r, block, base, metrics);
 
     if ((block.type === "table" || block.type === "bar") && block.sort) {
       const allowed = [

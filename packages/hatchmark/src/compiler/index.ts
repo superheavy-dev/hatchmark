@@ -4,6 +4,8 @@ export * from "./defaults.js";
 export * from "./explain.js";
 export * from "./hash.js";
 export * from "./horizons.js";
+export * from "./map-report.js";
+export * from "./map-scale.js";
 export * from "./params.js";
 export * from "./period-build.js";
 export * from "./period-data.js";

@@ -368,3 +368,76 @@ describe.each(["light", "dark"] as const)("Default theme group tokens, %s", (mod
     for (const v of mins(measured.vsContext)) expect(v).toBeGreaterThanOrEqual(GROUP_BARS.context);
   });
 });
+
+const MAP_FLOOR = { adjacent: 8, lowestVsLand: 10, lowestVsNoData: 10, topVsCard: 3 } as const;
+
+const hex = (rgb: Rgb) =>
+  `#${rgb
+    .map((v) => {
+      const s = v <= 0.0031308 ? 12.92 * v : 1.055 * v ** (1 / 2.4) - 0.055;
+      return Math.round(Math.min(1, Math.max(0, s)) * 255)
+        .toString(16)
+        .padStart(2, "0");
+    })
+    .join("")}`;
+
+const noDataMean = (mode: Mode) => {
+  const { spacing, strokeWidth, opacity } = tokens.map.noData[mode];
+  const line = (strokeWidth * Math.SQRT2) / spacing;
+  const alpha = (2 * line - line * line) * opacity;
+  const land = linear(tokens.color[mode].land);
+  const ink = linear(tokens.color[mode][tokens.map.noData[mode].line as "textSubtle"]);
+  return hex(land.map((v, i) => v * (1 - alpha) + (ink[i] as number) * alpha) as Rgb);
+};
+
+const floorOf = (pairs: Pairs) => Math.min(...Object.values(pairs).map((p) => p.min));
+
+describe.each(["light", "dark"] as const)("Map class tokens, %s", (mode: Mode) => {
+  const { card, land } = tokens.color[mode];
+  const sequential = Object.entries(tokens.data[mode].sequentialClasses);
+  const diverging = Object.entries(tokens.data[mode].divergingClasses);
+
+  test("offers 3 to 7 sequential and 4 to 7 diverging classes", () => {
+    expect(sequential.map(([n, h]) => [n, h.length])).toEqual(
+      [3, 4, 5, 6, 7].map((n) => [String(n), n]),
+    );
+    expect(diverging.map(([n, h]) => [n, h.length])).toEqual(
+      [4, 5, 6, 7].map((n) => [String(n), n]),
+    );
+  });
+
+  test.each([...sequential, ...diverging])(
+    "%s classes: adjacent classes stay apart under every simulation",
+    (n, hexes) => {
+      expect(floorOf(closest(hexes, adjacent(hexes.length))), n).toBeGreaterThanOrEqual(
+        MAP_FLOOR.adjacent,
+      );
+    },
+  );
+
+  test.each(sequential)(
+    "%s sequential classes: the lowest stands off land and no-data",
+    (_, hexes) => {
+      const lowest = hexes[0] as string;
+      expect(floorOf(closest([lowest, land], [[0, 1]]))).toBeGreaterThanOrEqual(
+        MAP_FLOOR.lowestVsLand,
+      );
+      expect(floorOf(closest([lowest, noDataMean(mode)], [[0, 1]]))).toBeGreaterThanOrEqual(
+        MAP_FLOOR.lowestVsNoData,
+      );
+    },
+  );
+
+  test.each(sequential)(
+    "%s sequential classes: the top is at least 3:1 on the card",
+    (_, hexes) => {
+      expect(contrast(hexes.at(-1) as string, card)).toBeGreaterThanOrEqual(MAP_FLOOR.topVsCard);
+    },
+  );
+
+  test("diverging classes put the neutral in the middle of odd counts", () => {
+    for (const [n, hexes] of diverging)
+      if (hexes.length % 2 === 1)
+        expect(hexes[(hexes.length - 1) / 2], n).toBe(tokens.data[mode].divergingNeutral);
+  });
+});

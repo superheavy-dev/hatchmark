@@ -46,6 +46,7 @@ import {
   revenueSwitch,
   WEEK,
 } from "./grains.js";
+import { MAPS } from "./maps.js";
 import {
   TABLE_GROUP_CAMPAIGNS,
   TABLE_GROUP_CITIES,
@@ -68,7 +69,17 @@ import {
 } from "./tables.js";
 
 export interface GalleryVariant {
-  component: "kpi" | "line" | "bar" | "stacked" | "pie" | "scatter" | "table" | "groups" | "height";
+  component:
+    | "kpi"
+    | "line"
+    | "bar"
+    | "stacked"
+    | "pie"
+    | "scatter"
+    | "table"
+    | "groups"
+    | "height"
+    | "map";
   variant: string;
   title: string;
   data: DashboardData;
@@ -629,7 +640,7 @@ const TABLES: GalleryVariant[] = [
   one(
     "table",
     "table-other-distinct",
-    "Other row on a distinct count: shown as — (check warns HM4063)",
+    "Other row on a distinct count: shown as —, since distinct counts cannot be added up",
     TABLE_OTHER_DISTINCT,
   ),
   one(
@@ -669,7 +680,7 @@ const TABLES: GalleryVariant[] = [
   one(
     "table",
     "table-tall-shared-page",
-    'Sharing a row with "overflow": "page": grows, and the chart beside it stretches (check warns HM2026)',
+    'Sharing a row with "overflow": "page": grows, and the chart beside it stretches to match',
     { ...TABLE_TALL, id: "tall_shared_page", span: 8, overflow: "page" },
     { ...COUNTRY_BAR, id: "beside_page", span: 4 },
   ),
@@ -1759,6 +1770,7 @@ export const GALLERY: GalleryVariant[] = [
   ...TABLES,
   ...GROUPS,
   ...HEIGHTS,
+  ...MAPS,
 ];
 
 export type { KpiData };

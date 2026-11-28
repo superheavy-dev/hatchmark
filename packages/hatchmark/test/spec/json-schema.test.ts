@@ -29,6 +29,8 @@ const DEFINITIONS: Record<SpecKind, string[]> = {
     "Grain",
     "KpiBlock",
     "LineBlock",
+    "MapBlock",
+    "MapScale",
     "Period",
     "PeriodRange",
     "Range",

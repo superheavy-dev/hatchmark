@@ -5,6 +5,8 @@ import type {
   SeriesGroup,
   Value,
 } from "../compiler/dashboard-data.js";
+import type { Geography } from "../geo/types.js";
+import type { GeographyId } from "../spec/units.js";
 import { yTicks } from "./axis.js";
 import { formatTicks } from "./format.js";
 import { textWidth } from "./measure.js";
@@ -15,7 +17,11 @@ export interface RenderContext {
   data: DashboardData;
   theme: Theme;
   paint: Paint;
+  /** Boundaries for map blocks, by geography; a page passes only those its maps draw. */
+  geographies?: Geographies;
 }
+
+export type Geographies = Partial<Record<GeographyId, Geography>>;
 
 export interface ChartSize {
   width: number;

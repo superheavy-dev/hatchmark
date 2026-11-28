@@ -28,8 +28,10 @@ ZONE` value is converted to it. A timestamp without an offset (`2026-01-31 18:30
   with HM4011. Data checks warn when a source is more than a day behind the as-of (HM4010), when a
   column's newest value is more than a day after the build machine's clock (HM4012; the clock never
   changes the output), and when a block's window starts after the data it reads ends (HM4013). These data
-  checks run wherever data is read: `hatchmark build`, `check --sql` and `explain`; a plain
-  `hatchmark check` reads no data.
+  checks run wherever data is read: `hatchmark build`, `check --sql` and `explain`. A plain
+  `hatchmark check` reads data only for dashboards with a map, to build each map's match report
+  (HM5041–HM5043); when that data cannot be read, `check` fails with the read's diagnostics rather
+  than skip the report.
 - **Windows end at the last complete day.** A measure is complete through the earliest horizon
   of the sources it reads (a ratio through its laggiest operand) and never past the as-of. When
   that is before the end of its window, a KPI, table or category chart reads whole local days

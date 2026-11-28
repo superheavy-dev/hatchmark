@@ -6,6 +6,7 @@ import type {
   GrainSwitch,
   KpiData,
   LineData,
+  MapData,
   PieData,
   ScatterData,
   TableData,
@@ -13,12 +14,14 @@ import type {
 import type { PeriodData } from "../compiler/period-data.js";
 import type { SegmentData } from "../compiler/segment-build.js";
 import { type HeightPreset, layoutItems, MIN_CHART_SPAN } from "../spec/layout.js";
+import type { GeographyId } from "../spec/units.js";
 import { barCategories, barHeight, renderBar } from "./bar.js";
-import type { RenderContext } from "./chart.js";
+import type { Geographies, RenderContext } from "./chart.js";
 import { chartRuntimeData, chartTable, describeChart } from "./describe.js";
 import { formatDate, formatSpan, recordRanges } from "./format.js";
 import { renderKpi } from "./kpi.js";
 import { renderLine } from "./line.js";
+import { MAP_LIST_WIDTH, mapBody, mapHeading, mapStyles } from "./map.js";
 import { timeOf } from "./partial.js";
 import { PERIOD_MOBILE, periodCaption, periodControl, periodStyles, periodText } from "./period.js";
 import { isPie, pieHeight, renderPie } from "./pie.js";
@@ -39,6 +42,7 @@ import {
   type Device,
   groupColorKeys,
   hexPaint,
+  MAP_COLORS,
   type Mode,
   type Theme,
 } from "./theme.js";
@@ -98,6 +102,11 @@ export interface PageAssets {
   runtime: string;
   periods?: string;
   fonts: Record<string, string>;
+  /**
+   * Scripts holding a geography's boundaries, by id, for the period engine to redraw maps; listed
+   * only for pages whose maps a period filter redraws.
+   */
+  geo?: Partial<Record<GeographyId, string>>;
 }
 
 export interface PageOptions {
@@ -107,10 +116,12 @@ export interface PageOptions {
   periods?: PeriodData;
   /** Every combination of the segment filter, embedded in the page (runSegmentData). */
   segments?: SegmentData;
+  /** Boundaries for the page's map blocks. */
+  geographies?: Geographies;
 }
 
-function context(data: DashboardData, theme: Theme): RenderContext {
-  return { data, theme, paint: cssPaint };
+function context(data: DashboardData, theme: Theme, geographies?: Geographies): RenderContext {
+  return { data, theme, paint: cssPaint, ...(geographies ? { geographies } : {}) };
 }
 
 const humanize = (column: string) => column.replaceAll("_", " ");
@@ -342,6 +353,17 @@ function tableStyle(block: TableData, ctx: RenderContext, alone: boolean): strin
   );
 }
 
+function mapCard(block: MapData, ctx: RenderContext): string {
+  const { title, subtitle } = mapHeading(block, ctx);
+  const id = `hm-${block.id}-t`;
+  const span = Math.max(block.span, MIN_CHART_SPAN);
+  const widths = LAYOUTS.map(
+    (layout) => cardWidth(layout, span, ctx.theme) - 2 * ctx.theme.density.cardPadding - 2,
+  );
+  const body = mapBody(block, ctx, title, widths, ctx.geographies?.[block.geo]);
+  return `<section class="hm-card hm-map-card" style="--span:${span}" aria-labelledby="${esc(id)}"><header class="hm-card-head"><h2 id="${esc(id)}">${esc(title)}</h2>${subtitle ? `<p>${esc(subtitle)}</p>` : ""}</header>${body}</section>`;
+}
+
 function card(
   block: LineData | BarData | PieData | TableData | ScatterData,
   ctx: RenderContext,
@@ -408,13 +430,22 @@ export function gridItems(blocks: readonly BlockData[], ctx: RenderContext): Gri
     const shown = item.blocks.map((i) => blocks[i] as BlockData);
     if (item.kind === "strip") return strip(shown as KpiData[], ctx, item.height);
     const block = shown[0] as Exclude<BlockData, KpiData>;
-    return { blocks: [block.id], html: card(block, ctx, item.alone, item.height) };
+    return {
+      blocks: [block.id],
+      html: block.type === "map" ? mapCard(block, ctx) : card(block, ctx, item.alone, item.height),
+    };
   });
 }
 
-function themeVariables(theme: Theme, mode: Mode): string {
+function themeVariables(theme: Theme, mode: Mode, maps: boolean): string {
   return [
     ...COLOR_KEYS.map((k) => `${cssVar(k)}:${colorValue(theme, mode, k)}`),
+    ...(maps
+      ? [
+          ...MAP_COLORS.map((k) => `${cssVar(k)}:${colorValue(theme, mode, k)}`),
+          `--hm-nodata:${theme.noData.opacity[mode]}`,
+        ]
+      : []),
     `--hm-partial-region:${theme.partial.regionOpacity[mode]}`,
   ].join(";");
 }
@@ -447,6 +478,7 @@ export function pageStyles(
   theme: Theme = DEFAULT_THEME,
   groups = false,
   segments = false,
+  maps = false,
 ): string {
   const d = theme.density;
   const fonts = FONT_FILES.filter((f) => assets.fonts[f.file] !== undefined)
@@ -458,8 +490,8 @@ export function pageStyles(
   const paint = COLOR_KEYS.map(
     (k) => `.hm-f-${k}{fill:var(${cssVar(k)})}.hm-s-${k}{stroke:var(${cssVar(k)})}`,
   ).join("");
-  const light = themeVariables(theme, "light");
-  const dark = themeVariables(theme, "dark");
+  const light = themeVariables(theme, "light", maps);
+  const dark = themeVariables(theme, "dark", maps);
   const layouts = LAYOUTS.map((layout, i) => {
     const upper = LAYOUTS[i - 1];
     const query = [
@@ -476,7 +508,10 @@ export function pageStyles(
     const mobile = layout.mobile
       ? `${PERIOD_MOBILE}.hm-header{flex-direction:column;align-items:flex-start}.hm-header-side{align-items:flex-start;align-self:stretch}.hm-kpi-value{font-size:20px;line-height:28px;letter-spacing:-0.01em}.hm-kpi-figure{gap:6px}.hm-track{display:none}.hm-table td.hm-cellbar,.hm-table td.hm-share{padding-left:16px}.hm-table:is(.hm-ma,.hm-mb) tr>.hm-outer{width:0;min-width:0;max-width:0;padding:0;border-left:0;overflow:hidden}.hm-table:is(.hm-ma,.hm-mb) tr>.hm-outer>*{position:absolute;width:1px;height:1px;margin:-1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap}.hm-table:is(.hm-ma,.hm-mb) thead tr>.hm-outer>*{display:none}.hm-table:is(.hm-ma,.hm-mb) tr>.hm-fill{position:sticky;left:0;z-index:1;padding-left:0;padding-right:12px;background:var(--hm-card);box-shadow:inset -1px 0 0 var(--hm-border)}.hm-table:is(.hm-ma,.hm-mb) thead tr>.hm-fill{z-index:3}.hm-tall .hm-table:is(.hm-ma,.hm-mb) thead tr>.hm-fill{box-shadow:inset -1px 0 0 var(--hm-border),inset 0 -1px 0 var(--hm-border-strong)}.hm-table:is(.hm-ma,.hm-mb) .hm-fill span{max-width:176px}.hm-table:is(.hm-ma,.hm-mb) tr>.hm-fill+*{padding-left:12px}.hm-table:is(.hm-ma,.hm-mb) .hm-key span.hm-m{display:-webkit-box}.hm-table .hm-key span.hm-msub{-webkit-line-clamp:1;font-size:12px;line-height:16px;font-weight:400;color:var(--hm-text-muted)}.hm-table.hm-deep tr[data-hm-level="2"] .hm-m{padding-left:12px}.hm-table.hm-deep tr:not(.hm-subtotal)>.hm-fill>span{padding-left:24px}.hm-table:is(.hm-ma,.hm-mb) tfoot tr>:first-child{box-shadow:inset -1px 0 0 var(--hm-border)}.hm-tall .hm-table:is(.hm-ma,.hm-mb) tfoot tr>:first-child{box-shadow:inset -1px 0 0 var(--hm-border),inset 0 1px 0 var(--hm-border-strong)}`
       : "";
-    return `@container hm ${query}{.hm-page{${width};padding:${layout.page}px 0}.hm-l${i}{display:block}${column}${mobile}}`;
+    const mapSide = !maps
+      ? ""
+      : `.hm-ms${i}{grid-template-columns:minmax(0,1fr) ${MAP_LIST_WIDTH}px}.hm-ms${i} .hm-map-side{position:relative;min-height:160px}.hm-ms${i} .hm-map-side-in{position:absolute;inset:0}.hm-ms${i} .hm-map-list{flex:0 1 auto;min-height:0;max-height:none}`;
+    return `@container hm ${query}{.hm-page{${width};padding:${layout.page}px 0}.hm-l${i}{display:block}${column}${mobile}${mapSide}}`;
   }).join("");
   return [
     fonts,
@@ -522,6 +557,14 @@ export function pageStyles(
     `.hm-tip{position:absolute;z-index:10;pointer-events:none;min-width:168px;max-width:260px;display:flex;flex-direction:column;gap:6px;padding:8px 10px;background:var(--hm-card);border:1px solid var(--hm-border-strong);border-radius:${theme.radius.tooltip}px;box-shadow:var(--hm-shadow)}`,
     `.hm-kpi .hm-tip{position:fixed}.hm-tip-h{font-size:12px;line-height:16px;font-weight:500}.hm-tip-s{font-size:12px;line-height:16px;margin-top:-4px;color:var(--hm-text-muted)}.hm-tip-r{display:flex;justify-content:space-between;align-items:center;gap:16px}.hm-tip-n{display:flex;align-items:center;gap:6px;color:var(--hm-text-muted);min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.hm-tip-n i{width:10px;height:2px;border-radius:1px;flex-shrink:0}.hm-tip-sq .hm-tip-n i{width:8px;height:8px;border-radius:2px}.hm-tip i.hm-tip-hatch{width:10px;height:10px;border-radius:0;flex-shrink:0;box-sizing:border-box;color:var(--hm-text-subtle);border:1px solid currentColor;background:repeating-linear-gradient(135deg,color-mix(in srgb,currentColor 75%,transparent) 0 1px,transparent 1px 3px),color-mix(in srgb,currentColor 10%,transparent)}.hm-tip-s{display:flex;align-items:center;gap:6px}.hm-pr{opacity:var(--hm-partial-region)}.hm-tip-v{font-weight:500;white-space:nowrap}.hm-tip-p{display:inline-block;min-width:52px;text-align:right;font-weight:400;color:var(--hm-text-muted)}.hm-tip-t{padding-top:6px;border-top:1px solid var(--hm-border)}.hm-tip-t .hm-tip-v{font-weight:600}`,
     paint,
+    ...(maps
+      ? [
+          MAP_COLORS.map(
+            (k) => `.hm-f-${k}{fill:var(${cssVar(k)})}.hm-bg-${k}{background:var(${cssVar(k)})}`,
+          ).join(""),
+          mapStyles(theme),
+        ]
+      : []),
     COLOR_KEYS.filter((k) => /^[cf]\d$/.test(k))
       .map(
         (k) =>
@@ -542,13 +585,14 @@ export function pageHead(
   theme: Theme = DEFAULT_THEME,
   groups = false,
   segments = false,
+  maps = false,
 ): string {
   const preload = FONT_FILES.filter((f) => f.file.endsWith("-Latin1.woff2") && f.weight !== 600)
     .map((f) => assets.fonts[f.file])
     .filter((url) => url !== undefined)
     .map((url) => `<link rel="preload" href="${esc(url)}" as="font" type="font/woff2" crossorigin>`)
     .join("");
-  return `${preload}<style>${pageStyles(assets, theme, groups, segments)}</style><script>${THEME_SCRIPT}</script><script defer src="${esc(assets.runtime)}"></script>`;
+  return `${preload}<style>${pageStyles(assets, theme, groups, segments, maps)}</style><script>${THEME_SCRIPT}</script><script defer src="${esc(assets.runtime)}"></script>`;
 }
 
 function document(title: string, head: string, body: string): string {
@@ -568,12 +612,20 @@ ${head}
 `;
 }
 
-export function renderDashboardBlocks(data: DashboardData, theme: Theme = DEFAULT_THEME): string {
-  return renderBlocks(data.blocks, context(data, theme));
+export function renderDashboardBlocks(
+  data: DashboardData,
+  theme: Theme = DEFAULT_THEME,
+  geographies?: Geographies,
+): string {
+  return renderBlocks(data.blocks, context(data, theme, geographies));
 }
 
-export function renderFragment(data: DashboardData, theme: Theme = DEFAULT_THEME): string {
-  return `<div class="hm-root"><div class="hm-page"><div class="hm-grid">${renderBlocks(data.blocks, context(data, theme))}</div></div></div>`;
+export function renderFragment(
+  data: DashboardData,
+  theme: Theme = DEFAULT_THEME,
+  geographies?: Geographies,
+): string {
+  return `<div class="hm-root"><div class="hm-page"><div class="hm-grid">${renderBlocks(data.blocks, context(data, theme, geographies))}</div></div></div>`;
 }
 
 export function renderDashboardPage(data: DashboardData, options: PageOptions): string {
@@ -586,7 +638,7 @@ export function renderDashboardPage(data: DashboardData, options: PageOptions): 
       ...[periods, ...states.map((s) => s.periods)].flatMap((p) => Object.values(p?.presets ?? {})),
     ];
     for (const preset of shown) {
-      renderDashboardBlocks(preset, options.theme);
+      renderDashboardBlocks(preset, options.theme, options.geographies);
       periodCaption(preset);
       if (preset.periodFilter) periodText(preset.periodFilter, preset.locale);
     }
@@ -603,15 +655,19 @@ const RANGES_SLOT = "<!--hm-ranges-->";
 
 function dashboardPage(data: DashboardData, options: PageOptions): string {
   const theme = options.theme ?? DEFAULT_THEME;
-  const ctx = context(data, theme);
+  const ctx = context(data, theme, options.geographies);
   const locale = data.locale;
   const asOf = `<p class="hm-asof">Data through ${esc(formatDate(data.asOf, locale))}</p>`;
+  const geo = Object.keys(options.geographies ?? {}).flatMap(
+    (id) => options.assets.geo?.[id as GeographyId] ?? [],
+  );
   const controls = [
     data.periodFilter
       ? periodControl(
           { ...data, periodFilter: data.periodFilter },
           options.periods ? options.assets.periods : undefined,
           WEEK_ORDER.indexOf(data.anchors.week),
+          options.periods ? geo : [],
         )
       : "",
     data.grainFilter
@@ -633,7 +689,7 @@ function dashboardPage(data: DashboardData, options: PageOptions): string {
       ? `<script type="application/json" data-hm-periods>${scriptJson(options.periods)}</script>`
       : "",
     options.segments
-      ? `<script type="application/json" data-hm-segments${options.assets.periods ? ` data-hm-engine="${esc(options.assets.periods)}"` : ""}>${scriptJson(options.segments)}</script>`
+      ? `<script type="application/json" data-hm-segments${options.assets.periods ? ` data-hm-engine="${esc(options.assets.periods)}"` : ""}${geo.length > 0 ? ` data-hm-geo="${esc(geo.join(" "))}"` : ""}>${scriptJson(options.segments)}</script>`
       : "",
     options.periods || options.segments ? RANGES_SLOT : "",
   ].join("");
@@ -644,7 +700,13 @@ function dashboardPage(data: DashboardData, options: PageOptions): string {
   const body = `<div class="hm-page">${header}<main class="hm-grid">${renderBlocks(data.blocks, ctx)}</main>${footer}</div>${embedded}`;
   return document(
     `${data.title} \u00B7 ${data.project}`,
-    pageHead(options.assets, theme, usesGroups(data), data.segmentFilter !== undefined),
+    pageHead(
+      options.assets,
+      theme,
+      usesGroups(data),
+      data.segmentFilter !== undefined,
+      data.blocks.some((b) => b.type === "map"),
+    ),
     body,
   );
 }

@@ -5,6 +5,7 @@ import type {
   Comparison,
   FileSource,
   Filter,
+  GeographyId,
   Project,
   RangeSpec,
   ResolvedGrain,
@@ -36,6 +37,11 @@ export interface MeasureComponent {
   /** Raw SQL aggregate expression, for metrics of type "sql". */
   sql?: string;
   filters: Filter[];
+  /**
+   * Counts rows that pass any of these sets: the set's filters and the query's window on the set's
+   * time column. Replaces filters and the query's own window.
+   */
+  anyOf?: { time?: string; filters: Filter[] }[];
   /**
    * How a browser or a total row may combine this component across groups: "sum" for sum and
    * count, "min"/"max" for those, and "none" when it must be recomputed from rows (count_distinct,
@@ -69,9 +75,22 @@ export type MeasureExpression =
   | { op: "ref"; queryId: string; metric: string }
   | { op: "divide"; numerator: MeasureExpression; denominator: MeasureExpression };
 
+/**
+ * A region dimension groups rows by the map region their column names (regionKeySql in geo/), so
+ * "CA" and "California" are one group and a non-additive metric is computed once over both. Rows
+ * whose value matches no region are dropped, unless unmatched is "keep", where they group under
+ * null: the match report reads them.
+ */
 export type PlannedDimension =
   | { kind: "column"; column: string }
-  | { kind: "time"; column: string; grain: ResolvedGrain };
+  | {
+      kind: "time";
+      column: string;
+      grain: ResolvedGrain;
+      /** Only rows passing these filters get a bucket; the others get null. */
+      filters?: Filter[];
+    }
+  | { kind: "region"; column: string; geo: GeographyId; unmatched?: "keep" };
 
 /**
  * The time window a query reads, explicit enough that the executor needs nothing else from the
@@ -158,6 +177,7 @@ export type PlannedParam =
       operator: "in";
       multiple: boolean;
       default: (string | number | boolean)[];
+      geo?: GeographyId;
     }
   | { id: string; kind: "period"; source: string; column: string; default: RangeSpec }
   | {
@@ -196,6 +216,12 @@ export type PlanParam =
       default: (string | number | boolean)[];
       /** Sources this filter binds to, sorted. */
       sources: string[];
+      /**
+       * Set when every map on the dashboard that reads its regions from this column uses this
+       * geography: a value naming a region keeps every spelling of that region, as the map groups
+       * them. Maps of different geographies on one column leave it unset, so values match exactly.
+       */
+      geo?: GeographyId;
     }
   | {
       id: string;
@@ -239,6 +265,13 @@ export interface BlockPlan {
    * when the block lists it, else the block's grain. measures are this grain's.
    */
   grain?: ResolvedGrain;
+  /**
+   * A map block's match report reading: its value and a row count by the raw region column and the
+   * region each value matched (null when none), over the same window and filters as measures. rows
+   * names one query per source the value reads, each counting that source's rows once: a row counts
+   * when it passes an operand's filters inside that operand's window on its own time column.
+   */
+  report?: { queryIds: string[]; measures: Record<string, MeasureExpression>; rows: string[] };
   /** One reading per grain a block switches between (its grains, in spec order), all built ahead. */
   grains?: {
     grain: ResolvedGrain;

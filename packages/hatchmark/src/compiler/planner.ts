@@ -7,6 +7,7 @@ import {
   type Dashboard,
   DEFAULT_PERIOD,
   type FileSource,
+  type Filter,
   type Grain,
   grainKey,
   type Metric,
@@ -46,9 +47,19 @@ export const PLANNED_BLOCK_TYPES = [
   "donut",
   "table",
   "scatter",
+  "map",
 ] as const;
 
-type AxisDimension = { kind: "column"; column: string } | { kind: "time"; grain: ResolvedGrain };
+type AxisDimension =
+  | { kind: "column"; column: string }
+  | { kind: "time"; grain: ResolvedGrain }
+  | Extract<PlannedDimension, { kind: "region" }>;
+
+export const ROWS_MEASURE: PlannedMeasure = {
+  metric: "__rows",
+  components: [{ id: "__rows__count", aggregate: "count", filters: [], reaggregate: "sum" }],
+  combine: { op: "identity", component: "__rows__count" },
+};
 
 interface Context {
   file: SpecFile<"dashboard">;
@@ -65,6 +76,7 @@ interface Context {
 interface Reading {
   queries: PlannedQuery[];
   measures: Record<string, MeasureExpression>;
+  rows?: string[];
 }
 
 function component(
@@ -170,7 +182,7 @@ function filterTables(
 ): Record<string, FileSource> | undefined {
   const names = measures
     .flatMap((m) => m.components)
-    .flatMap((c) => c.filters)
+    .flatMap((c) => [...c.filters, ...(c.anyOf ?? []).flatMap((s) => s.filters)])
     .flatMap((f) => (f.op === "in_table" || f.op === "not_in_table" ? [f.table] : []))
     .sort();
   const tables: Record<string, FileSource> = {};
@@ -207,6 +219,7 @@ function planReading(
   oneWindow = false,
   edges?: "clip",
   allPeriods = false,
+  rows = false,
 ): Reading {
   const groups = new Map<
     string,
@@ -260,7 +273,7 @@ function planReading(
     if (input === undefined || input.type === "lookup") continue;
     const grainAxis = axes.some((axis) => axis.kind === "time");
     const dimensions: PlannedDimension[] = axes.map((axis) =>
-      axis.kind === "column" ? axis : { kind: "time", column: group.time ?? "", grain: axis.grain },
+      axis.kind === "time" ? { kind: "time", column: group.time ?? "", grain: axis.grain } : axis,
     );
     const measures = group.metrics.flatMap((m) => {
       const metric = ctx.metrics.get(m);
@@ -301,6 +314,64 @@ function planReading(
     queries.push({ id, ...shape });
   }
 
+  const rowQueries: string[] = [];
+  if (rows) {
+    const bySource = new Map<
+      string,
+      {
+        group: { time?: string; horizons: TimeColumn[] };
+        byTime: Map<string, { time?: string; filters: Map<string, Filter[]> }>;
+      }
+    >();
+    for (const group of groups.values()) {
+      const input = ctx.sources[group.source];
+      if (input === undefined || input.type === "lookup") continue;
+      const entry = bySource.get(group.source) ?? { group, byTime: new Map() };
+      const timeKey = group.time ?? "";
+      const at = entry.byTime.get(timeKey) ?? {
+        ...(group.time === undefined ? {} : { time: group.time }),
+        filters: new Map<string, Filter[]>(),
+      };
+      for (const m of group.metrics) {
+        const metric = ctx.metrics.get(m);
+        const filters = (metric && plannedMeasure(m, metric))?.components[0]?.filters ?? [];
+        at.filters.set(canonicalJson(filters), filters);
+      }
+      entry.byTime.set(timeKey, at);
+      bySource.set(group.source, entry);
+    }
+    for (const [source, { group, byTime }] of bySource) {
+      const sets = [...byTime.values()].flatMap(({ time, filters }) => {
+        const all = [...filters.values()];
+        const kept = all.some((f) => f.length === 0) ? [[]] : all;
+        return kept.map((f) => ({ ...(time === undefined ? {} : { time }), filters: f }));
+      });
+      const only = sets.length === 1 ? sets[0] : undefined;
+      const counted: MeasureComponent = {
+        ...(ROWS_MEASURE.components[0] as MeasureComponent),
+        ...(only === undefined ? { anyOf: sets } : { filters: only.filters }),
+      };
+      const measure: PlannedMeasure = { ...ROWS_MEASURE, components: [counted] };
+      const tables = filterTables(ctx.sources, [measure]);
+      const shape: Omit<PlannedQuery, "id"> = {
+        source,
+        input: ctx.sources[source] as PlannedQuery["input"],
+        ...(tables === undefined ? {} : { tables }),
+        measures: [measure],
+        dimensions: axes as PlannedDimension[],
+        groupingSets,
+        window:
+          group.time === undefined
+            ? { range: "all_time", shift: "none" }
+            : { range: ctx.range, shift, column: group.time, horizons: group.horizons },
+        params: paramsForQuery(ctx.params, source, group.time),
+      };
+      const id = queryId(shape);
+      rowQueries.push(id);
+      queries.push({ id, ...shape });
+    }
+  }
+
   const expression = (name: string, horizons: TimeColumn[]): MeasureExpression => {
     const metric = ctx.metrics.get(name);
     if (metric?.type === "ratio") {
@@ -315,7 +386,7 @@ function planReading(
   };
   const measures: Record<string, MeasureExpression> = {};
   for (const name of names) measures[name] = expression(name, horizonsOf(name));
-  return { queries, measures };
+  return rows ? { queries, measures, rows: rowQueries } : { queries, measures };
 }
 
 function seriesReading(
@@ -416,6 +487,7 @@ function planBlockAt(
     previous?: Reading;
     sparkline?: Reading;
     domain?: Reading;
+    report?: Reading;
     grain?: ResolvedGrain;
     grains?: { grain: ResolvedGrain; reading: Reading }[];
   } = (() => {
@@ -495,6 +567,26 @@ function planBlockAt(
           measures: planReading(ctx, block.metrics, axes, tableGroupingSets(block), "none"),
         };
       }
+      case "map": {
+        const region = { kind: "region", column: block.region, geo: block.geo } as const;
+        return {
+          measures: planReading(ctx, [block.value], [region], [[0], []], "none"),
+          report: planReading(
+            ctx,
+            [block.value],
+            [
+              { kind: "column", column: block.region },
+              { ...region, unmatched: "keep" },
+            ],
+            [[0, 1]],
+            "none",
+            false,
+            undefined,
+            false,
+            true,
+          ),
+        };
+      }
       case "scatter":
         return {
           measures: planReading(
@@ -516,6 +608,7 @@ function planBlockAt(
     readings.previous,
     readings.sparkline,
     readings.domain,
+    readings.report,
     ...(readings.grains ?? []).map((g) => g.reading),
   ].flatMap((r) => (r ? r.queries : []));
   const queries = [...new Map(all.map((q) => [q.id, q])).values()];
@@ -528,6 +621,15 @@ function planBlockAt(
       ...(readings.previous ? { previous: readings.previous.measures } : {}),
       ...(readings.sparkline ? { sparkline: readings.sparkline.measures } : {}),
       ...(readings.domain ? { domain: readings.domain.measures } : {}),
+      ...(readings.report
+        ? {
+            report: {
+              queryIds: readings.report.queries.map((q) => q.id),
+              measures: readings.report.measures,
+              rows: readings.report.rows ?? [],
+            },
+          }
+        : {}),
       ...(readings.grain ? { grain: readings.grain } : {}),
       ...(readings.grains
         ? {
@@ -561,6 +663,7 @@ function shownMetrics(block: Block): string[] {
   if (block.type === "scatter") {
     return [...new Set([block.x, block.y, ...(block.size === undefined ? [] : [block.size])])];
   }
+  if (block.type === "map") return [block.value];
   return "metric" in block ? [block.metric] : "metrics" in block ? block.metrics : [];
 }
 

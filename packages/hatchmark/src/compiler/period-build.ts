@@ -17,6 +17,7 @@ import type {
   MeasureComponent,
   MeasureExpression,
   ParamBindings,
+  PlannedDimension,
   PlannedQuery,
   QueryPlan,
   QueryResult,
@@ -32,21 +33,32 @@ import { nextDay, queryBounds } from "./windows.js";
 
 /**
  * The day-grain query a custom range reads instead of a planned query: the same source, measures,
- * select filters and column dimensions, with every time dimension replaced by one day dimension on
+ * select filters, column and region dimensions, with every time dimension replaced by one day dimension on
  * the window column and the window opened to all time. Undefined when no period filter windows the
  * query.
  */
 export function dayCubeQuery(query: PlannedQuery): PlannedQuery | undefined {
   const column = query.window.column;
   if (column === undefined || !query.params.some((p) => p.kind === "period")) return undefined;
-  const columns = query.dimensions.filter((d) => d.kind === "column");
+  const sets = query.measures.flatMap((m) => m.components.flatMap((c) => c.anyOf ?? []));
+  const split = new Set(sets.map((s) => s.time)).size > 1;
+  if (split && sets.some((s) => s.time === undefined)) return undefined;
+  const days: PlannedDimension[] = !split
+    ? [{ kind: "time", column, grain: { unit: "day" } }]
+    : sets.map((s) => ({
+        kind: "time",
+        column: s.time as string,
+        grain: { unit: "day" },
+        filters: s.filters,
+      }));
+  const columns = query.dimensions.filter((d) => d.kind !== "time");
   const shape: Omit<PlannedQuery, "id"> = {
     source: query.source,
     input: query.input,
     ...(query.tables === undefined ? {} : { tables: query.tables }),
     measures: query.measures,
-    dimensions: [{ kind: "time", column, grain: { unit: "day" } }, ...columns],
-    groupingSets: [[0, ...columns.map((_, i) => i + 1)]],
+    dimensions: [...days, ...columns],
+    groupingSets: [[...days.keys(), ...columns.map((_, i) => i + days.length)]],
     window: {
       range: "all_time",
       shift: "none",
@@ -62,18 +74,23 @@ function cubeFrom(query: PlannedQuery, result: QueryResult, start: number, last:
   const components = query.measures.flatMap((m) => m.components.map((c) => c.id));
   const at = new Map(result.columns.map((c, i) => [c.name, i]));
   const width = query.dimensions.length;
+  const lead = query.dimensions.filter((d) => d.kind === "time").length;
   const cube: DayCube = {
-    columns: query.dimensions.slice(1).map((d) => d.column),
+    columns: query.dimensions.slice(lead).map((d) => d.column),
     days: [],
-    keys: query.dimensions.slice(1).map(() => []),
+    ...(lead > 1 ? { sets: Array.from({ length: lead }, () => []) } : {}),
+    keys: query.dimensions.slice(lead).map(() => []),
     values: Object.fromEntries(components.map((id) => [id, []])),
   };
   for (const row of result.rows) {
-    if (typeof row[0] !== "string") continue;
-    const day = dayNumber(row[0]);
-    if (day > last) continue;
-    cube.days.push(day - start);
-    for (let i = 1; i < width; i++) cube.keys[i - 1]?.push(toKey(row[i]));
+    const days = row
+      .slice(0, lead)
+      .map((v) => (typeof v === "string" && dayNumber(v) <= last ? dayNumber(v) - start : null));
+    const present = days.filter((d): d is number => d !== null);
+    if (present.length === 0) continue;
+    cube.days.push(Math.min(...present));
+    for (const [s, d] of days.entries()) cube.sets?.[s]?.push(d);
+    for (let i = lead; i < width; i++) cube.keys[i - lead]?.push(toKey(row[i]));
     for (const id of components) {
       const raw = row[at.get(id) ?? -1];
       cube.values[id]?.push(typeof raw === "number" ? raw : null);
@@ -122,7 +139,7 @@ function portablePlan(plan: QueryPlan): QueryPlan {
       measures: q.measures.map((m) => ({
         ...m,
         components: m.components.map(
-          ({ sql: _, ...c }): MeasureComponent => ({ ...c, filters: [] }),
+          ({ sql: _, anyOf: __, ...c }): MeasureComponent => ({ ...c, filters: [] }),
         ),
       })),
     })),
