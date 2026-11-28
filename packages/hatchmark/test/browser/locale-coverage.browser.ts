@@ -370,3 +370,37 @@ describe("calendar month and weekday names never follow the viewer's locale", ()
     );
   });
 });
+
+describe("a custom range the build never drew reads the same in every viewer locale", () => {
+  it("eu page in fr-FR and sv-SE chromium: the status before Apply and the label after it", async () => {
+    const explorer = fromYaml(
+      await readFile(path.join(EXAMPLE, "dashboards/explorer.yaml"), "utf8"),
+    );
+    const at = await writeExample({ locale: "eu" }, { explorer });
+    expect((await buildProject(at)).code).toBe(0);
+    const built = path.join(at, "dist", "explorer", "index.html");
+    const html = await readFile(built, "utf8");
+    expect(html).not.toContain("2026-09-03 2026-09-12");
+    const seen: { status: string | null; label: string | null }[] = [];
+    for (const viewer of ["fr-FR", "sv-SE"]) {
+      const context = await (engines.chromium as Browser).newContext({ locale: viewer });
+      const page = await context.newPage();
+      await page.goto("file://" + built);
+      const button = page.locator(".hm-period-button");
+      await button.click();
+      await page.locator("[data-hm-edge=start]").fill("2026-09-03");
+      await page.locator("[data-hm-edge=end]").fill("2026-09-12");
+      const status = page.locator(".hm-cal-status");
+      await expect.poll(() => status.textContent()).toMatch(/, 10 days$/);
+      const before = await status.textContent();
+      await page.locator("[data-hm-cal=apply]").click();
+      await page.waitForFunction(
+        () => !document.querySelector("main.hm-grid")?.hasAttribute("aria-busy"),
+      );
+      seen.push({ status: before, label: await button.locator(".hm-period-name").textContent() });
+      await context.close();
+    }
+    expect(seen[1]).toEqual(seen[0]);
+    expect(seen[0]?.label).toBe(seen[0]?.status?.replace(/, 10 days$/, ""));
+  });
+});
