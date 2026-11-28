@@ -48,7 +48,7 @@ describe("normalizeRegionKey", () => {
   });
 
   it("joins a code only from ASCII digits with an optional zero fraction", () => {
-    for (const raw of ["6", "06", " 06 ", "06.0", "\t6\n", 6])
+    for (const raw of ["6", "06", " 06 ", "06.0", "06.00", "\t6\n", 6])
       expect(matchRegion("us-states", raw), JSON.stringify(raw)).toEqual({
         kind: "matched",
         id: "CA",

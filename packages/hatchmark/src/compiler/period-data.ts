@@ -36,6 +36,12 @@ export interface DayCube {
   /** The query's column and region dimensions, in order; the day comes first and is not listed. */
   columns: string[];
   days: number[];
+  /**
+   * For a match-report row count whose operands window different date columns: each operand's day
+   * per entry (null when the rows fail its filters), aligned with days. An entry counts in a range
+   * when any of its days falls inside; days holds the earliest.
+   */
+  sets?: (number | null)[][];
   /** One array per column dimension, aligned with days. */
   keys: Key[][];
   /** One array per measure component, by component id, aligned with days. */
@@ -132,7 +138,10 @@ export function cubeResult(
   const columnAt = dims.map((d) => (d.kind !== "time" ? columns++ : -1));
   const groups = query.groupingSets.map(() => new Map<string, { keys: Key[]; rows: number[] }>());
   for (let i = 0; i < cube.days.length; i++) {
-    const day = cube.days[i] ?? 0;
+    const day = cube.sets
+      ? (cube.sets.map((s) => s[i] ?? null).find((d) => d !== null && d >= lo && d < hi) ??
+        -Infinity)
+      : (cube.days[i] ?? 0);
     if (day < lo || day >= hi) continue;
     let text = texts.get(day);
     if (text === undefined) {

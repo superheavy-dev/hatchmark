@@ -251,6 +251,12 @@ function dimensionSql(
   context: ExecutionContext,
   sql: Sql,
 ): string {
+  if (dimension.kind === "time" && dimension.filters !== undefined) {
+    const { filters, ...plain } = dimension;
+    const bucket = dimensionSql(source, plain, context, sql);
+    const when = filters.map((f) => filterSql(source, f, context, sql));
+    return when.length === 0 ? bucket : `CASE WHEN ${when.join(" AND ")} THEN ${bucket} END`;
+  }
   if (dimension.kind === "time") {
     const local = `CAST(${localTime(source, dimension.column, context.timezone, sql)} AS DATE)`;
     const { grain } = dimension;

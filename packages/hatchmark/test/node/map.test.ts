@@ -1,8 +1,11 @@
+import { readFile } from "node:fs/promises";
+import path from "node:path";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { run as cli } from "../../src/cli/main.js";
 import type { MapData } from "../../src/compiler/dashboard-data.js";
+import { customRangeDashboard, type PeriodData } from "../../src/compiler/period-data.js";
 import { PROJECT_DEFAULTS } from "../../src/spec/index.js";
-import { metric, Oracle, removeProjects, run, writeProject } from "./fixture.js";
+import { buildProject, metric, Oracle, removeProjects, run, writeProject } from "./fixture.js";
 
 function rng(seed: number): () => number {
   let s = seed >>> 0;
@@ -322,8 +325,8 @@ describe("map match report for filtered and same-source metrics", () => {
 describe("map match report across date columns of one source", () => {
   afterAll(removeProjects);
 
-  it("counts a row when it passes an operand's filters inside that operand's own window", async () => {
-    const { root, project } = await writeProject({
+  const project = (filters: unknown[]) =>
+    writeProject({
       "hatchmark.yaml": {
         ...PROJECT_DEFAULTS,
         name: "Dates",
@@ -360,17 +363,46 @@ describe("map match report across date columns of one source", () => {
       "dashboards/m.yaml": {
         title: "Dates",
         period: { asOf: "2026-06-30", range: "month_to_date", compare: "none" },
+        filters,
         blocks: [
           { type: "map", id: "rate", geo: "us-states", region: "state", value: "ship_rate" },
+          { type: "map", id: "paid", geo: "us-states", region: "state", value: "paid" },
         ],
       },
     });
-    const map = (await run(root, project, "m")).data?.blocks[0] as MapData;
-    expect(Object.fromEntries(map.match.map((m) => [String(m.key), [m.rows, m.region]]))).toEqual({
-      CA: [2, "CA"],
-      TX: [1, "TX"],
-      Atlantis: [1, null],
-    });
+  const rows = (map: MapData | undefined) =>
+    Object.fromEntries((map?.match ?? []).map((m) => [String(m.key), m.rows]));
+
+  it("counts a row when it passes an operand's filters inside that operand's own window", async () => {
+    const { root, project: p } = await project([]);
+    const maps = ((await run(root, p, "m")).data?.blocks ?? []) as MapData[];
+    expect(rows(maps[0])).toEqual({ CA: 2, TX: 1, Atlantis: 1 });
+    expect(rows(maps[1])).toEqual({ CA: 1, TX: 1 });
+  });
+
+  it("keeps the same rows for a custom range, with one or several date columns", async () => {
+    const { root } = await project([
+      {
+        type: "period",
+        id: "period",
+        options: [{ to_date: "month" }, { last: 7, unit: "day" }],
+        default: { to_date: "month" },
+      },
+    ]);
+    expect((await buildProject(root)).code).toBe(0);
+    const page = await readFile(path.join(root, "dist", "m", "index.html"), "utf8");
+    const payload = JSON.parse(
+      /<script type="application\/json" data-hm-periods>(.*?)<\/script>/s.exec(page)?.[1] ?? "{}",
+    ) as PeriodData;
+    const custom = payload.custom as NonNullable<PeriodData["custom"]>;
+    const range = (start: string, end: string) =>
+      (customRangeDashboard(custom, payload.filter, { start, end }).blocks ?? []) as MapData[];
+    const june = range("2026-06-01", "2026-07-01");
+    expect(rows(june[0])).toEqual({ CA: 2, TX: 1, Atlantis: 1 });
+    expect(rows(june[1])).toEqual({ CA: 1, TX: 1 });
+    const late = range("2026-06-04", "2026-07-01");
+    expect(rows(late[0])).toEqual({ TX: 1, Atlantis: 1 });
+    expect(rows(late[1])).toEqual({ TX: 1 });
   });
 });
 

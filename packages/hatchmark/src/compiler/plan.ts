@@ -81,7 +81,13 @@ export type MeasureExpression =
  */
 export type PlannedDimension =
   | { kind: "column"; column: string }
-  | { kind: "time"; column: string; grain: ResolvedGrain }
+  | {
+      kind: "time";
+      column: string;
+      grain: ResolvedGrain;
+      /** Only rows passing these filters get a bucket; the others get null. */
+      filters?: Filter[];
+    }
   | { kind: "region"; column: string; geo: GeographyId; unmatched?: "keep" };
 
 /**
