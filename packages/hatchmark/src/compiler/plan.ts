@@ -99,6 +99,11 @@ export interface PlannedWindow {
    * the start of its first bucket. Only on a query with a time dimension.
    */
   edges?: "clip";
+  /**
+   * "horizon": an all-time window ends at the horizon instant, today's partial day included, even
+   * without a time dimension; otherwise such a window ends at the horizon's day.
+   */
+  through?: "horizon";
 }
 
 export interface PlannedQuery {
@@ -198,7 +203,8 @@ export interface BlockPlan {
   sparkline?: Record<string, MeasureExpression>;
   /**
    * A grouped split block's metrics by split value under its filters, over every period up to the
-   * as-of: every value the page can show, so each keeps its colour whichever period is shown.
+   * horizon instant: every value the page can show, so each keeps its colour whichever period is
+   * shown.
    */
   domain?: Record<string, MeasureExpression>;
   /**

@@ -245,6 +245,7 @@ function planReading(
           ? { range: "all_time", shift: "none" }
           : {
               range: allPeriods ? "all_time" : ctx.range,
+              ...(allPeriods ? { through: "horizon" as const } : {}),
               shift,
               column: group.time,
               horizons: group.horizons,

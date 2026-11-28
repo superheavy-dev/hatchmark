@@ -235,6 +235,68 @@ describe("series groups across periods, filters and stacks", () => {
     for (const row of domainRows) expect(row.slice(1).every((v) => v === null)).toBe(true);
   });
 
+  it("reads the colour domain through today's partial day when the as-of is the latest data", async () => {
+    const period = { start: "2026-05-01", end: "2026-07-01" };
+    const today = await writeProject({
+      "hatchmark.yaml": {
+        ...PROJECT_DEFAULTS,
+        name: "Today",
+        timezone: "UTC",
+        sources: { orders: { type: "csv", path: "data/orders.csv" } },
+      },
+      "data/orders.csv": [
+        "time,region,channel,amount",
+        "2026-06-07T10:00:00Z,West,Direct,10",
+        "2026-06-08T10:00:00Z,West,Regular,20",
+        "2026-06-30T10:00:00Z,West,CurrentDayOnly,30",
+        "2026-06-30T12:00:00Z,West,Tail,40",
+        "",
+      ].join("\n"),
+      "metrics/revenue.yaml": metric({
+        label: "Revenue",
+        type: "aggregate",
+        table: "orders",
+        time: "time",
+        aggregate: "sum",
+        column: "amount",
+      }),
+      "dashboards/today.yaml": {
+        title: "Today",
+        period: { asOf: "latest_data", range: period, compare: "none" },
+        filters: [
+          { type: "select", id: "region", column: "region", default: "West" },
+          { type: "period", id: "dates", options: [period, "all_time"], default: period },
+        ],
+        blocks: [
+          {
+            type: "line",
+            id: "revenue",
+            grain: "month",
+            split: "channel",
+            metrics: ["revenue"],
+            groups: [{ label: "Owned", series: ["Direct", "CurrentDayOnly"] }],
+          },
+        ],
+      },
+    });
+    const { code, report } = await buildProject(today.root);
+    expect(code).toBe(0);
+    expect(JSON.stringify(report)).not.toContain("HM2027");
+    const html = await readFile(path.join(today.root, "dist", "today", "index.html"), "utf8");
+    const payload = JSON.parse(
+      html.match(/<script type="application\/json" data-hm-periods>(.*?)<\/script>/s)?.[1] ?? "{}",
+    ) as { presets: Record<string, DashboardData> };
+    const presets = Object.values(payload.presets);
+    expect(presets).toHaveLength(2);
+    for (const preset of presets) {
+      const series = (preset.blocks[0] as LineData).series;
+      const of = (label: string) => series.find((s) => s.label === label);
+      expect(of("CurrentDayOnly")?.group).toEqual({ index: 0, step: 1 });
+      expect(of("CurrentDayOnly")?.values.some((v) => v === 30)).toBe(true);
+      expect([of("Regular")?.colorRank, of("Tail")?.colorRank]).toEqual([0, 1]);
+    }
+  });
+
   it("warns about a split value only when no period has rows for it under the page's filters", () => {
     const missing = (name: string) =>
       warnings[name]?.map((w) => w.message).filter((m) => m.includes("no rows"));
