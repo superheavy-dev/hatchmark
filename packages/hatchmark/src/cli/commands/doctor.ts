@@ -6,7 +6,7 @@ import { VERSION } from "../../version.js";
 import type { CommandHelp } from "../help.js";
 import { type CommandContext, type CommandResult, EXIT } from "../io.js";
 import { packageRoot } from "../package-root.js";
-import { homeDir, installCommand, skillCopies, skillLocations } from "./skills.js";
+import { homeDir, inspectSkill, installCommand, skillLocations } from "./skills.js";
 
 export const doctorHelp: CommandHelp = {
   name: "doctor",
@@ -81,23 +81,30 @@ export async function doctor(ctx: CommandContext): Promise<CommandResult> {
       : `no ${CONFIG_FILE} in ${ctx.root}; run hatchmark init to create a project`,
   });
 
-  const copies = (await skillCopies(skillLocations(ctx.root, homeDir(ctx.io.env)))).filter(
-    (c) => c.status === "current" || c.status === "stale",
+  const copies = [];
+  for (const location of skillLocations(ctx.root, homeDir(ctx.io.env))) {
+    copies.push(await inspectSkill(location));
+  }
+  const current = copies.filter((c) => c.status === "current");
+  const drift = copies.flatMap((c) =>
+    c.status === "stale"
+      ? [
+          `${c.dir} is the agent skill of hatchmark ${c.version}, not ${VERSION}; run ${installCommand(ctx, c.agent, c.scope)}`,
+        ]
+      : c.status === "modified"
+        ? [
+            `${c.dir} was changed since hatchmark ${c.version} installed it; keep it, or replace it with ${installCommand(ctx, c.agent, c.scope, true)}`,
+          ]
+        : [],
   );
-  const stale = copies.filter((c) => c.status === "stale");
   checks.push({
     name: "skills",
-    status: stale.length === 0 ? "ok" : "warn",
+    status: drift.length === 0 ? "ok" : "warn",
     detail:
-      stale.length > 0
-        ? stale
-            .map(
-              (c) =>
-                `${c.dir} is the agent skill of hatchmark ${c.version}, not ${VERSION}; run ${installCommand(ctx, c.agent, c.scope)}`,
-            )
-            .join("; ")
-        : copies.length > 0
-          ? `agent skill ${VERSION} at ${copies.map((c) => c.dir).join(", ")}`
+      drift.length > 0
+        ? drift.join("; ")
+        : current.length > 0
+          ? `agent skill ${VERSION} at ${current.map((c) => c.dir).join(", ")}`
           : "no Hatchmark agent skill installed; hatchmark skills install adds one for coding agents",
   });
 

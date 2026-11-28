@@ -15,7 +15,14 @@ import {
   sampleOrdersCsv,
 } from "../sample.js";
 import { usageError } from "../usage.js";
-import { applySkillInstall, planSkillInstall, skillLocations } from "./skills.js";
+import {
+  commitSkillInstall,
+  discardSkillInstall,
+  planSkillInstall,
+  type StagedSkills,
+  skillLocations,
+  stageSkillInstall,
+} from "./skills.js";
 
 export const initHelp: CommandHelp = {
   name: "init",
@@ -206,6 +213,13 @@ export async function init(
     }
   }
 
+  let staged: StagedSkills | undefined;
+  if (Array.isArray(skillPlans) && skillPlans.length > 0) {
+    const result = await stageSkillInstall(skillPlans);
+    if (!("staged" in result)) return result;
+    staged = result;
+  }
+
   const created: string[] = [];
   const updated: string[] = [];
   const unchanged: string[] = [];
@@ -222,31 +236,38 @@ export async function init(
     (before === undefined ? created : updated).push(file);
   };
 
-  await mkdir(target, { recursive: true });
-  for (const [file, text] of owned) await write(file, text);
-  for (const sub of ["data", "metrics", "dashboards"])
-    await mkdir(path.join(target, sub), { recursive: true });
-  await write("AGENTS.md", nextAgents);
+  try {
+    await mkdir(target, { recursive: true });
+    for (const [file, text] of owned) await write(file, text);
+    for (const sub of ["data", "metrics", "dashboards"])
+      await mkdir(path.join(target, sub), { recursive: true });
+    await write("AGENTS.md", nextAgents);
 
-  const claude = await readOptional(path.join(target, "CLAUDE.md"));
-  if (claude === undefined) await write("CLAUDE.md", "@AGENTS.md\n");
-  else if (!claude.includes("@AGENTS.md")) {
-    notes.push(
-      "CLAUDE.md exists and does not include @AGENTS.md; add that line so Claude Code reads the Hatchmark block",
-    );
+    const claude = await readOptional(path.join(target, "CLAUDE.md"));
+    if (claude === undefined) await write("CLAUDE.md", "@AGENTS.md\n");
+    else if (!claude.includes("@AGENTS.md")) {
+      notes.push(
+        "CLAUDE.md exists and does not include @AGENTS.md; add that line so Claude Code reads the Hatchmark block",
+      );
+    }
+
+    const gitignore = (await readOptional(path.join(target, ".gitignore"))) ?? "";
+    const lines = gitignore.split(/\r?\n/);
+    const missing = GITIGNORE.filter((entry) => !lines.includes(entry));
+    if (missing.length > 0) {
+      await write(
+        ".gitignore",
+        `${gitignore}${gitignore === "" || gitignore.endsWith("\n") ? "" : "\n"}${missing.join("\n")}\n`,
+      );
+    }
+  } catch (error) {
+    if (staged !== undefined) await discardSkillInstall(staged);
+    throw error;
   }
-
-  const gitignore = (await readOptional(path.join(target, ".gitignore"))) ?? "";
-  const lines = gitignore.split(/\r?\n/);
-  const missing = GITIGNORE.filter((entry) => !lines.includes(entry));
-  if (missing.length > 0) {
-    await write(
-      ".gitignore",
-      `${gitignore}${gitignore === "" || gitignore.endsWith("\n") ? "" : "\n"}${missing.join("\n")}\n`,
-    );
+  if (staged !== undefined) {
+    const failed = await commitSkillInstall(staged);
+    if (failed !== undefined) return failed;
   }
-
-  await applySkillInstall(skillPlans);
   const skills = skillPlans.map(({ location, status }) => ({
     agent: location.agent,
     scope: location.scope,

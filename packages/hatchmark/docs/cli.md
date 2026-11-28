@@ -119,7 +119,7 @@ HM2015 error on that dashboard. A block the planner leaves out, such as a metric
 | `HM0007` | `dev` could not finish watching the project within 15 seconds, usually because a directory cannot be read; the diagnostic names the file system error. Exits 3.                                                                                                                                                                                                                                                                                                                                                                                                                                   |
 | `HM0008` | `data query` got something other than exactly one SELECT, or the query reads or writes a file that is not a source. Nothing ran. Exits 2.                                                                                                                                                                                                                                                                                                                                                                                                                                                         |
 | `HM0009` | `data query` failed in DuckDB; the message is DuckDB's. An unknown table lists the source names. Exits 2.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                         |
-| `HM0010` | `skills install` (or `init --skills`) found a symlink or another entry that is not a regular file or directory on the way to a skill directory or inside it, or a `hatchmark` skill directory whose `SKILL.md` has no `metadata.hatchmark-version` (Hatchmark did not write it), or `--scope user` without `HOME`. It wrote nothing. The diagnostic lists the paths. `--force` replaces a directory Hatchmark did not write; nothing writes through a symlink. Exits 2.                                                                                                                           |
+| `HM0010` | `skills install` (or `init --skills`) found a symlink, FIFO or other entry that is not a regular file or directory on the way to a skill directory or inside it, a path it cannot read or write (`EACCES`, `EPERM`, `EROFS`, `ENOSPC`), a copy changed since it was installed, a `hatchmark` skill directory without `.hatchmark-skill.json` (Hatchmark did not write it), or `--scope user` without `HOME`. It wrote nothing. The diagnostic lists the paths. `--force` replaces a changed copy or one Hatchmark did not write; nothing writes through a symlink. Exits 2.                       |
 
 ## data
 
@@ -210,18 +210,26 @@ that directory is the cross-agent convention other Agent Skills tools, such as G
 VS Code, read too. Without `--agent`, install writes both.
 
 The installed `SKILL.md` is the bundled one with `metadata: { hatchmark-version: "<version>" }`
-added to its front matter, always the version of the CLI that wrote it; every other file is copied
-byte for byte. That field marks a directory as Hatchmark's:
+added to its front matter (with the file's own line endings), always the version of the CLI that
+wrote it; every other file is copied byte for byte. Install also writes `.hatchmark-skill.json` next
+to them: the version and the SHA-256 of every file it wrote. That manifest marks a directory as
+Hatchmark's and tells an untouched copy from an edited one:
 
 - A directory that does not exist is `created`.
-- A Hatchmark copy with the same files is `unchanged`. Any other Hatchmark copy, such as one from
-  another version, is `updated`: install replaces the whole directory, so files the bundle no longer
-  has go away.
-- A `hatchmark` skill directory without the field was not written by Hatchmark. Install refuses it
-  with `HM0010` unless you pass `--force`, which replaces it.
-- A symlink or anything else that is not a regular file or directory on the way to the skill
+- A copy whose files all match the manifest is clean. A clean copy with the bundled files is
+  `unchanged`; any other clean copy, such as one from another version, is `updated` without asking.
+  Install replaces the whole directory, so files the bundle no longer has go away.
+- A copy with a changed, added or deleted file is `modified`, and a `hatchmark` skill directory
+  without a manifest was not written by Hatchmark. Install refuses both with `HM0010` unless you
+  pass `--force`, which replaces them.
+- A symlink, FIFO or anything else that is not a regular file or directory on the way to the skill
   directory or inside it (such as `.claude/skills` linked elsewhere) gives `HM0010`, even with
-  `--force`. Install checks every target first, so on an error it writes nothing.
+  `--force`. So does a path that cannot be read or written (`EACCES`, `EPERM`, `EROFS`, `ENOSPC`),
+  with the path and the error.
+
+Install checks every target first, then writes each new copy into a staging directory next to its
+target, then swaps the copies in. If anything fails it removes what it staged, puts back any copy it
+had moved aside, and writes nothing.
 
 ```json
 {
@@ -246,11 +254,16 @@ byte for byte. That field marks a directory as Hatchmark's:
 ```
 
 `hatchmark skills status` lists each of the four directories (or those `--agent` and `--scope`
-pick) with `status` `missing`, `current`, `stale` (another version) or `foreign` (not written
-by Hatchmark) and the `version` of the copy. `hatchmark init --skills` installs at project scope
-for both agents as part of init. `hatchmark doctor` warns about every Hatchmark copy, project or
-user, whose version differs from the running CLI and names the `hatchmark skills install` command
-that refreshes it; no copy is not a warning.
+pick) with the `version` from its manifest and a `status`: `missing`, `current`, `stale` (a clean
+copy of another version), `modified` (changed since it was installed), `foreign` (not written by
+Hatchmark), `blocked` (install would refuse a symlink or special file there) or `unreadable`;
+the last two carry a `detail` with the path. Status reads through the same checks as install, so it
+never opens a FIFO or follows a symlink. `hatchmark init --skills` stages the skill before init
+writes anything and installs it at project scope for both agents. `hatchmark doctor` warns about
+every `stale` copy, project or user, and prints the `hatchmark skills install --agent <agent>
+--scope <scope>` command that refreshes it, shell-quoted so it can be pasted as is; for a
+`modified` copy it prints the same command with `--force`. It never suggests an install for a
+`blocked` or `unreadable` path, and no copy is not a warning.
 
 ## dev
 

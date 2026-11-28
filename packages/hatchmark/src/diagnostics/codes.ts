@@ -54,7 +54,7 @@ export const CODES = {
   HM0010: {
     title: "cannot install the agent skill",
     explanation:
-      "hatchmark skills install, or hatchmark init --skills, wrote nothing because a skill directory it writes cannot be written safely. Either a path on the way, such as .claude, .claude/skills or a file inside the hatchmark skill directory, is a symlink or something else that is not a regular file or directory (Hatchmark never writes through a symlink, even with --force), or a hatchmark skill directory exists that Hatchmark did not write: its SKILL.md has no metadata.hatchmark-version. The diagnostic lists the paths. Move or remove them, pass --force to replace a directory Hatchmark did not write, or choose another --agent or --scope. With --scope user, HOME must be set.",
+      "hatchmark skills install, or hatchmark init --skills, wrote nothing because a skill directory it writes cannot be written safely. A path on the way, such as .claude or .claude/skills, or an entry inside the hatchmark skill directory is a symlink, a FIFO or something else that is not a regular file or directory (Hatchmark never reads or writes through one, even with --force); a path cannot be read or written (EACCES, EPERM, EROFS or ENOSPC); the installed copy was changed since it was installed (a file differs from the SHA-256 in its .hatchmark-skill.json, or was added or deleted); or a hatchmark skill directory exists that Hatchmark did not write (it has no .hatchmark-skill.json). The diagnostic lists the paths. Move, fix or remove them, pass --force to replace a changed copy or one Hatchmark did not write, or choose another --agent or --scope. With --scope user, HOME must be set.",
   },
   HM1001: {
     title: "file cannot be read",

@@ -1,9 +1,11 @@
-import { mkdir, mkdtemp, readdir, readFile, rm, symlink, writeFile } from "node:fs/promises";
+import { execFileSync } from "node:child_process";
+import { createHash } from "node:crypto";
+import { chmod, mkdir, mkdtemp, readdir, readFile, rm, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import { parse } from "yaml";
-import { skillVersion, stampVersion } from "../../src/cli/commands/skills.js";
+import { stampVersion } from "../../src/cli/commands/skills.js";
 import { run } from "../../src/cli/main.js";
 
 const PACKAGE = path.resolve(import.meta.dirname, "../..");
@@ -11,9 +13,13 @@ const BUNDLE = path.join(PACKAGE, "skills/hatchmark");
 const PACKAGE_VERSION = (
   JSON.parse(await readFile(path.join(PACKAGE, "package.json"), "utf8")) as { version: string }
 ).version;
+const MANIFEST = ".hatchmark-skill.json";
+const POSIX_USER = process.platform !== "win32" && process.getuid?.() !== 0;
 
 const dirs: string[] = [];
+const locked: string[] = [];
 afterEach(async () => {
+  for (const dir of locked.splice(0)) await chmod(dir, 0o755).catch(() => undefined);
   for (const dir of dirs.splice(0)) await rm(dir, { recursive: true, force: true });
 });
 
@@ -21,6 +27,11 @@ async function tempDir(): Promise<string> {
   const dir = await mkdtemp(path.join(tmpdir(), "hatchmark-skills-"));
   dirs.push(dir);
   return dir;
+}
+
+async function lock(dir: string, mode: number): Promise<void> {
+  locked.push(dir);
+  await chmod(dir, mode);
 }
 
 async function cli(argv: string[], opts: { cwd: string; home?: string }) {
@@ -48,14 +59,56 @@ async function tree(dir: string): Promise<Map<string, string>> {
   return files;
 }
 
-async function project(): Promise<{ root: string; home: string }> {
+async function project(name = "project"): Promise<{ base: string; root: string; home: string }> {
   const base = await tempDir();
-  const root = path.join(base, "project");
+  const root = path.join(base, name);
   const home = path.join(base, "home");
   await mkdir(root);
   await mkdir(home);
-  return { root, home };
+  return { base, root, home };
 }
+
+const sha256 = (text: string) => createHash("sha256").update(text).digest("hex");
+
+function stamped(text: string, version: string): string {
+  const eol = text.includes("\r\n") ? "\r\n" : "\n";
+  const close = text.indexOf(`${eol}---${eol}`, 3);
+  return `${text.slice(0, close)}${eol}metadata:${eol}  hatchmark-version: "${version}"${text.slice(close)}`;
+}
+
+async function manifest(dir: string): Promise<{ version: string; files: Record<string, string> }> {
+  return JSON.parse(await readFile(path.join(dir, MANIFEST), "utf8"));
+}
+
+async function setManifestVersion(dir: string, version: string): Promise<void> {
+  const value = await manifest(dir);
+  await writeFile(path.join(dir, MANIFEST), JSON.stringify({ ...value, version }));
+}
+
+async function expectBundle(dir: string): Promise<void> {
+  const bundle = await tree(BUNDLE);
+  const installed = await tree(dir);
+  expect([...installed.keys()].sort()).toEqual([...bundle.keys(), MANIFEST].sort());
+  for (const [file, text] of bundle) {
+    expect(installed.get(file), file).toBe(
+      file === "SKILL.md" ? stamped(text, PACKAGE_VERSION) : text,
+    );
+  }
+  const recorded = await manifest(dir);
+  expect(recorded.version).toBe(PACKAGE_VERSION);
+  expect(Object.keys(recorded.files).sort()).toEqual([...bundle.keys()].sort());
+  for (const [file, digest] of Object.entries(recorded.files)) {
+    expect(digest, file).toBe(sha256(installed.get(file) ?? ""));
+  }
+}
+
+const statusOf = async (root: string, home: string | undefined, agent: string, scope: string) =>
+  (
+    await cli(["skills", "status", "--agent", agent, "--scope", scope], {
+      cwd: root,
+      ...(home ? { home } : {}),
+    })
+  ).json().skills[0];
 
 describe("the bundled skill", () => {
   it("follows the Agent Skills format and carries no version of its own", async () => {
@@ -65,7 +118,7 @@ describe("the bundled skill", () => {
     expect(typeof front.description).toBe("string");
     expect((front.description as string).length).toBeLessThanOrEqual(1024);
     expect(front.metadata).toBeUndefined();
-    expect(skillVersion(text)).toBeUndefined();
+    expect(text).not.toContain("hatchmark-version");
     expect(text.split("\n").length).toBeLessThan(150);
   });
 
@@ -113,10 +166,20 @@ describe("the bundled skill", () => {
     const manifest = JSON.parse(await readFile(path.join(PACKAGE, "package.json"), "utf8"));
     expect(manifest.files).toContain("skills");
   });
+
+  it("stamps the version into LF and CRLF front matter alike", () => {
+    expect(stampVersion("---\nname: x\ndescription: y\n---\n\n# X\n", "1.2.3")).toBe(
+      '---\nname: x\ndescription: y\nmetadata:\n  hatchmark-version: "1.2.3"\n---\n\n# X\n',
+    );
+    expect(stampVersion("---\r\nname: x\r\ndescription: y\r\n---\r\n\r\n# X\r\n", "1.2.3")).toBe(
+      '---\r\nname: x\r\ndescription: y\r\nmetadata:\r\n  hatchmark-version: "1.2.3"\r\n---\r\n\r\n# X\r\n',
+    );
+    expect(() => stampVersion("# no front matter\n", "1.2.3")).toThrow("no front matter");
+  });
 });
 
 describe("hatchmark skills install", () => {
-  it("copies the bundled skill for every agent and stamps the package version", async () => {
+  it("copies the bundled skill for every agent with a manifest of what it wrote", async () => {
     const { root, home } = await project();
     const out = await cli(["skills", "install", "--cwd", root], { cwd: root, home });
     expect(out.code).toBe(0);
@@ -139,18 +202,10 @@ describe("hatchmark skills install", () => {
         },
       ],
     });
-    const bundle = await tree(BUNDLE);
-    for (const dir of [".claude/skills/hatchmark", ".agents/skills/hatchmark"]) {
-      const installed = await tree(path.join(root, dir));
-      expect([...installed.keys()].sort()).toEqual([...bundle.keys()].sort());
-      for (const [file, text] of bundle) {
-        expect(installed.get(file), file).toBe(
-          file === "SKILL.md" ? stampVersion(text, PACKAGE_VERSION) : text,
-        );
-      }
-      expect(skillVersion(installed.get("SKILL.md") ?? "")).toBe(PACKAGE_VERSION);
-    }
+    await expectBundle(path.join(root, ".claude/skills/hatchmark"));
+    await expectBundle(path.join(root, ".agents/skills/hatchmark"));
     expect(await readdir(home)).toEqual([]);
+    expect((await readdir(path.join(root, ".claude/skills"))).sort()).toEqual(["hatchmark"]);
 
     const again = await cli(["skills", "install", "--cwd", root], { cwd: root, home });
     expect(again.json().skills.map((s: { status: string }) => s.status)).toEqual([
@@ -159,19 +214,63 @@ describe("hatchmark skills install", () => {
     ]);
   });
 
-  it("updates an older copy Hatchmark wrote and drops files the bundle no longer has", async () => {
+  it("refreshes a clean older copy without asking and drops files the bundle no longer has", async () => {
     const { root } = await project();
+    await cli(["skills", "install", "--agent", "claude"], { cwd: root });
     const dir = path.join(root, ".claude/skills/hatchmark");
-    await mkdir(path.join(dir, "references"), { recursive: true });
-    const old = stampVersion(await readFile(path.join(BUNDLE, "SKILL.md"), "utf8"), "0.0.0-old");
-    await writeFile(path.join(dir, "SKILL.md"), old);
-    await writeFile(path.join(dir, "references/gone.md"), "old\n");
+    const old = "old reference\n";
+    await writeFile(path.join(dir, "references/gone.md"), old);
+    const value = await manifest(dir);
+    await writeFile(
+      path.join(dir, MANIFEST),
+      JSON.stringify({
+        ...value,
+        version: "0.0.0-old",
+        files: { ...value.files, "references/gone.md": sha256(old) },
+      }),
+    );
+    expect((await statusOf(root, undefined, "claude", "project")).status).toBe("stale");
     const out = await cli(["skills", "install", "--agent", "claude"], { cwd: root });
+    expect(out.code).toBe(0);
     expect(out.json().skills).toEqual([
       { agent: "claude", scope: "project", path: dir, status: "updated" },
     ]);
-    expect(skillVersion(await readFile(path.join(dir, "SKILL.md"), "utf8"))).toBe(PACKAGE_VERSION);
-    expect((await tree(dir)).has("references/gone.md")).toBe(false);
+    await expectBundle(dir);
+  });
+
+  it("keeps a copy with local edits unless --force", async () => {
+    const { root } = await project();
+    await cli(["skills", "install", "--agent", "claude"], { cwd: root });
+    const dir = path.join(root, ".claude/skills/hatchmark");
+    const edited = `${await readFile(path.join(dir, "SKILL.md"), "utf8")}\nMy own paragraph.\n`;
+    await writeFile(path.join(dir, "SKILL.md"), edited);
+    await writeFile(path.join(dir, "notes.md"), "notes\n");
+    expect(await statusOf(root, undefined, "claude", "project")).toMatchObject({
+      status: "modified",
+      version: PACKAGE_VERSION,
+    });
+
+    const out = await cli(["skills", "install", "--agent", "claude"], { cwd: root });
+    expect(out.code).toBe(2);
+    expect(out.json().diagnostics[0].code).toBe("HM0010");
+    expect(out.json().diagnostics[0].expected[0]).toContain(dir);
+    expect(await readFile(path.join(dir, "SKILL.md"), "utf8")).toBe(edited);
+    expect(await readFile(path.join(dir, "notes.md"), "utf8")).toBe("notes\n");
+
+    await writeFile(
+      path.join(dir, "SKILL.md"),
+      stamped(await readFile(path.join(BUNDLE, "SKILL.md"), "utf8"), PACKAGE_VERSION),
+    );
+    await rm(path.join(dir, "notes.md"));
+    await rm(path.join(dir, "references/metrics.md"));
+    expect((await statusOf(root, undefined, "claude", "project")).status).toBe("modified");
+    expect((await cli(["skills", "install", "--agent", "claude"], { cwd: root })).code).toBe(2);
+    expect((await tree(dir)).has("references/metrics.md")).toBe(false);
+
+    const forced = await cli(["skills", "install", "--agent", "claude", "--force"], { cwd: root });
+    expect(forced.code).toBe(0);
+    expect(forced.json().skills[0].status).toBe("updated");
+    await expectBundle(dir);
   });
 
   it("refuses a directory Hatchmark did not write unless --force", async () => {
@@ -181,7 +280,8 @@ describe("hatchmark skills install", () => {
     await writeFile(path.join(dir, "SKILL.md"), "---\nname: hatchmark\ndescription: mine\n---\n");
     const out = await cli(["skills", "install"], { cwd: root });
     expect(out.code).toBe(2);
-    expect(out.json().diagnostics[0]).toMatchObject({ code: "HM0010", expected: [dir] });
+    expect(out.json().diagnostics[0].code).toBe("HM0010");
+    expect(out.json().diagnostics[0].expected).toEqual([`${dir} was not written by Hatchmark`]);
     expect(await readdir(root)).toEqual([".agents"]);
     expect(await readFile(path.join(dir, "SKILL.md"), "utf8")).toContain("description: mine");
 
@@ -191,7 +291,7 @@ describe("hatchmark skills install", () => {
       "created",
       "updated",
     ]);
-    expect(skillVersion(await readFile(path.join(dir, "SKILL.md"), "utf8"))).toBe(PACKAGE_VERSION);
+    await expectBundle(dir);
   });
 
   it("never writes through a symlink, even with --force", async () => {
@@ -201,10 +301,10 @@ describe("hatchmark skills install", () => {
     await symlink(elsewhere, path.join(root, ".claude/skills"));
     const out = await cli(["skills", "install", "--force"], { cwd: root });
     expect(out.code).toBe(2);
-    expect(out.json().diagnostics[0]).toMatchObject({
-      code: "HM0010",
-      expected: [path.join(root, ".claude/skills")],
-    });
+    expect(out.json().diagnostics[0].code).toBe("HM0010");
+    expect(out.json().diagnostics[0].expected).toEqual([
+      `${path.join(root, ".claude/skills")} is a symlink`,
+    ]);
     expect(await readdir(elsewhere)).toEqual([]);
     expect(await readdir(root)).toEqual([".claude"]);
 
@@ -216,11 +316,48 @@ describe("hatchmark skills install", () => {
       cwd: root,
       home,
     });
-    expect(file.json().diagnostics[0]).toMatchObject({
-      code: "HM0010",
-      expected: [path.join(dir, "SKILL.md")],
-    });
+    expect(file.json().diagnostics[0].expected).toEqual([
+      `${path.join(dir, "SKILL.md")} is a symlink`,
+    ]);
     expect(await readFile(path.join(elsewhere, "target.md"), "utf8")).toBe("keep\n");
+  });
+
+  it.skipIf(!POSIX_USER)("writes nothing when one target cannot be written", async () => {
+    const { root } = await project();
+    await cli(["skills", "install", "--agent", "claude"], { cwd: root });
+    const claude = path.join(root, ".claude/skills/hatchmark");
+    await setManifestVersion(claude, "0.0.0-old");
+    const before = await tree(claude);
+    const codex = path.join(root, ".agents/skills");
+    await mkdir(codex, { recursive: true });
+    await lock(codex, 0o555);
+
+    const out = await cli(["skills", "install"], { cwd: root });
+    expect(out.code).toBe(2);
+    expect(out.json().diagnostics[0].code).toBe("HM0010");
+    expect(out.json().diagnostics[0].expected[0]).toMatch(/\.agents\/skills.*EACCES/);
+    expect(await tree(claude)).toEqual(before);
+    expect(await readdir(path.join(root, ".claude/skills"))).toEqual(["hatchmark"]);
+    expect(await readdir(codex)).toEqual([]);
+
+    await rm(path.join(root, ".claude"), { recursive: true });
+    const fresh = await cli(["skills", "install"], { cwd: root });
+    expect(fresh.code).toBe(2);
+    expect(await readdir(root)).toEqual([".agents"]);
+  });
+
+  it.skipIf(!POSIX_USER)("reports a directory it cannot read as unreadable", async () => {
+    const { root } = await project();
+    await mkdir(path.join(root, ".claude"));
+    await lock(path.join(root, ".claude"), 0o000);
+    expect(await statusOf(root, undefined, "claude", "project")).toMatchObject({
+      status: "unreadable",
+      detail: expect.stringContaining("EACCES"),
+    });
+    const out = await cli(["skills", "install", "--agent", "claude"], { cwd: root });
+    expect(out.code).toBe(2);
+    expect(out.json().diagnostics[0]).toMatchObject({ code: "HM0010" });
+    expect(out.json().diagnostics[0].expected[0]).toContain("EACCES");
   });
 
   it("installs under the home directory with --scope user", async () => {
@@ -286,6 +423,45 @@ describe("hatchmark skills status", () => {
       ],
     });
   });
+
+  it.skipIf(process.platform === "win32")(
+    "calls a FIFO blocked without opening it, and doctor suggests no install",
+    { timeout: 5000 },
+    async () => {
+      const { root, home } = await project();
+      const dir = path.join(root, ".claude/skills/hatchmark");
+      await mkdir(dir, { recursive: true });
+      execFileSync("mkfifo", [path.join(dir, "SKILL.md")]);
+      expect(await statusOf(root, home, "claude", "project")).toMatchObject({
+        status: "blocked",
+        detail: `${path.join(dir, "SKILL.md")} is not a regular file or directory`,
+      });
+      const doctor = await cli(["doctor"], { cwd: root, home });
+      expect(doctor.code).toBe(0);
+      const check = doctor.json().checks.find((c: { name: string }) => c.name === "skills");
+      expect(check.detail).not.toContain("skills install --agent");
+    },
+  );
+
+  it.skipIf(process.platform === "win32")(
+    "calls a stale copy behind a symlink blocked, and doctor suggests no install",
+    async () => {
+      const { base, root, home } = await project();
+      await cli(["skills", "install", "--agent", "claude"], { cwd: root, home });
+      const real = path.join(base, "real-skills");
+      await mkdir(real);
+      execFileSync("mv", [path.join(root, ".claude/skills/hatchmark"), real]);
+      await rm(path.join(root, ".claude/skills"), { recursive: true });
+      await symlink(real, path.join(root, ".claude/skills"));
+      await setManifestVersion(path.join(real, "hatchmark"), "0.0.0-old");
+      expect(await statusOf(root, home, "claude", "project")).toMatchObject({ status: "blocked" });
+      const check = (await cli(["doctor"], { cwd: root, home }))
+        .json()
+        .checks.find((c: { name: string }) => c.name === "skills");
+      expect(check.status).toBe("ok");
+      expect(check.detail).not.toContain("skills install --agent");
+    },
+  );
 });
 
 describe("hatchmark init --skills", () => {
@@ -313,9 +489,7 @@ describe("hatchmark init --skills", () => {
       },
     ]);
     expect(out.json().created).toEqual(plain.json().created);
-    expect(
-      skillVersion(await readFile(path.join(root, ".claude/skills/hatchmark/SKILL.md"), "utf8")),
-    ).toBe(PACKAGE_VERSION);
+    await expectBundle(path.join(root, ".claude/skills/hatchmark"));
   });
 
   it("writes nothing when the skill directory is refused", async () => {
@@ -326,11 +500,21 @@ describe("hatchmark init --skills", () => {
     expect(out.json().diagnostics[0].code).toBe("HM0010");
     expect(await readdir(path.join(cwd, "shop"))).toEqual([".claude"]);
   });
+
+  it.skipIf(!POSIX_USER)("writes nothing when the skill cannot be staged", async () => {
+    const cwd = await tempDir();
+    await mkdir(path.join(cwd, "shop/.agents/skills"), { recursive: true });
+    await lock(path.join(cwd, "shop/.agents/skills"), 0o555);
+    const out = await cli(["init", "shop", "--skills"], { cwd });
+    expect(out.code).toBe(2);
+    expect(out.json().diagnostics[0].code).toBe("HM0010");
+    expect(await readdir(path.join(cwd, "shop"))).toEqual([".agents"]);
+  });
 });
 
 describe("hatchmark doctor and the agent skill", () => {
-  const skillsCheck = async (root: string, home: string) => {
-    const out = await cli(["doctor", "--cwd", root], { cwd: root, home });
+  const skillsCheck = async (root: string, home: string, cwd = root) => {
+    const out = await cli(["doctor", "--cwd", root], { cwd, home });
     expect(out.code).toBe(0);
     return out.json().checks.find((c: { name: string }) => c.name === "skills");
   };
@@ -347,16 +531,61 @@ describe("hatchmark doctor and the agent skill", () => {
   it("warns about a copy from another version with the command that fixes it", async () => {
     const { root, home } = await project();
     await cli(["skills", "install", "--agent", "claude", "--scope", "user"], { cwd: root, home });
-    const file = path.join(home, ".claude/skills/hatchmark/SKILL.md");
-    await writeFile(
-      file,
-      stampVersion(await readFile(path.join(BUNDLE, "SKILL.md"), "utf8"), "0.0.0-old"),
-    );
+    const dir = path.join(home, ".claude/skills/hatchmark");
+    await setManifestVersion(dir, "0.0.0-old");
     const check = await skillsCheck(root, home);
     expect(check.status).toBe("warn");
-    expect(check.detail).toContain(path.dirname(file));
+    expect(check.detail).toContain(dir);
     expect(check.detail).toContain("0.0.0-old");
     expect(check.detail).toContain(PACKAGE_VERSION);
-    expect(check.detail).toContain("hatchmark skills install --agent claude --scope user");
+    expect(check.detail).toContain("run hatchmark skills install --agent claude --scope user");
   });
+
+  it("warns about an edited copy and offers the --force replacement", async () => {
+    const { root, home } = await project();
+    await cli(["skills", "install", "--agent", "codex"], { cwd: root, home });
+    await writeFile(path.join(root, ".agents/skills/hatchmark/notes.md"), "mine\n");
+    const check = await skillsCheck(root, home);
+    expect(check.status).toBe("warn");
+    expect(check.detail).toContain("was changed");
+    expect(check.detail).toContain(
+      "hatchmark skills install --agent codex --scope project --force",
+    );
+  });
+
+  it.skipIf(process.platform === "win32")(
+    "prints a repair command a shell runs as is, for any project path",
+    async () => {
+      const { base, root, home } = await project("project with spaces and 'quotes'");
+      await cli(["skills", "install", "--agent", "claude"], { cwd: root, home });
+      const dir = path.join(root, ".claude/skills/hatchmark");
+      await setManifestVersion(dir, "0.0.0-old");
+      const detail: string = (await skillsCheck(root, home, base)).detail;
+      const command = /run (hatchmark skills install .*)$/.exec(detail)?.[1] ?? "";
+      expect(command).toContain("--agent claude --scope project --cwd");
+      const argv = execFileSync(
+        "sh",
+        ["-c", `printf '%s\\0' ${command.slice("hatchmark ".length)}`],
+        {
+          encoding: "utf8",
+        },
+      )
+        .split("\0")
+        .slice(0, -1);
+      expect(argv).toEqual([
+        "skills",
+        "install",
+        "--agent",
+        "claude",
+        "--scope",
+        "project",
+        "--cwd",
+        root,
+      ]);
+      const fixed = await cli(argv, { cwd: base, home });
+      expect(fixed.code).toBe(0);
+      expect(fixed.json().skills[0]).toMatchObject({ path: dir, status: "updated" });
+      expect((await manifest(dir)).version).toBe(PACKAGE_VERSION);
+    },
+  );
 });
