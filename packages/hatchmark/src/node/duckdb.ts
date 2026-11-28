@@ -412,6 +412,7 @@ function resultOf(
   const { components, groupingAt, large: shownMetrics } = built;
   const grouped = query.dimensions.length > 0;
   const dimCount = query.dimensions.length;
+  const counts = new Set(query.measures.flatMap((m) => (m.rows === undefined ? [] : [m.rows])));
   const masks = new Map(
     query.groupingSets.map((set, i) => [
       query.dimensions.reduce(
@@ -442,7 +443,7 @@ function resultOf(
       })),
       ...components.map((c, j) => ({
         name: c.id,
-        type: resultType(types[dimCount + j] ?? ""),
+        type: counts.has(c.id) ? resultType(types[dimCount + j] ?? "") : ("number" as const),
       })),
     ],
     rows,

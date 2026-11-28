@@ -75,6 +75,15 @@ function component(
   return { id, aggregate, ...extra, filters: metric.filters ?? [], reaggregate };
 }
 
+function countedColumn(sql: string): { column?: string } | undefined {
+  const call = /^\s*(sum|count)\s*\(\s*([^()]*?)\s*\)\s*$/i.exec(sql);
+  if (call === null) return undefined;
+  if (call[1]?.toLowerCase() === "count") return {};
+  const name = /^(?:"([^"]+)"|([A-Za-z_]\w*))$/.exec(call[2] ?? "");
+  const column = name?.[1] ?? name?.[2];
+  return column === undefined ? undefined : { column };
+}
+
 /** An aggregate or SQL metric as components plus how to combine them (see PlannedMeasure). */
 export function plannedMeasure(name: string, metric: Metric): PlannedMeasure | undefined {
   if (metric.type !== "aggregate" && metric.type !== "sql") return undefined;
@@ -86,7 +95,9 @@ export function plannedMeasure(name: string, metric: Metric): PlannedMeasure | u
       return { metric: name, components: [c], combine };
     }
     const c = component(id, "sql", metric, { sql: metric.sql }, "sum");
-    const rows = component(`${name}__rows`, "count", metric, {}, "sum");
+    const counted = countedColumn(metric.sql);
+    if (counted === undefined) return { metric: name, components: [c], combine };
+    const rows = component(`${name}__rows`, "count", metric, counted, "sum");
     return { metric: name, components: [c, rows], combine, rows: rows.id };
   }
   const column = metric.column === undefined ? {} : { column: metric.column };

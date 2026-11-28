@@ -237,18 +237,19 @@ class Assembler {
     const measure = indexed?.query.measures.find((m) => m.metric === metric);
     if (indexed === undefined || measure === undefined) return null;
     const { combine } = measure;
-    const counted = combine.op === "identity" && indexed.numeric.has(combine.component);
     const rowsAt =
-      measure.rows === undefined || !counted ? undefined : indexed.components.get(measure.rows);
+      measure.rows === undefined || !indexed.numeric.has(measure.rows)
+        ? undefined
+        : indexed.components.get(measure.rows);
     const component = (id: string): Value => {
       const at = indexed.components.get(id);
       const reaggregate = measure.components.find((c) => c.id === id)?.reaggregate ?? "none";
       const values = keys.map((key) => {
         const row = indexed.rows.get(key);
+        if (row !== undefined && rowsAt !== undefined && row[rowsAt] === 0) return 0;
         const raw = row === undefined || at === undefined ? null : row[at];
         const value = typeof raw === "number" ? raw : null;
-        const empty = row === undefined || (rowsAt !== undefined && row[rowsAt] === 0);
-        return value === null && reaggregate === "sum" && empty ? 0 : value;
+        return value === null && reaggregate === "sum" && row === undefined ? 0 : value;
       });
       if (!fold) return values[0] ?? null;
       const present = values.filter((v): v is number => v !== null);

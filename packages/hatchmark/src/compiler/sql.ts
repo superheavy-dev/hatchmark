@@ -337,10 +337,20 @@ function builtQuery(
     for (let n = 1; taken(alias); n++) alias = `${base}_${n}`;
     return quote(alias);
   };
+  const counts = new Set(query.measures.flatMap((m) => (m.rows === undefined ? [] : [m.rows])));
   const measureSql = components.map((c) => {
     const inWhere = shared !== undefined;
     const filters = inWhere ? [] : c.filters.map((f) => filterSql(source, f, context, sql));
     const clause = filters.length > 0 ? ` FILTER (WHERE ${filters.join(" AND ")})` : "";
+    if (counts.has(c.id)) {
+      const summed = source.columns.find(
+        (s) => c.column !== undefined && sameColumn(s.name, c.column),
+      );
+      const numeric =
+        c.column === undefined ||
+        (summed !== undefined && (NUMERIC.test(summed.type) || summed.type.startsWith("DECIMAL(")));
+      return numeric ? `count(*)${clause}` : "NULL";
+    }
     const aggregate = `${aggregateSql(c, source)}${clause}`;
     return c.aggregate === "sum" ? `coalesce(${aggregate}, 0)` : aggregate;
   });
