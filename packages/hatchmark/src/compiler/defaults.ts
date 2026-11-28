@@ -1,10 +1,12 @@
 import { type Diagnostic, docsCommand } from "../diagnostics/index.js";
+import { yamlText } from "../spec/fixes.js";
 import {
   type Anchors,
   type Block,
   blockTarget,
   type Dashboard,
   DEFAULT_PERIOD,
+  dashboardDependencies,
   type Grain,
   groupAdditive,
   type Metric,
@@ -136,6 +138,29 @@ export function explainDefaults(project: Project): Diagnostic[] {
     });
   }
   const config = project.config.spec;
+  const timed = new Map<string, Set<string>>();
+  for (const name of project.dashboards.keys()) {
+    for (const dep of dashboardDependencies(project, name).metrics) {
+      const metric = metrics.get(dep);
+      if ((metric?.type !== "aggregate" && metric?.type !== "sql") || metric.time === undefined)
+        continue;
+      timed.set(metric.table, (timed.get(metric.table) ?? new Set()).add(metric.time));
+    }
+  }
+  for (const [name, columns] of [...timed].sort(([a], [b]) => (a < b ? -1 : 1))) {
+    const source = config?.sources?.[name];
+    if (source === undefined || source.type === "lookup" || source.freshness !== undefined)
+      continue;
+    const [only] = columns.size === 1 ? columns : [];
+    out.push(
+      note(
+        project.config,
+        `/sources/${name}`,
+        `uses the default freshness for source "${name}": it is complete through its newest timestamp, or through the whole newest date of a date column`,
+        `set freshness: {lag: {days: 1}} when its newest day may still be loading, or {through: as_of} for a source that is complete whenever the build runs${only === undefined ? "; any freshness silences this note" : `; freshness: {column: ${yamlText(only)}} keeps the default and silences this note`}`,
+      ),
+    );
+  }
   const quarter = config?.anchors?.quarter;
   const year = config?.anchors?.year;
   const onlyBlocks = (unit: AnchorUnit) => blockAnchored.has(unit) && !rangeAnchored.has(unit);

@@ -47,6 +47,9 @@ silences its note.
 | Years start on Jan 1                                  | `hatchmark.yaml`, when a year block or a range such as `year_to_date` relies on it                                   | `anchors.year` (a quarter start when `anchors.quarter` is set), or a block's grain anchor                  |
 | An interval ending at a bucket end counts in it       | metrics with `active`                                                                                                | `active.ends`                                                                                              |
 | A split entity takes its current group                | `per_entity` metrics                                                                                                 | `group_at`                                                                                                 |
+| A source is complete through its newest timestamp     | each source a dashboard reads by a metric's time column, on its entry in `hatchmark.yaml`                            | source `freshness`                                                                                         |
+| A flow target splits by days at a finer grain         | each target a block shows, on a metric that adds up over time                                                        | target `prorate`                                                                                           |
+| A point-in-time target moves linearly                 | each point-in-time target a block shows                                                                              | target `path`                                                                                              |
 
 The edges note names the first bucket's start and the range start when the page's first period is
 fixed (a date as `asOf`), using the period filter's and grain filter's defaults when the dashboard
