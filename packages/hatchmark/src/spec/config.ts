@@ -88,6 +88,49 @@ const jsonSource = z.strictObject({
     .meta({ description: 'An array of objects, or one object per line. Default "array".' }),
 });
 
+const envName = z.string().regex(/^[A-Za-z_][A-Za-z0-9_]*$/, {
+  error:
+    "must be the name of an environment variable, such as SHOP_DATABASE_URL; the connection string itself never goes in hatchmark.yaml",
+});
+
+const maxAge = z
+  .union([
+    z.strictObject({ minutes: z.number().int().min(1).max(527040) }),
+    z.strictObject({ hours: z.number().int().min(1).max(8784) }),
+    z.strictObject({ days: z.number().int().min(1).max(366) }),
+  ])
+  .meta({
+    description:
+      "Reuse the local copy of the rows while it is younger than this. Default: build fetches the rows on every run, and dev once per session.",
+  });
+
+const tableName = z.string().regex(/^[^."'`\\\s]+(\.[^."'`\\\s]+)?$/, {
+  error: 'must be a table name, or schema.table, such as "orders" or "public.orders"',
+});
+
+const databaseOptions = {
+  env: envName.meta({
+    description:
+      "The environment variable that holds the connection string, such as SHOP_DATABASE_URL.",
+  }),
+  table: tableName.optional().meta({
+    description: "The table or view to read, as name or schema.name. Set table or query.",
+  }),
+  query: z.string().min(1).optional().meta({
+    description: "A SELECT the database runs, in its own SQL dialect. Set table or query.",
+  }),
+  max_age: maxAge.optional(),
+  ...fileSourceOptions,
+};
+
+const postgresSource = z
+  .strictObject({ type: z.literal("postgres"), ...databaseOptions })
+  .meta({ description: "A table or query in a PostgreSQL database." });
+
+const mysqlSource = z
+  .strictObject({ type: z.literal("mysql"), ...databaseOptions })
+  .meta({ description: "A table or query in a MySQL or MariaDB database." });
+
 const lookupSchema = z
   .strictObject({
     table: identifier.meta({ description: "A file source to join onto the base table." }),
@@ -130,13 +173,32 @@ const lookupSource = z
   });
 
 export const sourceSchema = z
-  .discriminatedUnion("type", [csvSource, parquetSource, jsonSource, lookupSource])
+  .discriminatedUnion("type", [
+    csvSource,
+    parquetSource,
+    jsonSource,
+    postgresSource,
+    mysqlSource,
+    lookupSource,
+  ])
   .meta({
     id: "Source",
-    description: "A table read from a file in the project, or a lookup over others.",
+    description:
+      "A table read from a file in the project or from a database, or a lookup over others.",
   });
 export type Source = z.infer<typeof sourceSchema>;
-export type FileSource = Exclude<Source, { type: "lookup" }>;
+/** A source that reads rows itself: a file or a database table. */
+export type TableSource = Exclude<Source, { type: "lookup" }>;
+export type FileSource = Extract<Source, { type: "csv" | "parquet" | "json" }>;
+export type DatabaseSource = Extract<Source, { type: "postgres" | "mysql" }>;
+
+export function isDatabaseSource(source: Source | undefined): source is DatabaseSource {
+  return source?.type === "postgres" || source?.type === "mysql";
+}
+
+export function isFileSource(source: Source | undefined): source is FileSource {
+  return source?.type === "csv" || source?.type === "parquet" || source?.type === "json";
+}
 export type LookupSource = Extract<Source, { type: "lookup" }>;
 
 function isLocale(tag: string): boolean {
@@ -222,6 +284,26 @@ export const projectConfigSchema = z
       .meta({ description: "Tables by name. Metrics refer to these names in their table field." }),
   })
   .superRefine((c, ctx) => {
+    for (const [name, source] of Object.entries(c.sources)) {
+      if (!isDatabaseSource(source)) continue;
+      if (source.table !== undefined && source.query !== undefined) {
+        ctx.addIssue(
+          customIssue(
+            "HM3007",
+            ["sources", name, "query"],
+            'use either "table" or "query", not both',
+          ),
+        );
+      } else if (source.table === undefined && source.query === undefined) {
+        ctx.addIssue(
+          customIssue(
+            "HM3001",
+            ["sources", name],
+            `database source "${name}" needs "table" (a table or view) or "query" (a SELECT)`,
+          ),
+        );
+      }
+    }
     if (c.weekStart !== undefined && c.anchors?.week !== undefined) {
       ctx.addIssue(
         customIssue("HM3007", ["weekStart"], 'use either "weekStart" or "anchors.week", not both'),

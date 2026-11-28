@@ -81,7 +81,7 @@ What it doesn't change:
 
 ## Sources
 
-A source is one file read as a table. Its name (the key under `sources`) is lowercase snake_case,
+A source is one file, or one database table or query (see [Database sources](#database-sources)), read as a table. Its name (the key under `sources`) is lowercase snake_case,
 such as `orders` or `web_sessions`.
 
 **`path` is relative to `hatchmark.yaml`**, not to `dataDir`: a file at `data/orders.csv` is
@@ -132,6 +132,97 @@ usage:
 Column types are inferred from every row of the file (see [numbers.md](numbers.md#reading-files)).
 A metric or block that names a column the file does not have fails `hatchmark build` with `HM2015`,
 which names the source and the column; `hatchmark check` does not catch every such case.
+
+## Database sources
+
+A `postgres` or `mysql` source reads a table, a view or a query from PostgreSQL, or from MySQL or
+MariaDB. Metrics use it exactly like a file source.
+
+```yaml
+sources:
+  orders:
+    type: postgres
+    env: SHOP_DATABASE_URL
+    table: public.orders
+  refunds:
+    type: mysql
+    env: BILLING_DATABASE_URL
+    query: SELECT id, order_id, amount, refunded_at FROM refunds WHERE refunded_at >= '2024-01-01'
+    max_age:
+      hours: 1
+```
+
+| Option    | Meaning                                                                                                                                                                                          |
+| --------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `env`     | Required. The name of the environment variable that holds the connection string. The connection string never goes in `hatchmark.yaml`; `env` takes only a variable name.                         |
+| `table`   | A table or view, as `name` or `schema.name`, matched exactly as written. Without a schema: `public` (or the connection's search path) in PostgreSQL, the connection's database in MySQL.         |
+| `query`   | Instead of `table`: a `SELECT` that the database runs, in its own SQL dialect. Use it to cast columns, filter rows or join tables before Hatchmark reads them.                                   |
+| `max_age` | `{ minutes: n }`, `{ hours: n }` or `{ days: n }`: reuse the local copy of the rows while it is younger than this. Without it, `build` fetches the rows on every run and `dev` once per session. |
+
+`timezone`, `freshness` and `snapshot` work as for file sources.
+
+### Credentials
+
+The variable holds the connection string in the form DuckDB's extensions take:
+
+- PostgreSQL: a URL or a libpq string, such as `postgresql://reader:secret@db.example.com:5432/shop?sslmode=require`.
+- MySQL: `host=db.example.com port=3306 user=reader password=secret database=shop`.
+
+Set it in the shell, or as a secret in CI. Hatchmark never writes it to disk: diagnostics, `--json`
+output and logs replace the connection string and every password in it with `***`, and the local
+copy is keyed by the host, port, database and user, never by the password. Hatchmark only reads:
+the database is attached read-only and only `SELECT` statements run. Give it a user that may only
+read the tables it needs.
+
+### How queries run
+
+`build`, `dev`, `explain` and `check --sql` load DuckDB's `postgres` or `mysql` extension
+(downloaded once from extensions.duckdb.org; `HM2044` when that fails), attach the database
+read-only, and copy the table or query into `.hatchmark/cache/v1/s/<source>.<key>.parquet`. Every
+query of the command then reads that copy as it reads a Parquet file: the same SQL, the same
+[numbers rules](numbers.md), and one set of rows in one order, so a build never mixes rows fetched
+at different moments and float sums come out the same on every run over the same copy. The
+database reads each source once per command; filtering, grouping and totals happen in DuckDB.
+
+The query cache keys entries by the query plan and the copy's SHA-256, as for files, so queries
+reuse their results exactly when the copy is reused (`max_age`). `hatchmark explain` shows when
+each copy was fetched. A copy holds the source's rows on the build machine: `.hatchmark/` is in the
+`.gitignore` that `hatchmark init` writes. Deleting `.hatchmark/` is always safe; the next command
+fetches again.
+
+### Types
+
+| Database type                                                             | Read as                        | Numbers rule                                                                                                          |
+| ------------------------------------------------------------------------- | ------------------------------ | --------------------------------------------------------------------------------------------------------------------- |
+| `smallint`, `integer`, `bigint`, MySQL unsigned integers                  | DuckDB integers                | Summed exactly (as `HUGEINT`), like integers in files.                                                                |
+| `numeric(p,s)`, `decimal(p,s)` with p ≤ 38                                | `DECIMAL(p,s)`                 | Exact.                                                                                                                |
+| PostgreSQL `numeric` without a precision; `numeric`/`decimal` with p > 38 | `DOUBLE` (the driver's choice) | Float rules (`HM4004`); a metric that aggregates it gets warning `HM4080`. Declare a precision or cast it in `query`. |
+| `real`, `double precision`, `float`, `double`                             | `DOUBLE`                       | Float rules.                                                                                                          |
+| PostgreSQL `timestamptz`, MySQL `TIMESTAMP`                               | `TIMESTAMP WITH TIME ZONE`     | An instant; MySQL is read with session time zone UTC, so the server's zone never shifts it.                           |
+| PostgreSQL `timestamp`, MySQL `DATETIME`                                  | `TIMESTAMP`                    | Wall-clock time in the source's `timezone` (default UTC; note `HM4016`).                                              |
+| `date`                                                                    | `DATE`                         | A calendar date.                                                                                                      |
+| `text`, `varchar`, `char`, `uuid`, `json`, `jsonb`, `time`, enums         | `VARCHAR`                      | Text.                                                                                                                 |
+| `boolean`, MySQL `TINYINT(1)` and `BIT(1)`                                | `BOOLEAN`                      |                                                                                                                       |
+| `interval`, `bytea`/`BLOB`, arrays, composite types                       | kept as DuckDB reads them      | A metric that uses one fails `check` with `HM2043`.                                                                   |
+
+Both databases deliver microseconds; nanosecond timestamps (`TIMESTAMP_NS`) only come from Parquet
+files. Integer sums that pass 64 bits stay exact in `HUGEINT`, as for files.
+
+### Checking without a connection
+
+`hatchmark check` reads a database source's column names and types, never its rows:
+
+1. When the variable is set, from the database itself. `HM2041` when it cannot connect, `HM2042` when
+   the table is missing, `HM2018` for a column the table does not have, `HM2043` for a type a
+   metric cannot use.
+2. When it is not set, from the newest local copy of the same table or query in `.hatchmark/cache`,
+   with note `HM2040` naming when that copy was fetched.
+3. With neither, the source's columns are not checked: warning `HM2040` (exit 0 unless `--strict`).
+   Everything else in the project is still checked.
+
+`build` and `dev` need the rows, so a missing variable is an error there. In CI, set the variable
+as a secret where `build` runs; a `check` job without database access still checks every file and
+reference and only warns about the database columns.
 
 ## Starting from `init --template minimal`
 

@@ -1,5 +1,5 @@
 import { normalizePath } from "./common.js";
-import type { Source } from "./config.js";
+import { isFileSource, type Source } from "./config.js";
 import type { Block } from "./dashboard.js";
 import type { Filter, Metric, Target } from "./metric.js";
 import type { Project } from "./project.js";
@@ -172,7 +172,7 @@ export function dashboardsAffectedBy(project: Project, changed: string): string[
   const segment = [...project.segments.values()].find((s) => s.file === file)?.name;
   const configured = project.config.spec?.sources ?? {};
   const changedSources = Object.entries(configured)
-    .filter(([, source]) => source.type !== "lookup" && normalizePath(source.path) === file)
+    .filter(([, source]) => isFileSource(source) && normalizePath(source.path) === file)
     .map(([name]) => name);
   if (metric === undefined && segment === undefined && changedSources.length === 0) return [];
   return all.filter((name) => {

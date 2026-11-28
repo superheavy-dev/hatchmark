@@ -24,8 +24,9 @@ import {
   type SqlExecutor,
   type TimeColumn,
 } from "../compiler/index.js";
-import { normalizePath, type ProjectConfig } from "../spec/index.js";
+import { isDatabaseSource, normalizePath, type ProjectConfig } from "../spec/index.js";
 import { VERSION } from "../version.js";
+import { createDatabaseStore, type DatabaseStore } from "./database.js";
 
 const readSources = (query: PlannedQuery): string[] => [
   query.source,
@@ -43,6 +44,8 @@ export interface DataFile {
   file: string;
   bytes: number;
   sha256: string;
+  /** For a database source: when its local copy was fetched, ISO 8601 UTC. */
+  fetched_at?: string;
 }
 
 /** What explain shows for one query. */
@@ -202,8 +205,10 @@ export async function createCachedExecutor(options: {
   root: string;
   config: ProjectConfig;
   /** Makes the executor, rooted at the project or at a snapshot of its data files. */
-  createInner(root: string): Promise<InnerExecutor>;
+  createInner(root: string, databases: DatabaseStore | undefined): Promise<InnerExecutor>;
   readOnly?: boolean;
+  /** Where database sources' rows come from; a store of its own over process.env when absent. */
+  databases?: DatabaseStore;
   sweep?: boolean;
 }): Promise<CachedExecutor> {
   const { root, config } = options;
@@ -239,8 +244,14 @@ export async function createCachedExecutor(options: {
   const snapshotting = stats.enabled && !options.readOnly;
   const snapshot = path.join(root, ".hatchmark", "tmp", randomUUID());
   let snapshotted = false;
-  const projectExecutor = lazy(() => options.createInner(root));
-  const snapshotExecutor = lazy(() => options.createInner(snapshot));
+  const ownStore =
+    options.databases === undefined &&
+    Object.values(config.sources).some((s) => isDatabaseSource(s))
+      ? createDatabaseStore({ root, env: process.env, readOnly: options.readOnly === true })
+      : undefined;
+  const databases = options.databases ?? ownStore;
+  const projectExecutor = lazy(() => options.createInner(root, databases));
+  const snapshotExecutor = lazy(() => options.createInner(snapshot, databases));
 
   const fingerprints = new Map<string, Promise<DataFile>>();
   const fingerprint = (source: string, file: string): Promise<DataFile> => {
@@ -278,6 +289,12 @@ export async function createCachedExecutor(options: {
       for (const name of names) {
         const s = config.sources[name];
         if (s === undefined || s.type === "lookup") continue;
+        if (isDatabaseSource(s)) {
+          if (databases === undefined) return undefined;
+          const copy = await databases.copy(name, s);
+          out.push({ ...(await fingerprint(name, copy.file)), fetched_at: copy.stored_at });
+          continue;
+        }
         out.push(await fingerprint(name, normalizePath(s.path)));
       }
       return out;
@@ -668,6 +685,7 @@ export async function createCachedExecutor(options: {
         for (const executor of [projectExecutor.made(), snapshotExecutor.made()]) {
           if (executor !== undefined) await (await executor).close();
         }
+        await ownStore?.close();
         if (snapshotted) await rm(snapshot, { recursive: true, force: true }).catch(() => {});
       }
     },

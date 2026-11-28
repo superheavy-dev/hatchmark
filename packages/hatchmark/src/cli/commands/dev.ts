@@ -63,6 +63,7 @@ export async function dev(
       ...(flags.host === undefined ? {} : { host: flags.host }),
       open: flags.open,
       color: ctx.color,
+      env: ctx.io.env,
       log: (text) => ctx.io.stderr(text),
     });
   } catch (error) {

@@ -3,12 +3,12 @@ import type {
   Aggregate,
   Anchors,
   Comparison,
-  FileSource,
   Filter,
   GeographyId,
   Project,
   RangeSpec,
   ResolvedGrain,
+  TableSource,
 } from "../spec/index.js";
 import type { PlannedHorizon, SourceHorizon, TimeColumn } from "./horizons.js";
 
@@ -163,12 +163,12 @@ export interface PlannedQuery {
    * The source's file and reader options as hatchmark.yaml declares them. They decide what rows
    * the query reads, so they are part of its id and of the plan hash.
    */
-  input: FileSource;
+  input: TableSource;
   /**
    * The sources that in_table and not_in_table filters read, by name, as hatchmark.yaml declares
    * them; absent when the query has no such filter.
    */
-  tables?: Record<string, FileSource>;
+  tables?: Record<string, TableSource>;
   /** Aggregate and SQL metrics on this source; ratios combine measures in BlockPlan.measures. */
   measures: PlannedMeasure[];
   dimensions: PlannedDimension[];

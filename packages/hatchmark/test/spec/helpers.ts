@@ -127,6 +127,7 @@ export function projectFrom(files: {
   segments?: Record<string, unknown>;
   columns?: Record<string, string[]>;
   columnTypes?: Record<string, { name: string; type: string }[]>;
+  databases?: Record<string, Parameters<Project["databases"]["set"]>[1]>;
 }): Project {
   const text = (v: unknown): string => (typeof v === "string" ? v : toYaml(v));
   const project: Project = {
@@ -137,6 +138,7 @@ export function projectFrom(files: {
     missingData: new Set(),
     columns: new Map(Object.entries(files.columns ?? {})),
     columnTypes: new Map(Object.entries(files.columnTypes ?? {})),
+    databases: new Map(Object.entries(files.databases ?? {})),
   };
   for (const [name, value] of Object.entries(files.metrics ?? METRICS)) {
     project.metrics.set(name, parseSpecFile("metric", `metrics/${name}.yaml`, text(value)));

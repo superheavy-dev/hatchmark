@@ -1,13 +1,19 @@
 import { open, readdir, readFile, stat } from "node:fs/promises";
 import path from "node:path";
 import type { ProjectHost } from "../spec/index.js";
+import { createDatabaseStore, type DatabaseStore } from "./database.js";
 
 /**
- * The Node.js ProjectHost: reads files under root, and reads the columns of Parquet and JSON
- * sources with DuckDB (loaded only when a project has such a source).
+ * The Node.js ProjectHost: reads files under root, reads the columns of Parquet and JSON sources
+ * with DuckDB (loaded only when a project has such a source), and the columns of database sources
+ * with the connection strings in env.
  */
-export function nodeProjectHost(root: string): ProjectHost {
+export function nodeProjectHost(
+  root: string,
+  env: Readonly<Record<string, string | undefined>> = process.env,
+): ProjectHost {
   const resolve = (file: string): string => path.join(root, ...file.split("/"));
+  let databases: DatabaseStore | undefined;
   return {
     label: root,
     readText: (file) => readFile(resolve(file), "utf8").catch(() => undefined),
@@ -42,6 +48,10 @@ export function nodeProjectHost(root: string): ProjectHost {
     async columnTypes(file, source) {
       const { describeColumnTypes } = await import("./duckdb.js");
       return describeColumnTypes(resolve(file), source);
+    },
+    database(name, source) {
+      databases ??= createDatabaseStore({ root, env });
+      return databases.describe(name, source);
     },
   };
 }

@@ -29,7 +29,9 @@ import { GEOGRAPHY_DATA, geographyScript, usedGeographies } from "../../geo/inde
 import {
   type CacheStats,
   createCachedExecutor,
+  createDatabaseStore,
   createDuckDbExecutor,
+  type DatabaseStore,
   nodeProjectHost,
 } from "../../node/index.js";
 import {
@@ -41,6 +43,7 @@ import {
 import {
   checkReferences,
   type GeographyId,
+  isFileSource,
   loadProject,
   type Project,
   type ProjectConfig,
@@ -83,6 +86,7 @@ export interface BuildDeps {
   createExecutor(options: {
     root: string;
     config: ProjectConfig;
+    databases?: DatabaseStore;
   }): Promise<DashboardExecutor & { close(): Promise<void> }>;
   runDashboard: typeof runDashboard;
 }
@@ -225,7 +229,9 @@ export async function build(
   flags: { out?: string; cache?: boolean },
   deps: BuildDeps = defaultDeps,
 ): Promise<CommandResult> {
-  const { project, diagnostics: loadDiagnostics } = await loadProject(nodeProjectHost(ctx.root));
+  const { project, diagnostics: loadDiagnostics } = await loadProject(
+    nodeProjectHost(ctx.root, ctx.io.env),
+  );
   if (project === undefined || project.config.spec === undefined) {
     const report = createReport([
       ...loadDiagnostics,
@@ -245,6 +251,7 @@ export async function build(
     deps,
     flags.cache !== false,
     loadDiagnostics,
+    ctx.io.env,
   );
   if (diagnostics.some((d) => d.severity === "error")) {
     const report = createReport(diagnostics);
@@ -430,8 +437,12 @@ export async function bundledAssets(
 export function sourceNames(config: ProjectConfig): string[] {
   return [
     ...new Set(
-      Object.values(config.sources).flatMap((s) =>
-        s.type === "lookup" ? [] : [path.posix.basename(s.path)],
+      Object.entries(config.sources).flatMap(([name, s]) =>
+        s.type === "lookup"
+          ? []
+          : isFileSource(s)
+            ? [path.posix.basename(s.path)]
+            : [s.table ?? name],
       ),
     ),
   ].sort();
@@ -501,7 +512,9 @@ async function runAll(
   deps: BuildDeps,
   useCache: boolean,
   loaded: readonly Diagnostic[],
+  env: Readonly<Record<string, string | undefined>>,
 ): Promise<{ pages: Page[]; diagnostics: Diagnostic[]; cache?: CacheStats }> {
+  const databases = createDatabaseStore({ root, env });
   const pages: Page[] = [];
   const diagnostics = new Map<string, Diagnostic>();
   for (const d of loaded) diagnostics.set(JSON.stringify(d), d);
@@ -512,11 +525,12 @@ async function runAll(
     ? await createCachedExecutor({
         root,
         config,
-        createInner: (at) => deps.createExecutor({ root: at, config }),
+        createInner: (at) => deps.createExecutor({ root: at, config, databases }),
         sweep: true,
+        databases,
       })
     : undefined;
-  const executor = cached ?? (await deps.createExecutor({ root, config }));
+  const executor = cached ?? (await deps.createExecutor({ root, config, databases }));
   try {
     for (const name of [...project.dashboards.keys()].sort()) {
       const now = new Date();
@@ -529,6 +543,7 @@ async function runAll(
     }
   } finally {
     await executor.close();
+    await databases.close();
   }
   return {
     pages,

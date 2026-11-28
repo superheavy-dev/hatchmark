@@ -94,8 +94,28 @@ export function compareDiagnostics(a: Diagnostic, b: Diagnostic): number {
 }
 
 /** Builds the versioned report; ok is false only when there is at least one error. */
+const URL_PASSWORD = /(\w+:\/\/[^:/@\s]*:)[^@\s]*@/g;
+const KEYWORD_PASSWORD = /\b(password\s*=\s*)('(?:[^'\\]|\\.)*'|[^\s"]+)/gi;
+
+/**
+ * Replaces passwords in connection strings (scheme://user:password@host, password=...) with ***,
+ * so a report never repeats a credential from a file or an error.
+ */
+export function maskPasswords(text: string): string {
+  return text.replace(URL_PASSWORD, "$1***@").replace(KEYWORD_PASSWORD, "$1***");
+}
+
+function masked<T>(value: T): T {
+  if (typeof value === "string") return maskPasswords(value) as T;
+  if (Array.isArray(value)) return value.map(masked) as T;
+  if (value !== null && typeof value === "object") {
+    return Object.fromEntries(Object.entries(value).map(([k, v]) => [k, masked(v)])) as T;
+  }
+  return value;
+}
+
 export function createReport(diagnostics: readonly Diagnostic[]): DiagnosticReport {
-  const sorted = [...diagnostics].sort(compareDiagnostics);
+  const sorted = [...diagnostics].sort(compareDiagnostics).map(masked);
   const errorCount = sorted.filter((d) => d.severity === "error").length;
   return {
     format_version: DIAGNOSTICS_FORMAT_VERSION,

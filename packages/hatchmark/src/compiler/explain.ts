@@ -2,7 +2,7 @@ import { type Diagnostic, docsCommand } from "../diagnostics/index.js";
 import { type Project, parseSpecFile, blockId as specBlockId } from "../spec/index.js";
 import type { ExecutionContext, PlannedQuery } from "./plan.js";
 import { planDashboard } from "./planner.js";
-import { blockingErrors, type DashboardExecutor, executionContext } from "./run.js";
+import { blockingErrors, type DashboardExecutor, dataFailure, executionContext } from "./run.js";
 import type { BuiltSql, SqlValue } from "./sql.js";
 import { queryBounds, SUPPORTED_DATES } from "./windows.js";
 
@@ -89,8 +89,7 @@ export async function explainDashboard(
       explained.push({ blockId: block.blockId, queries: out });
     }
   } catch (error) {
-    const message = error instanceof Error ? error.message : String(error);
-    return { diagnostics: [...diagnostics, failure("HM2015", message)] };
+    return { diagnostics: [...diagnostics, dataFailure("", error)] };
   }
   return { blocks: explained, asOf: context.asOf, diagnostics };
 }
