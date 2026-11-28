@@ -1,6 +1,7 @@
 import { afterAll, describe, expect, it } from "vitest";
 import { runPeriodData } from "../../src/compiler/period-build.js";
 import { customRangeDashboard } from "../../src/compiler/period-data.js";
+import { planDashboard } from "../../src/compiler/planner.js";
 import { createDuckDbExecutor } from "../../src/node/index.js";
 import { metric, removeProjects, run, writeProject } from "./fixture.js";
 import { METRICS } from "./periods.oracle.js";
@@ -9,7 +10,10 @@ afterAll(removeProjects);
 
 type Range = { start: string; end: string };
 
-async function kpi(sql: string, range: Range): Promise<{ preset: unknown; custom: unknown }> {
+async function kpi(
+  sql: string,
+  range: Range,
+): Promise<{ preset: unknown; custom: unknown; counted: boolean }> {
   const { root, project, diagnostics } = await writeProject({
     "hatchmark.yaml": {
       version: 1,
@@ -27,7 +31,7 @@ async function kpi(sql: string, range: Range): Promise<{ preset: unknown; custom
       sources: { sales: { type: "csv", path: "data/sales.csv" } },
     },
     "data/sales.csv":
-      "sold,amount,status\n2025-04-01,3,paid\n2025-04-03,,paid\n2025-04-05,10,paid\n2025-04-09,1,paid\n",
+      "sold,amount,status,flag\n2025-04-01,3,paid,true\n2025-04-03,,paid,false\n2025-04-05,10,paid,true\n2025-04-09,1,paid,false\n",
     "metrics/net.yaml": metric({
       type: "sql",
       table: "sales",
@@ -57,7 +61,10 @@ async function kpi(sql: string, range: Range): Promise<{ preset: unknown; custom
       const block = blocks.find((b) => b.id === "net");
       return block !== undefined && "value" in block ? block.value : undefined;
     };
-    return { preset: value(result.data.blocks), custom: value(custom.blocks) };
+    const plan = planDashboard(project, "probe").plan;
+    const counted =
+      plan?.queries.some((q) => q.measures.some((m) => m.rows !== undefined)) ?? false;
+    return { preset: value(result.data.blocks), custom: value(custom.blocks), counted };
   } finally {
     await executor.close();
   }
@@ -69,8 +76,13 @@ const noRows = { start: "2025-04-06", end: "2025-04-08" };
 
 describe("an additive SQL metric over no rows: plain SUM and COUNT zero-fill, nothing else does", () => {
   it("a numeric result over no rows is 0, like a sum, in presets and custom ranges", async () => {
-    expect(await kpi("sum(amount)", noRows)).toEqual({ preset: 0, custom: 0 });
-    expect(await kpi("sum(amount)", rows)).toEqual({ preset: 10, custom: 10 });
+    expect(await kpi("sum(amount)", noRows)).toEqual({ preset: 0, custom: 0, counted: true });
+    expect(await kpi("sum(amount)", rows)).toEqual({ preset: 10, custom: 10, counted: true });
+    expect(await kpi("count(*)", noRows)).toEqual({ preset: 0, custom: 0, counted: true });
+  });
+
+  it("a plain sum over a BOOLEAN column plans exactly as before: no row count", async () => {
+    expect(await kpi("sum(flag)", rows)).toMatchObject({ preset: 1, counted: false });
   });
 
   it("an expression with its own fallback keeps it over no rows in a preset", async () => {
@@ -90,7 +102,7 @@ describe("an additive SQL metric over no rows: plain SUM and COUNT zero-fill, no
     "list(amount)",
     "sum(amount) * 1",
   ])("%s is not zero-filled: empty over no rows in presets and custom ranges", async (sql) => {
-    expect(await kpi(sql, noRows)).toEqual({ preset: null, custom: null });
+    expect(await kpi(sql, noRows)).toEqual({ preset: null, custom: null, counted: false });
   });
 
   it.each(["sum(amount)::VARCHAR", "sum(amount)::BOOLEAN", "sum(amount) * INTERVAL '1 day'"])(

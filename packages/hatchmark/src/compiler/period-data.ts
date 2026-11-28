@@ -124,7 +124,7 @@ export function cubeResult(
   };
   const lo = bounds.kind === "bounded" ? dayOf(bounds.start, false) : -Infinity;
   const hi = bounds.end === undefined ? Infinity : dayOf(bounds.end, true);
-  const components = query.measures.flatMap((m) => m.components).filter((c) => c.id in cube.values);
+  const components = query.measures.flatMap((m) => m.components);
   const dims = query.dimensions;
   const texts = new Map<number, string>();
   const buckets = new Map<string, string>();

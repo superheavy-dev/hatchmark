@@ -31,6 +31,16 @@ export function sameColumn(a: string, b: string): boolean {
   return foldColumn(a) === foldColumn(b);
 }
 
+/** A SQL metric expression that is one plain sum(column) or count(...) call, or undefined. */
+export function plainAggregate(sql: string): { fn: "sum" | "count"; column?: string } | undefined {
+  const call = /^\s*(sum|count)\s*\(\s*([^()]*?)\s*\)\s*$/i.exec(sql);
+  if (call === null) return undefined;
+  if (call[1]?.toLowerCase() === "count") return { fn: "count" };
+  const name = /^(?:"([^"]+)"|([A-Za-z_]\w*))$/.exec(call[2] ?? "");
+  const column = name?.[1] ?? name?.[2];
+  return column === undefined ? undefined : { fn: "sum", column };
+}
+
 /** Whether known columns include a column (see sameColumn); undefined when they are unknown. */
 export function hasColumn(
   columns: readonly string[] | undefined,

@@ -6,7 +6,7 @@ import {
   type SpecDocument,
   type SpecNode,
 } from "../diagnostics/index.js";
-import { GLOB_CHARACTERS, IDENTIFIER_PATTERN, normalizePath } from "./common.js";
+import { GLOB_CHARACTERS, IDENTIFIER_PATTERN, normalizePath, plainAggregate } from "./common.js";
 import type { FileSource } from "./config.js";
 import { PROJECT_DEFAULTS, type ProjectConfig, projectConfigSchema } from "./config.js";
 import { type Dashboard, dashboardSchema } from "./dashboard.js";
@@ -364,6 +364,11 @@ function typedSources(project: Project): Set<string> {
     if (f.op !== "in_table" && f.op !== "not_in_table") continue;
     out.add(table);
     out.add(f.table);
+  }
+  for (const { spec } of project.metrics.values()) {
+    if (spec?.type === "sql" && spec.additive && plainAggregate(spec.sql)?.fn === "sum") {
+      out.add(spec.table);
+    }
   }
   return out;
 }

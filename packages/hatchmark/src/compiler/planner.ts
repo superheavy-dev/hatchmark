@@ -11,11 +11,13 @@ import {
   grainKey,
   type Metric,
   type Project,
+  plainAggregate,
   projectAnchors,
   type ResolvedGrain,
   resolveGrain,
   type Source,
   type SpecFile,
+  sameColumn,
 } from "../spec/index.js";
 import { canonicalJson, sha256Hex } from "./hash.js";
 import { planHorizons, type TimeColumn } from "./horizons.js";
@@ -57,6 +59,7 @@ interface Context {
   range: QueryPlan["period"]["range"];
   compare: Comparison;
   anchors: Anchors;
+  columnTypes: Project["columnTypes"];
 }
 
 /** One reading of some metrics: the same axes, grouping sets and window shift for all of them. */
@@ -75,17 +78,22 @@ function component(
   return { id, aggregate, ...extra, filters: metric.filters ?? [], reaggregate };
 }
 
-function countedColumn(sql: string): { column?: string } | undefined {
-  const call = /^\s*(sum|count)\s*\(\s*([^()]*?)\s*\)\s*$/i.exec(sql);
-  if (call === null) return undefined;
-  if (call[1]?.toLowerCase() === "count") return {};
-  const name = /^(?:"([^"]+)"|([A-Za-z_]\w*))$/.exec(call[2] ?? "");
-  const column = name?.[1] ?? name?.[2];
-  return column === undefined ? undefined : { column };
+const NUMERIC_TYPE =
+  /^(TINYINT|SMALLINT|INTEGER|BIGINT|HUGEINT|UTINYINT|USMALLINT|UINTEGER|UBIGINT|UHUGEINT|FLOAT|DOUBLE|DECIMAL\(\d+,\s*\d+\))$/;
+
+function countsRows(sql: string, types: readonly { name: string; type: string }[] | undefined) {
+  const plain = plainAggregate(sql);
+  if (plain?.fn === "count") return true;
+  const type = types?.find((c) => plain?.column !== undefined && sameColumn(c.name, plain.column));
+  return type !== undefined && NUMERIC_TYPE.test(type.type);
 }
 
 /** An aggregate or SQL metric as components plus how to combine them (see PlannedMeasure). */
-export function plannedMeasure(name: string, metric: Metric): PlannedMeasure | undefined {
+export function plannedMeasure(
+  name: string,
+  metric: Metric,
+  types?: readonly { name: string; type: string }[],
+): PlannedMeasure | undefined {
   if (metric.type !== "aggregate" && metric.type !== "sql") return undefined;
   if (metric.type === "sql") {
     const id = `${name}__sql`;
@@ -95,9 +103,8 @@ export function plannedMeasure(name: string, metric: Metric): PlannedMeasure | u
       return { metric: name, components: [c], combine };
     }
     const c = component(id, "sql", metric, { sql: metric.sql }, "sum");
-    const counted = countedColumn(metric.sql);
-    if (counted === undefined) return { metric: name, components: [c], combine };
-    const rows = component(`${name}__rows`, "count", metric, counted, "sum");
+    if (!countsRows(metric.sql, types)) return { metric: name, components: [c], combine };
+    const rows = component(`${name}__rows`, "count", metric, {}, "sum");
     return { metric: name, components: [c, rows], combine, rows: rows.id };
   }
   const column = metric.column === undefined ? {} : { column: metric.column };
@@ -267,7 +274,13 @@ function planReading(
     );
     const measures = group.metrics.flatMap((m) => {
       const metric = ctx.metrics.get(m);
-      const measure = metric && plannedMeasure(m, metric);
+      const measure =
+        metric &&
+        plannedMeasure(
+          m,
+          metric,
+          metric.type === "sql" ? ctx.columnTypes.get(metric.table) : undefined,
+        );
       return measure ? [measure] : [];
     });
     const tables = filterTables(ctx.sources, measures);
@@ -608,6 +621,7 @@ function context(
       range: period.range,
       compare: period.compare,
       anchors: projectAnchors(project.config.spec),
+      columnTypes: project.columnTypes,
     },
     diagnostics: [],
   };

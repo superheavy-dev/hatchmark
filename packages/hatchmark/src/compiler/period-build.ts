@@ -58,11 +58,8 @@ export function dayCubeQuery(query: PlannedQuery): PlannedQuery | undefined {
 }
 
 function cubeFrom(query: PlannedQuery, result: QueryResult, start: number, last: number): DayCube {
+  const components = query.measures.flatMap((m) => m.components.map((c) => c.id));
   const at = new Map(result.columns.map((c, i) => [c.name, i]));
-  const numeric = new Set(result.columns.filter((c) => c.type === "number").map((c) => c.name));
-  const components = query.measures.flatMap((m) =>
-    m.components.filter((c) => c.id !== m.rows || numeric.has(c.id)).map((c) => c.id),
-  );
   const width = query.dimensions.length;
   const cube: DayCube = {
     columns: query.dimensions.slice(1).map((d) => d.column),
