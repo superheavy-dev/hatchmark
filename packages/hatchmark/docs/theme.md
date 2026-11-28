@@ -16,7 +16,8 @@ Slot n is the same hue family in both sets, so a series keeps its colour when on
 A group of related series (see [components/groups.md](components/groups.md)) takes one of three hue
 families, in this order: blue (slots 1 and 5), pink and red (slots 2, 6 and 8), and green (slot 4).
 Each family has three lightness steps as strokes and fills, in light and dark (`data.groups`), and
-step 1 is the family's base slot colour. Slot 3 (cyan) and slot 7 (warm grey) host no group: cyan
+step 1 stays close to the family's base slot colour, moving only so that steps 2 and 3 always recede
+(`checks.<mode>.groupCVD.leadVsBase` records how far). Slot 3 (cyan) and slot 7 (warm grey) host no group: cyan
 cannot step in lightness without running into the blues, and grey steps would read as context.
 While a group holds a family, ungrouped series skip its slots.
 

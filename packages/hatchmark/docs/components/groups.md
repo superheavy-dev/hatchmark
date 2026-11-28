@@ -39,9 +39,9 @@ groups:
 
 ## How colours are picked
 
-- The first group takes the blue family, the second pink and red, the third green. Step 1 is the
-  family's usual colour, so a group's lead series looks the way it does ungrouped; steps 2 and 3
-  differ in lightness only.
+- The first group takes the blue family, the second pink and red, the third green. Step 1 is
+  close to the family's usual colour, tuned where needed so that steps 2 and 3 always recede
+  behind it; the steps differ in lightness only.
 - Ungrouped series take the usual slots in order, skipping the slots of every family a group holds,
   so no ungrouped series shares a hue with a group. A chart without `groups` is drawn exactly as
   before.

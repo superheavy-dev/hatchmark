@@ -224,16 +224,45 @@ describe.each(["light", "dark"] as const)("Default theme group tokens, %s", (mod
   const labelled = (f: Family, part: Part) =>
     f[mode][part].map((hex, i) => ({ hex, label: `${f.id}${i + 1}` }));
 
-  test("every family has the same number of steps, and step 1 is its first slot", () => {
+  test("every family has the same number of steps and its own slots", () => {
     for (const f of families) {
       for (const part of ["stroke", "fill"] as const) expect(f[mode][part]).toHaveLength(steps);
-      const slot = (f.slots[0] as number) - 1;
-      expect(f[mode].stroke[0]).toBe(tokens.data[mode].categorical[slot]);
-      expect(f[mode].fill[0]).toBe(tokens.data[mode].categoricalFill[slot]);
     }
     expect(new Set(families.flatMap((f) => f.slots)).size).toBe(
       families.flatMap((f) => f.slots).length,
     );
+  });
+
+  test("each lead's distance from its family's base slot is as recorded", () => {
+    const measured = Object.fromEntries(
+      (["stroke", "fill"] as const).map((part) => [
+        part,
+        Object.fromEntries(
+          families.map((f) => {
+            const base = tokens.data[mode][part === "stroke" ? "categorical" : "categoricalFill"][
+              (f.slots[0] as number) - 1
+            ] as string;
+            const lead = f[mode][part][0] as string;
+            return [
+              f.id,
+              {
+                base,
+                lead,
+                ...Object.fromEntries(
+                  Object.entries(SIMULATIONS).map(([name, simulate]) => [
+                    name,
+                    Math.round(
+                      ciede2000(lab(simulate(linear(base))), lab(simulate(linear(lead)))) * 10,
+                    ) / 10,
+                  ]),
+                ),
+              },
+            ];
+          }),
+        ),
+      ]),
+    );
+    expect(measured).toEqual(checks.groupCVD.leadVsBase);
   });
 
   test("every step is at least 3:1 against the surfaces, as recorded", () => {
@@ -268,6 +297,7 @@ describe.each(["light", "dark"] as const)("Default theme group tokens, %s", (mod
       tokens.data[mode][part === "stroke" ? "categorical" : "categoricalFill"];
     const measured = {
       bars: checks.groupCVD.bars,
+      leadVsBase: checks.groupCVD.leadVsBase,
       withinFamily: Object.fromEntries(
         parts.map((part) => [
           part,
