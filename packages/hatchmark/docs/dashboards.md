@@ -105,13 +105,13 @@ every preset.
   height: tall
 ```
 
-| Block                                     | What `height` sets                                                                                                                                               |
-| ----------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `line`, `area`, vertical `bar`, `scatter` | The chart's height. A key above the plot adds to it.                                                                                                             |
-| `pie`, `donut`                            | The chart's height, and how large the pie may grow. A key longer than the pie adds to it. On phones the card's width caps the pie, so `tall` adds no size there. |
-| horizontal `bar`                          | The height its rows stretch to fill. Rows stay between 28 and 36 px so names stay legible, so the number of bars sets most of the height.                        |
-| `kpi`                                     | The figure and sparkline size. See [components/kpi.md](components/kpi.md).                                                                                       |
-| `table`                                   | The rows shown before the table scrolls inside its card. See [components/table.md](components/table.md#long-tables).                                             |
+| Block                                     | What `height` sets                                                                                                                                                                          |
+| ----------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `line`, `area`, vertical `bar`, `scatter` | The chart's height. A key above the plot adds to it.                                                                                                                                        |
+| `pie`, `donut`                            | The chart's height, and how large the pie may grow. A key longer than the pie adds to it. On phones the card's width caps the pie, so `tall` adds no size there.                            |
+| horizontal `bar`                          | The height its rows stretch to fill, within each preset's row limits (22–30, 28–36 or 28–48 px), so the number of bars sets most of the height. See [components/bar.md](components/bar.md). |
+| `kpi`                                     | The figure and sparkline size. See [components/kpi.md](components/kpi.md).                                                                                                                  |
+| `table`                                   | The rows shown before the table scrolls inside its card. See [components/table.md](components/table.md#long-tables).                                                                        |
 
 In the Default theme a chart is 200, 280 or 400 px tall on desktop (`compact`, `default`, `tall`)
 and 180, 230 or 320 px on phones; [theme.md](theme.md#block-heights) lists every value.
