@@ -81,15 +81,49 @@ Windows are calendar dates in the project time zone; [numbers.md](numbers.md#tim
 
 Fields every block takes:
 
-| Field   | Meaning                                                                                                                                                                                                                                                         |
-| ------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `id`    | Optional stable id, lowercase snake_case. Defaults to `<type>_<index>`.                                                                                                                                                                                         |
-| `title` | Optional card title. State the finding ("Revenue reached a record in October"); the subtitle Hatchmark adds says what is measured.                                                                                                                              |
-| `span`  | Width in the 12-column grid, 1–12. Default 3 for `kpi` (four to a row) and 12 for the rest. Line, area, bar and scatter charts take at least 3 columns; a smaller span gets warning HM2024 and is drawn 3 wide. Below 1024 px every block takes the full width. |
+| Field    | Meaning                                                                                                                                                                                                                                                         |
+| -------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `id`     | Optional stable id, lowercase snake_case. Defaults to `<type>_<index>`.                                                                                                                                                                                         |
+| `title`  | Optional card title. State the finding ("Revenue reached a record in October"); the subtitle Hatchmark adds says what is measured.                                                                                                                              |
+| `span`   | Width in the 12-column grid, 1–12. Default 3 for `kpi` (four to a row) and 12 for the rest. Line, area, bar and scatter charts take at least 3 columns; a smaller span gets warning HM2024 and is drawn 3 wide. Below 1024 px every block takes the full width. |
+| `height` | Optional card height: `compact`, `default` (when unset) or `tall`. Every block type but `text` and `bar_list` takes it. See [Heights](#heights).                                                                                                                |
 
 Metric names in blocks are metric file names (see [metrics.md](metrics.md)); columns in `by` and
 `split` are source columns. `line`, `area` and `bar` blocks with several series take `groups` to colour
 related series as one hue family ([components/groups.md](components/groups.md)).
+
+### Heights
+
+`height` picks one of three presets. There are no pixel heights: the theme sets each preset
+separately for desktop and phone, so axis labels, keys, tooltips and KPI figures stay legible at
+every preset.
+
+```yaml
+- type: line
+  metrics: [revenue]
+  grain: month
+  height: tall
+```
+
+| Block                                     | What `height` sets                                                                                                                                                                          |
+| ----------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `line`, `area`, vertical `bar`, `scatter` | The chart's height. A key above the plot adds to it.                                                                                                                                        |
+| `pie`, `donut`                            | The chart's height, and how large the pie may grow. A key longer than the pie adds to it. On phones the card's width caps the pie, so `tall` adds no size there.                            |
+| horizontal `bar`                          | The height its rows stretch to fill, within each preset's row limits (22–30, 28–36 or 28–48 px), so the number of bars sets most of the height. See [components/bar.md](components/bar.md). |
+| `kpi`                                     | The figure and sparkline size. See [components/kpi.md](components/kpi.md).                                                                                                                  |
+| `table`                                   | The rows shown before the table scrolls inside its card. See [components/table.md](components/table.md#long-tables).                                                                        |
+
+In the Default theme a chart is 200, 280 or 400 px tall on desktop (`compact`, `default`, `tall`)
+and 180, 230 or 320 px on phones; [theme.md](theme.md#block-heights) lists every value.
+
+Cards side by side end level. On screens 1024 px and wider, the charts in one grid row are drawn at
+the tallest preset among them, and a KPI strip at the tallest preset of its KPIs, so a compact
+chart is never drawn beside a tall one. A card set lower gets warning HM2028. Below 1024 px cards
+stack, and every card, each KPI included, keeps its own preset. Tables keep their own height in any row.
+
+A pixel value or another string is an error that lists the presets. `height` on a `text` or
+`bar_list` block is an error with a safe fix that removes it, and on a table with
+`overflow: page` it is warning HM2031 (see [diagnostics.md](diagnostics.md#card-height)).
 
 ## Filters
 

@@ -8,7 +8,9 @@ import {
   type SpecDocument,
   toPointer,
 } from "../diagnostics/index.js";
-import { addPropertyFix, replaceValueFix, yamlText } from "./fixes.js";
+import tokens from "../render/themes/default.json" with { type: "json" };
+import { addPropertyFix, removePropertyFix, replaceValueFix, yamlText } from "./fixes.js";
+import { HEIGHT_PRESETS } from "./layout.js";
 
 type Path = (string | number)[];
 type Schema = core.$ZodType;
@@ -91,6 +93,20 @@ function objectKeys(root: z.ZodType, value: unknown, path: Path): string[] {
   const def = defOf(schema);
   return def.type === "object" ? Object.keys(def.shape) : [];
 }
+
+const HEIGHTLESS_TYPES = new Set(["text", "bar_list"]);
+
+const optionalFix = (fix: Fix | undefined): { fix?: Fix } => (fix ? { fix } : {});
+
+/** A height written in pixels: 320, "320" or "320px". */
+function pixels(value: unknown): number | undefined {
+  if (typeof value === "number" && Number.isFinite(value)) return value;
+  const match = typeof value === "string" ? /^\s*(\d+(?:\.\d+)?)\s*(?:px)?\s*$/i.exec(value) : null;
+  return match ? Number(match[1]) : undefined;
+}
+
+const desktopChart = (preset: (typeof HEIGHT_PRESETS)[number]) =>
+  tokens.blockHeight[preset].desktop.chart;
 
 const PAGING_KEYS = new Set([
   "pagination",
@@ -203,6 +219,27 @@ export function issuesToDiagnostics(
     const at = valueAt(value, path);
     const key = path.at(-1);
 
+    const px = key === "height" ? pixels(at.value) : undefined;
+    if (px !== undefined && (issue.code === "invalid_value" || issue.code === "invalid_type")) {
+      const nearest = HEIGHT_PRESETS.reduce((a, b) =>
+        Math.abs(desktopChart(b) - px) < Math.abs(desktopChart(a) - px) ? b : a,
+      );
+      push("HM3004", path, "height takes a preset name, not pixels", {
+        expected: [...HEIGHT_PRESETS],
+        help: `use ${HEIGHT_PRESETS.map((h) => `${h} (${desktopChart(h)} px for a chart on desktop)`).join(", ")}; the theme sets each one for desktop and phone so axis labels, keys and tooltips stay legible`,
+        ...optionalFix(
+          replaceValueFix(
+            document,
+            toPointer(path),
+            nearest,
+            "unsafe",
+            `set height: ${nearest}, the nearest preset`,
+          ),
+        ),
+      });
+      continue;
+    }
+
     if (issue.code === "custom") {
       const code =
         (issue.params as { hatchmark?: DiagnosticCode } | undefined)?.hatchmark ?? "HM3005";
@@ -261,6 +298,18 @@ export function issuesToDiagnostics(
           const paging =
             PAGING_KEYS.has(extraKey.toLowerCase()) &&
             (at.value as { type?: unknown } | undefined)?.type === "table";
+          const blockType = (at.value as { type?: unknown } | undefined)?.type;
+          if (extraKey === "height" && HEIGHTLESS_TYPES.has(String(blockType))) {
+            push("HM3002", keyPath, `a ${String(blockType)} block takes no height`, {
+              target: "key",
+              expected: allowed,
+              help: `a ${String(blockType)} block is as tall as its content; height applies to kpi, line, area, bar, pie, donut, scatter and table blocks`,
+              ...optionalFix(
+                removePropertyFix(document, toPointer(path), "height", "safe", 'remove "height"'),
+              ),
+            });
+            continue;
+          }
           push("HM3002", keyPath, `unknown property "${extraKey}"`, {
             target: "key",
             expected: allowed,

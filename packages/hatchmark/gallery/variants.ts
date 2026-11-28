@@ -10,6 +10,7 @@ import type {
   TableData,
   Value,
 } from "../src/compiler/dashboard-data.js";
+import { HEIGHT_PRESETS, type HeightPreset } from "../src/spec/layout.js";
 import {
   CHANNELS,
   COUNTRIES,
@@ -68,7 +69,7 @@ import {
 
 /** One gallery entry: a component variant on sample data, wrapped as a one-block dashboard. */
 export interface GalleryVariant {
-  component: "kpi" | "line" | "bar" | "stacked" | "pie" | "scatter" | "table" | "groups";
+  component: "kpi" | "line" | "bar" | "stacked" | "pie" | "scatter" | "table" | "groups" | "height";
   variant: string;
   title: string;
   data: DashboardData;
@@ -1657,6 +1658,106 @@ const GROUPS: GalleryVariant[] = [
   ),
 ];
 
+const BY_VARIANT = new Map(
+  [...KPIS, ...LINES, ...BARS, ...STACKED, ...PIES, ...SCATTER, ...TABLES].map((v) => [
+    v.variant,
+    v,
+  ]),
+);
+
+function sample(variant: string): GalleryVariant {
+  const found = BY_VARIANT.get(variant);
+  if (found === undefined) throw new Error(`gallery variant ${variant} missing`);
+  return found;
+}
+
+function sized<B extends DashboardData["blocks"][number]>(
+  block: B,
+  height: HeightPreset,
+  span: number,
+): B {
+  return { ...block, id: `${block.id}_${height}`, title: `height: ${height}`, span, height };
+}
+
+const heights = (
+  variant: string,
+  title: string,
+  blocks: DashboardData["blocks"],
+  from: GalleryVariant,
+): GalleryVariant => ({
+  component: "height",
+  variant,
+  title,
+  data: { ...from.data, name: variant, title, blocks },
+});
+
+/** One chart drawn at each preset, each on its own grid row (two span-8 cards never share one). */
+const everyPreset = (variant: string, title: string, from: string, span = 8): GalleryVariant => {
+  const base = sample(from);
+  const block = base.data.blocks[0] as DashboardData["blocks"][number];
+  return heights(
+    variant,
+    title,
+    HEIGHT_PRESETS.map((h) => sized(block, h, span)),
+    base,
+  );
+};
+
+const stripKpis = [
+  sample("kpi-sparkline").data.blocks[0] as KpiData,
+  ...(SALES.blocks.slice(1, 4) as KpiData[]),
+];
+
+const HEIGHTS: GalleryVariant[] = [
+  everyPreset("height-line", "Line, split by region", "line-split", 12),
+  everyPreset("height-area", "Stacked area", "area-stacked", 12),
+  everyPreset("height-bar", "Vertical stacked bars with a key", "bar-stacked"),
+  everyPreset(
+    "height-bar-horizontal",
+    "Horizontal bars: rows stretch within each preset's limits, so the row count sets most of the height",
+    "bar-horizontal",
+  ),
+  everyPreset("height-pie", "Pie", "pie-countries"),
+  everyPreset("height-donut", "Donut", "donut-channels"),
+  everyPreset("height-scatter", "Scatter, sized by revenue", "scatter-countries"),
+  ...HEIGHT_PRESETS.map((h) =>
+    heights(
+      `height-kpi-${h}`,
+      `KPI strip, ${h}`,
+      stripKpis.map((k) => ({ ...k, id: `${k.id}_${h}`, height: h })),
+      sample("kpi-sparkline"),
+    ),
+  ),
+  everyPreset(
+    "height-table",
+    "Table of 50 rows: each preset scrolls past its own row count",
+    "table-tall",
+    12,
+  ),
+  heights(
+    "height-row",
+    "Mixed presets in one row: wide screens draw the row at its tallest preset, phones keep each card's own",
+    [
+      { ...sized(sample("line-split").data.blocks[0] as LineData, "compact", 6) },
+      { ...sized(sample("bar-stacked").data.blocks[0] as BarData, "tall", 6) },
+      { ...sized(sample("pie-countries").data.blocks[0] as PieData, "compact", 4) },
+      { ...sized(sample("donut-channels").data.blocks[0] as PieData, "compact", 4) },
+      { ...sized(sample("bar-horizontal").data.blocks[0] as BarData, "compact", 4) },
+    ],
+    sample("line-split"),
+  ),
+  heights(
+    "height-strip",
+    "Mixed presets in one KPI strip: drawn at its tallest KPI's preset on wide screens, each KPI's own below 1024 px",
+    stripKpis.map((k, i) => ({
+      ...k,
+      id: `${k.id}_mixed`,
+      height: (["compact", "tall", "default", "compact"] as const)[i] as HeightPreset,
+    })),
+    sample("kpi-sparkline"),
+  ),
+];
+
 export const GALLERY: GalleryVariant[] = [
   ...KPIS,
   ...LINES,
@@ -1670,6 +1771,7 @@ export const GALLERY: GalleryVariant[] = [
   ...SCATTER,
   ...TABLES,
   ...GROUPS,
+  ...HEIGHTS,
 ];
 
 export type { KpiData };

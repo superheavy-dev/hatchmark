@@ -116,6 +116,23 @@ A table with `overflow: page` grows with its rows. In a grid row shared with oth
 that stretches the other cards to the table's height, so it is a warning, HM2026. Remove `overflow`
 (a table in a shared row scrolls inside its card by default), or give the table `span: 12`.
 
+## Card height
+
+`height` takes a preset name: `compact`, `default` or `tall`. A pixel value such as `320` or
+`"320px"` is HM3004 with a help line that lists each preset's chart height, and an unsafe fix to
+the nearest one. Any other string is HM3004 that lists the presets, with a fix when one is close
+(`tal` to `tall`). `text` and `bar_list` blocks are as tall as their content: `height` on them is
+HM3002, and the safe fix removes it.
+
+A table with `overflow: page` grows with its rows, so `height` on it has no effect: warning HM2031,
+and the safe fix removes `height`.
+
+Cards side by side end level. On wide screens, charts in one grid row are drawn at the tallest
+preset among them, and the KPIs of one strip at the tallest among the strip's KPIs. A card set
+lower is a warning, HM2028, labelled with the height it is drawn at. Below 1024 px cards stack,
+and every card, each KPI included, keeps its own preset. The fix sets the card to the height it is drawn at;
+it is unsafe because it also changes how the card looks on phones.
+
 ## YAML syntax
 
 Spec files are YAML 1.2, read with the core schema, one document per file, with the `.yaml`

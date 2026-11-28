@@ -136,7 +136,7 @@ export function renderKpi(block: KpiData, ctx: RenderContext): string {
     })}</script>`;
   }
   return [
-    `<div class="hm-kpi" style="--span:${block.span}"${runtime ? ` data-hm-chart="${esc(block.id)}"` : ""}>`,
+    `<div class="hm-kpi" style="--span:${block.span}"${block.height && block.height !== "default" ? ` data-hm-height="${block.height}"` : ""}${runtime ? ` data-hm-chart="${esc(block.id)}"` : ""}>`,
     runtime,
     `<div class="hm-kpi-label">${esc(label)}</div>`,
     `<div class="hm-kpi-figure"${lang}><span class="hm-kpi-value${block.value === null ? " hm-null" : ""}">${esc(value)}</span>${delta}</div>`,

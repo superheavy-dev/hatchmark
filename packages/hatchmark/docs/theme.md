@@ -28,3 +28,25 @@ simulation. `checks.<mode>.groupContrastVsCard` and `checks.<mode>.groupCVD` rec
 numbers, and `test/render/tokens.test.ts` recomputes them.
 
 Categorical colours are adapted from the FT's g-chartcolour.
+
+## Block heights
+
+`blockHeight` in the tokens file sets what each `height` preset means, separately for desktop
+(layouts 600 px and wider) and phone. `default` is the height every block had before presets.
+
+| Token           | What it sets                                      | compact (desktop / phone) | default     | tall        |
+| --------------- | ------------------------------------------------- | ------------------------- | ----------- | ----------- |
+| `chart`         | Chart height in px; a key or more bars adds to it | 200 / 180                 | 280 / 230   | 400 / 320   |
+| `pie`           | Largest pie or donut diameter in px               | 160 / 150                 | 240 / 240   | 360 / 280   |
+| `kpiSize`       | KPI figure font size in px                        | 22 / 18                   | 28 / 20     | 36 / 24     |
+| `kpiLineHeight` | KPI figure line height in px                      | 28 / 24                   | 32 / 28     | 44 / 32     |
+| `sparkline`     | KPI sparkline height in px                        | 21 / 20                   | 24 / 24     | 33 / 28     |
+| `tableRows`     | Body rows a table shows before it scrolls         | 7.5 / 7.5                 | 15.5 / 15.5 | 25.5 / 18.5 |
+| `barRow`        | Shortest horizontal bar row in px                 | 22 / 22                   | 28 / 28     | 28 / 28     |
+| `barRowMax`     | Tallest horizontal bar row in px                  | 30 / 30                   | 36 / 36     | 48 / 48     |
+
+The values keep every chart legible at each preset: a compact plot still has three value ticks and
+room for its key and tooltip, a pie's largest diameter follows the preset (on phones the card's width caps it first), and
+a KPI sparkline keeps about three quarters of its figure's line height. A 22 px horizontal bar row
+still fits its bar and a one-line name; names that wrap keep a two-line row at every preset. A tall table on a phone
+stops at 18.5 rows so its scroll area never fills the screen.

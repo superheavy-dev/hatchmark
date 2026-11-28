@@ -24,9 +24,15 @@ import {
   PIE_READABLE_LIMIT,
 } from "./dashboard.js";
 import { ENTITY_NAMES, type Expr, exprRefs, parseExpr, shapeError } from "./expr.js";
-import { addPropertyFix, removeItemFix, replaceValueFix, yamlText } from "./fixes.js";
+import {
+  addPropertyFix,
+  removeItemFix,
+  removePropertyFix,
+  replaceValueFix,
+  yamlText,
+} from "./fixes.js";
 import { filterTables, metricSources, readSources, sourceTables } from "./graph.js";
-import { aloneInRow, MIN_CHART_SPAN } from "./layout.js";
+import { layoutItems, MIN_CHART_SPAN } from "./layout.js";
 import type { Filter, Metric, TableMetric } from "./metric.js";
 import type { Project, SpecFile } from "./project.js";
 import {
@@ -1185,25 +1191,9 @@ function checkDashboard(project: Project, file: SpecFile<"dashboard">, out: Diag
     return false;
   };
 
-  const items: { index: number; span: number }[] = [];
-  let strip: { index: number; span: number } | undefined;
-  dashboard.blocks.forEach((block, index) => {
-    if (block.type === "text") return;
-    if (block.type === "kpi") {
-      if (strip) {
-        strip.span = Math.min(12, strip.span + (block.span ?? 3));
-        return;
-      }
-      strip = { index, span: block.span ?? 3 };
-      items.push(strip);
-      return;
-    }
-    strip = undefined;
-    const span = block.span ?? 12;
-    items.push({ index, span: block.type === "table" ? span : Math.max(MIN_CHART_SPAN, span) });
-  });
-  const alone = aloneInRow(items.map((item) => item.span));
-  const shared = new Set(items.filter((_, i) => !alone[i]).map((item) => item.index));
+  const layout = layoutItems(dashboard.blocks);
+  const shared = new Set(layout.filter((item) => !item.alone).flatMap((item) => item.blocks));
+  const drawnAt = new Map(layout.flatMap((item) => item.blocks.map((i) => [i, item] as const)));
 
   const blockIds = new Map<string, number>();
   dashboard.blocks.forEach((block, index) => {
@@ -1217,6 +1207,48 @@ function checkDashboard(project: Project, file: SpecFile<"dashboard">, out: Diag
           severity: "warning",
           label: "the row grows with the table",
           help: 'remove "overflow" to scroll inside the card, or give the table its own row with span: 12',
+        },
+      );
+    }
+    if (block.type === "table" && block.overflow === "page" && block.height !== undefined) {
+      r.report(
+        "HM2031",
+        `${base}/height`,
+        'a table with overflow: page grows with its rows, so "height" has no effect',
+        {
+          severity: "warning",
+          label: "ignored",
+          help: 'remove "height", or remove "overflow" so the table scrolls inside a card of that height',
+          ...optional(
+            "fix",
+            removePropertyFix(file.document, base, "height", "safe", 'remove "height"'),
+          ),
+        },
+      );
+    }
+    const drawn = drawnAt.get(index);
+    const height = "height" in block ? block.height : undefined;
+    if (drawn && drawn.kind !== "table" && drawn.height !== (height ?? "default")) {
+      const pointer = height === undefined ? base : `${base}/height`;
+      const description = `set height: ${drawn.height}`;
+      const fix =
+        height === undefined
+          ? addPropertyFix(file.document, base, "height", drawn.height, "unsafe", description)
+          : replaceValueFix(file.document, pointer, drawn.height, "unsafe", description);
+      r.report(
+        "HM2028",
+        pointer,
+        drawn.kind === "strip"
+          ? `KPIs in one strip are drawn at the tallest height among them, so this one is drawn ${drawn.height}`
+          : `this chart shares a grid row with a ${drawn.height} chart, so it is drawn ${drawn.height} on wide screens`,
+        {
+          severity: "warning",
+          label: `drawn ${drawn.height}`,
+          help:
+            drawn.kind === "strip"
+              ? `set the same height on every KPI in the strip, such as height: ${drawn.height}`
+              : `set the same height on every chart in the row, such as height: ${drawn.height}, or give this chart its own row with span: 12`,
+          ...optional("fix", fix),
         },
       );
     }

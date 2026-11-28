@@ -29,6 +29,7 @@ other: true
 | `subtotals`      | A subtotal row for every group of each outer `by` column. Needs two or more `by` columns.                 |
 | `bars`           | Metrics that draw a bar in their cells, scaled across the rows shown. Must also be in `metrics` (HM2006). |
 | `overflow`       | How a table past 15 rows fits: `"page"` or `"scroll"`. Default from the layout; see Long tables.          |
+| `height`         | `compact`, `default` or `tall`: how many rows the card shows before it scrolls. See Long tables.          |
 
 What it draws:
 
@@ -125,8 +126,21 @@ other cards in the row stretch to the table's height, so check warns with HM2026
 follows the 12-column grid as the spec lays it out: a run of KPIs counts as one card, a chart is
 counted at its drawn width (at least 3 columns), and a block that does not fit in what is left of
 a row starts the next one. Below 1024 px every block takes the full width, but the mode stays the
-one the spec's layout gives. When card height presets arrive, the scroll height will
-follow the preset instead of the fixed 16 rows.
+one the spec's layout gives.
+
+`height` sets the scroll area, so a table with a `height` scrolls inside its card even when it has
+its grid row alone. The Default theme shows these many body rows before a table scrolls (the half
+row hints that there is more), with the header and any total row in view on top of them:
+
+| `height`  | Desktop | Phone |
+| --------- | ------- | ----- |
+| `compact` | 7.5     | 7.5   |
+| `default` | 15.5    | 15.5  |
+| `tall`    | 25.5    | 18.5  |
+
+A table at or under its preset's rows does not scroll. With `overflow: page` the table grows with
+the page and `height` has no effect, so check warns with HM2031; the safe fix removes `height`.
+Tables keep their own height in a grid row; chart presets do not change them.
 
 Printing shows every row.
 

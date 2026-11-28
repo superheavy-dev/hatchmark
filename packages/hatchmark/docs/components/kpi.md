@@ -14,10 +14,17 @@ sparkline: true
 | `compare`   | `previous_period`, `previous_year` or `none`. Defaults to the dashboard period's compare. |
 | `sparkline` | `true` adds a small line of the metric by month over the current window.                  |
 | `span`      | Width in the 12-column grid. Default 3, so four KPIs fill a row.                          |
+| `height`    | `compact`, `default` or `tall`: the size of the figure and the sparkline.                 |
 
 What it draws:
 
-- Consecutive KPI blocks share one card, split by hairlines (the KPI strip).
+- Consecutive KPI blocks share one card, split by hairlines (the KPI strip). On screens 1024 px
+  and wider the strip draws every KPI at the tallest `height` among them, so figures in one strip
+  match, and a KPI set lower gets warning HM2028. Below 1024 px the strip wraps and each KPI keeps
+  its own `height`.
+- `height` scales the figure and its sparkline together, in the Default theme (figure size / line
+  height / sparkline height in px): `compact` 22/28/21, `default` 28/32/24, `tall` 36/44/33 on
+  desktop; `compact` 18/24/20, `default` 20/28/24, `tall` 24/32/28 on phones.
 - The figure is regular weight with tabular numbers. Currency switches to compact notation
   (`$6.14M`) at 100,000 and plain numbers at 1,000,000, unless the metric's format sets `compact`.
 - The change carries an arrow and a sign: `▲ +10.0%`. Percent metrics change in percentage points:

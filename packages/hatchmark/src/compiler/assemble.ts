@@ -7,6 +7,7 @@ import type {
   RangeSpec,
   ResolvedGrain,
 } from "../spec/index.js";
+import type { HeightPreset } from "../spec/layout.js";
 import { blockId, grainKey, PIE_DEFAULT_LIMIT, resolveGrain } from "../spec/units.js";
 import {
   type BarData,
@@ -1300,7 +1301,7 @@ class Assembler {
   }
 }
 
-type Common = { id: string; title?: string; span: number };
+type Common = { id: string; title?: string; span: number; height?: HeightPreset };
 
 /** A column's header text: underscores as spaces, first letter capitalized ("ship_country"). */
 const MAX_POINTS = 1000;
@@ -1414,6 +1415,7 @@ export function assembleWith(
       id: blockPlan.blockId,
       ...(block.title === undefined ? {} : { title: block.title }),
       span: block.span ?? (block.type === "kpi" ? 3 : 12),
+      ...("height" in block && block.height !== undefined ? { height: block.height } : {}),
     };
     if (block.type === "kpi") {
       shown.add(block.metric);

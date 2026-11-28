@@ -11,7 +11,7 @@ import type {
   TableData,
 } from "../compiler/dashboard-data.js";
 import type { PeriodData } from "../compiler/period-data.js";
-import { aloneInRow, MIN_CHART_SPAN } from "../spec/layout.js";
+import { type HeightPreset, layoutItems, MIN_CHART_SPAN } from "../spec/layout.js";
 import { barCategories, barHeight, renderBar } from "./bar.js";
 import type { RenderContext } from "./chart.js";
 import { chartRuntimeData, chartTable, describeChart } from "./describe.js";
@@ -26,13 +26,15 @@ import { esc, scriptJson } from "./svg.js";
 
 export { scriptJson };
 
-import { renderTable } from "./table.js";
+import { renderTable, tableHeight } from "./table.js";
 import {
+  type BlockHeight,
   COLOR_KEYS,
   colorValue,
   cssPaint,
   cssVar,
   DEFAULT_THEME,
+  type Device,
   groupColorKeys,
   hexPaint,
   type Mode,
@@ -61,8 +63,26 @@ export type Layout = (typeof LAYOUTS)[number];
 /** Weekdays from Monday, to order the calendar's columns from the project's week anchor. */
 const WEEK_ORDER = ["monday", "tuesday", "wednesday", "thursday", "friday", "saturday", "sunday"];
 
-/** Plot height on phones (layout rule 02). */
-const MOBILE_CHART_HEIGHT = 230;
+/** The container query of the phone layouts: below the narrowest layout that is not mobile. */
+export const PHONE_QUERY = `(max-width:${Math.min(...LAYOUTS.filter((l) => !l.mobile).map((l) => l.min)) - 0.02}px)`;
+
+/** The container query of the 12-column layouts, where cards sit side by side. */
+const GRID_QUERY = `(min-width:${Math.min(...LAYOUTS.filter((l) => l.grid).map((l) => l.min))}px)`;
+
+/**
+ * Styles for one non-default height preset, scoped to the elements that carry it, so a page that
+ * uses no preset keeps its stylesheet unchanged.
+ */
+export function heightStyle(
+  theme: Theme,
+  preset: HeightPreset,
+  rules: (h: BlockHeight, scope: string) => string,
+  print = "",
+): string {
+  const scope = `[data-hm-height=${preset}]`;
+  const { desktop, phone } = theme.height[preset];
+  return `<style>${rules(desktop, scope)}@container hm ${PHONE_QUERY}{${rules(phone, scope)}}${print ? `@media print{${print.replaceAll("&", scope)}}` : ""}</style>`;
+}
 
 /** One bundled font file: the page loads it with @font-face from a relative URL. */
 export interface FontFile {
@@ -235,23 +255,31 @@ export function cardWidth(layout: Layout, span: number, theme: Theme = DEFAULT_T
   return Math.floor(span * column + (span - 1) * gap);
 }
 
+/**
+ * Draws a chart for every layout. In the 12-column layouts it takes rowHeight, the tallest preset
+ * of the charts in its grid row, so cards side by side end level; narrower layouts stack every card
+ * and use the chart's own preset.
+ */
 function chartBody(
   block: LineData | BarData | PieData | ScatterData,
   ctx: RenderContext,
   label: string,
+  rowHeight: HeightPreset,
 ): string {
   const { theme } = ctx;
   const variants = new Map<string, { svg: string; layouts: number[] }>();
   LAYOUTS.forEach((layout, index) => {
     const width = cardWidth(layout, chartSpan(block), theme) - 2 * theme.density.cardPadding - 2;
-    const base = layout.mobile ? MOBILE_CHART_HEIGHT : theme.density.chartHeight;
+    const preset = layout.grid ? rowHeight : (block.height ?? "default");
+    const sizes = theme.height[preset][layout.mobile ? "phone" : "desktop"];
+    const base = sizes.chart;
     const height =
       block.type === "bar"
-        ? barHeight(block, ctx, width, base)
+        ? barHeight(block, ctx, width, base, sizes)
         : isPie(block)
-          ? pieHeight(block, ctx, width, base)
+          ? pieHeight(block, ctx, width, base, sizes.pie)
           : base;
-    const key = `${width}x${height}`;
+    const key = `${width}x${height}x${base}`;
     const found = variants.get(key);
     if (found) {
       found.layouts.push(index);
@@ -262,7 +290,7 @@ function chartBody(
       block.type === "bar"
         ? renderBar(block, ctx, size)
         : isPie(block)
-          ? renderPie(block, ctx, size)
+          ? renderPie(block, ctx, size, undefined, sizes.pie)
           : block.type === "scatter"
             ? renderScatter(block, ctx, size)
             : renderLine(block, ctx, size);
@@ -302,6 +330,7 @@ function grainControl(options: GrainOption[], selected: string, label: string, e
 function grainCard(
   block: (LineData | BarData) & { grains: GrainSwitch },
   ctx: RenderContext,
+  rowHeight: HeightPreset,
 ): string {
   const id = `hm-${block.id}-t`;
   const { selected, options } = block.grains;
@@ -321,7 +350,7 @@ function grainCard(
       subtitle: subtitle
         ? `<span data-hm-grain="${esc(o.key)}"${hidden}>${esc(subtitle)}</span>`
         : "",
-      body: `<div class="hm-grain-panel" data-hm-grain="${esc(o.key)}"${hidden}>${chartBody(variant, ctx, title)}</div>`,
+      body: `<div class="hm-grain-panel" data-hm-grain="${esc(o.key)}"${hidden}>${chartBody(variant, ctx, title, rowHeight)}</div>`,
     };
   });
   const subtitles = panels.map((p) => p.subtitle).join("");
@@ -339,20 +368,36 @@ function grainCard(
   return `<section class="hm-card hm-${block.type}" style="--span:${chartSpan(block)}" aria-labelledby="${esc(id)}" data-hm-grains>${head}${panels.map((p) => p.body).join("")}</section>`;
 }
 
+/** The scroll area's height for a table with a non-default preset: header, rows and any total row. */
+function tableStyle(block: TableData, ctx: RenderContext, alone: boolean): string {
+  const preset = tableHeight(block, alone);
+  if (preset === undefined) return "";
+  const row = ctx.theme.density.tableRow;
+  const [footer, foot] = block.total ? [row, ""] : [0, ".hm-nofoot"];
+  return heightStyle(
+    ctx.theme,
+    preset,
+    (h, scope) =>
+      `.hm-table-wrap${scope}.hm-tall${foot}{max-height:${row - 4 + Math.round(h.tableRows * row) + footer}px}`,
+    `.hm-table-wrap&.hm-tall${foot}{max-height:none}`,
+  );
+}
+
 function card(
   block: LineData | BarData | PieData | TableData | ScatterData,
   ctx: RenderContext,
   alone: boolean,
+  rowHeight: HeightPreset,
 ): string {
   if ((block.type === "line" || block.type === "area" || block.type === "bar") && block.grains) {
-    return grainCard(block as (LineData | BarData) & { grains: GrainSwitch }, ctx);
+    return grainCard(block as (LineData | BarData) & { grains: GrainSwitch }, ctx, rowHeight);
   }
   const { title, subtitle } = blockHeading(block, ctx);
   const id = `hm-${block.id}-t`;
   const body =
     block.type === "table"
-      ? renderTable(block, ctx, alone, subtitle !== "")
-      : chartBody(block, ctx, title);
+      ? renderTable(block, ctx, alone, subtitle !== "") + tableStyle(block, ctx, alone)
+      : chartBody(block, ctx, title, rowHeight);
   if (block.type === "table") {
     const download = `<button type="button" class="hm-csv" data-hm-csv="${esc(block.id)}" aria-label="Download ${esc(title)} as CSV" hidden>Download CSV</button>`;
     return `<section class="hm-card hm-table" style="--span:${block.span}" aria-labelledby="${esc(id)}"><header class="hm-card-head hm-switch"><div class="hm-card-titles"><h2 id="${esc(id)}">${esc(title)}</h2>${subtitle ? `<p id="hm-${esc(block.id)}-s">${esc(subtitle)}</p>` : ""}</div>${download}</header>${body}</section>`;
@@ -360,15 +405,29 @@ function card(
   return `<section class="hm-card hm-${block.type}" style="--span:${chartSpan(block)}" aria-labelledby="${esc(id)}"><header class="hm-card-head"><h2 id="${esc(id)}">${esc(title)}</h2>${subtitle ? `<p>${esc(subtitle)}</p>` : ""}</header>${body}</section>`;
 }
 
-function strip(kpis: KpiData[], ctx: RenderContext): GridItem {
+function strip(kpis: KpiData[], ctx: RenderContext, height: HeightPreset): GridItem {
   const span = Math.min(
     12,
     kpis.reduce((sum, k) => sum + k.span, 0),
   );
   const parts = kpis.map((k) => renderKpi(k, ctx));
+  const kpiRules = (h: BlockHeight, scope: string) =>
+    `${scope} .hm-kpi-value{font-size:${h.kpiSize}px;line-height:${h.kpiLineHeight}px}${scope} .hm-spark{height:${h.sparkline}px}`;
+  const presets = [...new Set(kpis.map((k) => k.height ?? "default"))];
+  const tiles = presets
+    .filter((p) => p !== "default")
+    .map((p) => heightStyle(ctx.theme, p, (h, scope) => kpiRules(h, `.hm-kpi${scope}`)));
+  const level =
+    presets.length > 1
+      ? `<style>@container hm ${GRID_QUERY}{${kpiRules(ctx.theme.height[height].desktop, `.hm-strip[data-hm-height=${height}] .hm-kpi`)}}</style>`
+      : "";
+  const sized =
+    tiles.length === 0 && level === ""
+      ? ">"
+      : ` data-hm-height="${height}">${tiles.join("")}${level}`;
   return {
     blocks: kpis.map((k) => k.id),
-    html: `<section class="hm-strip" style="--span:${span}" aria-label="Key metrics">${parts.join("")}</section>`,
+    html: `<section class="hm-strip" style="--span:${span}" aria-label="Key metrics"${sized}${parts.join("")}</section>`,
     kpis: parts,
   };
 }
@@ -393,38 +452,12 @@ export function renderBlocks(blocks: readonly BlockData[], ctx: RenderContext): 
  * and replace only the cards that changed.
  */
 export function gridItems(blocks: readonly BlockData[], ctx: RenderContext): GridItem[] {
-  const items: (KpiData[] | LineData | BarData | PieData | ScatterData | TableData)[] = [];
-  for (const block of blocks) {
-    const last = items.at(-1);
-    if (block.type === "kpi") {
-      if (Array.isArray(last)) last.push(block);
-      else items.push([block]);
-    } else if (
-      block.type === "line" ||
-      block.type === "area" ||
-      block.type === "bar" ||
-      block.type === "pie" ||
-      block.type === "donut" ||
-      block.type === "table" ||
-      block.type === "scatter"
-    ) {
-      items.push(block);
-    }
-  }
-  const alone = aloneInRow(
-    items.map((item) =>
-      Array.isArray(item)
-        ? item.reduce((sum, k) => sum + k.span, 0)
-        : item.type === "table"
-          ? item.span
-          : chartSpan(item),
-    ),
-  );
-  return items.map((item, i) =>
-    Array.isArray(item)
-      ? strip(item, ctx)
-      : { blocks: [item.id], html: card(item, ctx, alone[i] ?? false) },
-  );
+  return layoutItems(blocks).map((item) => {
+    const shown = item.blocks.map((i) => blocks[i] as BlockData);
+    if (item.kind === "strip") return strip(shown as KpiData[], ctx, item.height);
+    const block = shown[0] as Exclude<BlockData, KpiData>;
+    return { blocks: [block.id], html: card(block, ctx, item.alone, item.height) };
+  });
 }
 
 function themeVariables(theme: Theme, mode: Mode): string {
@@ -684,7 +717,7 @@ export function renderIndexPage(
 export function renderChartSvg(
   block: LineData | BarData | PieData | ScatterData,
   data: DashboardData,
-  options: { width: number; height?: number; mode?: Mode; theme?: Theme },
+  options: { width: number; height?: number; device?: Device; mode?: Mode; theme?: Theme },
 ): string {
   const theme = options.theme ?? DEFAULT_THEME;
   const mode = options.mode ?? "light";
@@ -693,21 +726,23 @@ export function renderChartSvg(
     font: `${theme.font.family}, ${theme.font.fallback}`,
     background: colorValue(theme, mode, "card"),
   };
-  const base = options.height ?? theme.density.chartHeight;
+  const sizes = theme.height[block.height ?? "default"][options.device ?? "desktop"];
+  const base = options.height ?? sizes.chart;
   const size = { width: options.width, height: base };
   if (isPie(block)) {
     return renderPie(
       block,
       ctx,
-      { ...size, height: pieHeight(block, ctx, size.width, base) },
+      { ...size, height: pieHeight(block, ctx, size.width, base, sizes.pie) },
       standalone,
+      sizes.pie,
     );
   }
   if (block.type === "bar") {
     return renderBar(
       block,
       ctx,
-      { ...size, height: barHeight(block, ctx, size.width, base) },
+      { ...size, height: barHeight(block, ctx, size.width, base, sizes) },
       standalone,
     );
   }
