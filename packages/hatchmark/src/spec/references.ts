@@ -39,7 +39,7 @@ import {
   timeNature,
 } from "./semantics.js";
 import { parseTemporal, temporalRepair } from "./temporal.js";
-import { rangeKey } from "./units.js";
+import { GROUP_MAX_COUNT, GROUP_MAX_SIZE, rangeKey } from "./units.js";
 
 export const TEXT_REFERENCE_FIELDS = ["value", "previous", "change", "change_pct"] as const;
 function optional<K extends string, V>(key: K, value: V | undefined): { [P in K]?: V } {
@@ -927,6 +927,94 @@ function notAdditiveLabel(metric: Metric): string {
 }
 
 /**
+ * A block's groups: a single-series chart has nothing to group (HM5031), a metric name must be one
+ * the block draws (HM2027; split values are checked against the data at build), a series belongs to
+ * one group once (HM3011), and the theme's hue families bound a group's size (HM5030) and the
+ * number of groups (HM5032).
+ */
+function checkGroups(
+  r: Reporter,
+  file: SpecFile<"dashboard">,
+  block: Block & { type: "line" | "area" | "bar" },
+  base: string,
+): void {
+  const groups = block.groups;
+  if (groups === undefined) return;
+  const split = block.split !== undefined;
+  if (!split && block.metrics.length < 2) {
+    r.report("HM5031", `${base}/groups`, "groups need a chart with two or more series", {
+      label: `this chart draws one series, "${block.metrics[0] ?? ""}"`,
+      help: "remove groups, or add the related metrics to metrics",
+    });
+    return;
+  }
+  if (groups.length > GROUP_MAX_COUNT) {
+    r.report(
+      "HM5032",
+      `${base}/groups`,
+      `${groups.length} groups are more than the ${GROUP_MAX_COUNT} hue families a chart can give groups`,
+      { help: "merge groups, or leave some series ungrouped" },
+    );
+  }
+  const seen = new Map<string, number>();
+  groups.forEach((group, g) => {
+    const pointer = `${base}/groups/${g}/series`;
+    if (group.series.length > GROUP_MAX_SIZE) {
+      r.report(
+        "HM5030",
+        pointer,
+        `group "${group.label}" has ${group.series.length} series; a group holds at most ${GROUP_MAX_SIZE}`,
+        {
+          label: `a hue family has ${GROUP_MAX_SIZE} lightness steps that stay apart`,
+          help: "split the group in two, or leave the least important series ungrouped",
+        },
+      );
+    }
+    group.series.forEach((member, i) => {
+      const name = String(member);
+      const at = `${pointer}/${i}`;
+      if (!split && !block.metrics.includes(name)) {
+        r.report(
+          "HM2027",
+          at,
+          `group "${group.label}" names "${name}", which this chart does not draw`,
+          {
+            expected: block.metrics,
+            ...suggestion(file.document, name, block.metrics, at),
+          },
+        );
+        return;
+      }
+      const owner = seen.get(name);
+      if (owner !== undefined) {
+        r.report(
+          "HM3011",
+          at,
+          owner === g
+            ? `"${name}" is listed twice in group "${group.label}"`
+            : `"${name}" is already in group "${groups[owner]?.label ?? ""}"`,
+          {
+            help: "a series takes its colour from one group; remove the repeat",
+            ...optional(
+              "fix",
+              removeItemFix(
+                file.document,
+                pointer,
+                i,
+                "unsafe",
+                `remove "${name}" from this group`,
+              ),
+            ),
+          },
+        );
+        return;
+      }
+      seen.set(name, g);
+    });
+  });
+}
+
+/**
  * A pie or donut: its metric must be a part of a whole (HM4001, an error, since the slices would
  * not add up to anything), and more than PIE_READABLE_LIMIT slices are too thin to compare (HM5010).
  */
@@ -1248,6 +1336,10 @@ function checkDashboard(project: Project, file: SpecFile<"dashboard">, out: Diag
     }
 
     if (block.type === "scatter") checkScatter(r, block, base);
+
+    if (block.type === "line" || block.type === "area" || block.type === "bar") {
+      checkGroups(r, file, block, base);
+    }
 
     if ((block.type === "table" || block.type === "bar") && block.sort) {
       const allowed = [

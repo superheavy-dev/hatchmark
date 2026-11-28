@@ -195,6 +195,11 @@ export const CODES = {
     explanation:
       "A grain filter offers a grain that no line, area or bar block lists in its grains, so choosing it changes nothing on the page. The filter drives only blocks whose grains include the chosen grain, compared at the project anchors. Add the grain to the blocks that should switch, or remove the option.",
   },
+  HM2027: {
+    title: "group names a series the chart does not draw",
+    explanation:
+      "Every series in a block's groups must be one the chart draws: a name from the block's metrics or, when the block splits, a split value as the chart labels it (null is \"(empty)\"). Metric names are checked against metrics as an error. Split values come from the data, so build warns when a value never appears; the group keeps the colour step of every listed series, so colours stay put when a value is missing from one period.",
+  },
   HM3001: {
     title: "missing required property",
     explanation:
@@ -239,6 +244,11 @@ export const CODES = {
     title: "expression syntax error",
     explanation:
       "A formula, row expression or per_entity expression cannot be parsed, uses something its kind does not allow (strings and comparisons are row and per_entity only), or puts a condition where a value belongs. Formulas: + - * /, parentheses, numbers, metric names, coalesce, min, max, abs. Row expressions add columns, 'strings', null, comparisons, and, or, not, greatest, least, if, is_null, date_diff and match. per_entity expressions use current and prior. The diagnostic points at the offending characters.",
+  },
+  HM3011: {
+    title: "series in more than one group",
+    explanation:
+      "A series takes its colour from the one group it belongs to, so it can be listed in only one group, once. Remove the repeat, or merge the groups.",
   },
   HM4001: {
     title: "percent of total on a non-additive metric",
@@ -399,6 +409,21 @@ export const CODES = {
     title: "page over the size budget",
     explanation:
       "A built dashboard page weighs more than 3 MB of HTML, counting everything it carries: every chart drawn ahead at each layout and grain, the data of each period preset, and the day-grain data a custom range is computed from. Such a page is slow on a phone. The warning splits the size into those parts. When the day-grain data is the largest, set custom: false on the period filter so readers pick from the presets only; otherwise list fewer grains or presets, split by fewer values, or move blocks to another dashboard.",
+  },
+  HM5030: {
+    title: "group larger than a hue family",
+    explanation:
+      "A group's series share one hue family and differ by lightness. The theme has only so many lightness steps that stay apart from each other, from other groups and from the context grey, so a group holds at most that many series (the message names the limit). Split the group into two, or leave the least important series ungrouped.",
+  },
+  HM5031: {
+    title: "groups on a single-series chart",
+    explanation:
+      "groups colour related series of one chart alike, so they need a chart with two or more series: several metrics, or one metric with split. Remove groups, or add the related metrics.",
+  },
+  HM5032: {
+    title: "more groups than hue families",
+    explanation:
+      "Each group takes its own hue family, and the theme has only so many families that can host a group while staying apart from each other and from the ungrouped series (the message names the limit). Merge groups, leave some series ungrouped, or split the chart.",
   },
   HM9001: {
     title: "internal error",

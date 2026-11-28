@@ -18,7 +18,8 @@ import { wireTable } from "./table.js";
 
 interface RuntimeSeries {
   label: string;
-  color: number;
+  color: number | string;
+  group?: number;
   v: (number | null)[];
   text: string[];
   short: string[];
@@ -32,6 +33,7 @@ interface RuntimeChart {
   swatch: "line" | "square";
   colors?: number[];
   cuts?: number[];
+  groups?: string[];
   headers: string[];
   series: RuntimeSeries[];
   total?: string[];
@@ -149,13 +151,16 @@ function attach(figure: HTMLElement, chart: RuntimeChart): void {
       tip.append(line);
     }
     const rows = chart.series.map((s, k) => ({ s, k, v: s.v[index] ?? null }));
-    if (rows.length > 1 && !scatter) {
+    if (rows.length > 1 && !scatter && !chart.groups) {
       rows.sort(
         (a, b) =>
           (b.v ?? Number.NEGATIVE_INFINITY) - (a.v ?? Number.NEGATIVE_INFINITY) || a.k - b.k,
       );
     }
-    for (const { s } of rows) {
+    rows.forEach(({ s, k }) => {
+      if (s.group !== undefined && chart.series[k - 1]?.group !== s.group) {
+        tip?.append(element("div", "hm-tip-g", chart.groups?.[s.group] ?? ""));
+      }
       const row = element("div", "hm-tip-r");
       const name = element("span", "hm-tip-n");
       const slot = chart.colors ? chart.colors[index] : s.color;
@@ -167,8 +172,8 @@ function attach(figure: HTMLElement, chart: RuntimeChart): void {
       const value = element("span", "hm-tip-v", s.text[index] ?? "");
       if (s.pct) value.append(element("span", "hm-tip-p", s.pct[index] ?? ""));
       row.append(name, value);
-      tip.append(row);
-    }
+      tip?.append(row);
+    });
     if (chart.total) {
       const row = element("div", "hm-tip-r hm-tip-t");
       const value = element("span", "hm-tip-v", chart.total[index] ?? "");

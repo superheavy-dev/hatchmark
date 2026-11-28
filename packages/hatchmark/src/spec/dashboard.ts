@@ -11,7 +11,7 @@ import {
   scalar,
   schemaRef,
 } from "./common.js";
-import { PIE_DEFAULT_LIMIT } from "./units.js";
+import { GROUP_MAX_COUNT, GROUP_MAX_SIZE, PIE_DEFAULT_LIMIT } from "./units.js";
 
 const blockCommon = {
   id: identifier.optional().meta({
@@ -58,6 +58,29 @@ const incomplete = z.enum(["mark", "hide", "show"]).meta({
     'Buckets the data doesn\'t fully cover. "mark" (default) lists them in each series\' partial; "hide" leaves them out; "show" draws them as complete buckets (check warns with HM4014 for a flow metric).',
 });
 
+const groupsField = z
+  .array(
+    z
+      .strictObject({
+        label: z.string().min(1).meta({
+          description:
+            "The group's name in the key, the tooltip and the data table, such as Revenue.",
+        }),
+        series: z
+          .array(z.union([z.string().min(1), z.number(), z.boolean()]))
+          .min(2)
+          .meta({
+            description: `Series that belong together, lead series first. Each is a metric name from metrics or, with split, a split value as the chart labels it. At most ${GROUP_MAX_SIZE}.`,
+          }),
+      })
+      .meta({ id: "SeriesGroup" }),
+  )
+  .min(1)
+  .optional()
+  .meta({
+    description: `Series that belong together, such as actual, target and forecast of one metric. A group shares one hue and steps through its lightness in the order listed; ungrouped series keep their usual colours. At most ${GROUP_MAX_COUNT} groups, and a series belongs to one group only.`,
+  });
+
 const timeSeriesFields = {
   ...blockCommon,
   metrics: metricList,
@@ -66,6 +89,7 @@ const timeSeriesFields = {
   edges: edges.optional(),
   incomplete: incomplete.optional(),
   split: columnName.optional().meta({ description: "Column that splits one metric into series." }),
+  groups: groupsField,
 };
 
 function grainsField() {
@@ -141,6 +165,7 @@ const barBlock = z
     edges: edges.optional().meta({ description: "With grain only. Defaults to snap." }),
     incomplete: incomplete.optional().meta({ description: "With grain only. Defaults to mark." }),
     split: columnName.optional(),
+    groups: groupsField,
     stack: stackField,
     orientation: z.enum(["vertical", "horizontal"]).optional(),
     sort: sort.optional(),

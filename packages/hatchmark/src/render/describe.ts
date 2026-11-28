@@ -1,12 +1,20 @@
 import type { BarData, LineData, PieData, ScatterData, Value } from "../compiler/dashboard-data.js";
 import { barCategories } from "./bar.js";
-import { isNumber, lowerFirst, metricOf, type RenderContext, SHARE } from "./chart.js";
+import {
+  groupHeading,
+  isNumber,
+  lowerFirst,
+  metricOf,
+  type RenderContext,
+  SHARE,
+} from "./chart.js";
 import { formatBucket, formatSpan, formatValue } from "./format.js";
 import { plottedValues, readoutHead, readoutValue } from "./line.js";
 import { bucketLines, bucketName, partialPositions } from "./partial.js";
 import { isPie, pieCuts, pieEmptyText, pieItems, pieNote } from "./pie.js";
 import { scatterOrder, scatterPoints } from "./scatter.js";
 import { esc, langAttr } from "./svg.js";
+import { type SeriesPaint, seriesPaints } from "./theme.js";
 
 type ChartBlock = LineData | BarData;
 
@@ -106,7 +114,7 @@ export function describeChart(
     block.axis.kind === "time"
       ? `by ${block.axis.grain}, ${formatSpan(block.axis.window, ctx.data.locale)}`
       : `by ${block.axis.column.replaceAll("_", " ")}, ${names.length} ${names.length === 1 ? "category" : "categories"}${block.type === "bar" && block.omittedCategories ? ` of ${names.length + block.omittedCategories}` : ""}`;
-  const parts = [`${kind} of ${series.map((s) => s.label).join(", ")} ${over}.`];
+  const parts = [`${kind} of ${seriesNames(block)} ${over}.`];
   for (const s of series.slice(0, 3)) {
     const defined = s.values.map((v, i) => ({ v, i })).filter((p) => isNumber(p.v)) as {
       v: number;
@@ -131,6 +139,22 @@ export function describeChart(
   const partial = partialPositions(block, ctx);
   for (const i of partial.keys()) parts.push(`${bucketLines(block, i, ctx, partial).line}.`);
   return parts.join(" ");
+}
+
+/** The series a chart shows, in words: a group reads as its name with its members in brackets. */
+function seriesNames(block: ChartBlock): string {
+  const names: string[] = [];
+  block.series.forEach((s, k) => {
+    if (s.group === undefined) {
+      names.push(s.label);
+      return;
+    }
+    const heading = groupHeading(block, k);
+    if (heading === undefined) return;
+    const members = block.series.filter((t) => t.group?.index === s.group?.index);
+    names.push(`${heading} (${members.map((t) => t.label).join(", ")})`);
+  });
+  return names.join(", ");
 }
 
 const share = (ctx: RenderContext, v: Value | undefined) =>
@@ -162,7 +186,11 @@ export function chartTable(
     s.share
       ? `${full(ctx, s.metric, s.values[i])} (${share(ctx, s.share[i])})`
       : full(ctx, s.metric, s.values[i]);
-  const head = `<tr><th scope="col">${block.axis.kind === "time" ? "Period" : esc(block.axis.column.replaceAll("_", " "))}</th>${block.series.map((s) => `<th scope="col">${esc(s.label)}</th>`).join("")}${totals ? '<th scope="col">Total</th>' : ""}</tr>`;
+  const corner =
+    block.axis.kind === "time" ? "Period" : esc(block.axis.column.replaceAll("_", " "));
+  const head = block.groups
+    ? groupedHead(block, corner, totals !== undefined)
+    : `<tr><th scope="col">${corner}</th>${block.series.map((s) => `<th scope="col">${esc(s.label)}</th>`).join("")}${totals ? '<th scope="col">Total</th>' : ""}</tr>`;
   const rows = names
     .map(
       (name, i) =>
@@ -170,6 +198,28 @@ export function chartTable(
     )
     .join("");
   return `<div class="hm-sr"><table><caption>${esc(caption)}</caption><thead>${head}</thead><tbody>${rows}</tbody></table></div>`;
+}
+
+/**
+ * A grouped chart's table header: a first row with each group's name over its members and
+ * ungrouped series spanning both rows, then a row of the members' names.
+ */
+function groupedHead(block: ChartBlock, corner: string, total: boolean): string {
+  const top: string[] = [`<th scope="col" rowspan="2">${corner}</th>`];
+  const members: string[] = [];
+  block.series.forEach((s, k) => {
+    if (s.group === undefined) {
+      top.push(`<th scope="col" rowspan="2">${esc(s.label)}</th>`);
+      return;
+    }
+    members.push(`<th scope="col">${esc(s.label)}</th>`);
+    const heading = groupHeading(block, k);
+    if (heading === undefined) return;
+    const size = block.series.filter((t) => t.group?.index === s.group?.index).length;
+    top.push(`<th scope="colgroup" colspan="${size}">${esc(heading)}</th>`);
+  });
+  if (total) top.push('<th scope="col" rowspan="2">Total</th>');
+  return `<tr>${top.join("")}</tr><tr>${members.join("")}</tr>`;
 }
 
 function totalPartial(block: ChartBlock, i: number): boolean {
@@ -188,12 +238,16 @@ export interface ChartRuntimeData {
   colors?: number[];
   /** Pie only: each slice's cumulative end as a fraction of a turn from 12 o'clock. */
   cuts?: number[];
+  /** Group names; a chart with groups lists its tooltip rows in series order under these. */
+  groups?: string[];
   /** scatter: headers name the points from left to right, and series are its metrics' rows. */
   headers: string[];
   series: {
     label: string;
-    /** Categorical slot, 1 to 8. */
-    color: number;
+    /** Categorical slot, 1 to 8, or a group colour such as "g1-2" (family 1, step 2). */
+    color: number | string;
+    /** Index into groups. */
+    group?: number;
     /** Raw values, for sorting tooltip rows. */
     v: Value[];
     /** Full-format text per position. */
@@ -235,14 +289,21 @@ export function chartRuntimeData(
     block.axis.kind === "time"
       ? block.axis.buckets.map((_, i) => bucketLines(block, i, ctx, partial))
       : undefined;
+  const paints = seriesPaints(ctx.theme, block.series);
+  const color = (k: number) => {
+    const slot = (paints[k] as SeriesPaint).stroke.slice(1);
+    return /^\d+$/.test(slot) ? Number(slot) : slot;
+  };
   return {
     kind: block.type === "bar" ? "bar" : "line",
     swatch: block.type === "line" ? "line" : "square",
     headers: lines ? lines.map((l) => l.date) : positions(block, ctx),
     ...(lines && partial.size > 0 ? { status: lines.map((l) => l.status ?? "") } : {}),
+    ...(block.groups ? { groups: block.groups.map((g) => g.label) } : {}),
     series: block.series.map((s, k) => ({
       label: s.label,
-      color: (k % 8) + 1,
+      color: color(k),
+      ...(s.group === undefined ? {} : { group: s.group.index }),
       v: s.values,
       text: s.values.map((v) => full(ctx, s.metric, v)),
       short:
