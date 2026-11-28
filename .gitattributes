@@ -1,0 +1,2 @@
+packages/hatchmark/test/render/goldens/** linguist-generated=true
+packages/hatchmark/test/fixtures/global-sales/*.data.json linguist-generated=true
