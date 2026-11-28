@@ -8,7 +8,7 @@ import {
   formatValue,
 } from "./format.js";
 import { bucketLines, partialPositions, timeOf } from "./partial.js";
-import { esc, r, scriptJson } from "./svg.js";
+import { esc, langAttr, r, scriptJson } from "./svg.js";
 
 /**
  * One KPI cell for a KPI strip: label, headline figure in regular weight, the change with an arrow,
@@ -19,6 +19,7 @@ import { esc, r, scriptJson } from "./svg.js";
  */
 export function renderKpi(block: KpiData, ctx: RenderContext): string {
   const locale = ctx.data.locale;
+  const lang = langAttr(locale);
   const metric = metricOf(ctx, block.metric);
   const label = block.title ?? metric.label;
   const value = formatValue(block.value, metric, locale, "headline");
@@ -42,7 +43,7 @@ export function renderKpi(block: KpiData, ctx: RenderContext): string {
       direction === "flat"
         ? "no change"
         : `${direction}${judged === "neutral" ? "" : `, ${judged === "good" ? "better" : "worse"}`}`;
-    delta = `<span class="hm-delta hm-${judged}">${arrow ? `<span aria-hidden="true">${arrow}</span>\u2009` : ""}${esc(changeText)}<span class="hm-sr"> (${spoken})</span></span>`;
+    delta = `<span class="hm-delta hm-${judged}">${arrow ? `<span aria-hidden="true">${arrow}</span>\u2009` : ""}${esc(changeText)}<span class="hm-sr"${lang ? ' lang="en"' : ""}> (${spoken})</span></span>`;
   }
   const shown = ctx.data.period.current;
   const own =
@@ -123,7 +124,7 @@ export function renderKpi(block: KpiData, ctx: RenderContext): string {
     const named = sparkline.buckets.map((b) => formatBucket(b, sparkline.grain, locale));
     const partialLine = [...partial.keys()].map((i) => lines[i]?.line).at(-1);
     const text = values.map((v) => formatValue(v, metric, locale, "full"));
-    table = `<div class="hm-sr"><table><caption>${esc(`${label} by ${sparkline.grain}`)}</caption><thead><tr><th scope="col">Period</th><th scope="col">${esc(label)}</th></tr></thead><tbody>${lines.map((l, i) => `<tr><th scope="row">${esc(l.line)}</th><td>${esc(text[i] as string)}</td></tr>`).join("")}</tbody></table></div>`;
+    table = `<div class="hm-sr"><table><caption>${esc(`${label} by ${sparkline.grain}`)}</caption><thead><tr><th scope="col">Period</th><th scope="col">${esc(label)}</th></tr></thead><tbody>${lines.map((l, i) => `<tr><th scope="row">${esc(l.line)}</th><td${lang}>${esc(text[i] as string)}</td></tr>`).join("")}</tbody></table></div>`;
     const geometry = `data-hm-kind="line" data-hm-x="0,100,${values.length}" data-hm-y="${hi === lo ? `${lo},${lo + 1},12,12` : `${lo},${hi},22,2`}" data-hm-plot="0,0,100,24"`;
     spark = `<svg class="hm-spark" viewBox="0 0 100 24" preserveAspectRatio="none" overflow="visible" tabindex="0" role="img" aria-label="${esc(`${label} by ${sparkline.grain}, ${named[0]} to ${named.at(-1)}${partialLine ? `; ${partialLine}` : ""}`)}" ${geometry}><path d="${d}"${ctx.paint.attrs("none", "c1")} stroke-width="1.5" vector-effect="non-scaling-stroke" stroke-linejoin="round"/>${sparkEnd}</svg>`;
     runtime = `<script type="application/json">${scriptJson({
@@ -145,7 +146,7 @@ export function renderKpi(block: KpiData, ctx: RenderContext): string {
     `<div class="hm-kpi" style="--span:${block.span}"${runtime ? ` data-hm-chart="${esc(block.id)}"` : ""}>`,
     runtime,
     `<div class="hm-kpi-label">${esc(label)}</div>`,
-    `<div class="hm-kpi-figure"><span class="hm-kpi-value${block.value === null ? " hm-null" : ""}">${esc(value)}</span>${delta}</div>`,
+    `<div class="hm-kpi-figure"${lang}><span class="hm-kpi-value${block.value === null ? " hm-null" : ""}">${esc(value)}</span>${delta}</div>`,
     `<div class="hm-kpi-note">${esc(note)}</div>`,
     spark,
     table,

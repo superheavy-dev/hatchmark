@@ -128,7 +128,7 @@ function dateFormat(locale: string, options: Intl.DateTimeFormatOptions): Intl.D
   const key = `${locale}|${JSON.stringify(options)}`;
   let format = dateFormats.get(key);
   if (format === undefined) {
-    format = new Intl.DateTimeFormat(locale, { ...options, timeZone: "UTC" });
+    format = new Intl.DateTimeFormat(locale, { ...options, timeZone: "UTC", calendar: "gregory" });
     dateFormats.set(key, format);
   }
   return format;

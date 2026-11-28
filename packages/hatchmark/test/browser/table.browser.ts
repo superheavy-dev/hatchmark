@@ -190,6 +190,11 @@ beforeAll(async () => {
         rowCount: 3,
       },
     ]),
+    mixedOrder: (() => {
+      const data = keyed("mixed-order", ["Zulu", 10, "äpple", 2]);
+      const table = data.blocks[0] as TableData;
+      return { ...data, blocks: [{ ...table, textOrder: ["äpple", "Zulu"] }] };
+    })(),
     lines: keyed("lines", [
       1000.1234567,
       0.0044,
@@ -361,6 +366,16 @@ describe("table regressions", () => {
     ];
     await page.getByRole("button", { name: "Item", exact: true }).click();
     expect(await labels()).toEqual(expected);
+    await page.close();
+  });
+
+  it("sorts numbers before text in a column that mixes them, and text by the build's order", async () => {
+    const page = await open("mixedOrder");
+    const header = page.getByRole("button", { name: "Key", exact: true });
+    await header.click();
+    expect(await column(page, 0)).toEqual(["2", "10", "äpple", "Zulu"]);
+    await header.click();
+    expect(await column(page, 0)).toEqual(["Zulu", "äpple", "10", "2"]);
     await page.close();
   });
 

@@ -273,6 +273,8 @@ export interface TableData extends BlockCommon {
   bars?: string[];
   /** Set when the spec chose how a tall table fits; otherwise the renderer picks from the layout. */
   overflow?: "page" | "scroll";
+  /** The text keys in the rows, in the order the build sorts them; absent when no key is text. */
+  textOrder?: string[];
   /**
    * Rows in display order after sort and limit. Limit never counts the total row. With subtotals,
    * each group's subtotal row comes first, then its groups; the limit and the Other row apply within

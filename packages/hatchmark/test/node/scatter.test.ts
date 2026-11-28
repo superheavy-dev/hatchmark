@@ -295,7 +295,7 @@ describe("scatter blocks against a SQL oracle", () => {
          CAST(coalesce(sum(quantity) FILTER (WHERE status = 'paid'), 0) AS DOUBLE) AS items,
          CAST(coalesce(sum(amount) FILTER (WHERE status = 'paid'), 0) AS DOUBLE) AS revenue
        FROM read_csv('${csv}') WHERE ${WINDOW} GROUP BY customer_id
-       ORDER BY revenue DESC, customer_id`,
+       ORDER BY revenue DESC, length(customer_id), customer_id`,
     );
     const placed = rows.length;
     expect(rows.some((r) => r.revenue === 0)).toBe(true);

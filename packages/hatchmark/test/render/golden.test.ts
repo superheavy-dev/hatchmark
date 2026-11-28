@@ -76,4 +76,14 @@ describe("golden renders", () => {
       renderDashboardPage(data, { assets: ASSETS, sources: ["orders.csv"] }),
     );
   });
+
+  for (const locale of ["de-DE", "ja-JP"]) {
+    it(`the global-sales example page in ${locale}`, () => {
+      const data = { ...(GLOBAL_SALES as DashboardData), locale };
+      golden(
+        `global-sales.${locale}.html`,
+        renderDashboardPage(data, { assets: ASSETS, sources: ["orders.csv"] }),
+      );
+    });
+  }
 });

@@ -261,6 +261,7 @@ export function renderBar(
           size: CAPTION,
           anchor: k === 0 ? "start" : k === shares.ticks.length - 1 ? "end" : "middle",
           color: "textSubtle",
+          lang: shares.locale,
         }),
       );
     });
@@ -297,6 +298,7 @@ export function renderBar(
               ...valueStyle,
               anchor: neg ? "end" : "start",
               color: "textMuted",
+              lang: locale,
             }),
           );
         }
@@ -318,6 +320,7 @@ export function renderBar(
                 ...valueStyle,
                 anchor: neg ? "end" : "start",
                 color: partial.some((p) => p.has(i)) ? "textMuted" : "text",
+                lang: locale,
               },
             ),
           );
@@ -406,6 +409,7 @@ export function renderBar(
             ...valueStyle,
             anchor: "middle",
             color: "textMuted",
+            lang: locale,
           }),
         );
       }
@@ -421,6 +425,7 @@ export function renderBar(
           size: CAPTION,
           anchor: "middle",
           color: "textSubtle",
+          lang: locale,
         }),
       ),
     );

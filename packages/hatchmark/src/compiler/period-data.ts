@@ -70,6 +70,11 @@ export interface CustomRangeData {
   cubes: Record<string, DayCube>;
   /** Metrics a custom range cannot compute from day aggregates, sorted. */
   presetOnly: string[];
+  /**
+   * Every text value in the cubes and results, in the order the build sorts them in the project
+   * locale, so a browser orders keys like the build whatever collation data it has.
+   */
+  textOrder: string[];
 }
 
 export interface PeriodData {
@@ -253,7 +258,7 @@ export function customRangeDashboard(
       .filter(([, m]) => m.nature === "point")
       .map(([name]) => name),
   );
-  const { data } = assembleWith(project, custom.plan, results, context, points);
+  const { data } = assembleWith(project, custom.plan, results, context, points, custom.textOrder);
   if (data === undefined) throw new Error("custom range assembly produced no data");
   const presetOnly = new Set(custom.presetOnly);
   const blocks = data.blocks.map((b) =>

@@ -19,6 +19,8 @@ export interface PeriodView {
   caption: string;
   name: string;
   dates?: string;
+  nameIsDates: boolean;
+  lang?: string;
   presetOnly: string[];
 }
 
@@ -110,11 +112,6 @@ export function mountPeriod(root: HTMLElement, redraw: (view: PeriodView) => voi
     start: cal?.querySelector<HTMLInputElement>("[data-hm-edge=start]"),
     end: cal?.querySelector<HTMLInputElement>("[data-hm-edge=end]"),
   };
-  for (const input of [inputs.start, inputs.end]) {
-    if (!input) continue;
-    input.min = min;
-    input.max = max;
-  }
   const state: {
     start: string | undefined;
     end: string | undefined;
@@ -127,13 +124,43 @@ export function mountPeriod(root: HTMLElement, redraw: (view: PeriodView) => voi
     focus: max,
     view: monthStart(max),
   };
+  const names = Intl.DateTimeFormat.supportedLocalesOf(locale).length > 0 ? locale : "en-US";
   const fmt = (options: Intl.DateTimeFormatOptions) =>
-    new Intl.DateTimeFormat(locale, { timeZone: "UTC", ...options });
+    new Intl.DateTimeFormat(names, { timeZone: "UTC", calendar: "gregory", ...options });
   const monthName = fmt({ month: "long", year: "numeric" });
   const weekdayName = fmt({ weekday: "short" });
   const weekdayLong = fmt({ weekday: "long" });
   const dayLabel = fmt({ weekday: "long", month: "long", day: "numeric", year: "numeric" });
   const short = fmt({ month: "short", day: "numeric", year: "numeric" });
+  const pattern = cal?.dataset.hmPattern ?? "MM/DD/YYYY";
+  const digits = [...(cal?.dataset.hmDigits ?? "0123456789")];
+  const FIELD = { DD: "day", MM: "month", YYYY: "year" } as const;
+  const order = (pattern.match(/DD|MM|YYYY/g) ?? []).map((t) => FIELD[t as keyof typeof FIELD]);
+  const separators = new Set([..." ./-", ...pattern.replace(/DD|MM|YYYY/g, "")]);
+  const shownDay = (day: string | undefined) =>
+    day
+      ? pattern
+          .replace(/DD|MM|YYYY/g, (t) =>
+            t === "YYYY" ? day.slice(0, 4) : t === "MM" ? day.slice(5, 7) : day.slice(8, 10),
+          )
+          .replace(/\d/g, (d) => digits[Number(d)] ?? d)
+      : "";
+  const typedDay = (text: string): string | undefined => {
+    const plain = [...text.normalize("NFKC").trim()]
+      .map((c) => (digits.includes(c) ? String(digits.indexOf(c)) : c))
+      .join("");
+    const iso = /^(\d{4})-(\d{1,2})-(\d{1,2})$/.exec(plain);
+    const groups = iso ? iso.slice(1) : (plain.match(/\d+/g) ?? []);
+    const fields: readonly ("day" | "month" | "year")[] = iso ? ["year", "month", "day"] : order;
+    if (groups.length !== 3 || fields.length !== 3) return undefined;
+    if (!iso && [...plain.replace(/\d+/g, "")].some((c) => !separators.has(c))) return undefined;
+    const field = (type: "day" | "month" | "year") => groups[fields.indexOf(type)] ?? "";
+    const [year, month, day] = [field("year"), field("month"), field("day")];
+    if (year.length !== 4 || month.length > 2 || day.length > 2) return undefined;
+    const value = `${year}-${month.padStart(2, "0")}-${day.padStart(2, "0")}`;
+    const time = Date.UTC(Number(year), Number(month) - 1, Number(day));
+    return toDay(time) === value ? value : undefined;
+  };
   const inside = (day: string) => day >= min && day <= max;
   const clamp = (day: string) => (day < min ? min : day > max ? max : day);
 
@@ -175,7 +202,7 @@ export function mountPeriod(root: HTMLElement, redraw: (view: PeriodView) => voi
     return `<div class="hm-month"><p class="hm-month-name" id="${id}">${monthName.format(toDate(first))}</p><table class="hm-days" role="grid" aria-labelledby="${id}"><thead><tr>${head}</tr></thead><tbody>${rows.join("")}</tbody></table></div>`;
   };
 
-  const drawCalendar = (focus = false) => {
+  const drawCalendar = (focus = false, editing?: HTMLInputElement) => {
     if (!months) return;
     const had =
       document.activeElement instanceof HTMLElement && months.contains(document.activeElement)
@@ -187,8 +214,8 @@ export function mountPeriod(root: HTMLElement, redraw: (view: PeriodView) => voi
     if (next)
       next.disabled = monthStart(addMonths(state.view, visibleMonths() - 1)) >= monthStart(max);
     for (const [edge, input] of Object.entries(inputs)) {
-      if (!input) continue;
-      input.value = state[edge as "start" | "end"] ?? "";
+      if (!input || input === editing) continue;
+      input.value = shownDay(state[edge as "start" | "end"]);
       input.removeAttribute("aria-invalid");
     }
     if (apply) apply.disabled = !(state.start && state.end);
@@ -283,11 +310,16 @@ export function mountPeriod(root: HTMLElement, redraw: (view: PeriodView) => voi
       shown = view.key;
       check(view.key);
       const name = root.querySelector(".hm-period-name");
-      if (name) name.textContent = view.name;
+      if (name) {
+        name.textContent = view.name;
+        if (view.nameIsDates && view.lang) name.setAttribute("lang", view.lang);
+        else name.removeAttribute("lang");
+      }
       let dates = root.querySelector<HTMLElement>(".hm-period-button .hm-period-dates");
       if (view.dates && !dates) {
         dates = document.createElement("span");
         dates.className = "hm-period-dates";
+        if (view.lang) dates.lang = view.lang;
         button.append(dates);
       }
       if (dates) {
@@ -400,33 +432,45 @@ export function mountPeriod(root: HTMLElement, redraw: (view: PeriodView) => voi
     event.preventDefault();
     moveFocus(move());
   });
-  for (const [edge, input] of Object.entries(inputs)) {
-    input?.addEventListener("change", () => {
-      const value = input.value;
-      input.removeAttribute("aria-invalid");
-      if (!/^\d{4}-\d{2}-\d{2}$/.test(value) || !inside(value)) {
-        if (edge === "start") state.start = undefined;
-        state.end = undefined;
-        drawCalendar();
-        input.value = value;
-        if (value === "") return;
-        input.setAttribute("aria-invalid", "true");
-        if (status)
-          status.textContent = `Pick a day from ${short.format(toDate(min))} to ${short.format(toDate(max))}`;
-        return;
-      }
-      if (edge === "start") {
-        state.start = value;
-        if (state.end !== undefined && state.end < value) state.end = undefined;
-      } else {
-        if (state.start === undefined || value < state.start) state.start = value;
-        state.end = value;
-      }
-      state.focus = value;
-      state.view = monthStart(addMonths(value, edge === "end" ? -(visibleMonths() - 1) : 0));
-      if (state.view < monthStart(min)) state.view = monthStart(min);
-      drawCalendar();
-    });
+  const read = (edge: "start" | "end", input: HTMLInputElement, typing: boolean) => {
+    const text = input.value;
+    const value = typedDay(text);
+    const other = edge === "start" ? state.end : state.start;
+    const crosses =
+      value !== undefined &&
+      other !== undefined &&
+      (edge === "start" ? value > other : value < other);
+    if (typing && (value === undefined || crosses)) return;
+    input.removeAttribute("aria-invalid");
+    if (value === undefined || !inside(value)) {
+      if (edge === "start") state.start = undefined;
+      state.end = undefined;
+      drawCalendar(false, input);
+      if (text.trim() === "") return;
+      input.setAttribute("aria-invalid", "true");
+      if (status)
+        status.textContent =
+          value === undefined
+            ? `Type a date as ${pattern}`
+            : `Pick a day from ${short.format(toDate(min))} to ${short.format(toDate(max))}`;
+      return;
+    }
+    if (edge === "start") {
+      state.start = value;
+      if (state.end !== undefined && state.end < value) state.end = undefined;
+    } else {
+      if (state.start === undefined || value < state.start) state.start = value;
+      state.end = value;
+    }
+    state.focus = value;
+    state.view = monthStart(addMonths(value, edge === "end" ? -(visibleMonths() - 1) : 0));
+    if (state.view < monthStart(min)) state.view = monthStart(min);
+    drawCalendar(false, typing ? input : undefined);
+  };
+  for (const edge of ["start", "end"] as const) {
+    const input = inputs[edge];
+    input?.addEventListener("input", () => read(edge, input, true));
+    input?.addEventListener("change", () => read(edge, input, false));
   }
   cal?.querySelector("[data-hm-cal=cancel]")?.addEventListener("click", () => close(true));
   apply?.addEventListener("click", () => {

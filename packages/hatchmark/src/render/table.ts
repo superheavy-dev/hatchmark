@@ -2,7 +2,7 @@ import type { TableData, TableRow } from "../compiler/dashboard-data.js";
 import { isNumber, metricOf, type RenderContext } from "./chart.js";
 import { formatDate, formatKey, formatSpan, formatValue, parseDate } from "./format.js";
 import { timeOf } from "./partial.js";
-import { esc, r } from "./svg.js";
+import { esc, langAttr, r } from "./svg.js";
 
 /**
  * Rows past which a table keeps its header and total row in view: scrolling inside its card, or in
@@ -50,6 +50,8 @@ export function renderTable(
   described = false,
 ): string {
   const locale = ctx.data.locale;
+  const lang = langAttr(locale);
+  const ranks = new Map((block.textOrder ?? []).map((text, i) => [text, i]));
   const width = block.by.length;
   const metrics = block.metrics.map((m) => metricOf(ctx, m));
   const shareFormat = { format: { type: "percent", decimals: 1 } } as const;
@@ -191,13 +193,13 @@ export function renderTable(
     const cls = [bars.has(name) ? "hm-cellbar" : "", isNumber(value) ? "" : "hm-null"]
       .filter(Boolean)
       .join(" ");
-    return `<td${cls ? ` class="${cls}"` : ""} data-v="${raw(value)}">${drawn}${esc(formatValue(value ?? null, metricOf(ctx, name), locale, "full"))}</td>`;
+    return `<td${cls ? ` class="${cls}"` : ""}${lang} data-v="${raw(value)}">${drawn}${esc(formatValue(value ?? null, metricOf(ctx, name), locale, "full"))}</td>`;
   };
   const shareCell = (share: number | null | undefined, name: string, bar: boolean) => {
     const fraction =
       isNumber(share) && (maxShare[name] ?? 0) > 0 ? share / (maxShare[name] as number) : 0;
     const drawn = bar ? track({ left: 0, width: fraction }, undefined) : "";
-    return `<td class="hm-share${isNumber(share) ? "" : " hm-null"}" data-v="${raw(share)}">${drawn}${esc(formatValue(share ?? null, shareFormat, locale, "full"))}</td>`;
+    return `<td class="hm-share${isNumber(share) ? "" : " hm-null"}"${lang} data-v="${raw(share)}">${drawn}${esc(formatValue(share ?? null, shareFormat, locale, "full"))}</td>`;
   };
   const values = (
     get: (m: string) => number | null | undefined,
@@ -219,9 +221,10 @@ export function renderTable(
     extra = "",
   ) => {
     const tag = i === 0 ? 'th scope="row"' : "td";
-    const content = `${text === "" ? "" : `<span${hidden ? ' class="hm-sr"' : ""}>${esc(text)}</span>`}${extra}`;
+    const content = `${text === "" ? "" : `<span${hidden ? ' class="hm-sr"' : ""}${typeof value === "number" ? lang : ""}>${esc(text)}</span>`}${extra}`;
     const title = text === "" || hidden ? "" : ` title="${esc(text)}"`;
-    return `<${tag} class="${keyClass(i)}${cls}"${title}${typeof value === "number" ? ' data-t="n"' : ""} data-v="${attr(value === null ? "" : String(value))}">${content}</${tag.split(" ")[0]}>`;
+    const rank = typeof value === "string" ? ranks.get(value) : undefined;
+    return `<${tag} class="${keyClass(i)}${cls}"${title}${typeof value === "number" ? ' data-t="n"' : ""}${rank === undefined ? "" : ` data-hm-rank="${rank}"`} data-v="${attr(value === null ? "" : String(value))}">${content}</${tag.split(" ")[0]}>`;
   };
   const keysOf = (row: TableRow, previous: TableRow | undefined, shown: Set<number>): string[] => {
     const level = row.kind === "subtotal" ? (row.level ?? 1) : undefined;

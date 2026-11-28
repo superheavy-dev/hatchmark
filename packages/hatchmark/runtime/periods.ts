@@ -4,6 +4,7 @@ import { parseDaysKey } from "../src/compiler/periods.js";
 import { useRanges } from "../src/render/format.js";
 import { renderDashboardBlocks } from "../src/render/page.js";
 import { periodCaption, periodText } from "../src/render/period.js";
+import { valueLang } from "../src/render/svg.js";
 
 /**
  * The period engine: loaded by the runtime the first time a reader picks another range, so pages
@@ -19,6 +20,10 @@ export interface PeriodView {
   caption: string;
   name: string;
   dates?: string;
+  /** The name is the range's dates rather than a preset's name. */
+  nameIsDates: boolean;
+  /** The locale the dates are formatted in, unless it is English like the rest of the page. */
+  lang?: string;
   /** Labels of metrics shown as "—" because a custom range cannot compute them. */
   presetOnly: string[];
 }
@@ -40,12 +45,15 @@ function view(
   }
   if (data?.periodFilter === undefined) return undefined;
   const text = periodText(data.periodFilter, data.locale);
+  const lang = valueLang(data.locale);
   return {
     key,
     blocks: renderDashboardBlocks(data),
     caption: periodCaption(data),
     name: text.name,
     ...(text.dates ? { dates: text.dates } : {}),
+    nameIsDates: text.nameIsDates,
+    ...(lang === undefined ? {} : { lang }),
     presetOnly,
   };
 }
