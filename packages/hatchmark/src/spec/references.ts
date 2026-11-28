@@ -32,7 +32,7 @@ import {
   replaceValueFix,
   yamlText,
 } from "./fixes.js";
-import { filterTables, metricSources, readSources, sourceTables } from "./graph.js";
+import { blockTarget, filterTables, metricSources, readSources, sourceTables } from "./graph.js";
 import { layoutItems, MIN_CHART_SPAN } from "./layout.js";
 import type { Filter, Metric, TableMetric } from "./metric.js";
 import type { Project, SpecFile } from "./project.js";
@@ -897,6 +897,83 @@ function reaches(
   return metricDeps(metric).some((dep) => reaches(dep, target, metrics, seen));
 }
 
+function checkBlockTarget(
+  r: Reporter,
+  project: Project,
+  file: SpecFile<"dashboard">,
+  block: Block,
+  base: string,
+  metrics: ReadonlyMap<string, Metric>,
+): void {
+  const pointer = `${base}/target`;
+  const found = blockTarget(block, metrics);
+  const names = blockMetricRefs(block).map((ref) => ref.name);
+  const quoted = (list: readonly string[]) => list.map((n) => `"${n}"`).join(", ");
+  if (found === undefined) {
+    const ids = [
+      ...new Set(names.flatMap((n) => (metrics.get(n)?.targets ?? []).map((t) => t.id))),
+    ];
+    const id = "target" in block ? (block.target ?? "") : "";
+    r.report("HM2022", pointer, `unknown target "${id}"`, {
+      label:
+        ids.length === 0
+          ? `${quoted(names)} defines no targets`
+          : `not a target id of ${quoted(names)}`,
+      expected: ids,
+      ...suggestion(file.document, id, ids, pointer),
+    });
+    return;
+  }
+  const { metric, target } = found;
+  const read = [...metricSources(project, metric)];
+  const known = (source: string, column: string) =>
+    columnsOf(project, source)?.has(foldColumn(column));
+  const inMetric = (columns: string[]) =>
+    read.length > 0 && read.every((s) => columns.every((c) => known(s, c) === true));
+  const table = target.table;
+  const inTarget = (columns: string[]) =>
+    table !== undefined && columns.every((c) => known(table, c) !== false);
+  const owner = `target "${target.id}" of "${metric}"`;
+  for (const filter of file.spec?.filters ?? []) {
+    if (filter.type === "select") {
+      if (!inMetric([filter.column]) || inTarget([filter.column])) continue;
+      r.report(
+        "HM4021",
+        pointer,
+        `${owner} is hidden while filter "${filter.id}" keeps some values: ${table === undefined ? "inline values have no columns" : `source "${table}" has no column "${filter.column}"`}`,
+        {
+          severity: "warning",
+          label: "the block shows no target then",
+          help: `give the target a table with a "${filter.column}" column, so the target filters with the block`,
+        },
+      );
+    } else if (filter.type === "segment") {
+      const hiddenBy = filter.segments.filter((name) => {
+        const columns = (project.segments.get(name)?.spec?.filters ?? []).map((f) => f.column);
+        if (!inMetric(columns)) return false;
+        return target.segments !== undefined ? !target.segments.includes(name) : !inTarget(columns);
+      });
+      if (hiddenBy.length === 0) continue;
+      const why =
+        target.segments !== undefined
+          ? `it is set for ${quoted(target.segments) || "no segment"}`
+          : table === undefined
+            ? "inline values have no columns"
+            : `source "${table}" lacks the segment's columns`;
+      r.report(
+        "HM4021",
+        pointer,
+        `${owner} is hidden while segment ${quoted(hiddenBy)} of filter "${filter.id}" is on: ${why}`,
+        {
+          severity: "warning",
+          label: "the block shows no target then",
+          help: 'list the segments the target was set for in its "segments", or give its table the segment\'s columns',
+        },
+      );
+    }
+  }
+}
+
 function blockMetricRefs(block: Block): { pointer: string; name: string }[] {
   switch (block.type) {
     case "kpi":
@@ -1356,6 +1433,10 @@ function checkDashboard(project: Project, file: SpecFile<"dashboard">, out: Diag
           },
         );
       }
+    }
+
+    if ("target" in block && block.target !== undefined) {
+      checkBlockTarget(r, project, file, block, base, metrics);
     }
 
     if (block.type === "table") {

@@ -743,12 +743,14 @@ Targets live in the metric file, so every block that shows the metric can show t
 ]
 ```
 
-- A target is a set of bucket values at one grain: from a table (`grain`, a date column holding each bucket's start, a `value` column, optional extra columns as dimensions) or inline `values` keyed by bucket start date (`"2027-02-01": 9000000` for a year anchored `02-01`).
-- **Flow targets** are amounts per period. At a coarser grain they sum (a quarter shows only when all three months exist); at a finer grain they prorate by days in the overlap by default, and check notes it (HM4022, note); `"prorate": "none"` hides the target at grains finer than its own. In a partial bucket the pace target is target × elapsed, so "on pace" means something on November 26.
-- **Point-in-time targets** are values at a period's end. Between points they follow `path` (`linear` or `compound`, default `linear`); before the first point there's no target. In a partial bucket the target is read at the horizon.
-- Blocks: `"target": "plan"` on kpi (attainment percent, progress bar, good/bad from `better`), line and area (target line), bar (target tick per bar).
-- **Segments and filters.** A target table's extra columns act as dimensions: with `split: "segment"` each series gets its own target. When a dashboard filter or segment toggle is active and the target table lacks that column, the target hides and the block says why; check warns ahead of time (HM4021). A target may declare the segments it was set for (`"segments": ["external"]`); otherwise toggling a segment hides it.
-- Checks: HM2022 unknown target id; HM4020 the target covers none or only part of the window (warning); currency is the metric's.
+- A target is a set of bucket values at one grain: from a table (`grain`, a date column holding each bucket's start, a `value` column, optional extra columns as dimensions) or inline `values` keyed by bucket start date (`"2027-02-01": 9000000` for a year anchored `02-01`). Buckets start at the project anchors. A date inside a bucket counts for that bucket, and the values of one bucket add up (a table with one row per region and month gives the month's total). The planner reads a table target with one query: the sum of `value` by `date` and the dimensions, over all rows.
+- **Flow targets** are amounts per period. A bucket or window [S, E) of local dates gets every target bucket [s, e) it overlaps: one wholly inside with its value, one partly inside with value × days(overlap) / days(s, e). It has a target only when every target bucket it overlaps has a value, so a quarter shows only when all three months exist. Splitting a bucket needs `"prorate": "days"`, the default when the metric adds up over time (sums, counts, linear formulas of them); check notes it (HM4022, note). With `"prorate": "none"` a bucket or window that would split a target bucket has no target, and a time series at a grain finer than the target's hides it (`hidden: "grain"`). A metric that doesn't add up over time (an average, a ratio, a distinct count) has a target only for exactly one target bucket: never summed, never split.
+- **Flow windows.** A KPI or category bar reads the target over its window's period: the whole bucket of a to-date range (all of November for month to date), the window itself for `last N` ranges (slid or not, it is the period), and the range as written otherwise (a last complete unit, an explicit `{start, end}`). Edges are prorated by days as above. When the target doesn't cover the period there is no target, and the block warns with HM4020.
+- **Pace.** In a partial bucket, or a window that ends before its period does, the pace target is target × elapsed, so "on pace" means something on November 26. Elapsed is the elapsed definition of section 6.1, unrounded: (to − from) / (E − S) in local wall-clock time, where a to-date window ends at the horizon instant and a trimmed range at its last complete day (whole days). A clipped first bucket (`edges: "clip"`) has a pace by the share the window covers. KPI attainment is value ÷ pace when there is a pace, else value ÷ target.
+- **Point-in-time targets** are values at a period's end: a value keyed by bucket start holds at that bucket's end. Between two values they follow `path`: `linear` (default) moves by the same amount per unit of local wall-clock time, `compound` by the same factor, value₀ × (value₁ / value₀)^f, which needs both values positive (no target otherwise). There is no target before the first value's instant, nor after the last one's (HM4020). A bucket reads the target at its end, the bucket the horizon cuts reads it at the horizon, and a KPI at its window's end (the horizon when the window ends there).
+- Blocks: `"target": "plan"` on kpi (attainment percent, progress bar, good/bad from `better`), line and area (target line), bar (target tick per bar). With several metrics, the target belongs to the first metric that defines the id. The data carries the values: a KPI's `target` (`value`, `pace`, `attainment`), each series' `target` (one value per bucket or category, null where there is none, with `pace` at partial positions), and a chart's `target` (the total over every split value; `window` for a category bar whose target has no `by` column).
+- **Segments and filters.** A target table's extra columns act as dimensions only when they are the block's `by` or `split` column: a category bar then has a target per bar, and each split series its own target; otherwise the block shows the total. A table target follows a select filter or segment toggle when both the metric's sources and the table have its columns. When a select filter keeps some values in the metric's rows and the target table lacks that column, or a segment is on in the metric's rows and the table lacks the segment's columns, the target hides (`hidden: "filter"` or `"segment"`) and the block says why; check warns ahead of time (HM4021). Inline targets have no columns, so any active select filter hides them. A target may declare the segments it was set for (`"segments": ["external"]`): it is then shown, unfiltered, while no other segment is on, and hides when one is; a target that declares none hides under a segment it cannot follow.
+- Checks: HM2022 unknown target id (error, with did-you-mean); HM4020 the target covers none or only part of the window or buckets (warning); HM4021 hidden under a filter or segment (warning); HM4022 prorated by days (note); HM4040 notes the default `prorate: "days"` and `path: "linear"` of a target a block shows; currency is the metric's.
 
 ## 8. Segments
 
@@ -894,12 +896,16 @@ interface BlockPlan {
 
 interface PlannedTarget {
   id: string;
+  label: string;
   kind: "flow" | "point";
-  path: "linear" | "compound";
-  grain: Grain;
+  additive?: boolean; // flow: values sum and split by days
+  prorate?: "days" | "none"; // flow, resolved from the default
+  path?: "linear" | "compound"; // point, resolved from the default
+  grain: ResolvedGrain; // at the project anchors
   values:
-    | { source: string; date: string; column: string; dimensions: string[] }
+    | { queryId: string; source: string; date: string; column: string; dimensions: string[] }
     | { inline: Record<string, number> };
+  segments?: string[];
 }
 
 interface QueryPlan {

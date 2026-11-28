@@ -12,6 +12,7 @@ import { blockId, grainKey, PIE_DEFAULT_LIMIT, resolveGrain } from "../spec/unit
 import {
   type BarData,
   type BlockData,
+  type BlockTarget,
   type CategoryAxis,
   DASHBOARD_DATA_VERSION,
   type DashboardData,
@@ -19,6 +20,7 @@ import {
   type EmptyWindow,
   type GrainOption,
   type KpiData,
+  type KpiTarget,
   type LineData,
   type MapData,
   type MapMatch,
@@ -33,30 +35,36 @@ import {
   type ScatterPoint,
   type Series,
   type SeriesGroup,
+  type SeriesTarget,
   type StackTotals,
   type TableData,
   type TableRow,
+  type TargetHidden,
   type TimeAxis,
   type Value,
 } from "./dashboard-data.js";
 import { formatWall, lastWallBefore, parseInstant, toLocal } from "./instants.js";
 import { classOf, mapScale } from "./map-scale.js";
-import { segmentValues } from "./params.js";
+import { segmentValues, selectValues } from "./params.js";
 import { rangeKey, rangeName } from "./periods.js";
 import type {
   BlockPlan,
   ExecutionContext,
   MeasureExpression,
+  PlannedParam,
   PlannedQuery,
+  PlannedTarget,
   QueryPlan,
   QueryResult,
 } from "./plan.js";
 import { tableGroupingSets } from "./planner.js";
+import { elapsedShare, flowTarget, pointTarget, targetBuckets } from "./targets.js";
 import {
   boundInstant,
   bucketEnd,
   effectiveRange,
   measureHorizon,
+  NAMED,
   nextDay,
   queryBounds,
   resolveRange,
@@ -298,25 +306,13 @@ class Assembler {
     grain: ResolvedGrain,
     clipFrom?: string,
   ): T & { partial?: PartialBucket[] } {
-    const at = this.horizon(expression);
-    const clip = clipFrom === undefined ? undefined : parseInstant(clipFrom);
-    if (at === undefined && clip === undefined) return series;
-    const horizon = at === undefined ? undefined : toLocal(at, this.context.timezone);
-    const lastRead = at === undefined ? undefined : lastWallBefore(at, this.context.timezone);
+    const spans = this.spans(expression, buckets, grain, clipFrom);
+    if (spans === undefined) return series;
     const partial: PartialBucket[] = [];
     const values = series.values.map((value, index) => {
-      const start = parseInstant(buckets[index] ?? "");
-      const end = parseInstant(bucketEnd(buckets[index] ?? "", grain));
-      const from = index === 0 && clip !== undefined && clip > start ? clip : start;
-      if (
-        horizon !== undefined &&
-        from >= horizon &&
-        !(lastRead !== undefined && lastRead >= from)
-      ) {
-        return null;
-      }
-      const cut = horizon !== undefined && horizon < end ? horizon : end;
-      const to = cut <= from && lastRead !== undefined ? lastRead + 1n : cut;
+      const span = spans[index];
+      if (span === undefined || span === null) return null;
+      const { start, end, from, to } = span;
       if (from > start || to < end) {
         partial.push({
           index,
@@ -329,6 +325,39 @@ class Assembler {
       return value;
     });
     return { ...series, values, ...(partial.length > 0 ? { partial } : {}) };
+  }
+
+  /**
+   * What a time series reads of each bucket [start, end), in local wall-clock microseconds: from a
+   * clipped window start or the bucket start, to the measure's horizon or the bucket end; null for
+   * a bucket at or after the horizon. Undefined when there is neither a horizon nor a clip.
+   */
+  private spans(
+    expression: MeasureExpression | undefined,
+    buckets: string[],
+    grain: ResolvedGrain,
+    clipFrom?: string,
+  ): ({ start: bigint; end: bigint; from: bigint; to: bigint } | null)[] | undefined {
+    const at = this.horizon(expression);
+    const clip = clipFrom === undefined ? undefined : parseInstant(clipFrom);
+    if (at === undefined && clip === undefined) return undefined;
+    const horizon = at === undefined ? undefined : toLocal(at, this.context.timezone);
+    const lastRead = at === undefined ? undefined : lastWallBefore(at, this.context.timezone);
+    return buckets.map((bucket, index) => {
+      const start = parseInstant(bucket);
+      const end = parseInstant(bucketEnd(bucket, grain));
+      const from = index === 0 && clip !== undefined && clip > start ? clip : start;
+      if (
+        horizon !== undefined &&
+        from >= horizon &&
+        !(lastRead !== undefined && lastRead >= from)
+      ) {
+        return null;
+      }
+      const cut = horizon !== undefined && horizon < end ? horizon : end;
+      const to = cut <= from && lastRead !== undefined ? lastRead + 1n : cut;
+      return { start, end, from, to };
+    });
   }
 
   /**
@@ -627,6 +656,329 @@ class Assembler {
     });
   }
 
+  private targetRows(planned: PlannedTarget): { date: string; keys: Key[]; value: number }[] {
+    if ("inline" in planned.values) {
+      return Object.entries(planned.values.inline).map(([date, value]) => ({
+        date,
+        keys: [],
+        value,
+      }));
+    }
+    const indexed = this.queries.get(planned.values.queryId);
+    if (indexed === undefined) return [];
+    const at = indexed.components.get(indexed.query.measures[0]?.components[0]?.id ?? "");
+    return (indexed.keys.get(0) ?? []).flatMap((keys) => {
+      const row = indexed.rows.get(rowKey(0, keys));
+      const value = row === undefined || at === undefined ? null : row[at];
+      const [date, ...rest] = keys;
+      return typeof date === "string" && typeof value === "number" && Number.isFinite(value)
+        ? [{ date: date.slice(0, 10), keys: rest, value }]
+        : [];
+    });
+  }
+
+  /** A target's values by bucket start, over the rows whose dimensions equal select's keys. */
+  private targetValues(planned: PlannedTarget, select: Record<string, Key>): Map<string, number> {
+    const dims = "inline" in planned.values ? [] : planned.values.dimensions;
+    const rows = this.targetRows(planned).filter((row) =>
+      Object.entries(select).every(([column, key]) => {
+        const i = dims.indexOf(column);
+        return i < 0 || row.keys[i] === key;
+      }),
+    );
+    return targetBuckets(rows, planned.grain);
+  }
+
+  /**
+   * Why a target does not apply under this execution's filters (RFC 0001 section 7): a select
+   * filter keeps some values in the metric's rows but not in the target's, or a segment is on in
+   * the metric's rows that the target cannot follow.
+   */
+  private targetHidden(
+    planned: PlannedTarget,
+    expression: MeasureExpression | undefined,
+  ): TargetHidden | undefined {
+    const own =
+      "queryId" in planned.values ? this.queries.get(planned.values.queryId)?.query : undefined;
+    const { bindings } = this.context;
+    for (const id of expression ? refs(expression) : []) {
+      for (const p of this.queries.get(id)?.query.params ?? []) {
+        if (p.kind === "select") {
+          if (selectValues(p, bindings).length === 0) continue;
+          if (!own?.params.some((t) => t.kind === "select" && t.id === p.id)) return "filter";
+        } else if (p.kind === "segment") {
+          const on = segmentValues(p, bindings).filter((n) => p.segments.some((s) => s.name === n));
+          if (on.length === 0) continue;
+          if (planned.segments !== undefined) {
+            if (on.some((n) => !planned.segments?.includes(n))) return "segment";
+            continue;
+          }
+          const bound = own?.params.find((t) => t.kind === "segment" && t.id === p.id);
+          const follows = (n: string) =>
+            bound?.kind === "segment" && bound.segments.some((s) => s.name === n);
+          if (!on.every(follows)) return "segment";
+        }
+      }
+    }
+    return undefined;
+  }
+
+  /**
+   * A target over a KPI's or category's window. A point-in-time target is read at the window's
+   * end. A flow target covers the window's period: a to-date range's whole bucket, the window
+   * itself for last N units, else the range as written. When the window ends before its period
+   * does, pace is the target times the share of the period the window covers (elapsedShare).
+   */
+  private windowTarget(
+    planned: PlannedTarget,
+    expression: MeasureExpression | undefined,
+    select: Record<string, Key>,
+  ): { value: Value; pace?: number; prorated: boolean } {
+    const none = { value: null, prorated: false };
+    const query = expression && this.queries.get(refs(expression)[0] ?? "")?.query;
+    const bounds = this.bounds(expression);
+    if (query === undefined || bounds === undefined || query.window.column === undefined) {
+      return none;
+    }
+    const values = this.targetValues(planned, select);
+    const local = (bound: string) =>
+      bound.endsWith("Z")
+        ? toLocal(parseInstant(bound), this.context.timezone)
+        : parseInstant(bound);
+    if (planned.kind === "point") {
+      if (bounds.end === undefined) return none;
+      return { value: pointTarget(values, planned, local(bounds.end)), prorated: false };
+    }
+    if (bounds.kind !== "bounded") return none;
+    const param = query.params.find(
+      (p): p is PlannedParam & { kind: "period" } =>
+        p.kind === "period" && p.column === query.window.column,
+    );
+    const range = effectiveRange(query.window.range, param, this.context.bindings);
+    const base =
+      range === "all_time"
+        ? undefined
+        : resolveRange(range, "none", this.context.asOf, this.plan.anchors);
+    if (range === "all_time" || base?.kind !== "bounded") return none;
+    const spec = typeof range === "string" ? NAMED[range] : range;
+    const period =
+      "to_date" in spec
+        ? {
+            start: base.start,
+            end: bucketEnd(base.start, resolveGrain(spec.to_date, this.plan.anchors)),
+          }
+        : "last" in spec
+          ? { start: bounds.start, end: bounds.end }
+          : base;
+    const full = flowTarget(values, planned, period.start, period.end);
+    if (full.value === null) return full;
+    const start = parseInstant(period.start);
+    const stop = parseInstant(period.end);
+    const end = local(bounds.end);
+    if (end >= stop) return full;
+    return { ...full, pace: full.value * elapsedShare(start, end, start, stop) };
+  }
+
+  /**
+   * A target at each bucket of a time axis. A flow target covers each bucket (flowTarget), with
+   * pace in the buckets the measure's horizon or a clipped start makes partial. A point-in-time
+   * target is read at each bucket's end, and at the horizon in the bucket it cuts.
+   */
+  private timeTarget(
+    planned: PlannedTarget,
+    expression: MeasureExpression | undefined,
+    axis: TimeAxis,
+    grain: ResolvedGrain,
+    clip: string | undefined,
+    select: Record<string, Key>,
+  ): { target: SeriesTarget; prorated: boolean } {
+    const values = this.targetValues(planned, select);
+    const { buckets } = axis;
+    const spans = this.spans(expression, buckets, grain, clip) ?? [];
+    const horizon = this.horizon(expression);
+    const at = horizon === undefined ? undefined : toLocal(horizon, this.context.timezone);
+    let prorated = false;
+    const cells = buckets.map((bucket, i) => {
+      const end = bucketEnd(bucket, grain);
+      if (planned.kind === "point") {
+        const stop = parseInstant(end);
+        const read = at !== undefined && at > parseInstant(bucket) && at < stop ? at : stop;
+        return { value: pointTarget(values, planned, read), pace: null };
+      }
+      const flow = flowTarget(values, planned, bucket, end);
+      prorated ||= flow.prorated;
+      const span = spans[i];
+      const partial = span && (span.from > span.start || span.to < span.end);
+      return {
+        value: flow.value,
+        pace:
+          !partial || flow.value === null
+            ? null
+            : flow.value * elapsedShare(span.from, span.to, span.start, span.end),
+      };
+    });
+    const pace = cells.map((c) => c.pace);
+    return {
+      target: {
+        values: cells.map((c) => c.value),
+        ...(pace.some((v) => v !== null) ? { pace } : {}),
+      },
+      prorated,
+    };
+  }
+
+  /** A target at each category: the target over the window of the category's rows. */
+  private categoryTarget(
+    planned: PlannedTarget,
+    expression: MeasureExpression | undefined,
+    column: string,
+    categories: Key[],
+    select: Record<string, Key>,
+  ): { target: SeriesTarget; prorated: boolean } {
+    const cells = categories.map((c) =>
+      this.windowTarget(planned, expression, { ...select, [column]: c }),
+    );
+    const pace = cells.map((c) => c.pace ?? null);
+    return {
+      target: {
+        values: cells.map((c) => c.value),
+        ...(pace.some((v) => v !== null) ? { pace } : {}),
+      },
+      prorated: cells.some((c) => c.prorated),
+    };
+  }
+
+  /**
+   * A chart's target (BlockTarget): on the metric's series when the block doesn't split, on each
+   * split series when the target's table has the split column, and over every split value on the
+   * block when it splits; over the window when a category chart's target has no by column.
+   */
+  chartTarget(
+    block: Block & { type: "line" | "area" | "bar" },
+    plan: BlockPlan,
+    series: Series[],
+    axis: TimeAxis | CategoryAxis,
+    grain: ResolvedGrain | undefined,
+  ): { series: Series[]; target?: BlockTarget } {
+    const [entry] = Object.entries(plan.targets ?? {});
+    if (entry === undefined) return { series };
+    const [metric, planned] = entry;
+    const expression = plan.measures[metric];
+    const head: BlockTarget = { id: planned.id, label: planned.label, metric };
+    const finer =
+      axis.kind === "time" &&
+      grain !== undefined &&
+      planned.kind === "flow" &&
+      planned.prorate === "none" &&
+      GRAIN_RANK[grain.unit] < GRAIN_RANK[planned.grain.unit];
+    const hidden = this.targetHidden(planned, expression) ?? (finer ? "grain" : undefined);
+    if (hidden !== undefined) return { series, target: { ...head, hidden } };
+    const dims = "inline" in planned.values ? [] : planned.values.dimensions;
+    const by = axis.kind === "category" ? axis.column : undefined;
+    const positional = by === undefined || dims.includes(by);
+    const clip = axis.kind === "time" && block.edges === "clip" ? axis.window.start : undefined;
+    let prorated = false;
+    const cells: Value[] = [];
+    const at = (select: Record<string, Key>): SeriesTarget => {
+      const found =
+        axis.kind === "time" && grain !== undefined
+          ? this.timeTarget(planned, expression, axis, grain, clip, select)
+          : this.categoryTarget(
+              planned,
+              expression,
+              by ?? "",
+              axis.kind === "category" ? axis.categories : [],
+              select,
+            );
+      prorated ||= found.prorated;
+      cells.push(...found.target.values);
+      return found.target;
+    };
+    const split = block.split;
+    const own = split === undefined || dims.includes(split);
+    const targeted = series.map((s) => {
+      if (!positional || !own || s.metric !== metric) return s;
+      return { ...s, target: at(split === undefined ? {} : { [split]: s.splitValue ?? null }) };
+    });
+    const target: BlockTarget = { ...head };
+    if (positional && split !== undefined) {
+      const total = at({});
+      target.values = total.values;
+      if (total.pace) target.pace = total.pace;
+    }
+    if (!positional) {
+      const window = this.windowTarget(planned, expression, {});
+      prorated ||= window.prorated;
+      cells.push(window.value);
+      target.window = {
+        value: window.value,
+        ...(window.pace === undefined ? {} : { pace: window.pace }),
+      };
+    }
+    this.targetNotes(plan, planned, metric, prorated, cells, axis.kind === "time");
+    return { series: targeted, target };
+  }
+
+  kpiTarget(plan: BlockPlan, name: string, value: Value): KpiTarget | undefined {
+    const planned = plan.targets?.[name];
+    if (planned === undefined) return undefined;
+    const expression = plan.measures[name];
+    const head = { id: planned.id, label: planned.label };
+    const hidden = this.targetHidden(planned, expression);
+    if (hidden !== undefined) return { ...head, value: null, attainment: null, hidden };
+    const found = this.windowTarget(planned, expression, {});
+    this.targetNotes(plan, planned, name, found.prorated, [found.value], false);
+    return {
+      ...head,
+      value: found.value,
+      ...(found.pace === undefined ? {} : { pace: found.pace }),
+      attainment: divide(value, found.pace ?? found.value),
+    };
+  }
+
+  /** HM4020 when a target misses some of what a block reads, HM4022 when it was split by days. */
+  private targetNotes(
+    plan: BlockPlan,
+    planned: PlannedTarget,
+    metric: string,
+    prorated: boolean,
+    cells: Value[],
+    buckets: boolean,
+  ): void {
+    const file = this.project.dashboards.get(this.plan.dashboard);
+    const pointer = `${plan.pointer}/target`;
+    const push = (code: "HM4020" | "HM4022", message: string, help: string) => {
+      if (this.diagnostics.some((d) => d.code === code && d.message === message)) return;
+      this.diagnostics.push({
+        code,
+        severity: code === "HM4020" ? "warning" : "note",
+        message,
+        ...(file ? { file: file.file, pointer, ...file.document.locationOf(pointer) } : {}),
+        help,
+        docs: docsCommand(code),
+      });
+    };
+    const owner = `target "${planned.id}" of "${metric}"`;
+    const missing = cells.filter((v) => v === null).length;
+    if (missing > 0) {
+      const what = buckets ? "buckets" : "window";
+      push(
+        "HM4020",
+        `block "${plan.blockId}" shows ${owner}, which covers ${missing === cells.length ? "none" : "only part"} of its ${what}; it shows no target where the target does not cover`,
+        planned.kind === "point"
+          ? "a point-in-time target has values only from its first value's period end through its last one's; add values, or pick a range they cover"
+          : "add target values for the periods the block reads, or pick a range the target covers",
+      );
+    }
+    if (prorated) {
+      push(
+        "HM4022",
+        `block "${plan.blockId}" splits ${owner}, set per ${planned.grain.unit}, by days: a ${planned.grain.unit} counts by its days inside each bucket or window`,
+        "set prorate: none on the target to show it only where its buckets fit whole",
+      );
+    }
+  }
+
   kpi(block: Block & { type: "kpi" }, plan: BlockPlan, common: Common): KpiData {
     const name = block.metric;
     const compare = block.compare ?? this.plan.period.compare;
@@ -674,6 +1026,8 @@ class Assembler {
         { unit: "month" },
       );
     }
+    const target = this.kpiTarget(plan, name, current);
+    if (target) data.target = target;
     return data;
   }
 
@@ -695,10 +1049,11 @@ class Assembler {
         : this.splitSeries(first, plan.measures[first], axis.buckets, stack ? 2 : 1, 2),
     ).map((one) => this.cut(one, plan.measures[one.metric], axis.buckets, grain, clip(axis)));
     const shown = this.incomplete(block, plan, axis, series);
+    const targeted = this.chartTarget(block, plan, shown.series, shown.axis, grain);
     const stacked = this.cutTotals(
       this.stacked(
         stack,
-        shown.series,
+        targeted.series,
         block.split === undefined
           ? undefined
           : (i) => this.evaluate(plan.measures[first], 1, [shown.axis.buckets[i] ?? null, null]),
@@ -717,6 +1072,7 @@ class Assembler {
       series: groupOrder(stacked.series),
       ...groupLabels(block),
       ...stacked.extra,
+      ...(targeted.target ? { target: targeted.target } : {}),
     };
   }
 
@@ -756,14 +1112,21 @@ class Assembler {
           : this.metricSeries(block.metrics, plan.measures, axis.buckets)
         ).map((one) => this.cut(one, plan.measures[one.metric], axis.buckets, grain, clip(axis))),
       );
+      const targeted = this.chartTarget(block, plan, shown.series, shown.axis, grain);
       const { series, extra } = this.cutTotals(
-        stacked(shown.series, shown.axis.buckets),
+        stacked(targeted.series, shown.axis.buckets),
         expressions,
         shown.axis.buckets,
         grain,
         shown.hidden,
       );
-      return { ...base, axis: shown.axis, series: groupOrder(series), ...extra };
+      return {
+        ...base,
+        axis: shown.axis,
+        series: groupOrder(series),
+        ...extra,
+        ...(targeted.target ? { target: targeted.target } : {}),
+      };
     }
     const column = block.by ?? "";
     const all = this.keys(expressions, 0).map((keys) => keys[0] ?? null);
@@ -785,12 +1148,16 @@ class Assembler {
             .map(({ c }) => c);
     const shown = block.limit === undefined ? sorted : sorted.slice(0, block.limit);
     const axis: CategoryAxis = { kind: "category", column, categories: shown };
-    const { series, extra } = stacked(
+    const targeted = this.chartTarget(
+      block,
+      plan,
       split
         ? this.splitSeries(first, plan.measures[first], shown, 2, 2)
         : this.metricSeries(block.metrics, plan.measures, shown),
-      shown,
+      axis,
+      undefined,
     );
+    const { series, extra } = stacked(targeted.series, shown);
     const omitted = sorted.length - shown.length;
     return {
       ...base,
@@ -798,6 +1165,7 @@ class Assembler {
       series: groupOrder(series),
       ...extra,
       ...(omitted > 0 ? { omittedCategories: omitted } : {}),
+      ...(targeted.target ? { target: targeted.target } : {}),
     };
   }
 
@@ -808,11 +1176,11 @@ class Assembler {
   ): T {
     const data = build(block, plan);
     const variants = (plan.grains ?? []).map((g) => {
-      const { axis, series, totals } = build(
+      const { axis, series, totals, target } = build(
         { ...block, grain: g.grain },
         { ...plan, grain: g.grain, measures: g.measures },
       );
-      return { grain: g.grain, axis: axis as TimeAxis, series, totals };
+      return { grain: g.grain, axis: axis as TimeAxis, series, totals, target };
     });
     const axes =
       variants.length > 0
@@ -846,6 +1214,7 @@ class Assembler {
           axis: v.axis,
           series: v.series,
           ...(v.totals === undefined ? {} : { totals: v.totals }),
+          ...(v.target === undefined ? {} : { target: v.target }),
         })),
       },
     };
@@ -1333,6 +1702,7 @@ class Assembler {
 type Common = { id: string; title?: string; span: number; height?: HeightPreset };
 
 const MAX_POINTS = 1000;
+const GRAIN_RANK = { day: 0, week: 1, month: 2, quarter: 3, year: 4 } as const;
 const MAX_SCATTER_POINTS = 500;
 
 const UNIT_LABELS = { day: "Day", week: "Week", month: "Month", quarter: "Quarter", year: "Year" };

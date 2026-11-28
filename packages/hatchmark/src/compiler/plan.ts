@@ -242,6 +242,31 @@ export type PlanParam =
       default: string[];
     };
 
+/**
+ * A metric target as a block shows it (RFC 0001 section 7), resolved so assembly needs nothing from
+ * the spec. A target is a set of values at one grain, keyed by bucket start at the project anchors:
+ * inline, or read from a table by a planned query that sums the value column by the date column and
+ * the dimensions. dimensions are the block's by and split columns that the target's table has.
+ */
+export interface PlannedTarget {
+  id: string;
+  label: string;
+  /** "flow": an amount per period; "point": the value at a period's end. */
+  kind: "flow" | "point";
+  /** Flow only: whether the metric adds up over time, so target values sum and split by days. */
+  additive?: boolean;
+  /** Flow only: "days" splits a bucket by its days inside a finer bucket or window; "none" never does. */
+  prorate?: "days" | "none";
+  /** Point only: how the target moves between two values. */
+  path?: "linear" | "compound";
+  grain: ResolvedGrain;
+  values:
+    | { queryId: string; source: string; date: string; column: string; dimensions: string[] }
+    | { inline: Record<string, number> };
+  /** The segments the target was set for, when it lists them. */
+  segments?: string[];
+}
+
 export interface BlockPlan {
   /** blockId(block, index) from the spec. */
   blockId: string;
@@ -272,6 +297,8 @@ export interface BlockPlan {
    * when it passes an operand's filters inside that operand's window on its own time column.
    */
   report?: { queryIds: string[]; measures: Record<string, MeasureExpression>; rows: string[] };
+  /** The target the block names, by the metric it belongs to. */
+  targets?: Record<string, PlannedTarget>;
   /** One reading per grain a block switches between (its grains, in spec order), all built ahead. */
   grains?: {
     grain: ResolvedGrain;

@@ -2,9 +2,12 @@ import { type Diagnostic, docsCommand } from "../diagnostics/index.js";
 import {
   type Anchors,
   type Block,
+  blockTarget,
   type Dashboard,
   DEFAULT_PERIOD,
   type Grain,
+  groupAdditive,
+  type Metric,
   type Project,
   projectAnchors,
   type RangeSpec,
@@ -12,6 +15,7 @@ import {
   resolveGrain,
   type SpecFile,
   type TimeGrain,
+  timeNature,
 } from "../spec/index.js";
 import { shownGrain } from "./planner.js";
 import { bucketStart, NAMED, resolveRange } from "./windows.js";
@@ -25,6 +29,9 @@ export function explainDefaults(project: Project): Diagnostic[] {
   const anchored = new Set<AnchorUnit>();
   const blockAnchored = new Set<AnchorUnit>();
   const rangeAnchored = new Set<AnchorUnit>();
+  const metrics = new Map<string, Metric>();
+  for (const [name, file] of project.metrics) if (file.spec) metrics.set(name, file.spec);
+  const targets = new Set<string>();
   for (const file of project.dashboards.values()) {
     const dashboard = file.spec;
     if (dashboard === undefined) continue;
@@ -47,6 +54,40 @@ export function explainDefaults(project: Project): Diagnostic[] {
       if (unit === "week" || unit === "quarter" || unit === "year") {
         anchored.add(unit);
         rangeAnchored.add(unit);
+      }
+    }
+    for (const block of dashboard.blocks) {
+      const found = blockTarget(block, metrics);
+      const metricFile = found && project.metrics.get(found.metric);
+      if (found === undefined || metricFile === undefined) continue;
+      const key = JSON.stringify([found.metric, found.target.id]);
+      if (targets.has(key)) continue;
+      targets.add(key);
+      const { target, index } = found;
+      const nature = timeNature(found.metric, metrics);
+      if (
+        nature === "flow" &&
+        target.prorate === undefined &&
+        groupAdditive(found.metric, metrics)
+      ) {
+        out.push(
+          note(
+            metricFile,
+            `/targets/${index}`,
+            `target "${target.id}" uses prorate: days: a ${target.grain}'s target splits in proportion to its days at a finer grain and over a window that starts or ends inside a ${target.grain}`,
+            "set prorate: none to show it only where its buckets fit whole; prorate: days keeps the default and silences this note",
+          ),
+        );
+      }
+      if (nature === "point" && target.path === undefined) {
+        out.push(
+          note(
+            metricFile,
+            `/targets/${index}`,
+            `target "${target.id}" uses path: linear: between two values the target moves by the same amount each day`,
+            "set path: compound to move by the same factor each day, as a growth goal does; path: linear keeps the default and silences this note",
+          ),
+        );
       }
     }
     dashboard.blocks.forEach((block, index) => {

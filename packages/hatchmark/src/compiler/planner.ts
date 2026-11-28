@@ -3,6 +3,7 @@ import {
   type Anchors,
   type Block,
   blockId,
+  blockTarget,
   type Comparison,
   type Dashboard,
   DEFAULT_PERIOD,
@@ -10,6 +11,8 @@ import {
   type Filter,
   type Grain,
   grainKey,
+  groupAdditive,
+  hasColumn,
   type Metric,
   type Project,
   plainAggregate,
@@ -19,6 +22,7 @@ import {
   type Source,
   type SpecFile,
   sameColumn,
+  timeNature,
 } from "../spec/index.js";
 import { canonicalJson, sha256Hex } from "./hash.js";
 import { planHorizons, type TimeColumn } from "./horizons.js";
@@ -31,7 +35,9 @@ import {
   PLAN_VERSION,
   type PlannedDimension,
   type PlannedMeasure,
+  type PlannedParam,
   type PlannedQuery,
+  type PlannedTarget,
   type PlanParam,
   type PlanResult,
   type QueryPlan,
@@ -66,6 +72,7 @@ interface Context {
   spec: Dashboard;
   metrics: Map<string, Metric>;
   sources: Record<string, Source>;
+  columns: Project["columns"];
   params: PlanParam[];
   range: QueryPlan["period"]["range"];
   compare: Comparison;
@@ -626,6 +633,7 @@ function planBlockAt(
     }
   })();
 
+  const target = plannedTarget(ctx, block, readings.measures);
   const all = [
     readings.measures,
     readings.previous,
@@ -633,6 +641,7 @@ function planBlockAt(
     readings.domain,
     readings.report,
     ...(readings.grains ?? []).map((g) => g.reading),
+    ...(target?.query ? [{ queries: [target.query] }] : []),
   ].flatMap((r) => (r ? r.queries : []));
   const queries = [...new Map(all.map((q) => [q.id, q])).values()];
   return {
@@ -654,6 +663,7 @@ function planBlockAt(
           }
         : {}),
       ...(readings.grain ? { grain: readings.grain } : {}),
+      ...(target ? { targets: { [target.metric]: target.planned } } : {}),
       ...(readings.grains
         ? {
             grains: readings.grains.map(({ grain, reading }) => ({
@@ -667,6 +677,106 @@ function planBlockAt(
     queries,
     diagnostics: [],
   };
+}
+
+/**
+ * The target a block names, resolved (PlannedTarget), with the query that reads a table target's
+ * values: the sum of its value column by its date column and the block's by and split columns
+ * that the table has, over all rows, under the dashboard filters that bind both to the table and to
+ * the metric's sources: select filters and, unless the target lists its segments, segment filters.
+ */
+function plannedTarget(
+  ctx: Context,
+  block: Block,
+  reading: Reading,
+): { metric: string; planned: PlannedTarget; query?: PlannedQuery } | undefined {
+  const found = blockTarget(block, ctx.metrics);
+  if (found === undefined) return undefined;
+  const { metric, target } = found;
+  const nature = timeNature(metric, ctx.metrics);
+  if (nature !== "flow" && nature !== "point") return undefined;
+  const additive = groupAdditive(metric, ctx.metrics);
+  const base = {
+    id: target.id,
+    label: target.label ?? target.id,
+    kind: nature,
+    ...(nature === "flow"
+      ? { additive, prorate: target.prorate ?? (additive ? "days" : "none") }
+      : { path: target.path ?? "linear" }),
+    grain: resolveGrain(target.grain, ctx.anchors),
+    ...(target.segments === undefined ? {} : { segments: target.segments }),
+  } satisfies Omit<PlannedTarget, "values">;
+  if (target.values !== undefined) {
+    const inline = Object.fromEntries(
+      Object.entries(target.values).sort(([a], [b]) => (a < b ? -1 : 1)),
+    );
+    return { metric, planned: { ...base, values: { inline } } };
+  }
+  const table = target.table ?? "";
+  const input = ctx.sources[table];
+  if (input === undefined || input.type === "lookup") return undefined;
+  const axes = [
+    ...(block.type === "bar" && block.grain === undefined && block.by !== undefined
+      ? [block.by]
+      : []),
+    ...("split" in block && block.split !== undefined ? [block.split] : []),
+  ];
+  const dimensions = [...new Set(axes)].filter(
+    (column) => hasColumn(ctx.columns.get(table), column) === true,
+  );
+  const queries = new Map(reading.queries.map((q) => [q.id, q]));
+  const metricParams = refIds(reading.measures[metric]).flatMap(
+    (qid) => queries.get(qid)?.params ?? [],
+  );
+  const id = `${target.id}__target`;
+  const shape: Omit<PlannedQuery, "id"> = {
+    source: table,
+    input,
+    measures: [
+      {
+        metric: `${metric}.${target.id}`,
+        components: [
+          { id, aggregate: "sum", column: target.value ?? "", filters: [], reaggregate: "sum" },
+        ],
+        combine: { op: "identity", component: id },
+      },
+    ],
+    dimensions: [target.date ?? "", ...dimensions].map((column) => ({ kind: "column", column })),
+    groupingSets: [[0, ...dimensions.map((_, i) => i + 1)]],
+    window: { range: "all_time", shift: "none" },
+    params: paramsForQuery(ctx.params, table, undefined).flatMap((p): PlannedParam[] => {
+      const own = metricParams.filter((m) => m.id === p.id);
+      if (p.kind === "select") return own.length > 0 ? [p] : [];
+      if (p.kind !== "segment" || target.segments !== undefined) return [];
+      const bound = new Set(
+        own.flatMap((m) => (m.kind === "segment" ? m.segments.map((s) => s.name) : [])),
+      );
+      const segments = p.segments.filter((s) => bound.has(s.name));
+      return segments.length > 0 ? [{ ...p, segments }] : [];
+    }),
+  };
+  const query = { id: queryId(shape), ...shape };
+  return {
+    metric,
+    planned: {
+      ...base,
+      values: {
+        queryId: query.id,
+        source: table,
+        date: target.date ?? "",
+        column: target.value ?? "",
+        dimensions,
+      },
+    },
+    query,
+  };
+}
+
+function refIds(expression: MeasureExpression | undefined): string[] {
+  if (expression === undefined) return [];
+  return expression.op === "ref"
+    ? [expression.queryId]
+    : [...refIds(expression.numerator), ...refIds(expression.denominator)];
 }
 
 /**
@@ -734,6 +844,7 @@ function context(
       spec,
       metrics,
       sources: project.config.spec?.sources ?? {},
+      columns: project.columns,
       params: resolveParams(project, dashboard),
       range: period.range,
       compare: period.compare,

@@ -180,6 +180,11 @@ export const CODES = {
     explanation:
       "A metric, target or test names a segment with no file under segments/. The name is the file name without .yaml.",
   },
+  HM2022: {
+    title: "unknown target",
+    explanation:
+      "A block's target names an id that none of the block's metrics lists under targets. The id is the target's id in metrics/<name>.yaml, not its label. The diagnostic lists the ids the block's metrics define and suggests the closest one.",
+  },
   HM2023: {
     title: "test data for a source the metric does not read",
     explanation:
@@ -360,6 +365,21 @@ export const CODES = {
     explanation:
       "An as-of lookup with at: $evaluation picks each key's row at the instant a point-in-time metric is read, such as the exchange rate on the last day of a month for a balance. A flow sums rows over a period and a static metric has no instant, so there is no single evaluation instant to pick the row at. Join at each row's own time instead (at: <time column>), or read the metric at an instant (over_time, active or trailing).",
   },
+  HM4020: {
+    title: "target does not cover the window",
+    explanation:
+      "A block shows a target, but the target has no value for some of what the block reads: a KPI or category window that starts or ends outside the target's buckets or crosses a bucket the target leaves out, a point-in-time window that ends before the first or after the last target value, or time buckets with no target. Where it does not cover, the block shows no target rather than a partial one. Add the missing target values, or pick a range the target covers.",
+  },
+  HM4021: {
+    title: "target hidden under a filter or segment",
+    explanation:
+      "A target applies only to the rows it was set for. When a dashboard's select filter keeps some values of a column and the target's table has no such column (inline values have no columns), or a segment toggle is on and the target's table lacks the segment's columns, the block cannot filter the target with its numbers, so it hides the target and says why. A target that lists its segments is shown only while no other segment of the toggle is on. check warns ahead of time. Give the target's table the column, or list the target's segments.",
+  },
+  HM4022: {
+    title: "flow target prorated by days",
+    explanation:
+      "Informational. A flow target set per month (or another grain) is shown at a finer grain or over a window that starts or ends inside one of its buckets, so the bucket counts in proportion to its days inside: a $31,000 January target is $7,000 for a week of January. Set prorate: none on the target to show it only at its own grain and coarser ones.",
+  },
   HM4023: {
     title: "metric primitive not evaluated yet",
     explanation:
@@ -368,7 +388,7 @@ export const CODES = {
   HM4040: {
     title: "default business definition",
     explanation:
-      "Informational. The file relies on a default for a choice that differs between companies: where weeks, quarters and years start, whether a time series starts at the start of its first bucket (edges), how buckets the data does not fully cover are shown (incomplete), which source horizon a dashboard ends at (period asOf), whether an interval ending exactly at a bucket end still counts in that bucket, or which instant gives an entity its group. The note names the default and the option that changes it. Setting the option explicitly, even to its default value, silences the note. Human output folds these notes into one line per file; hatchmark check --explain-defaults prints them all, and the JSON report always lists them.",
+      "Informational. The file relies on a default for a choice that differs between companies: where weeks, quarters and years start, whether a time series starts at the start of its first bucket (edges), how buckets the data does not fully cover are shown (incomplete), which source horizon a dashboard ends at (period asOf), whether an interval ending exactly at a bucket end still counts in that bucket, which instant gives an entity its group, how a flow target splits at a finer grain (prorate), or how a point-in-time target moves between its values (path). The note names the default and the option that changes it. Setting the option explicitly, even to its default value, silences the note. Human output folds these notes into one line per file; hatchmark check --explain-defaults prints them all, and the JSON report always lists them.",
   },
   HM4060: {
     title: "stacked metrics do not add up",

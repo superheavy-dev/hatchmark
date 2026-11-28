@@ -15,6 +15,7 @@ Every metric has these fields:
 | `description` | Optional. What is counted, for readers and agents.                                    |
 | `format`      | How values are shown; see [Format](#format).                                          |
 | `better`      | `up`, `down` or `neutral`: which direction of change is good. It colours KPI changes. |
+| `targets`     | Optional. Goals for the metric that blocks can show; see [Targets](#targets).         |
 
 ## aggregate
 
@@ -149,6 +150,75 @@ A filter keeps the rows whose column matches. All filters of a metric must match
 `neq` and `not_in` keep rows whose column is empty; the other operators never match an empty value.
 Dates are `YYYY-MM-DD` and match the whole local day. [numbers.md](numbers.md#filters) has the exact
 rules.
+
+## Targets
+
+A target is a goal for a metric, set once in the metric file so every block that shows the metric
+can show it. A block names one with `target: <id>` (kpi, line, area and bar blocks). Targets don't
+draw yet: the block's data carries their values for the component that will.
+
+```yaml
+targets:
+  - id: plan
+    label: FY2027 plan
+    grain: month
+    table: revenue_plan
+    date: month
+    value: amount
+  - id: goal
+    label: $12M ARR
+    grain: month
+    values:
+      "2026-12-01": 7400000
+      "2027-12-01": 12000000
+    path: compound
+```
+
+| Field      | Meaning                                                                                                        |
+| ---------- | -------------------------------------------------------------------------------------------------------------- |
+| `id`       | What a block's `target` names.                                                                                 |
+| `label`    | Optional. Shown next to the target; defaults to the id.                                                        |
+| `grain`    | The grain the values are set at. Buckets start at the project `anchors`.                                       |
+| `values`   | Inline values by bucket start date. Use either `values` or `table`.                                            |
+| `table`    | A source holding the values, with `date` (each bucket's start) and `value` columns. Rows of one bucket add up. |
+| `prorate`  | Flow metrics: `days` (default when the metric adds up over time) or `none`.                                    |
+| `path`     | Point-in-time metrics: `linear` (default) or `compound`.                                                       |
+| `segments` | Optional. The segments the target was set for.                                                                 |
+
+A date inside a bucket counts for that bucket.
+
+**Flow targets** (sums and counts over a period) are amounts per bucket.
+
+- A coarser bucket is the sum of the target buckets inside it, and has a target only when every one
+  of them has a value: a quarter needs all three months.
+- A finer bucket, or a bucket that crosses target buckets (weeks against months), gets each target
+  bucket in proportion to its days inside: a week of January gets 7/31 of January's target. check
+  notes this with `HM4022`. `prorate: none` shows the target only where its buckets fit whole and
+  hides it at finer grains.
+- A KPI or category bar reads the target over its window's period, prorated by days at the edges,
+  and only when every target bucket the period touches has a value; otherwise it shows no target
+  and build warns with `HM4020`. The period is the whole bucket of a to-date range (all of November
+  for month to date), the window itself for `last N` ranges, and the range as written otherwise.
+- When the window ends before its period does (a to-date range at the horizon, or a range the
+  horizon trims), the target also carries a pace: the target times the share of the period elapsed,
+  in local wall-clock time, so a month-to-date KPI on November 26 at 2 p.m. is compared with 25.58
+  of 30 days. A time series' partial bucket has a pace the same way, by its own elapsed share.
+- A metric that doesn't add up over time (an average, a ratio) has a target only at its own grain,
+  never summed or split.
+
+**Point-in-time targets** (balances, ARR) are values at the end of each bucket. Between two values
+the target moves in a straight line (`linear`) or by a constant growth factor (`compound`, which
+needs both values positive). There is no target before the first value's bucket end, nor after the
+last one's. A bucket reads the target at its end, the bucket the horizon cuts reads it at the
+horizon, and a KPI reads it at its window's end.
+
+**Filters and segments.** A table target follows the dashboard's select filters and segment toggles
+when its table has their columns, and splits by a block's `by` or `split` column when its table has
+that column: each bar and each split series then has its own target. Otherwise the block shows the
+target for the whole metric. When a select filter keeps some values of a column the target's table
+lacks (inline values have no columns), or a segment is on that the target cannot follow, the block
+hides the target and says why; check warns ahead of time with `HM4021`. A target that lists its
+`segments` is shown while only those segments are on, without being filtered again.
 
 ## Format
 
