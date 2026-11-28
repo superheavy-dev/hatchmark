@@ -43,7 +43,7 @@ export interface QueryResultRows {
 
 export class SourceReadError extends Error {}
 
-const UNAVAILABLE = "hatchmark: source not available: ";
+const UNAVAILABLE = "__hm_unavailable_";
 export class QueryRejected extends Error {}
 export class MissingSource extends Error {
   constructor(readonly source: string) {
@@ -161,8 +161,8 @@ export async function openDataSession(options: { root: string; config: ProjectCo
     /**
      * Runs one SELECT over the file sources. File access is limited to the sources' files, and every
      * readable source is registered as a view before the query binds, so a source named like a
-     * DuckDB catalog view still reads the source. A missing or unreadable source is a view that
-     * fails with its reason when the query reads it.
+     * DuckDB catalog view still reads the source. A missing or unreadable source is a view over a
+     * dropped table, so a query that reads it fails to bind and gets the source's reason.
      */
     async query(
       sql: string,
@@ -208,9 +208,10 @@ export async function openDataSession(options: { root: string; config: ProjectCo
             unavailable.set(name, error as Error);
           }
         }
-        await connection.run(
-          `CREATE TEMP VIEW ${quote(name)} AS SELECT error('${UNAVAILABLE}${name}') AS unavailable`,
-        );
+        const backing = quote(`${UNAVAILABLE}${name}`);
+        await connection.run(`CREATE TEMP TABLE ${backing} (unavailable INTEGER)`);
+        await connection.run(`CREATE TEMP VIEW ${quote(name)} AS SELECT * FROM ${backing}`);
+        await connection.run(`DROP TABLE ${backing}`);
       }
       try {
         const prepared = await connection.prepare(sql);
@@ -228,9 +229,8 @@ export async function openDataSession(options: { root: string; config: ProjectCo
       } catch (error) {
         if (error instanceof QueryRejected) throw error;
         const message = (error as Error).message;
-        const blocked = [...unavailable].find(([name]) =>
-          message.includes(`${UNAVAILABLE}${name}`),
-        );
+        const table = /Table with name (\S+) does not exist/.exec(message)?.[1];
+        const blocked = [...unavailable].find(([name]) => table === `${UNAVAILABLE}${name}`);
         if (blocked !== undefined) throw blocked[1];
         throw permission(error as Error);
       }

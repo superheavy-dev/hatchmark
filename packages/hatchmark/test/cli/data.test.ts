@@ -240,11 +240,25 @@ describe("hatchmark data query", () => {
       );
       const own = await cli(["data", "query", "SELECT * FROM sqlite_master"], p);
       expect(own.json().rows).toEqual([[41, "apples"]]);
-      const gone = await cli(["data", "query", "SELECT * FROM pg_tables"], p);
-      expect(gone.code).toBe(3);
-      expect(gone.json().diagnostics[0].code).toBe("HM2010");
-      const unreadable = await cli(["data", "query", "SELECT * FROM duckdb_tables"], p);
-      expect(unreadable.json().diagnostics[0].code).toBe("HM2015");
+      for (const sql of [
+        "SELECT * FROM pg_tables",
+        "SELECT count(*) FROM pg_tables",
+        "SELECT id FROM pg_tables",
+        "SELECT 1 FROM orders WHERE EXISTS (SELECT 1 FROM pg_tables)",
+      ]) {
+        const gone = await cli(["data", "query", sql], p);
+        expect(gone.code, sql).toBe(3);
+        expect(gone.json().diagnostics[0].code, sql).toBe("HM2010");
+      }
+      for (const sql of ["SELECT * FROM duckdb_tables", "SELECT count(*) FROM duckdb_tables"]) {
+        const unreadable = await cli(["data", "query", sql], p);
+        expect(unreadable.json().diagnostics[0].code, sql).toBe("HM2015");
+      }
+      const shadow = await cli(
+        ["data", "query", "WITH pg_tables AS (SELECT 2 AS x) SELECT * FROM pg_tables"],
+        p,
+      );
+      expect(shadow.json().rows).toEqual([[2]]);
       expect((await cli(["data", "query", "SELECT count(*) FROM orders"], p)).json().rows).toEqual([
         [1500],
       ]);
