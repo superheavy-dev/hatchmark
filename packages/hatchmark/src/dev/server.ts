@@ -1,3 +1,4 @@
+import type { EventEmitter } from "node:events";
 import { realpath, stat } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
@@ -56,6 +57,38 @@ const DEBOUNCE_MS = 20;
 // second save inside that window gets no event.
 const RECHECK_MS = 100;
 const INDEX = "/";
+const WATCH_READY_MS = 15_000;
+
+// chokidar emits "ready" once and has no public flag for it, so a late listener checks
+// _readyEmitted. Edits made before "ready" can be missed on Linux, and an error in the first scan
+// can keep "ready" from ever coming.
+export function waitForWatcher(watcher: EventEmitter, timeoutMs: number): Promise<void> {
+  if ((watcher as { _readyEmitted?: boolean })._readyEmitted) return Promise.resolve();
+  return new Promise((resolve, reject) => {
+    let failure: Error | undefined;
+    const onError = (error: Error) => {
+      failure ??= error;
+    };
+    const settle = () => {
+      clearTimeout(timer);
+      watcher.off("ready", onReady);
+      watcher.off("error", onError);
+    };
+    const onReady = () => {
+      settle();
+      resolve();
+    };
+    const timer = setTimeout(() => {
+      settle();
+      const cause = failure === undefined ? "" : `: ${failure.message}`;
+      const message = `the file watcher did not finish scanning the project within ${timeoutMs / 1000} s${cause}`;
+      reject(Object.assign(new Error(message), { code: "EWATCH" }));
+    }, timeoutMs);
+    timer.unref();
+    watcher.on("ready", onReady);
+    watcher.on("error", onError);
+  });
+}
 
 export interface CardUpdate {
   index: number;
@@ -159,6 +192,7 @@ export async function startDevServer(
   const watched = new Set<string>();
   let vite: ViteDevServer | undefined;
   let booted = false;
+  let watcherReady: Promise<void> | undefined;
 
   const send = (message: DevEvent) => {
     options.onEvent?.(message);
@@ -444,6 +478,8 @@ export async function startDevServer(
     name: "hatchmark",
     resolveId: (id) => (id === CLIENT_ID ? CLIENT_FILE : undefined),
     configureServer(server) {
+      watcherReady = waitForWatcher(server.watcher, WATCH_READY_MS);
+      watcherReady.catch(() => undefined);
       server.watcher.on("all", (_event, file) => onFile(path.resolve(file)));
       server.middlewares.use((req, res, next) => {
         const handle = async () => {
@@ -521,6 +557,7 @@ export async function startDevServer(
   for (const file of watched) vite.watcher.add(file);
   try {
     await vite.listen();
+    await watcherReady;
   } catch (error) {
     await vite.close();
     await executor?.close();

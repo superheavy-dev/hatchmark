@@ -67,6 +67,12 @@ export async function dev(
     });
   } catch (error) {
     const code = (error as NodeJS.ErrnoException).code;
+    if (code === "EWATCH") {
+      const result = usageError("HM0007", (error as Error).message, {
+        help: "check that every directory in the project can be read, then run dev again",
+      });
+      return { ...result, exitCode: EXIT.environment };
+    }
     if (code !== "EADDRINUSE" && code !== "EADDRNOTAVAIL" && code !== "EACCES") throw error;
     const where = `${flags.host ?? "localhost"}:${port ?? 5173}`;
     const result = usageError(
