@@ -7,12 +7,15 @@ import {
   drawYAxis,
   emptyNote,
   fraction,
+  GROUP_STYLE,
+  groupHeading,
   isNumber,
   LABEL_LINE,
   lastDefined,
   metricOf,
   type RenderContext,
   SHARE,
+  seriesName,
   shareAxis,
   svgRoot,
   yAxis,
@@ -30,7 +33,7 @@ import {
   partialRegion,
 } from "./partial.js";
 import { r, svgLine, svgText } from "./svg.js";
-import { seriesColor, seriesFill } from "./theme.js";
+import { type SeriesPaint, seriesPaints } from "./theme.js";
 
 /** Direct labels need this much plot width; below it a pinned readout replaces them. */
 export const DIRECT_LABEL_MIN_PLOT = 320;
@@ -120,6 +123,11 @@ export function renderLine(
   const locale = data.locale;
   const n = block.axis.buckets.length;
   const series = block.series;
+  const paints = seriesPaints(ctx.theme, series, block.groups?.length);
+  const strokeOf = (k: number) => (paints[k] as SeriesPaint).stroke;
+  const fillOf = (k: number) => (paints[k] as SeriesPaint).fill;
+  const dash = ctx.theme.groups?.dash;
+  const dashOf = (k: number) => (dash && paints[k]?.secondary ? ` stroke-dasharray="${dash}"` : "");
   const metric = block.percent ? SHARE : metricOf(ctx, series[0]?.metric ?? "");
   const shown = (k: number) => (block.percent ? SHARE : metricOf(ctx, series[k]?.metric ?? ""));
   const bands = stackBands(block);
@@ -128,6 +136,7 @@ export function renderLine(
   const empty = values.length === 0;
 
   const nameStyle = { size: CAPTION, weight: 500 } as const;
+  const directName = (k: number) => seriesName(block, k);
   const lastIndex = series.map((s) => lastDefined(s.values));
   const lastText = series.map((s, k) =>
     formatValue(drawnValues(block, s)[lastIndex[k] ?? -1] ?? null, shown(k), locale, "compact"),
@@ -138,7 +147,7 @@ export function renderLine(
       ...series.map(
         (s, k) =>
           12 +
-          textWidth(s.label, nameStyle) +
+          textWidth(directName(k), nameStyle) +
           6 +
           textWidth(lastText[k] as string, { size: CAPTION }),
       ),
@@ -200,6 +209,27 @@ export function renderLine(
     }
     series.forEach((s, k) => {
       const width = LEGEND_NAME_X + textWidth(s.label, style) + 6 + (valueWidth[k] as number);
+      const fullHeading = groupHeading(block, k);
+      const heading =
+        fullHeading === undefined
+          ? undefined
+          : truncateEnd(fullHeading, Math.max(size.width / 2, size.width - width - 8), GROUP_STYLE);
+      if (heading !== undefined) {
+        const headingWidth = textWidth(heading, GROUP_STYLE) + 8;
+        if (x > 0 && x + headingWidth + width > size.width) {
+          x = 0;
+          row++;
+        }
+        parts.push(
+          svgText(paint, x, row * LEGEND_ROW + LABEL_LINE / 2, heading, {
+            ...GROUP_STYLE,
+            color: "text",
+            className: "hm-rg",
+            ...(heading === fullHeading ? {} : { title: fullHeading ?? "" }),
+          }),
+        );
+        x += headingWidth;
+      }
       if (x > 0 && x + width > size.width) {
         x = 0;
         row++;
@@ -208,9 +238,9 @@ export function renderLine(
       const room = size.width - x - LEGEND_NAME_X - 6 - (valueWidth[k] as number);
       const name = truncateEnd(s.label, room, style);
       parts.push(
-        `<circle cx="${r(x + 4)}" cy="${r(cy)}" r="4"${paint.attrs(seriesColor(k), undefined, `hm-rd-${k}`)}${hidden(!hatchedAt(k, last))}/>`,
+        `<circle cx="${r(x + 4)}" cy="${r(cy)}" r="4"${paint.attrs(strokeOf(k), undefined, `hm-rd-${k}`)}${hidden(!hatchedAt(k, last))}/>`,
         flowPartial
-          ? `<g class="hm-rq-${k}"${hidden(hatchedAt(k, last))}>${partialBar(ctx, hatch, seriesFill(k), x, cy - 4, 8, 8, 8)}</g>`
+          ? `<g class="hm-rq-${k}"${hidden(hatchedAt(k, last))}>${partialBar(ctx, hatch, fillOf(k), x, cy - 4, 8, 8, 8)}</g>`
           : "",
         svgText(paint, x + LEGEND_NAME_X, cy, name, {
           ...style,
@@ -300,7 +330,7 @@ export function renderLine(
       hatchDefs(
         paint,
         hatch,
-        ["textSubtle", ...series.map((_, k) => seriesFill(k))],
+        ["textSubtle", ...series.map((_, k) => fillOf(k))],
         ctx.theme.partial.spacing,
         plotLeft,
         top,
@@ -327,11 +357,11 @@ export function renderLine(
         .y1((v) => y(v as number))
         .digits(1)(plotted[k] as Value[]);
       if (area && (empty || (bandSlices[k] ?? []).length === 0)) {
-        parts.push(`<path d="${area}"${paint.attrs(seriesFill(k))} fill-opacity="0.14"/>`);
+        parts.push(`<path d="${area}"${paint.attrs(fillOf(k))} fill-opacity="0.14"/>`);
       } else if (area) {
         parts.push(
-          `<path d="${area}"${paint.attrs(seriesFill(k))} fill-opacity="0.14" clip-path="url(#${hatch}-whole${k})"/>`,
-          `<path d="${area}" fill="url(#${hatch}-${seriesFill(k)})" opacity="${ctx.theme.partial.areaHatchOpacity}" clip-path="url(#${hatch}-part${k})"/>`,
+          `<path d="${area}"${paint.attrs(fillOf(k))} fill-opacity="0.14" clip-path="url(#${hatch}-whole${k})"/>`,
+          `<path d="${area}" fill="url(#${hatch}-${fillOf(k)})" opacity="${ctx.theme.partial.areaHatchOpacity}" clip-path="url(#${hatch}-part${k})"/>`,
         );
       }
     }
@@ -345,17 +375,17 @@ export function renderLine(
       .digits(1)(vals);
     if (path) {
       parts.push(
-        `<path d="${path}"${paint.attrs("none", seriesColor(k))} stroke-width="${LINE_WIDTH}" stroke-linejoin="round" stroke-linecap="round"/>`,
+        `<path d="${path}"${paint.attrs("none", strokeOf(k))}${dashOf(k)} stroke-width="${LINE_WIDTH}" stroke-linejoin="round" stroke-linecap="round"/>`,
       );
     }
     vals.forEach((v, i) => {
       if (isNumber(v) && !isNumber(vals[i - 1]) && !isNumber(vals[i + 1])) {
-        parts.push(`<circle cx="${r(x(i))}" cy="${r(y(v))}" r="2"${paint.attrs(seriesColor(k))}/>`);
+        parts.push(`<circle cx="${r(x(i))}" cy="${r(y(v))}" r="2"${paint.attrs(strokeOf(k))}/>`);
       }
     });
     for (const { index } of series[k]?.partial ?? []) {
       const v = vals[index];
-      if (isNumber(v)) parts.push(hollowPoint(ctx, seriesColor(k), x(index), y(v)));
+      if (isNumber(v)) parts.push(hollowPoint(ctx, strokeOf(k), x(index), y(v)));
     }
   }
 
@@ -383,10 +413,10 @@ export function renderLine(
           `<polyline points="${r(plotRight + 2)},${r(target)} ${r(plotRight + 6)},${r(target)} ${r(plotRight + 10)},${r(centre)}"${paint.attrs("none", "textSubtle")}/>`,
         );
       }
-      const name = series[k]?.label ?? "";
+      const name = directName(k);
       const nameWidth = textWidth(name, nameStyle);
       parts.push(
-        `<circle cx="${r(labelX + 4)}" cy="${r(centre)}" r="4"${paint.attrs(seriesColor(k))}/>`,
+        `<circle cx="${r(labelX + 4)}" cy="${r(centre)}" r="4"${paint.attrs(strokeOf(k))}/>`,
         svgText(paint, labelX + 12, centre, name, {
           ...nameStyle,
           color: "text",

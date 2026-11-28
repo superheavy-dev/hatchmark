@@ -116,6 +116,13 @@ export interface Series {
   label: string;
   /** The split column's value when the block splits; absent otherwise. null is a real group. */
   splitValue?: string | number | boolean | null;
+  /** The block's group this series belongs to (index into the block's groups) and its place in it, lead first. */
+  group?: { index: number; step: number };
+  /**
+   * An ungrouped split series' place among the split values no group lists, under the block's
+   * filters over every period up to the as-of, so its colour does not change with the period shown.
+   */
+  colorRank?: number;
   /**
    * One value per x position (bucket or category), same order and length as the axis. On a time
    * axis, buckets at or after the series' horizon have no value (null).
@@ -179,12 +186,21 @@ export interface GrainSwitch {
   options: (GrainOption & { axis: TimeAxis; series: Series[]; totals?: Value[] })[];
 }
 
+/** Related series a block colours as one hue family, in the order the spec lists them. */
+export interface SeriesGroup {
+  label: string;
+}
+
 export interface LineData extends BlockCommon, StackTotals {
   type: "line" | "area";
   stack?: boolean;
   axis: TimeAxis;
-  /** Ordered: metric order in the spec, or split values by total descending, then by value. */
+  /**
+   * Ordered: metric order in the spec, or split values by total descending, then by value; a
+   * group's members follow each other in the group's order, where its first member would be.
+   */
   series: Series[];
+  groups?: SeriesGroup[];
   grains?: GrainSwitch;
 }
 
@@ -194,6 +210,7 @@ export interface BarData extends BlockCommon, StackTotals {
   stack: boolean;
   axis: TimeAxis | CategoryAxis;
   series: Series[];
+  groups?: SeriesGroup[];
   /** Categories removed by limit, so the renderer can say "Top 10 of 51". */
   omittedCategories?: number;
   /** Only with a time axis. */

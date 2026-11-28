@@ -2,10 +2,12 @@
   "$schema": "hatchmark-tokens/0.2",
   "id": "default",
   "name": "Default",
-  "version": "1.1.0",
+  "version": "1.3.0",
   "status": "final",
   "finalized": "2026-11-27: good/bad variant A (cerulean / vermilion); brand colours are kept and warned about, never replaced",
   "changelog": {
+    "1.3.0": "Series groups: the lead step of each family may differ from the family's base slot so that steps 2 and 3 always recede behind it; checks.<mode>.groupCVD.leadVsBase records how far each lead is from its base slot. All group bars still hold: every step is at least 3:1 on the page (light) and cardAlt (dark), every pair of steps in a family is at least ΔE2000 10, and every step is at least 8 from the other families, the ungrouped slots outside its family and the context grey, under normal vision and the three Machado simulations. Categorical slots, good and bad are unchanged.",
+    "1.2.0": "Series groups: three hue families (blue on slots 1 and 5, pink and red on slots 2, 6 and 8, green on slot 4) with three lightness steps each, in light and dark, as stroke and fill. Step 1 is the family's base slot colour. Every step is at least 3:1 on the page (light) and cardAlt (dark); every pair of steps in a family is at least ΔE2000 10, and every step is at least 8 from the other families, the ungrouped slots outside its family and the context grey, under normal vision and the three Machado simulations. Lightness only, no dash. Categorical slots, good and bad are unchanged.",
     "1.1.0": "Categorical palette adapted from the FT's g-chartcolour 0.8.26 (BSD-3-Clause), with separate stroke and fill sets. Strokes (lines, points, line keys) use data.<mode>.categorical, built from FT categorical_line; fills (bars, areas, pie and donut slices, square keys) use data.<mode>.categoricalFill, built from FT categorical_bar and re-ordered so slot n matches the stroke hue of slot n. Light values keep FT's hues, with lightness adjusted where a slot missed 3:1 contrast or the colour-vision separation bar; the dark set is derived. Context grey unchanged.",
     "1.0.1": "Names are never middle-truncated (legends, keys and direct labels reflow, bar categories wrap), KPI sparklines get the line tooltip, KPI note to sparkline gap 8 to 12 px."
   },
@@ -223,7 +225,111 @@
       "order": "fixed slot order c1..c8: categorical follows FT categorical_line order; categoricalFill takes, for each line slot, FT's categorical_bar colour of the nearest hue (bar indices 1,5,2,7,3,4,6,8). Series wrap after c8.",
       "highlightOne": "c1 for the highlighted item, context for the rest"
     },
-    "attribution": "Categorical colours are adapted from the FT's g-chartcolour."
+    "attribution": "Categorical colours are adapted from the FT's g-chartcolour.",
+    "groups": {
+      "steps": 3,
+      "secondary": {
+        "dash": null
+      },
+      "families": [
+        {
+          "id": "blue",
+          "name": "blue",
+          "slots": [
+            1,
+            5
+          ],
+          "light": {
+            "stroke": [
+              "#1a4b81",
+              "#426b9c",
+              "#6b8fbb"
+            ],
+            "fill": [
+              "#024884",
+              "#2b68a7",
+              "#4b90d7"
+            ]
+          },
+          "dark": {
+            "stroke": [
+              "#afd3fe",
+              "#7c9ec7",
+              "#476b95"
+            ],
+            "fill": [
+              "#afd4fe",
+              "#82a2c5",
+              "#4a6c91"
+            ]
+          }
+        },
+        {
+          "id": "pink",
+          "name": "pink and red",
+          "slots": [
+            2,
+            6,
+            8
+          ],
+          "light": {
+            "stroke": [
+              "#7b0c35",
+              "#9e345a",
+              "#b05d69"
+            ],
+            "fill": [
+              "#830230",
+              "#863c54",
+              "#a7596b"
+            ]
+          },
+          "dark": {
+            "stroke": [
+              "#fa8595",
+              "#cd5f82",
+              "#b24458"
+            ],
+            "fill": [
+              "#f6b1c3",
+              "#cf8c99",
+              "#945768"
+            ]
+          }
+        },
+        {
+          "id": "green",
+          "name": "green",
+          "slots": [
+            4
+          ],
+          "light": {
+            "stroke": [
+              "#415600",
+              "#5f713f",
+              "#829461"
+            ],
+            "fill": [
+              "#3d5000",
+              "#5a6f2a",
+              "#778856"
+            ]
+          },
+          "dark": {
+            "stroke": [
+              "#8bad43",
+              "#6e8e1e",
+              "#567200"
+            ],
+            "fill": [
+              "#98ba46",
+              "#71910c",
+              "#587108"
+            ]
+          }
+        }
+      ]
+    }
   },
   "density": {
     "default": "compact",
@@ -750,7 +856,649 @@
         0.56,
         0.459,
         0.359
-      ]
+      ],
+      "groupContrastVsCard": {
+        "card": {
+          "blue": {
+            "stroke": [
+              8.87,
+              5.5,
+              3.35
+            ],
+            "fill": [
+              9.28,
+              5.77,
+              3.35
+            ]
+          },
+          "pink": {
+            "stroke": [
+              10.79,
+              6.79,
+              4.55
+            ],
+            "fill": [
+              10.41,
+              7.53,
+              4.9
+            ]
+          },
+          "green": {
+            "stroke": [
+              8.22,
+              5.36,
+              3.3
+            ],
+            "fill": [
+              8.95,
+              5.61,
+              3.86
+            ]
+          }
+        },
+        "page": {
+          "blue": {
+            "stroke": [
+              8.14,
+              5.05,
+              3.07
+            ],
+            "fill": [
+              8.51,
+              5.29,
+              3.07
+            ]
+          },
+          "pink": {
+            "stroke": [
+              9.9,
+              6.23,
+              4.17
+            ],
+            "fill": [
+              9.55,
+              6.91,
+              4.5
+            ]
+          },
+          "green": {
+            "stroke": [
+              7.54,
+              4.91,
+              3.03
+            ],
+            "fill": [
+              8.21,
+              5.15,
+              3.54
+            ]
+          }
+        }
+      },
+      "groupCVD": {
+        "leadVsBase": {
+          "stroke": {
+            "blue": {
+              "base": "#0f5499",
+              "lead": "#1a4b81",
+              "normal": 3.9,
+              "deutan": 4.1,
+              "protan": 4.7,
+              "tritan": 4.4
+            },
+            "pink": {
+              "base": "#b3275f",
+              "lead": "#7b0c35",
+              "normal": 12.9,
+              "deutan": 13.4,
+              "protan": 11.6,
+              "tritan": 12.4
+            },
+            "green": {
+              "base": "#557002",
+              "lead": "#415600",
+              "normal": 9.1,
+              "deutan": 8.9,
+              "protan": 9.2,
+              "tritan": 8.7
+            }
+          },
+          "fill": {
+            "blue": {
+              "base": "#0f497f",
+              "lead": "#024884",
+              "normal": 0.8,
+              "deutan": 1.2,
+              "protan": 1.2,
+              "tritan": 0.6
+            },
+            "pink": {
+              "base": "#c03b6e",
+              "lead": "#830230",
+              "normal": 17.3,
+              "deutan": 18.4,
+              "protan": 17.6,
+              "tritan": 16.4
+            },
+            "green": {
+              "base": "#6e892c",
+              "lead": "#3d5000",
+              "normal": 20.4,
+              "deutan": 20.2,
+              "protan": 20.6,
+              "tritan": 20.1
+            }
+          }
+        },
+        "bars": {
+          "contrast": 3,
+          "contrastSurface": "page",
+          "withinFamily": 10,
+          "acrossFamilies": 8,
+          "vsUngrouped": 8,
+          "vsContext": 8
+        },
+        "withinFamily": {
+          "stroke": {
+            "blue": {
+              "adjacent": {
+                "normal": {
+                  "min": 11.1,
+                  "pair": "blue1/blue2"
+                },
+                "deutan": {
+                  "min": 11.1,
+                  "pair": "blue1/blue2"
+                },
+                "protan": {
+                  "min": 11.2,
+                  "pair": "blue1/blue2"
+                },
+                "tritan": {
+                  "min": 10.4,
+                  "pair": "blue1/blue2"
+                }
+              },
+              "all": {
+                "normal": {
+                  "min": 11.1,
+                  "pair": "blue1/blue2"
+                },
+                "deutan": {
+                  "min": 11.1,
+                  "pair": "blue1/blue2"
+                },
+                "protan": {
+                  "min": 11.2,
+                  "pair": "blue1/blue2"
+                },
+                "tritan": {
+                  "min": 10.4,
+                  "pair": "blue1/blue2"
+                }
+              }
+            },
+            "pink": {
+              "adjacent": {
+                "normal": {
+                  "min": 10.5,
+                  "pair": "pink1/pink2"
+                },
+                "deutan": {
+                  "min": 10.7,
+                  "pair": "pink2/pink3"
+                },
+                "protan": {
+                  "min": 10.5,
+                  "pair": "pink1/pink2"
+                },
+                "tritan": {
+                  "min": 10.1,
+                  "pair": "pink1/pink2"
+                }
+              },
+              "all": {
+                "normal": {
+                  "min": 10.5,
+                  "pair": "pink1/pink2"
+                },
+                "deutan": {
+                  "min": 10.7,
+                  "pair": "pink2/pink3"
+                },
+                "protan": {
+                  "min": 10.5,
+                  "pair": "pink1/pink2"
+                },
+                "tritan": {
+                  "min": 10.1,
+                  "pair": "pink1/pink2"
+                }
+              }
+            },
+            "green": {
+              "adjacent": {
+                "normal": {
+                  "min": 11.8,
+                  "pair": "green1/green2"
+                },
+                "deutan": {
+                  "min": 11.6,
+                  "pair": "green1/green2"
+                },
+                "protan": {
+                  "min": 11.3,
+                  "pair": "green1/green2"
+                },
+                "tritan": {
+                  "min": 10.2,
+                  "pair": "green1/green2"
+                }
+              },
+              "all": {
+                "normal": {
+                  "min": 11.8,
+                  "pair": "green1/green2"
+                },
+                "deutan": {
+                  "min": 11.6,
+                  "pair": "green1/green2"
+                },
+                "protan": {
+                  "min": 11.3,
+                  "pair": "green1/green2"
+                },
+                "tritan": {
+                  "min": 10.2,
+                  "pair": "green1/green2"
+                }
+              }
+            }
+          },
+          "fill": {
+            "blue": {
+              "adjacent": {
+                "normal": {
+                  "min": 11.1,
+                  "pair": "blue1/blue2"
+                },
+                "deutan": {
+                  "min": 10.6,
+                  "pair": "blue1/blue2"
+                },
+                "protan": {
+                  "min": 11.3,
+                  "pair": "blue1/blue2"
+                },
+                "tritan": {
+                  "min": 11,
+                  "pair": "blue1/blue2"
+                }
+              },
+              "all": {
+                "normal": {
+                  "min": 11.1,
+                  "pair": "blue1/blue2"
+                },
+                "deutan": {
+                  "min": 10.6,
+                  "pair": "blue1/blue2"
+                },
+                "protan": {
+                  "min": 11.3,
+                  "pair": "blue1/blue2"
+                },
+                "tritan": {
+                  "min": 11,
+                  "pair": "blue1/blue2"
+                }
+              }
+            },
+            "pink": {
+              "adjacent": {
+                "normal": {
+                  "min": 10.4,
+                  "pair": "pink1/pink2"
+                },
+                "deutan": {
+                  "min": 10.6,
+                  "pair": "pink1/pink2"
+                },
+                "protan": {
+                  "min": 10.3,
+                  "pair": "pink1/pink2"
+                },
+                "tritan": {
+                  "min": 10.5,
+                  "pair": "pink2/pink3"
+                }
+              },
+              "all": {
+                "normal": {
+                  "min": 10.4,
+                  "pair": "pink1/pink2"
+                },
+                "deutan": {
+                  "min": 10.6,
+                  "pair": "pink1/pink2"
+                },
+                "protan": {
+                  "min": 10.3,
+                  "pair": "pink1/pink2"
+                },
+                "tritan": {
+                  "min": 10.5,
+                  "pair": "pink2/pink3"
+                }
+              }
+            },
+            "green": {
+              "adjacent": {
+                "normal": {
+                  "min": 10.9,
+                  "pair": "green1/green2"
+                },
+                "deutan": {
+                  "min": 10.8,
+                  "pair": "green1/green2"
+                },
+                "protan": {
+                  "min": 10.7,
+                  "pair": "green1/green2"
+                },
+                "tritan": {
+                  "min": 10.6,
+                  "pair": "green2/green3"
+                }
+              },
+              "all": {
+                "normal": {
+                  "min": 10.9,
+                  "pair": "green1/green2"
+                },
+                "deutan": {
+                  "min": 10.8,
+                  "pair": "green1/green2"
+                },
+                "protan": {
+                  "min": 10.7,
+                  "pair": "green1/green2"
+                },
+                "tritan": {
+                  "min": 10.6,
+                  "pair": "green2/green3"
+                }
+              }
+            }
+          }
+        },
+        "acrossFamilies": {
+          "stroke": {
+            "normal": {
+              "min": 34.3,
+              "pair": "blue2/pink3"
+            },
+            "deutan": {
+              "min": 9,
+              "pair": "pink3/green3"
+            },
+            "protan": {
+              "min": 12.7,
+              "pair": "blue1/pink2"
+            },
+            "tritan": {
+              "min": 14.1,
+              "pair": "blue1/green1"
+            }
+          },
+          "fill": {
+            "normal": {
+              "min": 32.2,
+              "pair": "blue1/pink2"
+            },
+            "deutan": {
+              "min": 8.4,
+              "pair": "pink1/green1"
+            },
+            "protan": {
+              "min": 15.6,
+              "pair": "blue1/pink2"
+            },
+            "tritan": {
+              "min": 14.6,
+              "pair": "blue1/green1"
+            }
+          }
+        },
+        "vsUngrouped": {
+          "stroke": {
+            "blue": {
+              "normal": {
+                "min": 19.9,
+                "pair": "blue3/c3"
+              },
+              "deutan": {
+                "min": 9,
+                "pair": "blue2/c3"
+              },
+              "protan": {
+                "min": 11,
+                "pair": "blue1/c2"
+              },
+              "tritan": {
+                "min": 8.2,
+                "pair": "blue2/c3"
+              }
+            },
+            "pink": {
+              "normal": {
+                "min": 22.2,
+                "pair": "pink3/c7"
+              },
+              "deutan": {
+                "min": 8.1,
+                "pair": "pink3/c7"
+              },
+              "protan": {
+                "min": 12,
+                "pair": "pink3/c3"
+              },
+              "tritan": {
+                "min": 20.7,
+                "pair": "pink3/c7"
+              }
+            },
+            "green": {
+              "normal": {
+                "min": 20.6,
+                "pair": "green3/c7"
+              },
+              "deutan": {
+                "min": 8,
+                "pair": "green2/c8"
+              },
+              "protan": {
+                "min": 9.2,
+                "pair": "green2/c8"
+              },
+              "tritan": {
+                "min": 15.9,
+                "pair": "green3/c7"
+              }
+            }
+          },
+          "fill": {
+            "blue": {
+              "normal": {
+                "min": 14.6,
+                "pair": "blue3/c3"
+              },
+              "deutan": {
+                "min": 12.1,
+                "pair": "blue3/c3"
+              },
+              "protan": {
+                "min": 13.2,
+                "pair": "blue1/c2"
+              },
+              "tritan": {
+                "min": 8,
+                "pair": "blue2/c3"
+              }
+            },
+            "pink": {
+              "normal": {
+                "min": 23.5,
+                "pair": "pink3/c7"
+              },
+              "deutan": {
+                "min": 8.6,
+                "pair": "pink3/c7"
+              },
+              "protan": {
+                "min": 13.1,
+                "pair": "pink3/c3"
+              },
+              "tritan": {
+                "min": 20.4,
+                "pair": "pink3/c7"
+              }
+            },
+            "green": {
+              "normal": {
+                "min": 20.2,
+                "pair": "green3/c7"
+              },
+              "deutan": {
+                "min": 8.7,
+                "pair": "green3/c8"
+              },
+              "protan": {
+                "min": 8.9,
+                "pair": "green3/c8"
+              },
+              "tritan": {
+                "min": 14.4,
+                "pair": "green1/c1"
+              }
+            }
+          }
+        },
+        "vsContext": {
+          "stroke": {
+            "blue": {
+              "normal": {
+                "min": 25.5,
+                "pair": "blue3/context"
+              },
+              "deutan": {
+                "min": 26.8,
+                "pair": "blue3/context"
+              },
+              "protan": {
+                "min": 24.1,
+                "pair": "blue3/context"
+              },
+              "tritan": {
+                "min": 26.9,
+                "pair": "blue3/context"
+              }
+            },
+            "pink": {
+              "normal": {
+                "min": 35.8,
+                "pair": "pink3/context"
+              },
+              "deutan": {
+                "min": 26.8,
+                "pair": "pink3/context"
+              },
+              "protan": {
+                "min": 31.4,
+                "pair": "pink3/context"
+              },
+              "tritan": {
+                "min": 36.7,
+                "pair": "pink3/context"
+              }
+            },
+            "green": {
+              "normal": {
+                "min": 26.8,
+                "pair": "green3/context"
+              },
+              "deutan": {
+                "min": 24.6,
+                "pair": "green3/context"
+              },
+              "protan": {
+                "min": 25.3,
+                "pair": "green3/context"
+              },
+              "tritan": {
+                "min": 20.4,
+                "pair": "green3/context"
+              }
+            }
+          },
+          "fill": {
+            "blue": {
+              "normal": {
+                "min": 29.1,
+                "pair": "blue3/context"
+              },
+              "deutan": {
+                "min": 30.9,
+                "pair": "blue3/context"
+              },
+              "protan": {
+                "min": 27,
+                "pair": "blue3/context"
+              },
+              "tritan": {
+                "min": 28.5,
+                "pair": "blue3/context"
+              }
+            },
+            "pink": {
+              "normal": {
+                "min": 37.2,
+                "pair": "pink3/context"
+              },
+              "deutan": {
+                "min": 28,
+                "pair": "pink3/context"
+              },
+              "protan": {
+                "min": 33.2,
+                "pair": "pink3/context"
+              },
+              "tritan": {
+                "min": 37.9,
+                "pair": "pink3/context"
+              }
+            },
+            "green": {
+              "normal": {
+                "min": 29.7,
+                "pair": "green3/context"
+              },
+              "deutan": {
+                "min": 27.8,
+                "pair": "green3/context"
+              },
+              "protan": {
+                "min": 28.5,
+                "pair": "green3/context"
+              },
+              "tritan": {
+                "min": 24.2,
+                "pair": "green3/context"
+              }
+            }
+          }
+        }
+      }
     },
     "dark": {
       "textContrast": {
@@ -970,7 +1718,649 @@
         0.661,
         0.761,
         0.857
-      ]
+      ],
+      "groupContrastVsCard": {
+        "card": {
+          "blue": {
+            "stroke": [
+              11.36,
+              6.34,
+              3.19
+            ],
+            "fill": [
+              11.45,
+              6.63,
+              3.22
+            ]
+          },
+          "pink": {
+            "stroke": [
+              7.41,
+              4.65,
+              3.23
+            ],
+            "fill": [
+              10.04,
+              6.58,
+              3.2
+            ]
+          },
+          "green": {
+            "stroke": [
+              6.83,
+              4.65,
+              3.18
+            ],
+            "fill": [
+              7.91,
+              4.82,
+              3.17
+            ]
+          }
+        },
+        "cardAlt": {
+          "blue": {
+            "stroke": [
+              10.77,
+              6.01,
+              3.02
+            ],
+            "fill": [
+              10.85,
+              6.29,
+              3.05
+            ]
+          },
+          "pink": {
+            "stroke": [
+              7.03,
+              4.41,
+              3.06
+            ],
+            "fill": [
+              9.52,
+              6.24,
+              3.03
+            ]
+          },
+          "green": {
+            "stroke": [
+              6.47,
+              4.41,
+              3.02
+            ],
+            "fill": [
+              7.5,
+              4.57,
+              3
+            ]
+          }
+        }
+      },
+      "groupCVD": {
+        "leadVsBase": {
+          "stroke": {
+            "blue": {
+              "base": "#afd3fe",
+              "lead": "#afd3fe",
+              "normal": 0,
+              "deutan": 0,
+              "protan": 0,
+              "tritan": 0
+            },
+            "pink": {
+              "base": "#da4e7f",
+              "lead": "#fa8595",
+              "normal": 14.6,
+              "deutan": 12.9,
+              "protan": 19.1,
+              "tritan": 12
+            },
+            "green": {
+              "base": "#749427",
+              "lead": "#8bad43",
+              "normal": 8,
+              "deutan": 8,
+              "protan": 7.9,
+              "tritan": 8
+            }
+          },
+          "fill": {
+            "blue": {
+              "base": "#afd4fe",
+              "lead": "#afd4fe",
+              "normal": 0,
+              "deutan": 0,
+              "protan": 0,
+              "tritan": 0
+            },
+            "pink": {
+              "base": "#ad4669",
+              "lead": "#f6b1c3",
+              "normal": 30.3,
+              "deutan": 27.6,
+              "protan": 33.5,
+              "tritan": 30.2
+            },
+            "green": {
+              "base": "#718c2f",
+              "lead": "#98ba46",
+              "normal": 14.3,
+              "deutan": 14.2,
+              "protan": 14.2,
+              "tritan": 14.1
+            }
+          }
+        },
+        "bars": {
+          "contrast": 3,
+          "contrastSurface": "cardAlt",
+          "withinFamily": 10,
+          "acrossFamilies": 8,
+          "vsUngrouped": 8,
+          "vsContext": 8
+        },
+        "withinFamily": {
+          "stroke": {
+            "blue": {
+              "adjacent": {
+                "normal": {
+                  "min": 14.3,
+                  "pair": "blue1/blue2"
+                },
+                "deutan": {
+                  "min": 14.5,
+                  "pair": "blue1/blue2"
+                },
+                "protan": {
+                  "min": 14,
+                  "pair": "blue1/blue2"
+                },
+                "tritan": {
+                  "min": 14.3,
+                  "pair": "blue1/blue2"
+                }
+              },
+              "all": {
+                "normal": {
+                  "min": 14.3,
+                  "pair": "blue1/blue2"
+                },
+                "deutan": {
+                  "min": 14.5,
+                  "pair": "blue1/blue2"
+                },
+                "protan": {
+                  "min": 14,
+                  "pair": "blue1/blue2"
+                },
+                "tritan": {
+                  "min": 14.3,
+                  "pair": "blue1/blue2"
+                }
+              }
+            },
+            "pink": {
+              "adjacent": {
+                "normal": {
+                  "min": 11.6,
+                  "pair": "pink2/pink3"
+                },
+                "deutan": {
+                  "min": 11.8,
+                  "pair": "pink2/pink3"
+                },
+                "protan": {
+                  "min": 13.4,
+                  "pair": "pink2/pink3"
+                },
+                "tritan": {
+                  "min": 10.4,
+                  "pair": "pink1/pink2"
+                }
+              },
+              "all": {
+                "normal": {
+                  "min": 11.6,
+                  "pair": "pink2/pink3"
+                },
+                "deutan": {
+                  "min": 11.8,
+                  "pair": "pink2/pink3"
+                },
+                "protan": {
+                  "min": 13.4,
+                  "pair": "pink2/pink3"
+                },
+                "tritan": {
+                  "min": 10.4,
+                  "pair": "pink1/pink2"
+                }
+              }
+            },
+            "green": {
+              "adjacent": {
+                "normal": {
+                  "min": 10.1,
+                  "pair": "green1/green2"
+                },
+                "deutan": {
+                  "min": 10.1,
+                  "pair": "green1/green2"
+                },
+                "protan": {
+                  "min": 10.1,
+                  "pair": "green1/green2"
+                },
+                "tritan": {
+                  "min": 10.1,
+                  "pair": "green1/green2"
+                }
+              },
+              "all": {
+                "normal": {
+                  "min": 10.1,
+                  "pair": "green1/green2"
+                },
+                "deutan": {
+                  "min": 10.1,
+                  "pair": "green1/green2"
+                },
+                "protan": {
+                  "min": 10.1,
+                  "pair": "green1/green2"
+                },
+                "tritan": {
+                  "min": 10.1,
+                  "pair": "green1/green2"
+                }
+              }
+            }
+          },
+          "fill": {
+            "blue": {
+              "adjacent": {
+                "normal": {
+                  "min": 13.4,
+                  "pair": "blue1/blue2"
+                },
+                "deutan": {
+                  "min": 13.5,
+                  "pair": "blue1/blue2"
+                },
+                "protan": {
+                  "min": 13.3,
+                  "pair": "blue1/blue2"
+                },
+                "tritan": {
+                  "min": 13.4,
+                  "pair": "blue1/blue2"
+                }
+              },
+              "all": {
+                "normal": {
+                  "min": 13.4,
+                  "pair": "blue1/blue2"
+                },
+                "deutan": {
+                  "min": 13.5,
+                  "pair": "blue1/blue2"
+                },
+                "protan": {
+                  "min": 13.3,
+                  "pair": "blue1/blue2"
+                },
+                "tritan": {
+                  "min": 13.4,
+                  "pair": "blue1/blue2"
+                }
+              }
+            },
+            "pink": {
+              "adjacent": {
+                "normal": {
+                  "min": 10.6,
+                  "pair": "pink1/pink2"
+                },
+                "deutan": {
+                  "min": 10.4,
+                  "pair": "pink1/pink2"
+                },
+                "protan": {
+                  "min": 11.1,
+                  "pair": "pink1/pink2"
+                },
+                "tritan": {
+                  "min": 10.3,
+                  "pair": "pink1/pink2"
+                }
+              },
+              "all": {
+                "normal": {
+                  "min": 10.6,
+                  "pair": "pink1/pink2"
+                },
+                "deutan": {
+                  "min": 10.4,
+                  "pair": "pink1/pink2"
+                },
+                "protan": {
+                  "min": 11.1,
+                  "pair": "pink1/pink2"
+                },
+                "tritan": {
+                  "min": 10.3,
+                  "pair": "pink1/pink2"
+                }
+              }
+            },
+            "green": {
+              "adjacent": {
+                "normal": {
+                  "min": 12.1,
+                  "pair": "green2/green3"
+                },
+                "deutan": {
+                  "min": 12,
+                  "pair": "green2/green3"
+                },
+                "protan": {
+                  "min": 12.2,
+                  "pair": "green2/green3"
+                },
+                "tritan": {
+                  "min": 11.8,
+                  "pair": "green2/green3"
+                }
+              },
+              "all": {
+                "normal": {
+                  "min": 12.1,
+                  "pair": "green2/green3"
+                },
+                "deutan": {
+                  "min": 12,
+                  "pair": "green2/green3"
+                },
+                "protan": {
+                  "min": 12.2,
+                  "pair": "green2/green3"
+                },
+                "tritan": {
+                  "min": 11.8,
+                  "pair": "green2/green3"
+                }
+              }
+            }
+          }
+        },
+        "acrossFamilies": {
+          "stroke": {
+            "normal": {
+              "min": 36.5,
+              "pair": "blue2/pink2"
+            },
+            "deutan": {
+              "min": 12.6,
+              "pair": "pink3/green3"
+            },
+            "protan": {
+              "min": 10.9,
+              "pair": "blue3/pink2"
+            },
+            "tritan": {
+              "min": 12.8,
+              "pair": "blue2/green1"
+            }
+          },
+          "fill": {
+            "normal": {
+              "min": 30.3,
+              "pair": "blue3/pink3"
+            },
+            "deutan": {
+              "min": 19.5,
+              "pair": "pink3/green3"
+            },
+            "protan": {
+              "min": 12.6,
+              "pair": "blue3/pink3"
+            },
+            "tritan": {
+              "min": 13.1,
+              "pair": "blue2/green1"
+            }
+          }
+        },
+        "vsUngrouped": {
+          "stroke": {
+            "blue": {
+              "normal": {
+                "min": 19,
+                "pair": "blue2/c3"
+              },
+              "deutan": {
+                "min": 8.3,
+                "pair": "blue2/c3"
+              },
+              "protan": {
+                "min": 8.6,
+                "pair": "blue3/c2"
+              },
+              "tritan": {
+                "min": 8.7,
+                "pair": "blue2/c3"
+              }
+            },
+            "pink": {
+              "normal": {
+                "min": 23.8,
+                "pair": "pink3/c7"
+              },
+              "deutan": {
+                "min": 8.4,
+                "pair": "pink3/c7"
+              },
+              "protan": {
+                "min": 9.1,
+                "pair": "pink3/c7"
+              },
+              "tritan": {
+                "min": 22.8,
+                "pair": "pink2/c7"
+              }
+            },
+            "green": {
+              "normal": {
+                "min": 24.9,
+                "pair": "green3/c7"
+              },
+              "deutan": {
+                "min": 8.3,
+                "pair": "green1/c8"
+              },
+              "protan": {
+                "min": 17.8,
+                "pair": "green1/c8"
+              },
+              "tritan": {
+                "min": 16.6,
+                "pair": "green2/c3"
+              }
+            }
+          },
+          "fill": {
+            "blue": {
+              "normal": {
+                "min": 12.8,
+                "pair": "blue2/c3"
+              },
+              "deutan": {
+                "min": 8.6,
+                "pair": "blue2/c3"
+              },
+              "protan": {
+                "min": 8.1,
+                "pair": "blue2/c3"
+              },
+              "tritan": {
+                "min": 9.6,
+                "pair": "blue2/c3"
+              }
+            },
+            "pink": {
+              "normal": {
+                "min": 20.7,
+                "pair": "pink2/c7"
+              },
+              "deutan": {
+                "min": 9.4,
+                "pair": "pink2/c7"
+              },
+              "protan": {
+                "min": 8.5,
+                "pair": "pink2/c7"
+              },
+              "tritan": {
+                "min": 18.6,
+                "pair": "pink2/c7"
+              }
+            },
+            "green": {
+              "normal": {
+                "min": 26.1,
+                "pair": "green2/c7"
+              },
+              "deutan": {
+                "min": 8,
+                "pair": "green1/c8"
+              },
+              "protan": {
+                "min": 15.4,
+                "pair": "green3/c8"
+              },
+              "tritan": {
+                "min": 15.5,
+                "pair": "green2/c3"
+              }
+            }
+          }
+        },
+        "vsContext": {
+          "stroke": {
+            "blue": {
+              "normal": {
+                "min": 22.6,
+                "pair": "blue3/context"
+              },
+              "deutan": {
+                "min": 22.6,
+                "pair": "blue3/context"
+              },
+              "protan": {
+                "min": 23.5,
+                "pair": "blue3/context"
+              },
+              "tritan": {
+                "min": 24.9,
+                "pair": "blue3/context"
+              }
+            },
+            "pink": {
+              "normal": {
+                "min": 29.2,
+                "pair": "pink3/context"
+              },
+              "deutan": {
+                "min": 22.4,
+                "pair": "pink3/context"
+              },
+              "protan": {
+                "min": 10.7,
+                "pair": "pink3/context"
+              },
+              "tritan": {
+                "min": 30.5,
+                "pair": "pink3/context"
+              }
+            },
+            "green": {
+              "normal": {
+                "min": 29.1,
+                "pair": "green3/context"
+              },
+              "deutan": {
+                "min": 27.1,
+                "pair": "green3/context"
+              },
+              "protan": {
+                "min": 28.5,
+                "pair": "green3/context"
+              },
+              "tritan": {
+                "min": 18.3,
+                "pair": "green3/context"
+              }
+            }
+          },
+          "fill": {
+            "blue": {
+              "normal": {
+                "min": 22,
+                "pair": "blue3/context"
+              },
+              "deutan": {
+                "min": 21.9,
+                "pair": "blue3/context"
+              },
+              "protan": {
+                "min": 22.8,
+                "pair": "blue3/context"
+              },
+              "tritan": {
+                "min": 24.4,
+                "pair": "blue3/context"
+              }
+            },
+            "pink": {
+              "normal": {
+                "min": 25.9,
+                "pair": "pink3/context"
+              },
+              "deutan": {
+                "min": 17.3,
+                "pair": "pink3/context"
+              },
+              "protan": {
+                "min": 13.4,
+                "pair": "pink3/context"
+              },
+              "tritan": {
+                "min": 27.2,
+                "pair": "pink3/context"
+              }
+            },
+            "green": {
+              "normal": {
+                "min": 28.7,
+                "pair": "green3/context"
+              },
+              "deutan": {
+                "min": 26.8,
+                "pair": "green3/context"
+              },
+              "protan": {
+                "min": 28.3,
+                "pair": "green3/context"
+              },
+              "tritan": {
+                "min": 17.6,
+                "pair": "green3/context"
+              }
+            }
+          }
+        }
+      }
     }
   }
 }

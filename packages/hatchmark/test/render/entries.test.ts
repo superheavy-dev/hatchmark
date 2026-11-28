@@ -9,7 +9,7 @@ describe("gallery entries", () => {
     const entries = galleryEntries();
     expect(entries).toHaveLength(GALLERY.length);
     expect(new Set(entries.map((e) => e.component))).toEqual(
-      new Set(["kpi", "line", "bar", "stacked", "pie", "scatter", "table"]),
+      new Set(["kpi", "line", "bar", "stacked", "pie", "scatter", "table", "groups"]),
     );
     for (const e of entries) {
       expect(e.component).toMatch(ID);

@@ -6,6 +6,11 @@ import type { Block } from "./dashboard.js";
  * windows, for the period engine) can import them without the validation library.
  */
 
+/** Most series one group holds: the lightness steps of a hue family in the Default theme. */
+export const GROUP_MAX_SIZE = 3;
+/** Most groups one chart holds: the hue families of the Default theme that host a group. */
+export const GROUP_MAX_COUNT = 3;
+
 export const TIME_GRAINS = ["day", "week", "month", "quarter", "year"] as const;
 
 export const PERIOD_RANGES = [

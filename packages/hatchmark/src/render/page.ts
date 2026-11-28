@@ -33,6 +33,7 @@ import {
   cssPaint,
   cssVar,
   DEFAULT_THEME,
+  groupColorKeys,
   hexPaint,
   type Mode,
   type Theme,
@@ -433,8 +434,36 @@ function themeVariables(theme: Theme, mode: Mode): string {
   ].join(";");
 }
 
+function groupStyles(theme: Theme): string {
+  const keys = groupColorKeys(theme);
+  if (keys.length === 0) return "";
+  const vars = (mode: Mode) =>
+    keys.map((k) => `${cssVar(k)}:${colorValue(theme, mode, k)}`).join(";");
+  return [
+    `:root{${vars("light")}}`,
+    `@media (prefers-color-scheme:dark){:root:not([data-theme=light]){${vars("dark")}}}`,
+    `:root[data-theme=dark]{${vars("dark")}}`,
+    keys
+      .map(
+        (k) =>
+          `.hm-f-${k}{fill:var(${cssVar(k)})}.hm-s-${k}{stroke:var(${cssVar(k)})}.hm-b-${k}{background:var(${cssVar(k)})}.hm-tip i.hm-h-${k}{color:var(${cssVar(k)})}`,
+      )
+      .join(""),
+    ".hm-tip-g{font-size:12px;line-height:16px;font-weight:500;color:var(--hm-text);margin-bottom:-2px}",
+  ].join("\n");
+}
+
+/** Whether any chart of a dashboard draws a series group. */
+export function usesGroups(data: DashboardData): boolean {
+  return data.blocks.some((b) => "groups" in b && b.groups !== undefined);
+}
+
 /** The page stylesheet: fonts, theme variables for light and dark, layout and components. */
-export function pageStyles(assets: PageAssets, theme: Theme = DEFAULT_THEME): string {
+export function pageStyles(
+  assets: PageAssets,
+  theme: Theme = DEFAULT_THEME,
+  groups = false,
+): string {
   const d = theme.density;
   const fonts = FONT_FILES.filter((f) => assets.fonts[f.file] !== undefined)
     .map(
@@ -516,6 +545,7 @@ export function pageStyles(assets: PageAssets, theme: Theme = DEFAULT_THEME): st
       )
       .join(""),
     layouts,
+    ...(groups ? [groupStyles(theme)] : []),
   ].join("\n");
 }
 
@@ -523,13 +553,13 @@ const THEME_SCRIPT =
   'var t=new URLSearchParams(location.search).get("theme");if(t==="dark"||t==="light")document.documentElement.dataset.theme=t';
 
 /** Everything a page's head needs: fonts preload, styles, the theme switch and the runtime. */
-export function pageHead(assets: PageAssets, theme: Theme = DEFAULT_THEME): string {
+export function pageHead(assets: PageAssets, theme: Theme = DEFAULT_THEME, groups = false): string {
   const preload = FONT_FILES.filter((f) => f.file.endsWith("-Latin1.woff2") && f.weight !== 600)
     .map((f) => assets.fonts[f.file])
     .filter((url) => url !== undefined)
     .map((url) => `<link rel="preload" href="${esc(url)}" as="font" type="font/woff2" crossorigin>`)
     .join("");
-  return `${preload}<style>${pageStyles(assets, theme)}</style><script>${THEME_SCRIPT}</script><script defer src="${esc(assets.runtime)}"></script>`;
+  return `${preload}<style>${pageStyles(assets, theme, groups)}</style><script>${THEME_SCRIPT}</script><script defer src="${esc(assets.runtime)}"></script>`;
 }
 
 function document(title: string, head: string, body: string): string {
@@ -622,7 +652,11 @@ function dashboardPage(data: DashboardData, options: PageOptions): string {
     : `Source: ${data.project}`;
   const footer = `<footer class="hm-footer"><span>${esc(sources)}</span><span>Hatchmark \u00B7 ${esc(theme.id === "default" ? "Default theme" : theme.id)}</span></footer>`;
   const body = `<div class="hm-page">${header}<main class="hm-grid">${renderBlocks(data.blocks, ctx)}</main>${footer}</div>${embedded}`;
-  return document(`${data.title} \u00B7 ${data.project}`, pageHead(options.assets, theme), body);
+  return document(
+    `${data.title} \u00B7 ${data.project}`,
+    pageHead(options.assets, theme, usesGroups(data)),
+    body,
+  );
 }
 
 /** The index page listing every dashboard of a build, linked by relative URL. */

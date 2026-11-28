@@ -364,7 +364,9 @@ function endedWindow(
     formatWall(hw).endsWith("T00:00:00.000000") && fromLocal(hw, tz) === horizon
       ? day
       : formatInstant(horizon);
-  if (range === "all_time") return { kind: "unbounded", end: timeAxis ? exact : day };
+  if (range === "all_time") {
+    return { kind: "unbounded", end: timeAxis || window.through === "horizon" ? exact : day };
+  }
   const base = resolveRange(range, "none", context.asOf, anchors);
   if (base?.kind !== "bounded" || target.kind !== "bounded") return target;
   if (hw >= parseInstant(base.end)) return target;

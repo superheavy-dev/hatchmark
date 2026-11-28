@@ -8,6 +8,8 @@ import {
   drawYAxis,
   emptyNote,
   fraction,
+  GROUP_STYLE,
+  groupHeading,
   isNumber,
   LABEL_LINE,
   metricOf,
@@ -21,7 +23,7 @@ import { thinTicks } from "./labels.js";
 import { textWidth, truncateEnd, wrapLines } from "./measure.js";
 import { hatchDefs, hollowPoint, partialBar, partialId } from "./partial.js";
 import { r, svgLine, svgText } from "./svg.js";
-import { type Paint, seriesColor, seriesFill } from "./theme.js";
+import { type ColorKey, type Paint, type SeriesPaint, seriesPaints, type Theme } from "./theme.js";
 
 const BAR_THICKNESS = 10;
 const GROUPED_THICKNESS = 8;
@@ -79,26 +81,61 @@ function labelValues(block: BarData, stacked: boolean): Value[] | undefined {
   });
 }
 
+/** A key entry: a series' name and fill, and its group's name when it is the group's first member. */
+interface KeyItem {
+  label: string;
+  fill: ColorKey;
+  heading?: string;
+}
+
+function keyItems(block: BarData, theme: Theme): KeyItem[] {
+  const paints = seriesPaints(theme, block.series, block.groups?.length);
+  return block.series.map((s, k) => {
+    const heading = groupHeading(block, k);
+    return {
+      label: s.label,
+      fill: (paints[k] as SeriesPaint).fill,
+      ...(heading === undefined ? {} : { heading }),
+    };
+  });
+}
+
 /** A one-row (or wrapping) key of coloured squares and series names, for multi-series bars. */
 function drawKey(
   paint: Paint,
-  labels: readonly string[],
+  items: readonly KeyItem[],
   width: number,
 ): { svg: string; height: number } {
-  if (labels.length < 2) return { svg: "", height: 0 };
+  if (items.length < 2) return { svg: "", height: 0 };
   const parts: string[] = [];
   let x = 0;
   let row = 0;
-  labels.forEach((label, k) => {
+  items.forEach(({ label, fill, heading }) => {
     const text = truncateEnd(label, width - 14, { size: CAPTION });
     const w = 14 + textWidth(text, { size: CAPTION });
+    if (heading !== undefined) {
+      const shown = truncateEnd(heading, Math.max(width / 2, width - w - 8), GROUP_STYLE);
+      const headingWidth = textWidth(shown, GROUP_STYLE) + 8;
+      if (x > 0 && x + headingWidth + w > width) {
+        x = 0;
+        row++;
+      }
+      parts.push(
+        svgText(paint, x, row * LABEL_LINE + LABEL_LINE / 2, shown, {
+          ...GROUP_STYLE,
+          color: "text",
+          ...(shown === heading ? {} : { title: heading }),
+        }),
+      );
+      x += headingWidth;
+    }
     if (x > 0 && x + w > width) {
       x = 0;
       row++;
     }
     const cy = row * LABEL_LINE + LABEL_LINE / 2;
     parts.push(
-      `<rect x="${r(x)}" y="${r(cy - 4)}" width="8" height="8" rx="1"${paint.attrs(seriesFill(k))}/>`,
+      `<rect x="${r(x)}" y="${r(cy - 4)}" width="8" height="8" rx="1"${paint.attrs(fill)}/>`,
       svgText(paint, x + 14, cy, text, {
         size: CAPTION,
         color: "textMuted",
@@ -146,11 +183,7 @@ export function barHeight(
   width: number,
   chartHeight: number,
 ): number {
-  const key = drawKey(
-    cssLessPaint,
-    block.series.map((s) => s.label),
-    width,
-  ).height;
+  const key = drawKey(cssLessPaint, keyItems(block, ctx.theme), width).height;
   if (block.orientation === "vertical") return chartHeight + Math.max(0, key - KEY_ROW);
   const names = barCategories(block, ctx.data.locale);
   const wraps = rowNames(names, width).wrapped.some((w) => w.lines.length > 1);
@@ -192,11 +225,10 @@ export function renderBar(
   const totalText = totals?.map((v) =>
     isNumber(v) ? formatValue(v, metric, locale, "compact") : "",
   );
-  const key = drawKey(
-    paint,
-    series.map((s) => s.label),
-    size.width,
-  );
+  const paints = seriesPaints(ctx.theme, series, block.groups?.length);
+  const strokeOf = (k: number) => (paints[k] as SeriesPaint).stroke;
+  const fillOf = (k: number) => (paints[k] as SeriesPaint).fill;
+  const key = drawKey(paint, keyItems(block, ctx.theme), size.width);
   const parts: string[] = [key.svg];
   const label = block.title ?? series.map((s) => s.label).join(", ");
   const partial = series.map((s) =>
@@ -217,7 +249,7 @@ export function renderBar(
       ? hatchDefs(
           paint,
           hatch,
-          series.map((_, k) => seriesFill(k)),
+          series.map((_, k) => fillOf(k)),
           ctx.theme.partial.spacing,
           x,
           y,
@@ -286,10 +318,10 @@ export function renderBar(
         const w = Math.max(1, Math.abs(scale(b) - scale(a)));
         parts.push(
           partial[k]?.has(i)
-            ? partialBar(ctx, hatch, seriesFill(k), x0, cy + offset - thick / 2, w, thick, w)
-            : `<rect x="${r(x0)}" y="${r(cy + offset - thick / 2)}" width="${r(w)}" height="${thick}" rx="${ctx.theme.radius.bar}"${paint.attrs(seriesFill(k))}/>`,
+            ? partialBar(ctx, hatch, fillOf(k), x0, cy + offset - thick / 2, w, thick, w)
+            : `<rect x="${r(x0)}" y="${r(cy + offset - thick / 2)}" width="${r(w)}" height="${thick}" rx="${ctx.theme.radius.bar}"${paint.attrs(fillOf(k))}/>`,
         );
-        if (markers[k]?.has(i)) marks.push(hollowPoint(ctx, seriesColor(k), scale(b), cy + offset));
+        if (markers[k]?.has(i)) marks.push(hollowPoint(ctx, strokeOf(k), scale(b), cy + offset));
         if (grouped && showValues) {
           const text = (valueTexts[k] as string[])[i] as string;
           const neg = b < 0;
@@ -390,10 +422,10 @@ export function renderBar(
       const h = Math.max(1, Math.abs(y(b) - y(a)));
       parts.push(
         partial[k]?.has(i)
-          ? partialBar(ctx, hatch, seriesFill(k), x, top1, w, h, h)
-          : `<rect x="${r(x)}" y="${r(top1)}" width="${r(w)}" height="${r(h)}" rx="${ctx.theme.radius.bar}"${paint.attrs(seriesFill(k))}/>`,
+          ? partialBar(ctx, hatch, fillOf(k), x, top1, w, h, h)
+          : `<rect x="${r(x)}" y="${r(top1)}" width="${r(w)}" height="${r(h)}" rx="${ctx.theme.radius.bar}"${paint.attrs(fillOf(k))}/>`,
       );
-      if (markers[k]?.has(i)) marks.push(hollowPoint(ctx, seriesColor(k), x + w / 2, y(b)));
+      if (markers[k]?.has(i)) marks.push(hollowPoint(ctx, strokeOf(k), x + w / 2, y(b)));
     });
     if (showValues) {
       const total = totals?.[i];

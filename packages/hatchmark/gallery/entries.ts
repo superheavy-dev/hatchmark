@@ -1,4 +1,4 @@
-import { FONT_FILES, pageHead, renderFragment } from "../src/render/index.js";
+import { DEFAULT_THEME, FONT_FILES, pageHead, renderFragment } from "../src/render/index.js";
 import { GALLERY } from "./variants.js";
 
 export interface GalleryEntry {
@@ -20,8 +20,12 @@ export function galleryEntries(): GalleryEntry[] {
 }
 
 export function galleryHead(base: string): string {
-  return pageHead({
-    runtime: `${base}hatchmark.js`,
-    fonts: Object.fromEntries(FONT_FILES.map((f) => [f.file, `${base}${f.file}`])),
-  });
+  return pageHead(
+    {
+      runtime: `${base}hatchmark.js`,
+      fonts: Object.fromEntries(FONT_FILES.map((f) => [f.file, `${base}${f.file}`])),
+    },
+    DEFAULT_THEME,
+    true,
+  );
 }

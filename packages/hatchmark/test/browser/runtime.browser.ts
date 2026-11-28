@@ -560,18 +560,22 @@ describe("browser runtime", () => {
           .filter((svg) => svg.getBoundingClientRect().width > 0 && svg.querySelector(".hm-rh"))
           .map((svg) => {
             const period = (svg.querySelector(".hm-rh") as SVGTextElement).getBoundingClientRect();
-            const rows = new Map<number, number>();
-            for (const dot of svg.querySelectorAll(".hm-readout circle")) {
-              const box = dot.getBoundingClientRect();
-              const key = Math.round(box.top);
-              rows.set(key, Math.min(rows.get(key) ?? Number.POSITIVE_INFINITY, box.left));
+            const rows = new Map<number, { top: number; left: number }>();
+            for (const mark of svg.querySelectorAll(".hm-readout circle, .hm-readout .hm-rg")) {
+              const box = mark.getBoundingClientRect();
+              const key = Math.round((box.top + box.bottom) / 8);
+              const row = rows.get(key);
+              rows.set(key, {
+                top: Math.min(row?.top ?? Number.POSITIVE_INFINITY, box.top),
+                left: Math.min(row?.left ?? Number.POSITIVE_INFINITY, box.left),
+              });
             }
-            const tops = [...rows.keys()].sort((a, b) => a - b);
+            const ordered = [...rows.values()].sort((a, b) => a.top - b.top);
             return {
               periodLeft: period.left,
               periodBottom: period.bottom,
-              firstTop: tops[0] ?? 0,
-              rowLefts: tops.map((top) => rows.get(top) as number),
+              firstTop: ordered[0]?.top ?? 0,
+              rowLefts: ordered.map((row) => row.left),
             };
           }),
       );

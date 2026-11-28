@@ -1,4 +1,10 @@
-import type { DashboardData, MetricInfo, Series, Value } from "../compiler/dashboard-data.js";
+import type {
+  DashboardData,
+  MetricInfo,
+  Series,
+  SeriesGroup,
+  Value,
+} from "../compiler/dashboard-data.js";
 import { yTicks } from "./axis.js";
 import { formatTicks } from "./format.js";
 import { textWidth } from "./measure.js";
@@ -33,6 +39,32 @@ export function metricOf(ctx: RenderContext, name: string): MetricInfo {
       better: "neutral",
     }
   );
+}
+
+/** A group's name in a key: caption, medium weight. */
+export const GROUP_STYLE = { size: CAPTION, weight: 500 } as const;
+
+/** The group name a key shows before series k: set on a group's first member, else undefined. */
+export function groupHeading(
+  block: { series: readonly Series[]; groups?: readonly SeriesGroup[] },
+  k: number,
+): string | undefined {
+  const group = block.series[k]?.group;
+  if (group === undefined || block.series[k - 1]?.group?.index === group.index) return undefined;
+  return block.groups?.[group.index]?.label;
+}
+
+/** A series' label, prefixed with its group's name when another series of the block shares the label. */
+export function seriesName(
+  block: { series: readonly Series[]; groups?: readonly SeriesGroup[] },
+  k: number,
+): string {
+  const s = block.series[k];
+  if (s === undefined) return "";
+  const group = s.group === undefined ? undefined : block.groups?.[s.group.index]?.label;
+  if (group === undefined || block.series.filter((t) => t.label === s.label).length < 2)
+    return s.label;
+  return `${group} \u00B7 ${s.label}`;
 }
 
 /** The format of a share of a total: the value axis of a 100% stack, tooltip and key shares. */

@@ -28,6 +28,7 @@ import {
   type ScatterData,
   type ScatterPoint,
   type Series,
+  type SeriesGroup,
   type StackTotals,
   type TableData,
   type TableRow,
@@ -501,6 +502,78 @@ class Assembler {
     });
   }
 
+  tagGroups(
+    block: Block & { type: "line" | "area" | "bar" },
+    plan: BlockPlan,
+    series: Series[],
+  ): Series[] {
+    const groups = block.groups;
+    if (groups === undefined) return series;
+    const nameOf = (s: Series) => (block.split === undefined ? s.metric : s.label);
+    const labelOf = (v: Key) => (v === null ? "(empty)" : String(v));
+    const domain =
+      plan.domain === undefined
+        ? undefined
+        : this.keys(Object.values(plan.domain), 0).map((keys) => keys[0] ?? null);
+    const claimed: Key[] = [];
+    const owner = new Map<Series, { index: number; step: number }>();
+    groups.forEach((g, index) => {
+      g.series.forEach((member, step) => {
+        const name = String(member);
+        const candidates = series.filter((s) => nameOf(s) === name && !owner.has(s));
+        const values = domain?.filter((v) => labelOf(v) === name && !claimed.includes(v));
+        const value = values?.includes(null) ? null : values?.[0];
+        if (value !== undefined) claimed.push(value);
+        if (value === null && values?.includes(name)) {
+          this.groupWarning(
+            plan,
+            index,
+            step,
+            `group "${g.label}" names "(empty)", which matches both empty values and the text "(empty)" in "${block.split}"; the group takes the empty values`,
+            `rename the text "(empty)" in the data, or list the series it names in no group`,
+          );
+        }
+        const match =
+          domain === undefined
+            ? (candidates.find((s) => s.splitValue === null) ?? candidates[0])
+            : candidates.find((s) => s.splitValue === value);
+        if (match !== undefined) {
+          owner.set(match, { index, step });
+          return;
+        }
+        if (block.split === undefined || value !== undefined) return;
+        this.groupWarning(
+          plan,
+          index,
+          step,
+          `group "${g.label}" names "${name}", which "${block.split}" has no rows for`,
+          `check the spelling against the values of "${block.split}"; the group keeps this series' colour step`,
+        );
+      });
+    });
+    const free = domain?.filter((v) => !claimed.includes(v)) ?? [];
+    return series.map((s) => {
+      const group = owner.get(s);
+      if (group !== undefined) return { ...s, group };
+      const rank = s.splitValue === undefined ? -1 : free.indexOf(s.splitValue);
+      return rank < 0 ? s : { ...s, colorRank: rank };
+    });
+  }
+
+  groupWarning(plan: BlockPlan, index: number, step: number, message: string, help: string): void {
+    if (this.diagnostics.some((d) => d.code === "HM2027" && d.message === message)) return;
+    const file = this.project.dashboards.get(this.plan.dashboard);
+    const pointer = `${plan.pointer}/groups/${index}/series/${step}`;
+    this.diagnostics.push({
+      code: "HM2027",
+      severity: "warning",
+      message,
+      ...(file ? { file: file.file, pointer, ...file.document.locationOf(pointer) } : {}),
+      help,
+      docs: docsCommand("HM2027"),
+    });
+  }
+
   metricSeries(
     names: string[],
     measures: Record<string, MeasureExpression>,
@@ -647,10 +720,12 @@ class Assembler {
     const [first = ""] = block.metrics;
     const stack = block.type === "area" ? block.stack : undefined;
     const grain = plan.grain ?? resolveGrain(block.grain, this.plan.anchors);
-    const series = (
+    const series = this.tagGroups(
+      block,
+      plan,
       block.split === undefined
         ? this.metricSeries(block.metrics, plan.measures, axis.buckets)
-        : this.splitSeries(first, plan.measures[first], axis.buckets, stack ? 2 : 1, 2)
+        : this.splitSeries(first, plan.measures[first], axis.buckets, stack ? 2 : 1, 2),
     ).map((one) => this.cut(one, plan.measures[one.metric], axis.buckets, grain, clip(axis)));
     const shown = this.incomplete(block, plan, axis, series);
     const stacked = this.cutTotals(
@@ -672,7 +747,8 @@ class Assembler {
       type: block.type,
       ...(block.type === "area" ? { stack: Boolean(stack) } : {}),
       axis: shown.axis,
-      series: stacked.series,
+      series: groupOrder(stacked.series),
+      ...groupLabels(block),
       ...stacked.extra,
     };
   }
@@ -687,11 +763,12 @@ class Assembler {
       type: "bar" as const,
       orientation: block.orientation ?? "vertical",
       stack: Boolean(block.stack),
+      ...groupLabels(block),
     };
     const stacked = (series: Series[], positions: Key[]) =>
       this.stacked(
         block.stack,
-        series,
+        this.tagGroups(block, plan, series),
         split
           ? (i) => this.evaluate(plan.measures[first], 1, [positions[i] ?? null, null])
           : undefined,
@@ -719,7 +796,7 @@ class Assembler {
         grain,
         shown.hidden,
       );
-      return { ...base, axis: shown.axis, series, ...extra };
+      return { ...base, axis: shown.axis, series: groupOrder(series), ...extra };
     }
     const column = block.by ?? "";
     const all = this.keys(expressions, 0).map((keys) => keys[0] ?? null);
@@ -751,7 +828,7 @@ class Assembler {
     return {
       ...base,
       axis,
-      series,
+      series: groupOrder(series),
       ...extra,
       ...(omitted > 0 ? { omittedCategories: omitted } : {}),
     };
@@ -1416,4 +1493,31 @@ export function assembleWith(
     blocks,
   };
   return { data, diagnostics: assembler.diagnostics };
+}
+
+function groupLabels(block: Block & { type: "line" | "area" | "bar" }): { groups?: SeriesGroup[] } {
+  return block.groups === undefined
+    ? {}
+    : { groups: block.groups.map((g) => ({ label: g.label })) };
+}
+
+function groupOrder(series: Series[]): Series[] {
+  if (!series.some((s) => s.group !== undefined)) return series;
+  const out: Series[] = [];
+  const placed = new Set<number>();
+  for (const s of series) {
+    if (s.group === undefined) {
+      out.push(s);
+      continue;
+    }
+    const index = s.group.index;
+    if (placed.has(index)) continue;
+    placed.add(index);
+    out.push(
+      ...series
+        .filter((t) => t.group?.index === index)
+        .sort((a, b) => (a.group?.step ?? 0) - (b.group?.step ?? 0)),
+    );
+  }
+  return out;
 }
