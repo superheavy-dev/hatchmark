@@ -124,7 +124,7 @@ export function cubeResult(
   };
   const lo = bounds.kind === "bounded" ? dayOf(bounds.start, false) : -Infinity;
   const hi = bounds.end === undefined ? Infinity : dayOf(bounds.end, true);
-  const components = query.measures.flatMap((m) => m.components);
+  const components = query.measures.flatMap((m) => m.components).filter((c) => c.id in cube.values);
   const dims = query.dimensions;
   const texts = new Map<number, string>();
   const buckets = new Map<string, string>();
@@ -160,7 +160,6 @@ export function cubeResult(
   const aggregate = (c: MeasureComponent, rows: number[]): Value => {
     const values = cube.values[c.id] ?? [];
     if (c.reaggregate === "none") return null;
-    if (rows.length === 0 && c.reaggregate === "sum") return 0;
     let acc: number | null = null;
     for (const i of rows) {
       const v = values[i] ?? null;

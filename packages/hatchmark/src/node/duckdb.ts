@@ -440,7 +440,10 @@ function resultOf(
         name: d.column,
         type: d.kind === "time" ? ("date" as const) : resultType(types[i] ?? ""),
       })),
-      ...components.map((c) => ({ name: c.id, type: "number" as const })),
+      ...components.map((c, j) => ({
+        name: c.id,
+        type: resultType(types[dimCount + j] ?? ""),
+      })),
     ],
     rows,
     ...(query.groupingSets.length > 1 ? { groupingSet } : {}),

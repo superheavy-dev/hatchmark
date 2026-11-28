@@ -100,8 +100,10 @@ Metric filters and dashboard select filters compare a column with a value:
   Distinct counts, medians and non-additive SQL cannot be folded and show "—" (HM4063).
 - **Subtotals** come from the query's grouping sets (SQL ROLLUP), like the total, never from adding
   the rows below them.
-- **Empty groups and buckets.** Sums and counts of no rows are 0; other aggregates (distinct counts,
-  averages, ratios, medians, min, max) of no rows are empty.
+- **Empty groups and buckets.** Sums, counts and additive SQL metrics with a numeric result are 0
+  over no rows, and so is a distinct count over a window with no rows. Averages, ratios, medians,
+  min and max of no rows are empty, as are distinct counts of an empty group or bucket. Rows that
+  exist but whose values are all NULL stay empty, as SQL SUM does.
 - **percentOfTotal** is a row's share of the grand total, for additive metrics only (HM4001).
 - **Stacked bars and areas** carry each position's total, recomputed from rows like a table's, and
   each segment's share of it; a 100% stack (`stack: percent`) needs additive metrics too

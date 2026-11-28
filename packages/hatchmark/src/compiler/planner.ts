@@ -80,8 +80,14 @@ export function plannedMeasure(name: string, metric: Metric): PlannedMeasure | u
   if (metric.type !== "aggregate" && metric.type !== "sql") return undefined;
   if (metric.type === "sql") {
     const id = `${name}__sql`;
-    const c = component(id, "sql", metric, { sql: metric.sql }, metric.additive ? "sum" : "none");
-    return { metric: name, components: [c], combine: { op: "identity", component: id } };
+    const combine = { op: "identity", component: id } as const;
+    if (!metric.additive) {
+      const c = component(id, "sql", metric, { sql: metric.sql }, "none");
+      return { metric: name, components: [c], combine };
+    }
+    const c = component(id, "sql", metric, { sql: metric.sql }, "sum");
+    const rows = component(`${name}__rows`, "count", metric, {}, "sum");
+    return { metric: name, components: [c, rows], combine, rows: rows.id };
   }
   const column = metric.column === undefined ? {} : { column: metric.column };
   if (metric.aggregate === "avg") {

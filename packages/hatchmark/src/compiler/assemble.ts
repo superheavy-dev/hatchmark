@@ -71,6 +71,7 @@ interface IndexedQuery {
   /** Distinct dimension values by grouping set, in result order. */
   keys: Map<number, Key[][]>;
   components: Map<string, number>;
+  numeric: Set<string>;
 }
 
 /** Null-safe row identity: the grouping set plus every dimension value, null included. */
@@ -95,7 +96,8 @@ function index(query: PlannedQuery, result: QueryResult): IndexedQuery {
     keys.set(set, [...(keys.get(set) ?? []), values]);
   });
   const components = new Map(result.columns.map((c, i) => [c.name, i]));
-  return { query, rows, keys, components };
+  const numeric = new Set(result.columns.filter((c) => c.type === "number").map((c) => c.name));
+  return { query, rows, keys, components, numeric };
 }
 
 function divide(a: Value, b: Value): Value {
@@ -234,6 +236,10 @@ class Assembler {
     const indexed = this.queries.get(queryId);
     const measure = indexed?.query.measures.find((m) => m.metric === metric);
     if (indexed === undefined || measure === undefined) return null;
+    const { combine } = measure;
+    const counted = combine.op === "identity" && indexed.numeric.has(combine.component);
+    const rowsAt =
+      measure.rows === undefined || !counted ? undefined : indexed.components.get(measure.rows);
     const component = (id: string): Value => {
       const at = indexed.components.get(id);
       const reaggregate = measure.components.find((c) => c.id === id)?.reaggregate ?? "none";
@@ -241,7 +247,8 @@ class Assembler {
         const row = indexed.rows.get(key);
         const raw = row === undefined || at === undefined ? null : row[at];
         const value = typeof raw === "number" ? raw : null;
-        return value === null && reaggregate === "sum" && row === undefined ? 0 : value;
+        const empty = row === undefined || (rowsAt !== undefined && row[rowsAt] === 0);
+        return value === null && reaggregate === "sum" && empty ? 0 : value;
       });
       if (!fold) return values[0] ?? null;
       const present = values.filter((v): v is number => v !== null);
@@ -250,7 +257,6 @@ class Assembler {
       if (reaggregate === "max") return present.reduce((m, v) => Math.max(m, v));
       return present.reduce((sum, v) => sum + v, 0);
     };
-    const { combine } = measure;
     return combine.op === "identity"
       ? component(combine.component)
       : divide(component(combine.numerator), component(combine.denominator));

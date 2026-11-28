@@ -342,10 +342,7 @@ function builtQuery(
     const filters = inWhere ? [] : c.filters.map((f) => filterSql(source, f, context, sql));
     const clause = filters.length > 0 ? ` FILTER (WHERE ${filters.join(" AND ")})` : "";
     const aggregate = `${aggregateSql(c, source)}${clause}`;
-    if (c.aggregate === "sum") return `coalesce(${aggregate}, 0)`;
-    if (c.aggregate === "sql" && c.reaggregate === "sum")
-      return `CASE WHEN count(*) = 0 THEN 0 ELSE ${aggregate} END`;
-    return aggregate;
+    return c.aggregate === "sum" ? `coalesce(${aggregate}, 0)` : aggregate;
   });
 
   const dimRefs = query.dimensions.map((_, i) => free(`hm_d${i}`));
