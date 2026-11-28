@@ -1,0 +1,17 @@
+# yaml-language-server: $schema=../../../packages/hatchmark/schema/project.schema.json
+version: 1
+name: Benchmark
+dataDir: data
+metricsDir: metrics
+dashboardsDir: dashboards
+outDir: dist
+locale: en-US
+currency: USD
+timezone: UTC
+weekStart: sunday
+theme: default
+telemetry: false
+sources:
+  orders:
+    type: csv
+    path: data/orders.csv

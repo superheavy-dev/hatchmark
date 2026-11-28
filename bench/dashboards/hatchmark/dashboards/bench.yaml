@@ -1,0 +1,53 @@
+# yaml-language-server: $schema=../../../../packages/hatchmark/schema/dashboard.schema.json
+title: Global sales
+description: Orders from every market over the last 12 months.
+period:
+  asOf: 2026-10-31
+  range:
+    start: 2025-11-01
+    end: 2026-11-01
+  compare: none
+filters:
+  - type: segment
+    id: segments
+    label: Region
+    segments: [emea]
+blocks:
+  - type: kpi
+    id: revenue
+    metric: revenue
+  - type: kpi
+    id: orders
+    metric: orders
+  - type: kpi
+    id: aov
+    metric: avg_order_value
+  - type: kpi
+    id: refund_rate
+    metric: refund_rate
+  - type: line
+    id: revenue_by_region
+    title: Revenue by month, by region
+    metrics: [revenue]
+    grain: month
+    split: region
+    span: 8
+  - type: bar
+    id: revenue_by_channel
+    title: Revenue by channel
+    metrics: [revenue]
+    by: channel
+    orientation: horizontal
+    sort:
+      by: revenue
+      order: desc
+    span: 4
+  - type: table
+    id: by_country
+    title: Top countries by revenue
+    by: [country]
+    metrics: [revenue, orders, avg_order_value, customers]
+    sort:
+      by: revenue
+      order: desc
+    limit: 15

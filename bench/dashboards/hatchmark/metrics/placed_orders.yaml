@@ -1,0 +1,10 @@
+# yaml-language-server: $schema=../../../../packages/hatchmark/schema/metric.schema.json
+label: Placed orders
+description: Every order, paid or refunded.
+type: aggregate
+table: orders
+aggregate: count
+time: ordered_at
+format:
+  type: number
+better: up
