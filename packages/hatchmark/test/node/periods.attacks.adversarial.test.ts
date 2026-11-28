@@ -1,7 +1,3 @@
-// Attacks on the period filter's numbers path: totals against an SQL ROLLUP oracle,
-// non-additive metrics, empty and null groups, a select default with the period and grain filters,
-// partial periods at a mid-month as-of date, shifted anchors, and invalid custom ranges. Numbers are
-// checked against periods.oracle.ts (and, for totals, plain ROLLUP SQL over the oracle's own rows).
 import { appendFile, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
@@ -44,7 +40,6 @@ afterAll(async () => {
   await removeProjects();
 });
 
-/** Rows with null groups, a country with refunds only, a null amount, a null status, a null time, and rows at DST edges. */
 const EXTRA = [
   "900001,2025-06-15T15:00:00Z,C90001,,,,,paid,50.00",
   "900002,2025-06-15T16:00:00Z,C90002,Atlantis,,Direct,,refunded,20.00",
@@ -66,7 +61,6 @@ const amount = (aggregate: string) => ({
   column: "amount",
   ...PAID,
 });
-/** Non-additive and re-aggregable metrics beyond the example's: avg, min, max, median, SQL, nested ratios. */
 const EXTRA_METRICS: Record<string, Record<string, unknown>> = {
   avg_amount: amount("avg"),
   min_amount: amount("min"),
@@ -434,10 +428,6 @@ describe("empty and null groups, non-additive metrics, and a select default with
     expect(diff.problems.slice(0, 10)).toEqual([]);
   });
 
-  // Known issue (pre-existing in runDashboard, mirrored by the day cubes): an additive SQL sum over a
-  // window with no rows is null, while the same sum as an aggregate metric (revenue) is 0 and an empty
-  // bucket of it in a series is zero-filled, so change and change_pct vanish for comparisons before
-  // the first data day. The fix belongs to the metric layer, so this stays an expected failure until then.
   it.fails("an additive SQL sum is 0, like revenue, over a comparison window before the first data day", () => {
     const data = customOf(metrics, ["2024-11-01", "2024-12-01"]);
     const k = data.blocks.find((x) => x.id === "k_net_sql");

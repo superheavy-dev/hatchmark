@@ -69,12 +69,10 @@ export const buildHelp: CommandHelp = {
   },
 };
 
-/** Where the package keeps its bundled assets: the same path from src/ and from dist/. */
 const ASSETS = new URL("../../../assets/", import.meta.url);
 const ASSET_DIR = "_hatchmark";
 const MANIFEST = `${ASSET_DIR}/manifest.json`;
 
-/** What build needs from the platform; tests inject their own. */
 export interface BuildDeps {
   createExecutor(options: {
     root: string;
@@ -106,15 +104,6 @@ async function readAsset(relative: string): Promise<Uint8Array> {
   }
 }
 
-/**
- * Build never deletes a file it did not write. Every build records its files in
- * _hatchmark/manifest.json; the next build removes exactly those and nothing else. A non-empty
- * directory without a readable manifest is refused, as is one where a file build would write
- * exists but is not in the manifest, and the project directory itself. Build never follows a
- * symbolic link: the output directory, every directory between it and the project, and every
- * path under it that build reads, removes or writes must be a real directory or file. Returns
- * the previous build's files, or a reason to refuse.
- */
 async function checkOutDir(
   root: string,
   outDir: string,
@@ -173,11 +162,6 @@ async function checkOutDir(
   return { previous: [...previous] };
 }
 
-/**
- * Walks file from outDir one component at a time with lstat, so nothing is followed: each
- * directory on the way must be a real directory and the file itself a regular file, or the walk
- * stops at the first one that does not exist yet. Returns why the path is unsafe, or undefined.
- */
 async function unsafeTarget(outDir: string, file: string): Promise<string | undefined> {
   const parts = file.split("/");
   for (let i = 1; i <= parts.length; i++) {
@@ -199,11 +183,6 @@ async function unsafeTarget(outDir: string, file: string): Promise<string | unde
   return undefined;
 }
 
-/**
- * Creates a new, empty file next to target under a random name, exclusively (O_CREAT | O_EXCL), so
- * it never opens, follows or replaces anything that already exists. Tries a few names; undefined
- * when every one is taken.
- */
 async function openFresh(
   target: string,
 ): Promise<{ path: string; handle: FileHandle } | undefined> {
@@ -218,7 +197,6 @@ async function openFresh(
   return undefined;
 }
 
-/** The real path of p, through its deepest existing ancestor when p does not exist yet. */
 async function realLocation(p: string): Promise<string> {
   const missing: string[] = [];
   for (let at = p; ; at = path.dirname(at)) {
@@ -229,19 +207,11 @@ async function realLocation(p: string): Promise<string> {
   }
 }
 
-/** A relative POSIX path that stays inside the output directory. */
 function isOwnPath(file: string): boolean {
   const normal = path.posix.normalize(file);
   return normal === file && !path.posix.isAbsolute(file) && !normal.startsWith("..");
 }
 
-/**
- * Builds every dashboard of the project into static files. runDashboard checks the project first
- * and executes nothing when check finds errors; those errors exit 1 like hatchmark check. Output: <out>/<dashboard>/index.html, an
- * index page when there is more than one dashboard, and <out>/_hatchmark/ with the runtime and
- * fonts under content-hashed names. All URLs are relative, so the output works on any static host
- * and under any sub-path. Identical input gives byte-identical output.
- */
 export async function build(
   ctx: CommandContext,
   flags: { out?: string; cache?: boolean },
@@ -384,11 +354,6 @@ function cacheLine(cache: CacheStats): string {
   return `Reused ${cache.hits} of ${total} quer${total === 1 ? "y" : "ies"} from ${cache.dir}/`;
 }
 
-/**
- * The runtime and fonts every page loads, keyed by their path in the output directory
- * (_hatchmark/ with content-hashed names), and the URLs of those files from a page whose path
- * to the output directory is prefix. hatchmark dev serves the same files under the same URLs.
- */
 export async function bundledAssets(withPeriods = false): Promise<{
   files: Map<string, Uint8Array>;
   assetsFrom(prefix: string): PageAssets;
@@ -423,7 +388,6 @@ export async function bundledAssets(withPeriods = false): Promise<{
   };
 }
 
-/** The data file names a dashboard page's footer lists. */
 export function sourceNames(config: ProjectConfig): string[] {
   return [
     ...new Set(
@@ -434,10 +398,6 @@ export function sourceNames(config: ProjectConfig): string[] {
   ].sort();
 }
 
-/**
- * A dashboard's page with its period filter's data: every preset run exactly and the day cubes for
- * custom ranges. hatchmark dev renders the same page.
- */
 export async function periodPage(
   project: Project,
   name: string,

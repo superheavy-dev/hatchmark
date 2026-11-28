@@ -1,6 +1,3 @@
-// Grain switching (#16).
-// Every grain option of seven switching blocks is checked against an independent oracle (DuckDB reads
-// the raw rows; buckets, windows and metrics are computed here), at default and shifted anchors.
 import { readFile } from "node:fs/promises";
 import path from "node:path";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
@@ -88,7 +85,6 @@ function addMonths(y: number, m: number, dd: number): number {
   t.setUTCDate(Math.min(dd, last.getUTCDate()));
   return t.getTime();
 }
-/** Oracle bucket start, written without the core's windows.ts. */
 function bucket(d: string, g: Resolved): string {
   const t = ms(d);
   if (g.unit === "day") return d;
@@ -135,7 +131,6 @@ const resolve = (g: GrainSpec | undefined, anchors: Anchors): Resolved => {
 };
 const key = (g: Resolved) => (g.anchor ? `${g.unit}:${g.anchor}` : g.unit);
 
-/** Compares every option of every switching block with the oracle and returns what differs. */
 function compareBlocks(
   data: DashboardData,
   specBlocks: SpecBlock[],
@@ -171,7 +166,6 @@ function compareBlocks(
     }
     for (const [i, o] of b.grains.options.entries()) {
       const g = resolve(grains[i], anchors);
-      // edges "snap" (the default) starts each grain's window at its first bucket (RFC 0001 6.5).
       const snapped: [string, string] = [bucket(window[0], g), window[1]];
       const rows = inWindow(snapped, where);
       const buckets = (o.axis as { buckets: string[] }).buckets;
@@ -436,7 +430,6 @@ describe("a select, a period and a grain filter combined", () => {
     expect(problems.slice(0, 5)).toEqual([]);
     expect(cells).toBeGreaterThan(1000);
     const k = data.blocks.find((b) => b.id === "k_rev") as KpiData;
-    // The KPI reads whole days through the last complete day: the newest order is on Oct 31.
     const days: [string, string] = ["2025-10-31", "2026-10-31"];
     expect(k.current).toEqual({ start: days[0], end: days[1] });
     expect(num(k.value)).toBeCloseTo(num(oracleTotal("revenue", days, where)), 6);
@@ -457,7 +450,6 @@ const dash = (blocksList: unknown[], filters?: unknown[]) => ({
   blocks: blocksList,
 });
 
-/** The rendered grain controls: option keys and labels per control, duplicate ids, panels shown at load. */
 function controls(html: string) {
   const groups = [...html.matchAll(/<div class="hm-seg"([^>]*)>(.*?)<\/div>/g)].map((m) =>
     [...(m[2] as string).matchAll(/data-hm-grain="([^"]+)">([^<]*)</g)].map(

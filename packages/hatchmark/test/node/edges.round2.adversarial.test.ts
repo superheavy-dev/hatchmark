@@ -1,6 +1,3 @@
-// Edges and incomplete (#29): HM4014 for an all-time range and for
-// a one-bucket series partial only at its clipped start, and clip plus hide before a stale source,
-// each checked against raw SQL over the same rows.
 import { afterAll, expect, test } from "vitest";
 import { run as cli } from "../../src/cli/main.js";
 import type { LineData } from "../../src/compiler/index.js";

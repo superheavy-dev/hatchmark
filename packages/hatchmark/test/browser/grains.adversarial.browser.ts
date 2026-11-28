@@ -1,6 +1,4 @@
 /// <reference lib="dom" />
-// Grain switching (#16) on the trends example built by hatchmark build. A card without the grain
-// keeps its own.
 import { readFile } from "node:fs/promises";
 import path from "node:path";
 import { type Browser, chromium, type Locator, type Page } from "playwright";

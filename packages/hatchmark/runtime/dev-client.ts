@@ -1,15 +1,7 @@
 /// <reference types="vite/client" />
-/**
- * The hatchmark dev client, served only by hatchmark dev and never part of a build. It listens on
- * Vite's HMR connection: hatchmark:update swaps the cards that changed, attaches the runtime to
- * them and replaces the period filter's data, hatchmark:reload reloads the page after a structural change, and hatchmark:error and
- * hatchmark:ok show and clear the diagnostics overlay.
- */
 
 interface CardUpdate {
-  /** Position of the card among the grid's children. */
   index: number;
-  /** Position of the KPI inside a strip, when only that KPI changed. */
   kpi?: number;
   html: string;
 }
@@ -27,11 +19,6 @@ const fragment = (html: string): Element | null => {
 const checked = (group: Element | null | undefined): string | undefined =>
   group?.querySelector<HTMLElement>("button[aria-checked=true]")?.dataset.hmGrain;
 
-/**
- * Gives a swapped-in card the grain the reader had chosen: each segmented control takes the old
- * card's selection when the new card offers it, else the header grain filter's. The runtime is
- * already attached, so a click on the button selects the grain as a reader's click would.
- */
 const keepGrains = (before: Element, after: Element) => {
   const old = [...before.querySelectorAll(".hm-seg")];
   const page = checked(document.querySelector("[data-hm-grain-filter]"));

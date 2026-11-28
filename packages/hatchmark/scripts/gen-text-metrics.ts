@@ -1,8 +1,3 @@
-// Generates src/render/text-metrics.ts from the bundled IBM Plex Sans files in assets/fonts:
-// advance widths for every code point the subsets cover, and the kerning (GPOS kern plus the fi/fl
-// ligatures) between every pair of printable ASCII characters, in font units. Kerning between
-// accented letters is rare in labels and would multiply the table size. The renderer measures text with this
-// table, so layout needs no canvas, DOM or font file at run time. Run: pnpm gen:text-metrics
 import { readdirSync, writeFileSync } from "node:fs";
 import * as fontkit from "fontkit";
 

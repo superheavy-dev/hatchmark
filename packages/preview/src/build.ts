@@ -15,13 +15,11 @@ import { entries, head } from "./entries.js";
 import { type BuildInfo, renderSite } from "./page.js";
 import { periodProject } from "./periods.js";
 
-/** packages/, from dist/lib/preview/src/build.js (tsc compiles the hatchmark gallery sources too). */
 const PACKAGES = fileURLToPath(new URL("../../../../../", import.meta.url));
 const DIST = join(PACKAGES, "preview", "dist");
 const HATCHMARK = join(PACKAGES, "hatchmark");
 const BRAND = join(PACKAGES, "..", "assets", "brand");
 
-/** Reads the build info the workflow passes in PREVIEW_PR and PREVIEW_SHA. */
 export function buildInfo(env: Readonly<Record<string, string | undefined>>): BuildInfo {
   const pr = Number(env.PREVIEW_PR);
   return {

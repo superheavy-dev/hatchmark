@@ -2,7 +2,6 @@ import { describe, expect, it } from "vitest";
 import type { DashboardData, LineData } from "../../src/compiler/dashboard-data.js";
 import { renderChartSvg } from "../../src/render/index.js";
 
-/** Renderer invariants: one bucket per readout, gaps for missing data, finite geometry. */
 const data = {
   locale: "en-US",
   metrics: { v: { name: "v", label: "Value", format: { type: "number" }, better: "neutral" } },

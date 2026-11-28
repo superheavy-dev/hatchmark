@@ -25,7 +25,6 @@ const localDate = new Intl.DateTimeFormat("en-CA", {
   month: "2-digit",
   day: "2-digit",
 });
-/** The New York calendar day of an instant (epoch ms), by Intl. */
 const dayOf = (t: number) => localDate.format(new Date(t));
 
 function seeded(seed: number): () => number {
@@ -160,8 +159,6 @@ const METRICS: Record<string, unknown> = {
   }),
 };
 const KPIS = Object.keys(METRICS);
-/** Metrics a custom range cannot compute from day sums. Formula metrics are left out of
- * dashboards until the planner evaluates them (HM4023), so none is listed here. */
 const PRESET_ONLY = new Set(["customers"]);
 const TABLE_METRICS = ["revenue", "orders", "conversion", "max_amount"];
 const periodFilter = {
@@ -308,13 +305,11 @@ const SOURCES: Record<string, string[]> = {
   lagged: ["events"],
   conversion: ["orders", "sessions"],
 };
-/** RFC 6.1: the as-of instant T (latest_data: the newest horizon) capped by every source read. */
 const horizonOf = (m: string) =>
   Math.min(
     Math.max(H.orders as number, H.sessions as number, H.events as number),
     ...(SOURCES[m] ?? []).map((s) => H[s] as number),
   );
-/** RFC 6.4: KPI and table windows end at the local midnight at or before the horizon. */
 const lastCompleteEnd = (m: string) => dayOf(horizonOf(m));
 
 const AGG: Record<string, string> = {
@@ -325,7 +320,6 @@ const AGG: Record<string, string> = {
   max_amount: "max(amount::DOUBLE) FILTER (WHERE status = 'paid')",
 };
 
-/** A leaf metric over raw rows: local days in [start, end), rows at or before cut, one region. */
 async function leaf(m: string, w: Win, region?: string): Promise<number | null> {
   const table = m === "sessions" ? "sessions" : "orders";
   const t = table === "sessions" ? "started_at" : "ordered_at";
@@ -351,18 +345,12 @@ async function value(m: string, w: Win, region?: string): Promise<number | null>
   return leaf(m, w, region);
 }
 
-/** Last year's date, its day clamped to the month (Feb 29 back a year is Feb 28). */
 function yearBack(d: string): string {
   const [y = 0, m = 1, dd = 1] = d.split("-").map(Number);
   const last = new Date(Date.UTC(y - 1, m, 0)).getUTCDate();
   return `${pad(y - 1, 4)}-${pad(m)}-${pad(Math.min(dd, last))}`;
 }
 
-/**
- * RFC 6.2 and 6.4 for an explicit range [s, e): the current window ends at the last complete day;
- * the comparison as written (previous_period: the same number of days before; previous_year: first
- * and last day a year back) is cut to the current window's day count from its own start.
- */
 function kpiWindows(m: string, s: string, e: string, compare: "pp" | "ly") {
   const end = lastCompleteEnd(m) < e ? lastCompleteEnd(m) : e;
   const len = Math.max(0, days(s, end));
@@ -394,7 +382,6 @@ class Diff {
   }
 }
 
-/** Every number and key of two trees; skip names paths a custom range may legitimately differ on. */
 function deepCompare(a: unknown, b: unknown, at: string, diff: Diff, skip: (p: string) => boolean) {
   if (skip(at)) return;
   if (typeof a === "number" && typeof b === "number") return diff.num(at, a, b);
@@ -501,7 +488,6 @@ function ranges(p: PeriodData): Win[] {
     { start: "2026-11-19", end: "2026-11-20" },
     { start: "2026-10-22", end: span.end },
     { start: span.start, end: span.end },
-    // A link whose dates equal a preset's dates is still an explicit range (RFC 6.4: no slide).
     ...(Object.values(p.presets)[0]?.periodFilter?.options ?? []).flatMap((o) =>
       o.current ? [{ start: o.current.start, end: o.current.end }] : [],
     ),

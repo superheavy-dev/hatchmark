@@ -1,7 +1,3 @@
-// Stacked and 100% stacked bar and area (#22). A hostile orders table (signed amounts, null groups, a category in one month only, parts
-// that cancel to a zero total, a position with only negative parts, New York boundary rows) runs
-// through the real engine and renderer; totals, parts, shares, tooltips and the screen-reader table
-// are checked against plain SQL on the oracle's own DuckDB connection.
 import path from "node:path";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import type { DashboardData, Value } from "../../src/compiler/dashboard-data.js";
@@ -108,7 +104,6 @@ function balancesCsv(): string {
   return `${lines.join("\n")}\n`;
 }
 
-/** A second source that stops on Apr 15 (a horizon inside April), for the horizon cut. */
 function returnsCsv(): string {
   const rand = rng(1558);
   const regions = ["North America", "Europe", "Asia-Pacific", "Latin America"];
@@ -432,8 +427,6 @@ const CONFIG = {
 const LOCAL = "(ts AT TIME ZONE 'America/New_York')";
 const win = (end: string, start = "2026-01-01") =>
   `${LOCAL} >= TIMESTAMP '${start}' AND ${LOCAL} < TIMESTAMP '${end}'`;
-// edges "snap" (the default) starts a time series' window at its first bucket (RFC 0001 6.5): Jan 1,
-// 2026 is a Thursday, so the first Sunday week starts on Dec 28.
 const snapped = (unit: string) => (unit === "week" ? "2025-12-28" : "2026-01-01");
 const bucket = (unit: string) =>
   unit === "week"
@@ -449,7 +442,6 @@ const close = (a: Value | undefined, e: Value | undefined) =>
 let oracle: Oracle;
 let project: Awaited<ReturnType<typeof writeProject>>;
 let main: Awaited<ReturnType<typeof run>>;
-/** Year-to-date category charts end at the horizon: just after the newest order, or the as-of instant if earlier. */
 let categoryEnd: number;
 const toDate = () => `${LOCAL} >= TIMESTAMP '2026-01-01' AND epoch_us(ts) < ${categoryEnd}`;
 
@@ -467,7 +459,6 @@ function block(data: DashboardData | undefined, id: string): Stack {
   return found as unknown as Stack;
 }
 
-/** Totals, parts and shares of a stacked block against oracle maps keyed by [position(, split)]. */
 function compare(
   b: { series: StackSeries[]; totals?: Value[]; percent?: boolean },
   positions: Key[],
@@ -525,7 +516,6 @@ function runtimeOf(
   return m ? JSON.parse((m[1] as string).replace(/\\u003c/g, "<")) : undefined;
 }
 
-/** Tooltip pct and Total text against shares and totals, within display rounding. */
 function tooltip(
   html: string,
   id: string,
@@ -551,7 +541,6 @@ function tooltip(
   return bad;
 }
 
-/** The screen-reader table's last column against the engine totals, row by row. */
 function table(html: string, id: string, series: StackSeries[], totals: Value[]): string[] {
   const fig = html.split(`data-hm-chart="${id}"`)[1]?.split("</figure>")[0] ?? "";
   const rows = (fig.split("<tbody>")[1]?.split("</tbody>")[0] ?? "")

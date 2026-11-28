@@ -24,9 +24,6 @@ import { loadAt, metric, Oracle, removeProjects, run, writeProject } from "./fix
 
 const NY = "America/New_York";
 
-// Times are UTC; the project buckets in New York. Row 3 is Jan 31 23:30 in New York (Feb 1 UTC),
-// rows 7 and 8 sit on either side of local midnight before Apr 30, March has no rows at all, and
-// region and channel have nulls.
 const ORDERS = `order_id,ordered_at,region,channel,status,amount,refund,customer_id
 1,2026-01-05T15:00:00Z,West,web,paid,10.00,0,u1
 2,2026-01-31T23:30:00Z,West,,paid,20.00,5,u2
@@ -38,7 +35,6 @@ const ORDERS = `order_id,ordered_at,region,channel,status,amount,refund,customer
 8,2026-04-30T04:00:00Z,West,app,paid,80.00,0,u5
 `;
 
-// A second source with a DATE time column that ends later than orders.
 const SESSIONS = `started_at,region
 2026-01-10,West
 2026-01-31,
@@ -240,9 +236,6 @@ let oracle: Oracle;
 let edge: Awaited<ReturnType<typeof writeProject>>;
 let ytd: Awaited<ReturnType<typeof run>>;
 const local = `(ordered_at AT TIME ZONE '${NY}')`;
-// Order 8 is the newest, at local midnight on Apr 30, so the orders horizon is just after it. Last N
-// ranges read whole days through Apr 29 and leave order 8 out; to-date KPIs, tables and bars read
-// today's partial day up to the horizon and count it (RFC 0001 section 6.4).
 const THROUGH = "2026-04-30";
 const HORIZON = "2026-04-30T04:00:00.000001Z";
 

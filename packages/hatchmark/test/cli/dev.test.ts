@@ -22,7 +22,6 @@ interface HmrMessage {
 
 const copyExample = () => copyProject(EXAMPLE, "hatchmark-dev-");
 
-/** A client on Vite's HMR websocket, the connection the dev client in the page uses. */
 async function connect(server: DevServer) {
   const url = new URL(server.url);
   const socket = new WebSocket(`ws://${url.host}/?token=${server.token}`, "vite-hmr");
@@ -39,7 +38,6 @@ async function connect(server: DevServer) {
   return {
     messages,
     clear: () => messages.splice(0),
-    /** The first custom event with this name, waiting for it when needed. */
     async next(name: string, timeout = 15_000, dashboard?: string): Promise<HmrMessage> {
       const end = Date.now() + timeout;
       for (;;) {

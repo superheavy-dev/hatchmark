@@ -4,8 +4,6 @@ import type { BarData, DashboardData } from "../../src/compiler/dashboard-data.j
 import { chartRuntimeData, renderChartSvg } from "../../src/render/index.js";
 import { DEFAULT_THEME } from "../../src/render/theme.js";
 
-/** Stacked renders: key height, the horizontal 100% axis, one series. */
-
 function variant(name: string): { block: BarData; data: DashboardData } {
   const data = GALLERY.find((v) => v.variant === name)?.data;
   if (!data) throw new Error(`no gallery variant ${name}`);

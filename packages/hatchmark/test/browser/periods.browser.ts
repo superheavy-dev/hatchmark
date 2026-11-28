@@ -13,7 +13,6 @@ import { periodCaption } from "../../src/render/period.js";
 import { buildProject, EXAMPLE, loadAt, removeProjects, writeExample } from "../node/fixture.js";
 import { fromYaml } from "../yaml.js";
 
-/** The period control on the built explorer example: presets, calendar keyboard, URL state. */
 let browser: Browser;
 let root: string;
 
@@ -51,7 +50,6 @@ async function open(query = "", width = 1280): Promise<{ page: Page; errors: str
   return { page, errors };
 }
 
-/** The last day a custom range may end on: the day before the calendar's end. */
 const lastDay = async (page: Page) => {
   const end = await page.locator(".hm-cal").getAttribute("data-hm-end");
   return new Date(Date.parse(`${end}T00:00:00Z`) - 86_400_000).toISOString().slice(0, 10);
@@ -63,7 +61,6 @@ const caption = (page: Page) => page.locator("[data-hm-caption]").textContent();
 const kpi = (page: Page, label: string) =>
   page.locator(".hm-kpi", { hasText: label }).locator(".hm-kpi-value").textContent();
 
-/** The SQL path's numbers for a range, through runDashboard with the filter bound. */
 async function sql(range: unknown): Promise<DashboardData> {
   const { project } = await loadAt(root);
   const config = project.config.spec;

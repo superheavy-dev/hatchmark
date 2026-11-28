@@ -11,7 +11,6 @@ import { fromYaml, toYaml } from "../yaml.js";
 
 const roots: string[] = [];
 
-/** Writes a project into a fresh temporary directory and loads it with the Node host. */
 export async function writeProject(files: Record<string, unknown>): Promise<{
   root: string;
   project: Project;
@@ -52,10 +51,6 @@ export async function copyProject(from: string, prefix: string): Promise<string>
   return root;
 }
 
-/**
- * Copies examples/global-sales into a fresh temporary directory, with hatchmark.yaml merged with
- * config (undefined drops a key) and its dashboards replaced by the given ones.
- */
 export async function writeExample(
   config: Record<string, unknown>,
   dashboards: Record<string, unknown>,
@@ -72,7 +67,6 @@ export async function writeExample(
   return root;
 }
 
-/** Runs hatchmark build --json in process and returns its exit code and report. */
 export async function buildProject(root: string): Promise<{ code: number; report: unknown }> {
   let stdout = "";
   const code = await cli(["build", "--json", "--cwd", root], {
@@ -98,7 +92,6 @@ export async function removeProjects(): Promise<void> {
   for (const root of roots.splice(0)) await rm(root, { recursive: true, force: true });
 }
 
-/** Runs a dashboard with a fresh DuckDB executor. */
 export async function run(
   root: string,
   project: Project,
@@ -116,10 +109,6 @@ export async function run(
   }
 }
 
-/**
- * The independent oracle: plain SQL written in the tests, run on its own DuckDB database, never
- * through the planner or the executor's SQL builder.
- */
 export class Oracle {
   private constructor(private readonly connection: DuckDBConnection) {}
 
@@ -149,7 +138,6 @@ export class Oracle {
   }
 }
 
-/** Metric file content with the boilerplate filled in. */
 export function metric(body: Record<string, unknown>, format: unknown = { type: "number" }) {
   return { label: "Metric", format, better: "up", ...body };
 }

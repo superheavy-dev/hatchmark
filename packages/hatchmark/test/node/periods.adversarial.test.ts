@@ -1,6 +1,3 @@
-// Independent oracle for the period filter: every preset the build embeds, and custom ranges
-// through customRangeDashboard on that same embedded payload (the browser path), checked against
-// periods.oracle.ts; custom ranges are also checked against runDashboard's SQL path with the same binding.
 import { readFile } from "node:fs/promises";
 import path from "node:path";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
@@ -172,9 +169,6 @@ describe("custom ranges through customRangeDashboard match the oracle", () => {
     for (const [key, preset] of Object.entries(payload.presets)) {
       const span = preset.period.current as { start: string; end: string };
       const data = custom([span.start, span.end]);
-      // KPI and table windows end at the horizon by range kind (RFC 0001 section 6.4): a sliding
-      // last N or a calendar comparison can differ from the explicit range of the same dates. The
-      // runtime shows the preset itself for those dates, so only the series always have to agree.
       const windowsOf = (d: DashboardData) =>
         JSON.stringify(
           d.blocks.filter((b) => b.type === "kpi").map((b) => [b.current, b.previous]),

@@ -3,11 +3,6 @@ import type { BarData, LineData } from "../../src/compiler/index.js";
 import { PROJECT_DEFAULTS } from "../../src/spec/index.js";
 import { metric, removeProjects, run, writeProject } from "./fixture.js";
 
-// The edges and incomplete options of time-series blocks (RFC 0001 section 6.5). One row a day at
-// noon UTC from Sep 1 to Oct 15, 2026, so last 30 days as of Oct 15 is Sep 16 to Oct 15: Sep 16 is a
-// Wednesday inside the Monday week of Sep 14, and the data ends halfway through the week of Oct 12.
-// Every expectation is counted here from the rows.
-
 afterAll(removeProjects);
 
 const DAYS: string[] = [];

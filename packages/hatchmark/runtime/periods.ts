@@ -6,25 +6,14 @@ import { renderDashboardBlocks } from "../src/render/page.js";
 import { periodCaption, periodText } from "../src/render/period.js";
 import { valueLang } from "../src/render/svg.js";
 
-/**
- * The period engine: loaded by the runtime the first time a reader picks another range, so pages
- * that never change period never download it. It takes the data the page embeds (PeriodData),
- * picks the preset's DashboardData or assembles a custom range from the day-grain data, and draws
- * the blocks with the same renderer build uses. The runtime swaps them in.
- */
-
 export interface PeriodView {
-  /** The key the page now shows: the requested one, so a link to dates stays a link to dates. */
   key: string;
   blocks: string;
   caption: string;
   name: string;
   dates?: string;
-  /** The name is the range's dates rather than a preset's name. */
   nameIsDates: boolean;
-  /** The locale the dates are formatted in, unless it is English like the rest of the page. */
   lang?: string;
-  /** Labels of metrics shown as "—" because a custom range cannot compute them. */
   presetOnly: string[];
 }
 

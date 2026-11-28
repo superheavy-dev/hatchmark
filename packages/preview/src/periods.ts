@@ -3,11 +3,6 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { stringify } from "yaml";
 
-/**
- * Dashboards that show every variant of the period filter on the global-sales sample data, built
- * into the preview's periods/ folder: presets with a calendar and a grain filter, presets only,
- * a distinct count that needs a preset for custom ranges, and fixed-date presets with all time.
- */
 const KPIS = [
   { type: "kpi", id: "revenue", metric: "revenue", sparkline: true },
   { type: "kpi", id: "orders", metric: "orders" },
@@ -103,7 +98,6 @@ const DASHBOARDS: Record<string, unknown> = {
   },
 };
 
-/** A copy of the global-sales example with the period variants added; remove it when done. */
 export function periodProject(example: string): string {
   const root = mkdtempSync(join(tmpdir(), "hatchmark-preview-periods-"));
   cpSync(example, root, { recursive: true });

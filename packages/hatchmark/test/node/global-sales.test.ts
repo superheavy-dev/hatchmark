@@ -17,9 +17,6 @@ const ROOT = fileURLToPath(new URL("../../examples/global-sales/", import.meta.u
 const CSV = `${ROOT}data/orders.csv`;
 const LOCAL = "(ordered_at AT TIME ZONE 'America/New_York')";
 const CURRENT = `${LOCAL} >= TIMESTAMP '2025-11-01' AND ${LOCAL} < TIMESTAMP '2026-11-01'`;
-// KPIs, the table and the bar read whole local days through Oct 30, the last complete day (the
-// newest order is on Oct 31): last 12 months slides back to Oct 31, 2025, and previous_period is
-// the same 365 days before it. Time series keep the dashboard's months.
 const WHOLE = `${LOCAL} >= TIMESTAMP '2025-10-31' AND ${LOCAL} < TIMESTAMP '2026-10-31'`;
 const WHOLE_PREVIOUS = `${LOCAL} >= TIMESTAMP '2024-10-31' AND ${LOCAL} < TIMESTAMP '2025-10-31'`;
 const PAID = "status = 'paid'";
@@ -182,8 +179,6 @@ describe("global-sales example", () => {
 
 describe("global-sales trends dashboard (grain switching)", () => {
   let trends: DashboardData;
-  // The window is Oct 1, 2025 to Sep 30, 2026; edges "snap" (the default) starts each grain at its
-  // first bucket, so the Sunday weeks begin on Sep 28 (RFC 0001 section 6.5).
   const FIRST: Record<string, string> = {
     "week:sunday": "2025-09-28",
     month: "2025-10-01",

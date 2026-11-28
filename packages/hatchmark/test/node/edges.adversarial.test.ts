@@ -1,6 +1,3 @@
-// The edges and incomplete options (#29, RFC 0001 section 6.5): every chart value is checked against raw SQL over the same rows, written apart from the
-// planner. Three sources lag differently, so hide, clip and HM4014 meet a horizon before, inside and
-// after the range.
 import { readFileSync } from "node:fs";
 import { Ajv2020 } from "ajv/dist/2020.js";
 import { afterAll, expect, test } from "vitest";

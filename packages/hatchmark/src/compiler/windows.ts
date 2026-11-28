@@ -59,7 +59,6 @@ function addDays(date: Ymd, days: number): Ymd {
   return { y: t.getUTCFullYear(), m: t.getUTCMonth() + 1, d: t.getUTCDate() };
 }
 
-/** Moves by whole months, clamping the day to the target month (Mar 31 minus a month is Feb 28/29). */
 function addMonths(date: Ymd, months: number): Ymd {
   const index = date.y * 12 + (date.m - 1) + months;
   const y = Math.floor(index / 12);
@@ -70,7 +69,6 @@ function addMonths(date: Ymd, months: number): Ymd {
 const key = ({ y, m, d }: Ymd) => y * 10000 + m * 100 + d;
 const before = (a: Ymd, b: Ymd) => key(a) < key(b);
 
-/** Moves a date by whole grain units: days and weeks by days, the others by clamped months. */
 function addUnits(date: Ymd, unit: TimeGrain, n: number): Ymd {
   switch (unit) {
     case "day":
@@ -86,7 +84,6 @@ function addUnits(date: Ymd, unit: TimeGrain, n: number): Ymd {
   }
 }
 
-/** The start of the bucket holding a date: weeks from their anchor weekday, quarters and years from their MM-DD. */
 function startOf(date: Ymd, grain: ResolvedGrain): Ymd {
   switch (grain.unit) {
     case "day":
@@ -129,7 +126,6 @@ export const NAMED: Record<Exclude<PeriodRange, "all_time">, Exclude<RangeSpec, 
   last_complete_year: { last_complete: "year" },
 };
 
-/** A grain at the project anchors, for ranges and comparisons written with a bare unit. */
 function anchored(unit: TimeGrain, anchors: Anchors): ResolvedGrain {
   if (unit === "day" || unit === "month") return { unit };
   if (unit === "week") return { unit, anchor: anchors.week };
@@ -270,7 +266,6 @@ export function boundInstant(value: string, timezone: string): bigint {
   return value.endsWith("Z") ? parseInstant(value) : fromLocal(parseInstant(value), timezone);
 }
 
-/** Whole local days from one date to another. */
 function daysBetween(from: string, to: string): number {
   return Math.round(Number(parseInstant(to) - parseInstant(from)) / Number(DAY_US));
 }
@@ -439,7 +434,6 @@ export function effectiveRange(
 
 const DAY = /^\d{4}-\d{2}-\d{2}$/;
 
-/** Whether a value has the shape of a RangeSpec, checked without the spec schema. */
 function isRange(value: unknown): value is RangeSpec {
   if (typeof value === "string") return (PERIOD_RANGES as readonly string[]).includes(value);
   if (typeof value !== "object" || value === null || Array.isArray(value)) return false;
