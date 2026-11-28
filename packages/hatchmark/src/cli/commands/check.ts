@@ -1,5 +1,13 @@
 import path from "node:path";
-import { type ExplainedQuery, explainDashboard, explainDefaults } from "../../compiler/index.js";
+import {
+  type ExplainedQuery,
+  explainDashboard,
+  explainDefaults,
+  type MapMatchReport,
+  matchDiagnostics,
+  matchReports,
+  runDashboard,
+} from "../../compiler/index.js";
 import {
   createReport,
   type Diagnostic,
@@ -115,6 +123,27 @@ export async function check(
       await executor.close();
     }
   }
+  const maps: MapMatchReport[] = [];
+  const mapped = [...project.dashboards].filter(
+    ([, file]) => selected(file.file) && (file.spec?.blocks ?? []).some((b) => b.type === "map"),
+  );
+  if (
+    mapped.length > 0 &&
+    config !== undefined &&
+    !diagnostics.some((d) => d.severity === "error")
+  ) {
+    const executor = await createExecutor({ root: ctx.root, config });
+    try {
+      for (const [name] of mapped.sort(([a], [b]) => (a < b ? -1 : 1))) {
+        const run = await runDashboard(project, name, executor, new Date());
+        if (run.data === undefined) continue;
+        maps.push(...matchReports(run.data));
+        diagnostics.push(...matchDiagnostics(project, run.data));
+      }
+    } finally {
+      await executor.close();
+    }
+  }
   if (projectErrors || diagnostics.some((d) => d.severity === "error"))
     diagnostics = diagnostics.filter((d) => d.code !== "HM4040");
   const report = createReport(diagnostics);
@@ -127,7 +156,11 @@ export async function check(
     : renderHuman(report, { color: ctx.color, explainDefaults: flags.explainDefaults === true });
   return {
     exitCode: exitCodeFor(report.diagnostics, flags.strict === true),
-    json: flags.sql === true ? { ...report, sql } : report,
+    json: {
+      ...report,
+      ...(flags.sql === true ? { sql } : {}),
+      ...(maps.length > 0 ? { maps } : {}),
+    },
     human:
       printed.length > 0 ? `${[...printed, human].filter((s) => s !== "").join("\n\n")}` : human,
   };

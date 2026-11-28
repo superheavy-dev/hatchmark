@@ -32,6 +32,7 @@
     "typecheck": "tsc -p tsconfig.json --noEmit && tsc -p runtime/tsconfig.json",
     "gen:schema": "pnpm build && node scripts/write-schemas.ts",
     "gen:text-metrics": "node scripts/gen-text-metrics.ts",
+    "gen:boundaries": "node scripts/build-boundaries.ts",
     "prepack": "node -e \"for (const f of ['LICENSE', 'NOTICE']) require('fs').copyFileSync('../../' + f, f)\""
   },
   "dependencies": {
@@ -49,11 +50,15 @@
   },
   "devDependencies": {
     "@types/d3-array": "^3.2.2",
+    "@types/d3-geo": "^3.1.1",
     "@types/d3-scale": "^4.0.9",
     "@types/d3-shape": "^3.2.0",
     "@types/fontkit": "^2.0.9",
+    "@types/topojson-client": "^3.1.5",
     "ajv": "^8.20.0",
+    "d3-geo": "^3.1.2",
     "fontkit": "^3.0.0",
-    "playwright": "^1.65.1"
+    "playwright": "^1.65.1",
+    "topojson-client": "^3.1.0"
   }
 }

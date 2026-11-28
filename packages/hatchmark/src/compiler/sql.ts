@@ -1,3 +1,4 @@
+import { notDrawnIds, regionKeySql } from "../geo/aliases.js";
 import { type Filter, keyComparison, parseTemporal, sameColumn, WEEKDAYS } from "../spec/index.js";
 import { canonicalJson } from "./hash.js";
 import { segmentValues, selectValues } from "./params.js";
@@ -237,6 +238,7 @@ function dimensionSql(
   }
   const { name, type } = column(source, dimension.column);
   const q = quote(name);
+  if (dimension.kind === "region") return regionKeySql(dimension.geo, q);
   if (type === "VARCHAR" || type === "BOOLEAN" || type === "DATE" || NUMERIC.test(type)) return q;
   if (type.startsWith("DECIMAL")) return `CAST(${q} AS DOUBLE)`;
   if (isTimestamp(type)) {
@@ -357,6 +359,15 @@ function builtQuery(
   const dims = query.dimensions.map(
     (d, i) => `, ${dimensionSql(source, d, context, sql)} AS ${dimRefs[i]}`,
   );
+  query.dimensions.forEach((d, i) => {
+    if (d.kind !== "region" || d.unmatched === "keep") return;
+    const hidden = notDrawnIds(d.geo).map((id) => `'${id}'`);
+    where.push(
+      hidden.length === 0
+        ? `${dimRefs[i]} IS NOT NULL`
+        : `${dimRefs[i]} NOT IN (${hidden.join(", ")})`,
+    );
+  });
   const grouped = dimRefs.length > 0;
   const at = (id: string) => measureSql[components.findIndex((c) => c.id === id)];
   const floatSum = (id: string) => {

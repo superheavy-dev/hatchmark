@@ -46,6 +46,7 @@ import {
   revenueSwitch,
   WEEK,
 } from "./grains.js";
+import { MAPS } from "./maps.js";
 import {
   TABLE_GROUP_CAMPAIGNS,
   TABLE_GROUP_CITIES,
@@ -68,7 +69,17 @@ import {
 } from "./tables.js";
 
 export interface GalleryVariant {
-  component: "kpi" | "line" | "bar" | "stacked" | "pie" | "scatter" | "table" | "groups" | "height";
+  component:
+    | "kpi"
+    | "line"
+    | "bar"
+    | "stacked"
+    | "pie"
+    | "scatter"
+    | "table"
+    | "groups"
+    | "height"
+    | "map";
   variant: string;
   title: string;
   data: DashboardData;
@@ -1759,6 +1770,7 @@ export const GALLERY: GalleryVariant[] = [
   ...TABLES,
   ...GROUPS,
   ...HEIGHTS,
+  ...MAPS,
 ];
 
 export type { KpiData };

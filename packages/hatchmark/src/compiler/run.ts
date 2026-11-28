@@ -27,6 +27,7 @@ import {
   parseInstant,
   toLocal,
 } from "./instants.js";
+import { matchDiagnostics } from "./map-report.js";
 import { segmentValues, selectValues } from "./params.js";
 import {
   type ExecutionContext,
@@ -479,6 +480,7 @@ export async function runDashboardBindings(
       ...(assembled.data ? { data: assembled.data } : {}),
       diagnostics: [
         ...diagnostics,
+        ...(assembled.data && at === 0 ? matchDiagnostics(project, assembled.data) : []),
         ...imprecise.values(),
         ...largeResults(project, dashboard, plan, results),
         ...assembled.diagnostics,

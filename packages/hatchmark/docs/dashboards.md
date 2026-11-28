@@ -77,6 +77,7 @@ Windows are calendar dates in the project time zone; [numbers.md](numbers.md#tim
 | `bar`              | Metrics by category (`by`) or time bucket (`grain`).                   | [components/bar.md](components/bar.md)         |
 | `table`            | Metrics by one to three columns, with a total row.                     | [components/table.md](components/table.md)     |
 | `scatter`          | Two metrics per category as points, optionally sized by a third.       | [components/scatter.md](components/scatter.md) |
+| `map`              | One metric per US state or country, with a ranked bar list.            | [components/map.md](components/map.md)         |
 | `bar_list`, `text` | Valid, but not built yet: build leaves them out with warning `HM4002`. |                                                |
 
 Fields every block takes:

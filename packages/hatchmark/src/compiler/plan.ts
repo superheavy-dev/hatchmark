@@ -5,6 +5,7 @@ import type {
   Comparison,
   FileSource,
   Filter,
+  GeographyId,
   Project,
   RangeSpec,
   ResolvedGrain,
@@ -67,9 +68,16 @@ export type MeasureExpression =
   | { op: "ref"; queryId: string; metric: string }
   | { op: "divide"; numerator: MeasureExpression; denominator: MeasureExpression };
 
+/**
+ * A region dimension groups rows by the map region their column names (regionKeySql in geo/), so
+ * "CA" and "California" are one group and a non-additive metric is computed once over both. Rows
+ * whose value matches no region are dropped, unless unmatched is "keep", where they group under
+ * null: the match report reads them.
+ */
 export type PlannedDimension =
   | { kind: "column"; column: string }
-  | { kind: "time"; column: string; grain: ResolvedGrain };
+  | { kind: "time"; column: string; grain: ResolvedGrain }
+  | { kind: "region"; column: string; geo: GeographyId; unmatched?: "keep" };
 
 /**
  * The time window a query reads, explicit enough that the executor needs nothing else from the
@@ -237,6 +245,11 @@ export interface BlockPlan {
    * when the block lists it, else the block's grain. measures are this grain's.
    */
   grain?: ResolvedGrain;
+  /**
+   * A map block's match report reading: its value and a row count by the raw region column and the
+   * region each value matched (null when none), over the same window and filters as measures.
+   */
+  report?: { queryIds: string[]; measures: Record<string, MeasureExpression> };
   /** One reading per grain a block switches between (its grains, in spec order), all built ahead. */
   grains?: {
     grain: ResolvedGrain;

@@ -28,7 +28,31 @@ export type ColorKey =
   | `c${Slot}`
   | `f${Slot}`
   | `cg${number}-${number}`
-  | `fg${number}-${number}`;
+  | `fg${number}-${number}`
+  | MapColor;
+
+type ClassIndex = 1 | 2 | 3 | 4 | 5 | 6 | 7;
+
+/**
+ * A colour only maps paint with: land under regions without data, and the fill of class k (1 for
+ * the lowest) of a classed map scale with n classes, sequential for 3 to 7 classes and diverging
+ * around a midpoint for 4 to 7.
+ */
+export type MapColor =
+  | "land"
+  | `seq${3 | 4 | 5 | 6 | 7}-${ClassIndex}`
+  | `div${4 | 5 | 6 | 7}-${ClassIndex}`;
+
+/** Every map colour: land, then the class colours in the order the theme lists them. */
+export const MAP_COLORS: MapColor[] = [
+  "land",
+  ...([3, 4, 5, 6, 7] as const).flatMap((n) =>
+    Array.from({ length: n }, (_, k) => `seq${n}-${k + 1}` as MapColor),
+  ),
+  ...([4, 5, 6, 7] as const).flatMap((n) =>
+    Array.from({ length: n }, (_, k) => `div${n}-${k + 1}` as MapColor),
+  ),
+];
 
 export type Mode = "light" | "dark";
 
@@ -61,10 +85,21 @@ export interface Theme {
   id: string;
   version: string;
   font: { family: string; fallback: string };
-  color: Record<Mode, Record<ChromeColor, string>>;
+  color: Record<Mode, Record<ChromeColor | "land", string>>;
   categorical: Record<Mode, string[]>;
   categoricalFill?: Record<Mode, string[]>;
   groups?: GroupTheme;
+  /** Classed map fills by number of classes, lowest class first. */
+  mapClasses: Record<
+    Mode,
+    { sequential: Record<string, string[]>; diverging: Record<string, string[]> }
+  >;
+  /** The no-data crosshatch on land: tile size in px, line width and line opacity per mode. */
+  noData: { spacing: number; strokeWidth: number; opacity: Record<Mode, number> };
+  /** Leader lines to labels for regions too small to label in place, in px. */
+  leader: { size: number; lineWidth: number; dot: number; gap: number };
+  /** Region borders and inset frames, in px at any scale. */
+  map: { regionStroke: number; insetStroke: number };
   density: Density;
   height: Record<HeightPreset, Record<Device, BlockHeight>>;
   radius: { card: number; control: number; tooltip: number; bar: number };
@@ -128,6 +163,34 @@ export const DEFAULT_THEME: Theme = {
     dark: defaultTokens.data.dark.categoricalFill,
   },
   ...optionalGroups(groupTheme(defaultTokens.data.groups)),
+  mapClasses: {
+    light: {
+      sequential: defaultTokens.data.light.sequentialClasses,
+      diverging: defaultTokens.data.light.divergingClasses,
+    },
+    dark: {
+      sequential: defaultTokens.data.dark.sequentialClasses,
+      diverging: defaultTokens.data.dark.divergingClasses,
+    },
+  },
+  noData: {
+    spacing: defaultTokens.map.noData.light.spacing,
+    strokeWidth: defaultTokens.map.noData.light.strokeWidth,
+    opacity: {
+      light: defaultTokens.map.noData.light.opacity,
+      dark: defaultTokens.map.noData.dark.opacity,
+    },
+  },
+  leader: {
+    size: defaultTokens.map.leader.size,
+    lineWidth: defaultTokens.map.leader.lineWidth,
+    dot: defaultTokens.map.leader.dot,
+    gap: defaultTokens.map.leader.gap,
+  },
+  map: {
+    regionStroke: defaultTokens.map.regionStroke.width,
+    insetStroke: defaultTokens.map.inset.width,
+  },
   density: defaultTokens.density.compact,
   height: {
     compact: defaultTokens.blockHeight.compact,
@@ -158,13 +221,18 @@ export function colorValue(theme: Theme, mode: Mode, key: ColorKey): string {
     const steps = family?.[group[1] === "f" ? "fill" : "stroke"][mode] ?? [];
     return steps[Number(group[3]) - 1] ?? theme.color[mode].context;
   }
+  const map = /^(seq|div)(\d)-(\d)$/.exec(key);
+  if (map) {
+    const classes = theme.mapClasses[mode][map[1] === "seq" ? "sequential" : "diverging"];
+    return classes[map[2] as string]?.[Number(map[3]) - 1] as string;
+  }
   if (/^[cf]\d$/.test(key)) {
     const palette = (
       key[0] === "f" ? (theme.categoricalFill ?? theme.categorical) : theme.categorical
     )[mode];
     return palette[(Number(key.slice(1)) - 1) % palette.length] as string;
   }
-  return theme.color[mode][key as ChromeColor];
+  return theme.color[mode][key as ChromeColor | "land"];
 }
 
 export function seriesColor(i: number): ColorKey {

@@ -1,3 +1,4 @@
+import { usedGeographies } from "../src/geo/index.js";
 import { DEFAULT_THEME, FONT_FILES, pageHead, renderFragment } from "../src/render/index.js";
 import { GALLERY } from "./variants.js";
 
@@ -15,7 +16,7 @@ export function galleryEntries(): GalleryEntry[] {
       ? v.variant.slice(v.component.length + 1)
       : v.variant,
     title: v.title,
-    html: renderFragment(v.data),
+    html: renderFragment(v.data, undefined, usedGeographies(v.data.blocks)),
   }));
 }
 
@@ -26,6 +27,7 @@ export function galleryHead(base: string): string {
       fonts: Object.fromEntries(FONT_FILES.map((f) => [f.file, `${base}${f.file}`])),
     },
     DEFAULT_THEME,
+    true,
     true,
   );
 }

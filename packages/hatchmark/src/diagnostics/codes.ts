@@ -215,6 +215,11 @@ export const CODES = {
     explanation:
       'Every series in a block\'s groups must be one the chart draws: a name from the block\'s metrics or, when the block splits, a split value as the chart labels it (null is "(empty)"). Metric names are checked against metrics as an error. Split values come from the data, so build warns when a listed value has no rows under the dashboard\'s filters in any period up to the as-of. A value missing from only some periods is not warned about: the group keeps the colour step of every listed series, so colours stay put while it is missing. When the split holds both empty values and the text "(empty)", a group that lists "(empty)" takes the empty values and build warns about the text.',
   },
+  HM2032: {
+    title: "diverging map scale off centre",
+    explanation:
+      "A map block's threshold scale sets a midpoint, which makes it diverging: classes below the midpoint take one hue and classes above it the other. That reads only when both sides have as many classes. With an even number of classes, make the midpoint one of the breaks, the middle one; with an odd number, put it inside the middle class, with as many breaks below it as above. For example breaks [-10, -2, 2, 10] with midpoint 0.",
+  },
   HM3001: {
     title: "missing required property",
     explanation:
@@ -273,7 +278,7 @@ export const CODES = {
   HM4002: {
     title: "block type not built yet",
     explanation:
-      "This version of Hatchmark builds kpi, line, area, bar, pie, donut, table and scatter blocks. bar_list and text blocks are valid specs but are not built yet, so the dashboard is built without them and they do not appear on the page. Use a bar block with by and a limit instead of bar_list, or keep the block and it will appear once its type is built.",
+      "This version of Hatchmark builds kpi, line, area, bar, pie, donut, table, scatter and map blocks. bar_list and text blocks are valid specs but are not built yet, so the dashboard is built without them and they do not appear on the page. Use a bar block with by and a limit instead of bar_list, or keep the block and it will appear once its type is built.",
   },
   HM4003: {
     title: "additive metric does not add up",
@@ -414,6 +419,26 @@ export const CODES = {
     title: "bubble size repeats an axis",
     explanation:
       'A scatter block\'s "size" names the same metric as "x" or "y", so the bubble area encodes a number the point\'s position already shows, and the larger points draw the eye to the same thing twice. Size by a third metric (revenue against orders and average order value), or remove "size" to draw plain dots.',
+  },
+  HM5040: {
+    title: "sum or count on a filled map",
+    explanation:
+      "A map block colours each region by its value. A sum or a count (revenue, orders, customers) is largest where the most people or customers are, so the map mostly repeats a population map: California, Texas and New York, or the United States, China and India, come out darkest whatever the business does. Map a rate instead: a ratio metric such as revenue per customer, orders per store or conversion rate, which compares regions of any size. The paired bar list still shows the totals. Bubble maps, which suit totals, are not available yet.",
+  },
+  HM5041: {
+    title: "rows that match no map region",
+    explanation:
+      "Some values in the map block's \"region\" column match no region of its geography, so their rows are not on the map, in the bar list or in the totals. Hatchmark matches ISO 3166 alpha-2, alpha-3 and numeric codes, USPS codes, FIPS codes, ISO 3166-2 codes such as US-CA, and common English names, ignoring case, accents, punctuation and spacing. The warning lists each unmatched value with its number of rows and the closest regions. Fix the values in the data (or in the source's SQL), or filter those rows out on purpose. hatchmark build --json and hatchmark check --json carry the full match report: which values joined which region, and which did not and why.",
+  },
+  HM5042: {
+    title: "ambiguous map region",
+    explanation:
+      'A value in the map block\'s "region" column could name more than one region, such as "Congo" (Republic of the Congo or the Democratic Republic of the Congo) or "Korea" (South or North Korea). Hatchmark never guesses, so those rows are left out like unmatched rows; the warning lists the candidates. Use a code (COG, COD, KOR, PRK) or the full name in the data.',
+  },
+  HM5043: {
+    title: "rows for regions the map does not draw",
+    explanation:
+      'Some values in the map block\'s "region" column name real regions that the map does not draw: on us-states, Guam, the U.S. Virgin Islands, American Samoa and the Northern Mariana Islands (Puerto Rico is drawn as an inset); on world-countries, Antarctica and countries too small for the boundary scale, such as Singapore, Malta or Bahrain. Their rows are left out of the map, the bar list and the totals, and the match report lists them as not drawn. Show them in a table or a bar chart beside the map, or filter them out on purpose.',
   },
   HM5022: {
     title: "too many scatter points",

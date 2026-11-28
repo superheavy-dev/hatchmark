@@ -7,9 +7,7 @@ import type {
   LineData,
   PieData,
 } from "../../src/compiler/dashboard-data.js";
-
-type Chart = LineData | BarData | PieData;
-
+import { usedGeographies } from "../../src/geo/index.js";
 import {
   cardWidth,
   cssPaint,
@@ -21,6 +19,8 @@ import {
   renderDashboardPage,
 } from "../../src/render/index.js";
 import GLOBAL_SALES from "../fixtures/global-sales/sales.data.json" with { type: "json" };
+
+type Chart = LineData | BarData | PieData;
 
 const DIR = new URL("./goldens/", import.meta.url);
 const UPDATE = process.env.HATCHMARK_UPDATE_GOLDENS === "1";
@@ -44,7 +44,12 @@ const ASSETS = {
 describe("golden renders", () => {
   for (const entry of GALLERY) {
     it(`${entry.component}/${entry.variant}`, () => {
-      const ctx: RenderContext = { data: entry.data, theme: DEFAULT_THEME, paint: cssPaint };
+      const ctx: RenderContext = {
+        data: entry.data,
+        theme: DEFAULT_THEME,
+        paint: cssPaint,
+        geographies: usedGeographies(entry.data.blocks),
+      };
       const charts = (blocks: DashboardData["blocks"], name: (b: Chart) => string) => {
         for (const chart of blocks as Chart[]) {
           const desktop = cardWidth(LAYOUTS[0], chart.span) - 34;
@@ -65,7 +70,7 @@ describe("golden renders", () => {
           charts(each, (b) => `${entry.variant}.${b.id}`);
         return;
       }
-      if (entry.component === "kpi" || entry.component === "table") {
+      if (entry.component === "kpi" || entry.component === "table" || entry.component === "map") {
         golden(`${entry.variant}.html`, `${renderBlocks(entry.data.blocks, ctx)}\n`);
         return;
       }

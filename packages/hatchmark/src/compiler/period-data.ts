@@ -33,7 +33,7 @@ export type Key = string | number | boolean | null;
  * rows. Days are counted from CustomRangeData.span.start.
  */
 export interface DayCube {
-  /** The query's column dimensions, in order; the day comes first and is not listed. */
+  /** The query's column and region dimensions, in order; the day comes first and is not listed. */
   columns: string[];
   days: number[];
   /** One array per column dimension, aligned with days. */
@@ -129,7 +129,7 @@ export function cubeResult(
   const texts = new Map<number, string>();
   const buckets = new Map<string, string>();
   let columns = 0;
-  const columnAt = dims.map((d) => (d.kind === "column" ? columns++ : -1));
+  const columnAt = dims.map((d) => (d.kind !== "time" ? columns++ : -1));
   const groups = query.groupingSets.map(() => new Map<string, { keys: Key[]; rows: number[] }>());
   for (let i = 0; i < cube.days.length; i++) {
     const day = cube.days[i] ?? 0;
@@ -140,7 +140,7 @@ export function cubeResult(
       texts.set(day, text);
     }
     const values = dims.map((d, k): Key => {
-      if (d.kind === "column") return cube.keys[columnAt[k] ?? -1]?.[i] ?? null;
+      if (d.kind !== "time") return cube.keys[columnAt[k] ?? -1]?.[i] ?? null;
       const memo = `${JSON.stringify(d.grain)}|${text}`;
       let start = buckets.get(memo);
       if (start === undefined) {

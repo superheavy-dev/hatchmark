@@ -2,10 +2,11 @@
   "$schema": "hatchmark-tokens/0.2",
   "id": "default",
   "name": "Default",
-  "version": "1.4.0",
+  "version": "1.5.0",
   "status": "final",
   "finalized": "2026-11-27: good/bad variant A (cerulean / vermilion); brand colours are kept and warned about, never replaced",
   "changelog": {
+    "1.5.0": "Map tokens: classed sequential ramps for 3 to 7 classes and diverging ramps for 4 to 7 classes, sampled from the existing ramps (data.<mode>.sequentialClasses, divergingClasses), a diverging neutral that stays clear of land (divergingNeutral), a crosshatched no-data pattern on land, the region stroke, the hover halo and outline, the inset frame and the small-region leader labels (map).",
     "1.4.0": "Block height presets: compact, default and tall, each with desktop and phone values for the chart plot, the KPI figure and sparkline, and the rows a scrolling table shows. default matches the heights of 1.3.0.",
     "1.3.0": "Series groups: the lead step of each family may differ from the family's base slot so that steps 2 and 3 always recede behind it; checks.<mode>.groupCVD.leadVsBase records how far each lead is from its base slot. All group bars still hold: every step is at least 3:1 on the page (light) and cardAlt (dark), every pair of steps in a family is at least ΔE2000 10, and every step is at least 8 from the other families, the ungrouped slots outside its family and the context grey, under normal vision and the three Machado simulations. Categorical slots, good and bad are unchanged.",
     "1.2.0": "Series groups: three hue families (blue on slots 1 and 5, pink and red on slots 2, 6 and 8, green on slot 4) with three lightness steps each, in light and dark, as stroke and fill. Step 1 is the family's base slot colour. Every step is at least 3:1 on the page (light) and cardAlt (dark); every pair of steps in a family is at least ΔE2000 10, and every step is at least 8 from the other families, the ungrouped slots outside its family and the context grey, under normal vision and the three Machado simulations. Lightness only, no dash. Categorical slots, good and bad are unchanged.",
@@ -155,7 +156,77 @@
         "#8eb0e1",
         "#5380c7",
         "#224fa7"
-      ]
+      ],
+      "sequentialClasses": {
+        "3": [
+          "#bcd2f9",
+          "#5781d1",
+          "#123780"
+        ],
+        "4": [
+          "#bcd2f9",
+          "#779ce1",
+          "#3a67bd",
+          "#123780"
+        ],
+        "5": [
+          "#bcd2f9",
+          "#88aae7",
+          "#5781d1",
+          "#2d5ab1",
+          "#123780"
+        ],
+        "6": [
+          "#bcd2f9",
+          "#92b2eb",
+          "#6991dc",
+          "#4571c6",
+          "#2552aa",
+          "#123780"
+        ],
+        "7": [
+          "#d4e3fd",
+          "#aec7f4",
+          "#87a9e7",
+          "#628bd8",
+          "#416dc2",
+          "#2450a7",
+          "#123780"
+        ]
+      },
+      "divergingClasses": {
+        "4": [
+          "#962a00",
+          "#da9e86",
+          "#8eb0e1",
+          "#224fa7"
+        ],
+        "5": [
+          "#962a00",
+          "#da9e86",
+          "#b4b4b4",
+          "#8eb0e1",
+          "#224fa7"
+        ],
+        "6": [
+          "#962a00",
+          "#bb6546",
+          "#da9e86",
+          "#8eb0e1",
+          "#5380c7",
+          "#224fa7"
+        ],
+        "7": [
+          "#962a00",
+          "#bb6546",
+          "#da9e86",
+          "#b4b4b4",
+          "#8eb0e1",
+          "#5380c7",
+          "#224fa7"
+        ]
+      },
+      "divergingNeutral": "#b4b4b4"
     },
     "dark": {
       "categorical": [
@@ -197,7 +268,77 @@
         "#4b6a97",
         "#6493db",
         "#92bdff"
-      ]
+      ],
+      "sequentialClasses": {
+        "3": [
+          "#26426c",
+          "#4f83d0",
+          "#b1d3ff"
+        ],
+        "4": [
+          "#26426c",
+          "#3c6bb1",
+          "#6b9ee8",
+          "#b1d3ff"
+        ],
+        "5": [
+          "#26426c",
+          "#3560a1",
+          "#4f83d0",
+          "#7babf2",
+          "#b1d3ff"
+        ],
+        "6": [
+          "#26426c",
+          "#315a97",
+          "#4174bf",
+          "#5e93e1",
+          "#85b3f7",
+          "#b1d3ff"
+        ],
+        "7": [
+          "#1d2c43",
+          "#254069",
+          "#305894",
+          "#4073bd",
+          "#5d92e0",
+          "#84b2f7",
+          "#b1d3ff"
+        ]
+      },
+      "divergingClasses": {
+        "4": [
+          "#ff9b79",
+          "#905943",
+          "#4b6a97",
+          "#92bdff"
+        ],
+        "5": [
+          "#ff9b79",
+          "#905943",
+          "#5b5b5b",
+          "#4b6a97",
+          "#92bdff"
+        ],
+        "6": [
+          "#ff9b79",
+          "#d07758",
+          "#905943",
+          "#4b6a97",
+          "#6493db",
+          "#92bdff"
+        ],
+        "7": [
+          "#ff9b79",
+          "#d07758",
+          "#905943",
+          "#5b5b5b",
+          "#4b6a97",
+          "#6493db",
+          "#92bdff"
+        ]
+      },
+      "divergingNeutral": "#5b5b5b"
     },
     "categoricalNames": [
       "navy blue",
@@ -649,7 +790,7 @@
       "method": "quantize, nice thresholds",
       "legend": "threshold boxes with boundary labels and unit",
       "stroke": "card colour 0.75px",
-      "noData": "land with dotted outline"
+      "noData": "crosshatch on land, see map.noData"
     },
     "symbols": {
       "shape": "hollow circle",
@@ -669,7 +810,63 @@
     "land": "one step off the card",
     "borders": "thin, card colour",
     "graticule": false,
-    "mobile": "pinned readout row; tap selects"
+    "mobile": "pinned readout row; tap selects",
+    "noData": {
+      "light": {
+        "background": "land",
+        "kind": "crosshatch",
+        "angles": [
+          45,
+          135
+        ],
+        "spacing": 6,
+        "strokeWidth": 0.75,
+        "line": "textSubtle",
+        "opacity": 0.4
+      },
+      "dark": {
+        "background": "land",
+        "kind": "crosshatch",
+        "angles": [
+          45,
+          135
+        ],
+        "spacing": 6,
+        "strokeWidth": 0.75,
+        "line": "textSubtle",
+        "opacity": 0.3
+      }
+    },
+    "regionStroke": {
+      "color": "card",
+      "width": 0.75
+    },
+    "hover": {
+      "halo": {
+        "color": "card",
+        "width": 3.5
+      },
+      "outline": {
+        "color": "text",
+        "width": 1.5
+      },
+      "order": "halo first, then outline, both centred on the region edge and drawn above every region",
+      "barList": "the matching row gets the same 1.5 px text-colour outline on its bar (inset 0.75) and its label in weight 500"
+    },
+    "inset": {
+      "color": "borderStrong",
+      "width": 1,
+      "radius": 0,
+      "padding": 6
+    },
+    "leader": {
+      "text": "textMuted",
+      "size": 12,
+      "line": "textSubtle",
+      "lineWidth": 0.75,
+      "dot": 1,
+      "gap": 3
+    }
   },
   "number": {
     "locale": "en-US",

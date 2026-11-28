@@ -2,6 +2,7 @@
 // tooltip is position:fixed so the strip's overflow does not clip it, and .hm-root's container-type
 // makes .hm-root its containing block.
 
+import { attachMap } from "./map.js";
 import { loadEngine, mountPeriod, type PeriodView, writeParam } from "./period-control.js";
 import { wireTable } from "./table.js";
 
@@ -489,6 +490,7 @@ function mount(root: ParentNode): void {
     const source = figure.querySelector(":scope > script[type='application/json']");
     if (source?.textContent) attach(figure, JSON.parse(source.textContent) as RuntimeChart);
   }
+  for (const figure of all("[data-hm-map]")) attachMap(figure);
   for (const card of all("section.hm-table")) wireTable(card);
   for (const wrap of all(".hm-table-wrap")) {
     wrap.addEventListener("keydown", (event) => {

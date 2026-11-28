@@ -32,14 +32,14 @@ import { nextDay, queryBounds } from "./windows.js";
 
 /**
  * The day-grain query a custom range reads instead of a planned query: the same source, measures,
- * select filters and column dimensions, with every time dimension replaced by one day dimension on
+ * select filters, column and region dimensions, with every time dimension replaced by one day dimension on
  * the window column and the window opened to all time. Undefined when no period filter windows the
  * query.
  */
 export function dayCubeQuery(query: PlannedQuery): PlannedQuery | undefined {
   const column = query.window.column;
   if (column === undefined || !query.params.some((p) => p.kind === "period")) return undefined;
-  const columns = query.dimensions.filter((d) => d.kind === "column");
+  const columns = query.dimensions.filter((d) => d.kind !== "time");
   const shape: Omit<PlannedQuery, "id"> = {
     source: query.source,
     input: query.input,

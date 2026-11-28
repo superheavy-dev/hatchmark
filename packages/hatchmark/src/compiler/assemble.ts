@@ -20,6 +20,9 @@ import {
   type GrainOption,
   type KpiData,
   type LineData,
+  type MapData,
+  type MapMatch,
+  type MapRegion,
   type MetricInfo,
   type PartialBucket,
   type PeriodFilter,
@@ -37,6 +40,7 @@ import {
   type Value,
 } from "./dashboard-data.js";
 import { formatWall, lastWallBefore, parseInstant, toLocal } from "./instants.js";
+import { classOf, mapScale } from "./map-scale.js";
 import { segmentValues } from "./params.js";
 import { rangeKey, rangeName } from "./periods.js";
 import type {
@@ -921,6 +925,87 @@ class Assembler {
     };
   }
 
+  /** Whether a metric adds up across groups in this plan: one component that re-aggregates by sum. */
+  private additive(expression: MeasureExpression | undefined): boolean {
+    if (expression?.op !== "ref") return false;
+    const measure = this.queries
+      .get(expression.queryId)
+      ?.query.measures.find((m) => m.metric === expression.metric);
+    if (measure?.combine.op !== "identity") return false;
+    const id = measure.combine.component;
+    return measure.components.find((c) => c.id === id)?.reaggregate === "sum";
+  }
+
+  /**
+   * A map: the value per drawn region (grouped by region in SQL, so every value naming a region
+   * counts once), ranked, classed by the block's scale, and the match of every distinct raw value
+   * of the region column from the report reading.
+   */
+  map(block: Block & { type: "map" }, plan: BlockPlan, common: Common): MapData {
+    const expression = plan.measures[block.value];
+    const emptyWindow = this.empty(expression);
+    const additive = this.additive(expression);
+    const total = emptyWindow ? null : this.evaluate(expression, 1, [null]);
+    const found = (emptyWindow ? [] : this.keys([expression], 0)).flatMap((keys) => {
+      const id = keys[0];
+      return typeof id === "string" ? [{ id, value: this.evaluate(expression, 0, [id]) }] : [];
+    });
+    found.sort(
+      (a, b) =>
+        (a.value === null ? 1 : 0) - (b.value === null ? 1 : 0) ||
+        (b.value ?? 0) - (a.value ?? 0) ||
+        (a.id < b.id ? -1 : a.id > b.id ? 1 : 0),
+    );
+    const scale = mapScale(
+      found.flatMap((r) => (r.value === null ? [] : [r.value])),
+      block.scale,
+    );
+    let rank = 0;
+    const regions: MapRegion[] = found.map((r, i) => {
+      if (r.value === null) return { id: r.id, value: null };
+      if (i === 0 || found[i - 1]?.value !== r.value) rank = i + 1;
+      return {
+        id: r.id,
+        value: r.value,
+        rank,
+        ...(additive && total !== null && total !== 0 ? { share: r.value / total } : {}),
+        class: classOf(r.value, scale.breaks),
+      };
+    });
+    const report = plan.report?.measures[block.value];
+    const rowsRef: MeasureExpression | undefined =
+      report === undefined
+        ? undefined
+        : { op: "ref", queryId: refs(report)[0] ?? "", metric: "__rows" };
+    const drawn = new Set(regions.map((r) => r.id));
+    const match: MapMatch[] = (emptyWindow ? [] : this.keys([report], 0)).map((keys) => {
+      const key = keys[0] ?? null;
+      const region = keys[1] ?? null;
+      return {
+        key,
+        region: typeof region === "string" && drawn.has(region) ? region : null,
+        rows: this.evaluate(rowsRef, 0, keys) ?? 0,
+        value: this.evaluate(report, 0, keys),
+      };
+    });
+    const window = span(this.bounds(expression), this.context.timezone);
+    return {
+      ...common,
+      type: "map",
+      geo: block.geo,
+      metric: block.value,
+      column: block.region,
+      pair: block.pair ?? "bars",
+      regions,
+      total,
+      additive,
+      scale,
+      match,
+      ...(window && !emptyWindow ? { window } : {}),
+      ...(emptyWindow ? { empty: emptyWindow } : {}),
+    };
+  }
+
   table(block: Block & { type: "table" }, plan: BlockPlan, common: Common): TableData {
     const percent = block.percentOfTotal ?? [];
     const width = block.by.length;
@@ -1396,6 +1481,9 @@ export function assembleWith(
     } else if (block.type === "table") {
       for (const m of block.metrics) shown.add(m);
       blocks.push(assembler.table(block, blockPlan, common));
+    } else if (block.type === "map") {
+      shown.add(block.value);
+      blocks.push(assembler.map(block, blockPlan, common));
     } else if (block.type === "scatter") {
       shown.add(block.x).add(block.y);
       if (block.size !== undefined) shown.add(block.size);

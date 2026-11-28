@@ -47,7 +47,17 @@ export function writeParam(name: string, value: string | undefined): void {
 
 let engine: Promise<Engine> | undefined;
 
-export function loadEngine(src: string): Promise<Engine> {
+function loadScript(src: string): Promise<void> {
+  return new Promise<void>((resolve, reject) => {
+    const script = document.createElement("script");
+    script.src = src;
+    script.onload = () => resolve();
+    script.onerror = () => reject(new Error(`${src} did not load`));
+    document.head.append(script);
+  });
+}
+
+export function loadEngine(src: string, geo: string[] = []): Promise<Engine> {
   engine ??= new Promise<Engine>((resolve, reject) => {
     const script = document.createElement("script");
     script.src = src;
@@ -60,7 +70,13 @@ export function loadEngine(src: string): Promise<Engine> {
       engine = undefined;
       reject(new Error("period engine did not load"));
     };
-    document.head.append(script);
+    Promise.all(geo.map(loadScript)).then(
+      () => document.head.append(script),
+      () => {
+        engine = undefined;
+        reject(new Error("map boundaries did not load"));
+      },
+    );
   });
   return engine;
 }
@@ -294,7 +310,7 @@ export function mountPeriod(
     const mine = ++turn;
     grid?.setAttribute("aria-busy", "true");
     try {
-      const engine = await loadEngine(src);
+      const engine = await loadEngine(src, (root.dataset.hmGeo ?? "").split(" ").filter(Boolean));
       if (mine !== turn) return;
       const payload = document.querySelector("script[data-hm-periods]")?.textContent ?? "{}";
       const view = engine.view(JSON.parse(payload), key, ranges);

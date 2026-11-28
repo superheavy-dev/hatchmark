@@ -16,6 +16,7 @@ import { fileURLToPath } from "node:url";
 import {
   type DashboardData,
   type DashboardExecutor,
+  matchReports,
   type PeriodData,
   pageWeight,
   runDashboard,
@@ -24,6 +25,7 @@ import {
   type SegmentData,
 } from "../../compiler/index.js";
 import { createReport, type Diagnostic, renderHuman } from "../../diagnostics/index.js";
+import { GEOGRAPHY_DATA, geographyScript, usedGeographies } from "../../geo/index.js";
 import {
   type CacheStats,
   createCachedExecutor,
@@ -38,6 +40,7 @@ import {
 } from "../../render/index.js";
 import {
   checkReferences,
+  type GeographyId,
   loadProject,
   type Project,
   type ProjectConfig,
@@ -252,8 +255,14 @@ export async function build(
     };
   }
 
+  const redrawn = new Set(
+    pages.flatMap((p) =>
+      p.periods === undefined && p.segments === undefined ? [] : Object.keys(usedGeographies(p.data.blocks)),
+    ) as GeographyId[],
+  );
   const assets = await bundledAssets(
     pages.some((p) => p.periods !== undefined || p.segments !== undefined),
+    [...redrawn],
   );
   const files = new Map<string, Uint8Array | string>(assets.files);
   const { assetsFrom } = assets;
@@ -262,6 +271,7 @@ export async function build(
     const html = renderDashboardPage(data, {
       assets: assetsFrom("../"),
       sources,
+      geographies: usedGeographies(data.blocks),
       ...(periods ? { periods } : {}),
       ...(segments ? { segments } : {}),
     });
@@ -333,6 +343,7 @@ export async function build(
   }
 
   const report = createReport(diagnostics);
+  const maps = pages.flatMap(({ data: p }) => matchReports(p));
   const relative = path.relative(ctx.root, outDir);
   const outLabel = relative.startsWith("..") ? outDir : relative.split(path.sep).join("/") || ".";
   const written = pages.map(({ data: p }) => ({
@@ -346,6 +357,7 @@ export async function build(
     ...(pages.length > 1 ? { index: `${outLabel}/index.html` } : {}),
     files: files.size,
     ...(cache !== undefined ? { cache } : {}),
+    ...(maps.length > 0 ? { maps } : {}),
   };
   const warnings = report.warning_count > 0 ? `${renderHuman(report, { color: ctx.color })}\n` : "";
   const human =
@@ -362,7 +374,10 @@ function cacheLine(cache: CacheStats): string {
   return `Reused ${cache.hits} of ${total} quer${total === 1 ? "y" : "ies"} from ${cache.dir}/`;
 }
 
-export async function bundledAssets(withPeriods = false): Promise<{
+export async function bundledAssets(
+  withPeriods = false,
+  geographies: GeographyId[] = [],
+): Promise<{
   files: Map<string, Uint8Array>;
   assetsFrom(prefix: string): PageAssets;
 }> {
@@ -384,11 +399,25 @@ export async function bundledAssets(withPeriods = false): Promise<{
     periodsName = hashedName("hatchmark-periods.js", engine);
     files.set(`${ASSET_DIR}/${periodsName}`, engine);
   }
+  const geo: Partial<Record<GeographyId, string>> = {};
+  for (const id of [...geographies].sort()) {
+    const content = new TextEncoder().encode(geographyScript(GEOGRAPHY_DATA[id]));
+    const name = hashedName(`geo-${id}.js`, content);
+    files.set(`${ASSET_DIR}/${name}`, content);
+    geo[id] = name;
+  }
   return {
     files,
     assetsFrom: (prefix) => ({
       runtime: `${prefix}${ASSET_DIR}/${runtimeName}`,
       ...(periodsName ? { periods: `${prefix}${ASSET_DIR}/${periodsName}` } : {}),
+      ...(Object.keys(geo).length > 0
+        ? {
+            geo: Object.fromEntries(
+              Object.entries(geo).map(([id, name]) => [id, `${prefix}${ASSET_DIR}/${name}`]),
+            ),
+          }
+        : {}),
       fonts: Object.fromEntries(
         Object.entries(fonts).map(([file, name]) => [file, `${prefix}${ASSET_DIR}/${name}`]),
       ),

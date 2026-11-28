@@ -12,7 +12,16 @@ import {
   schemaRef,
 } from "./common.js";
 import { HEIGHT_PRESETS } from "./layout.js";
-import { GROUP_MAX_COUNT, GROUP_MAX_SIZE, PIE_DEFAULT_LIMIT } from "./units.js";
+import {
+  GEOGRAPHIES,
+  GROUP_MAX_COUNT,
+  GROUP_MAX_SIZE,
+  MAP_DEFAULT_CLASSES,
+  MAP_MAX_CLASSES,
+  MAP_MIN_CLASSES,
+  MAP_SCALE_TYPES,
+  PIE_DEFAULT_LIMIT,
+} from "./units.js";
 
 const blockCommon = {
   id: identifier.optional().meta({
@@ -362,6 +371,118 @@ const scatterBlock = z
   })
   .meta({ id: "ScatterBlock" });
 
+const mapScale = z
+  .strictObject({
+    type: z.enum(MAP_SCALE_TYPES).optional().meta({
+      description:
+        '"quantile" (default): each class holds about the same number of regions. "threshold": classes split at your breaks. "linear": classes of equal width between the lowest and highest value.',
+    }),
+    classes: z
+      .number()
+      .int()
+      .min(MAP_MIN_CLASSES)
+      .max(MAP_MAX_CLASSES)
+      .optional()
+      .meta({
+        description: `Number of colour classes, ${MAP_MIN_CLASSES} to ${MAP_MAX_CLASSES}. Default ${MAP_DEFAULT_CLASSES}. With threshold breaks it is breaks + 1 and may be left out.`,
+      }),
+    breaks: z
+      .array(z.number())
+      .min(MAP_MIN_CLASSES - 1)
+      .max(MAP_MAX_CLASSES - 1)
+      .optional()
+      .meta({
+        description:
+          "Class boundaries in the metric's unit, ascending, for type threshold. A value equal to a break falls in the class above it.",
+      }),
+    midpoint: z.number().optional().meta({
+      description:
+        "Makes the scale diverging: values below the midpoint take one hue, values above it the other. Use it for change, margin or a gap to a target.",
+    }),
+  })
+  .superRefine((s, ctx) => {
+    const type = s.type ?? "quantile";
+    if (type === "threshold" && s.breaks === undefined) {
+      ctx.addIssue(
+        customIssue(
+          "HM3001",
+          ["breaks"],
+          'a threshold scale needs "breaks", such as [10, 20, 30, 40]',
+        ),
+      );
+    }
+    if (type !== "threshold" && s.breaks !== undefined) {
+      ctx.addIssue(
+        customIssue(
+          "HM3007",
+          ["breaks"],
+          'breaks set the classes of a threshold scale; set type: threshold, or remove "breaks"',
+        ),
+      );
+    }
+    if (s.breaks !== undefined) {
+      if (s.breaks.some((b, i) => i > 0 && b <= (s.breaks?.[i - 1] ?? b))) {
+        ctx.addIssue(customIssue("HM3005", ["breaks"], "breaks must be strictly ascending"));
+      }
+      if (s.classes !== undefined && s.classes !== s.breaks.length + 1) {
+        ctx.addIssue(
+          customIssue(
+            "HM3007",
+            ["classes"],
+            `${s.breaks.length} breaks make ${s.breaks.length + 1} classes; remove "classes" or set it to ${s.breaks.length + 1}`,
+          ),
+        );
+      }
+    }
+    const classes = s.breaks ? s.breaks.length + 1 : (s.classes ?? MAP_DEFAULT_CLASSES);
+    if (s.midpoint !== undefined && classes < 4) {
+      ctx.addIssue(
+        customIssue(
+          "HM3007",
+          [s.breaks ? "breaks" : "classes"],
+          "a diverging scale needs at least 4 classes, two on each side of its midpoint",
+        ),
+      );
+    }
+    if (type === "quantile" && s.midpoint !== undefined && classes % 2 === 1) {
+      ctx.addIssue(
+        customIssue(
+          "HM3007",
+          ["classes"],
+          "a diverging quantile scale splits the regions on each side of the midpoint into the same number of classes, so it needs an even number of classes",
+        ),
+      );
+    }
+  })
+  .meta({ id: "MapScale" });
+
+const mapBlock = z
+  .strictObject({
+    ...blockCommon,
+    type: z.literal("map"),
+    geo: z.enum(GEOGRAPHIES).meta({
+      description:
+        'Boundaries to draw: "us-states" (50 states, DC and Puerto Rico) or "world-countries".',
+    }),
+    region: columnName.meta({
+      description:
+        "Column naming the region of each row: a code (ISO 3166 alpha-2, alpha-3 or numeric, USPS, FIPS) or a name, matched case- and accent-insensitively.",
+    }),
+    value: metricName.meta({
+      description:
+        "Metric that colours each region. A rate, ratio or average reads well on a filled map; a sum or count mostly shows where people are (HM5040).",
+    }),
+    scale: mapScale.optional(),
+    pair: z.enum(["bars", "none"]).optional().meta({
+      description:
+        '"bars" (default): a ranked bar list beside the map with the same values, below it on narrow cards. "none": the map alone.',
+    }),
+    missing: z.enum(["hatch"]).optional().meta({
+      description: 'How regions without a value are drawn: "hatch" (default).',
+    }),
+  })
+  .meta({ id: "MapBlock", description: "A filled (choropleth) map of one metric by region." });
+
 const textBlock = z
   .strictObject({
     ...blockCommon,
@@ -384,6 +505,7 @@ export const blockSchema = z
     barListBlock,
     tableBlock,
     scatterBlock,
+    mapBlock,
     textBlock,
   ])
   .meta({ id: "Block" });
@@ -481,4 +603,4 @@ export const dashboardSchema = z
   .meta({ title: "Hatchmark dashboard (dashboards/<name>.yaml)" });
 export type Dashboard = z.infer<typeof dashboardSchema>;
 
-export { blockId } from "./units.js";
+export { blockId, GEOGRAPHIES, type GeographyId, MAP_DEFAULT_CLASSES } from "./units.js";

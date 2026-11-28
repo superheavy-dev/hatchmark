@@ -1,6 +1,7 @@
 import type { DashboardData } from "../src/compiler/dashboard-data.js";
 import { customRangeDashboard, type PeriodData } from "../src/compiler/period-data.js";
 import { parseDaysKey } from "../src/compiler/periods.js";
+import type { Geographies } from "../src/render/chart.js";
 import { useRanges } from "../src/render/format.js";
 import { renderDashboardBlocks } from "../src/render/page.js";
 import { periodCaption, periodText } from "../src/render/period.js";
@@ -37,7 +38,11 @@ function view(
   const lang = valueLang(data.locale);
   return {
     key,
-    blocks: renderDashboardBlocks(data),
+    blocks: renderDashboardBlocks(
+      data,
+      undefined,
+      (globalThis as { hatchmarkGeo?: Geographies }).hatchmarkGeo,
+    ),
     caption: periodCaption(data),
     name: text.name,
     ...(text.dates ? { dates: text.dates } : {}),

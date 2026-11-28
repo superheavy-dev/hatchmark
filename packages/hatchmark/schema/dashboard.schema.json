@@ -461,6 +461,9 @@
           "$ref": "#/$defs/ScatterBlock"
         },
         {
+          "$ref": "#/$defs/MapBlock"
+        },
+        {
           "$ref": "#/$defs/TextBlock"
         }
       ]
@@ -1251,6 +1254,108 @@
         "y",
         "by"
       ],
+      "additionalProperties": false
+    },
+    "MapBlock": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "description": "Stable block id. Defaults to <type>_<index>; set it to keep links and caches across reorders.",
+          "type": "string",
+          "pattern": "^[a-z][a-z0-9_]*$"
+        },
+        "title": {
+          "description": "Card title; state the finding.",
+          "type": "string"
+        },
+        "span": {
+          "description": "Width in a 12-column grid.",
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 12
+        },
+        "type": {
+          "type": "string",
+          "const": "map"
+        },
+        "geo": {
+          "type": "string",
+          "enum": [
+            "us-states",
+            "world-countries"
+          ],
+          "description": "Boundaries to draw: \"us-states\" (50 states, DC and Puerto Rico) or \"world-countries\"."
+        },
+        "region": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Column naming the region of each row: a code (ISO 3166 alpha-2, alpha-3 or numeric, USPS, FIPS) or a name, matched case- and accent-insensitively."
+        },
+        "value": {
+          "type": "string",
+          "pattern": "^[a-z][a-z0-9_]*$",
+          "description": "Metric that colours each region. A rate, ratio or average reads well on a filled map; a sum or count mostly shows where people are (HM5040)."
+        },
+        "scale": {
+          "$ref": "#/$defs/MapScale"
+        },
+        "pair": {
+          "description": "\"bars\" (default): a ranked bar list beside the map with the same values, below it on narrow cards. \"none\": the map alone.",
+          "type": "string",
+          "enum": [
+            "bars",
+            "none"
+          ]
+        },
+        "missing": {
+          "description": "How regions without a value are drawn: \"hatch\" (default).",
+          "type": "string",
+          "enum": [
+            "hatch"
+          ]
+        }
+      },
+      "required": [
+        "type",
+        "geo",
+        "region",
+        "value"
+      ],
+      "additionalProperties": false,
+      "description": "A filled (choropleth) map of one metric by region."
+    },
+    "MapScale": {
+      "type": "object",
+      "properties": {
+        "type": {
+          "description": "\"quantile\" (default): each class holds about the same number of regions. \"threshold\": classes split at your breaks. \"linear\": classes of equal width between the lowest and highest value.",
+          "type": "string",
+          "enum": [
+            "quantile",
+            "threshold",
+            "linear"
+          ]
+        },
+        "classes": {
+          "description": "Number of colour classes, 3 to 7. Default 5. With threshold breaks it is breaks + 1 and may be left out.",
+          "type": "integer",
+          "minimum": 3,
+          "maximum": 7
+        },
+        "breaks": {
+          "description": "Class boundaries in the metric's unit, ascending, for type threshold. A value equal to a break falls in the class above it.",
+          "minItems": 2,
+          "maxItems": 6,
+          "type": "array",
+          "items": {
+            "type": "number"
+          }
+        },
+        "midpoint": {
+          "description": "Makes the scale diverging: values below the midpoint take one hue, values above it the other. Use it for change, margin or a gap to a target.",
+          "type": "number"
+        }
+      },
       "additionalProperties": false
     },
     "TextBlock": {

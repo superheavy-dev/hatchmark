@@ -9,7 +9,7 @@ export function tallestPreset(presets: readonly (HeightPreset | undefined)[]): H
   ] as HeightPreset;
 }
 
-const CHART_TYPES = new Set(["line", "area", "bar", "pie", "donut", "scatter"]);
+const CHART_TYPES = new Set(["line", "area", "bar", "pie", "donut", "scatter", "map"]);
 
 export interface LayoutBlock {
   type: string;

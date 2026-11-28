@@ -89,6 +89,7 @@ describe("spec schemas", () => {
         "bar_list",
         "table",
         "scatter",
+        "map",
         "text",
       ],
       fix: { text: "line", applicability: "unsafe" },

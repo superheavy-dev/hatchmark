@@ -12,6 +12,9 @@
       "!assets/brand",
       "!packages/hatchmark/schema",
       "!packages/hatchmark/test/fixtures/global-sales",
+      "!packages/hatchmark/src/geo/us-states.ts",
+      "!packages/hatchmark/src/geo/world-codes.ts",
+      "!packages/hatchmark/src/geo/world-countries.ts",
       "!packages/hatchmark/src/render/text-metrics.ts",
       "!packages/hatchmark/src/render/themes",
       "!packages/hatchmark/test/render/goldens"
