@@ -173,6 +173,7 @@ export function slicePath(
   a0: number,
   a1: number,
 ): string {
+  // SVG draws no arc whose start and end points are the same, so a full turn is two halves.
   if (a1 - a0 >= 1 - 1e-9) {
     return slicePath(cx, cy, inner, outer, 0, 0.5) + slicePath(cx, cy, inner, outer, 0.5, 1);
   }
