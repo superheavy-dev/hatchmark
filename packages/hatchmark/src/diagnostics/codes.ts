@@ -36,6 +36,11 @@ export const CODES = {
     explanation:
       "hatchmark dev could not listen on the port and host it was given: another process uses the port, or the host is not an address of this machine. Stop the other process, or pass another --port or --host. Without --port, dev tries the next free port on its own.",
   },
+  HM0007: {
+    title: "dev server cannot watch the project",
+    explanation:
+      "hatchmark dev starts only once it watches every file of the project, so that no edit is missed. The watcher did not finish its first scan within 15 seconds, usually because a directory in the project cannot be read; the diagnostic names the file system error when there is one. Make every directory readable, or move what cannot be read out of the project, and run dev again.",
+  },
   HM1001: {
     title: "file cannot be read",
     explanation:
