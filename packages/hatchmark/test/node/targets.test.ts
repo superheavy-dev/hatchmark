@@ -518,3 +518,69 @@ describe("target checks", () => {
     expect(checkReferences(project).filter((d) => d.code === "HM4021")).toEqual([]);
   });
 });
+
+describe("targets under an in_table segment toggle", () => {
+  const sources = {
+    keys: { type: "csv", path: "data/keys.csv" },
+    regions: { type: "csv", path: "data/regions.csv" },
+    keyed: {
+      type: "lookup",
+      from: "keys",
+      lookups: [{ table: "regions", key: { region: "region" } }],
+    },
+  };
+  const more = (table: string) => ({
+    "data/keys.csv": "region\nAmericas\n",
+    "data/regions.csv": "region,caption\nAmericas,The Americas\nEMEA,Europe\n",
+    "segments/listed.yaml": {
+      label: "Listed",
+      filters: [{ column: "region", op: "in_table", table, key: "region" }],
+    },
+    "segments/unlisted.yaml": {
+      label: "Unlisted",
+      filters: [{ column: "region", op: "not_in_table", table, key: "region" }],
+    },
+  });
+  const blocks = [
+    { type: "kpi", id: "k", metric: "revenue", target: "plan" },
+    { type: "bar", id: "b", metrics: ["revenue"], by: "region", target: "plan" },
+  ];
+
+  it.each([
+    ["listed", [], 310, { Americas: 155, EMEA: 155 }],
+    ["listed", ["listed"], 155, { Americas: 155 }],
+    ["unlisted", [], 310, { Americas: 155, EMEA: 155 }],
+    ["unlisted", ["unlisted"], 155, { EMEA: 155 }],
+  ] as const)(
+    "%s toggled to %j: the target table's rows the key table keeps",
+    async (segment, on, value, bars) => {
+      const { data, diagnostics } = await build(
+        blocks,
+        { filters: [{ type: "segment", id: "seg", segments: [segment], default: [...on] }] },
+        more("keys"),
+        sources,
+      );
+      expect(diagnostics.filter((d) => d.severity === "error")).toEqual([]);
+      expect(kpi(data, "k").target?.value).toBe(value);
+      const bar = chart<BarData>(data, "b");
+      const categories = bar.axis.kind === "category" ? bar.axis.categories : [];
+      expect(
+        Object.fromEntries(categories.map((c, i) => [c, bar.series[0]?.target?.values[i]])),
+      ).toEqual(bars);
+    },
+  );
+
+  it("a block whose target follows a toggle with a lookup key table is left out with a note, and the build runs", async () => {
+    const { data, diagnostics } = await build(
+      blocks,
+      { filters: [{ type: "segment", id: "seg", segments: ["listed"], default: ["listed"] }] },
+      more("keyed"),
+      sources,
+    );
+    expect(data?.blocks).toEqual([]);
+    expect(diagnostics.map((d) => [d.code, d.severity, d.pointer])).toEqual([
+      ["HM4023", "warning", "/blocks/0"],
+      ["HM4023", "warning", "/blocks/1"],
+    ]);
+  });
+});

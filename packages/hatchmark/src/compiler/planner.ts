@@ -750,11 +750,35 @@ function plannedTarget(
   const metricParams = refIds(reading.measures[metric]).flatMap(
     (qid) => queries.get(qid)?.params ?? [],
   );
+  const params = paramsForQuery(ctx.params, table, undefined).flatMap((p): PlannedParam[] => {
+    const own = metricParams.filter((m) => m.id === p.id);
+    if (p.kind === "select") return own.length > 0 ? [p] : [];
+    if (p.kind !== "segment" || target.segments !== undefined) return [];
+    const bound = new Set(
+      own.flatMap((m) => (m.kind === "segment" ? m.segments.map((s) => s.name) : [])),
+    );
+    const segments = p.segments.filter((s) => bound.has(s.name));
+    return segments.length > 0 ? [{ ...p, segments }] : [];
+  });
+  const kept = new Set(
+    params.flatMap((p) => (p.kind === "segment" ? p.segments.map((s) => `${p.id}/${s.name}`) : [])),
+  );
+  const tables = filterTables(
+    ctx.sources,
+    [],
+    ctx.params.flatMap((p) =>
+      p.kind === "segment"
+        ? [{ ...p, segments: p.segments.filter((s) => kept.has(`${p.id}/${s.name}`)) }]
+        : [],
+    ),
+    table,
+  );
   const id = `${target.id}__target`;
   const count = `${target.id}__target_count`;
   const shape: Omit<PlannedQuery, "id"> = {
     source: table,
     input,
+    ...(tables === undefined ? {} : { tables }),
     measures: [
       {
         metric: `${metric}.${target.id}`,
@@ -774,16 +798,7 @@ function plannedTarget(
     dimensions: [target.date ?? "", ...dimensions].map((column) => ({ kind: "column", column })),
     groupingSets: [[0, ...dimensions.map((_, i) => i + 1)]],
     window: { range: "all_time", shift: "none" },
-    params: paramsForQuery(ctx.params, table, undefined).flatMap((p): PlannedParam[] => {
-      const own = metricParams.filter((m) => m.id === p.id);
-      if (p.kind === "select") return own.length > 0 ? [p] : [];
-      if (p.kind !== "segment" || target.segments !== undefined) return [];
-      const bound = new Set(
-        own.flatMap((m) => (m.kind === "segment" ? m.segments.map((s) => s.name) : [])),
-      );
-      const segments = p.segments.filter((s) => bound.has(s.name));
-      return segments.length > 0 ? [{ ...p, segments }] : [];
-    }),
+    params,
   };
   const query = { id: queryId(shape), ...shape };
   return {
