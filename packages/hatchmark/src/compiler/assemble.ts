@@ -1323,7 +1323,10 @@ function segmentFilter(
 ): { segmentFilter: NonNullable<DashboardData["segmentFilter"]> } | Record<string, never> {
   const param = plan.params.find((p) => p.kind === "segment");
   if (param?.kind !== "segment") return {};
-  const on = segmentValues(param, context.bindings);
+  const on = segmentValues(
+    { ...param, names: param.segments.map((s) => s.name) },
+    context.bindings,
+  );
   return {
     segmentFilter: {
       id: param.id,

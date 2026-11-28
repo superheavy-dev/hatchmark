@@ -90,7 +90,8 @@ export function paramsForQuery(
         .filter((s) => s.sources.includes(source))
         .map(({ name, filters }) => ({ name, filters }));
       if (segments.length === 0) return [];
-      return [{ id: param.id, kind: "segment", source, segments, default: param.default }];
+      const names = param.segments.map((s) => s.name);
+      return [{ id: param.id, kind: "segment", source, segments, names, default: param.default }];
     }
     if (timeColumn === undefined || param.columns[source]?.includes(timeColumn) !== true) return [];
     return [{ id: param.id, kind: "period", source, column: timeColumn, default: param.default }];
@@ -128,15 +129,16 @@ export function selectValues(
 
 /**
  * The segments a segment filter turns on in one execution: the bound names, else the default.
- * Throws when the binding is not an array of the filter's segment names.
+ * Throws when the binding is not an array of the filter's segment names (names: all of them, also
+ * those a query's source does not bind).
  */
 export function segmentValues(
-  param: { id: string; default: string[]; segments: { name: string }[] },
+  param: { id: string; default: string[]; names: readonly string[] },
   bindings: ParamBindings,
 ): string[] {
   const bound = bindings[param.id];
   if (bound === undefined) return param.default;
-  const names = new Set(param.segments.map((s) => s.name));
+  const names = new Set(param.names);
   if (!Array.isArray(bound) || !bound.every((v) => typeof v === "string" && names.has(v))) {
     throw new TypeError(
       `segment filter "${param.id}" is bound to ${JSON.stringify(bound)}, not a list of its segments`,

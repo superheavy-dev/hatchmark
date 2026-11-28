@@ -164,6 +164,8 @@ export type PlannedParam =
       source: string;
       /** The filter's segments whose columns this source has, with their filters, in spec order. */
       segments: { name: string; filters: Filter[] }[];
+      /** Every segment of the filter, bound to this source or not: the names a binding may use. */
+      names: string[];
       /** Segments on when nothing is bound. */
       default: string[];
     };

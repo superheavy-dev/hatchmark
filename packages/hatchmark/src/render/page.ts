@@ -446,6 +446,7 @@ export function pageStyles(
   assets: PageAssets,
   theme: Theme = DEFAULT_THEME,
   groups = false,
+  segments = false,
 ): string {
   const d = theme.density;
   const fonts = FONT_FILES.filter((f) => assets.fonts[f.file] !== undefined)
@@ -501,7 +502,6 @@ export function pageStyles(
     `.hm-switch{flex-direction:row;flex-wrap:wrap;justify-content:space-between;align-items:flex-start;gap:8px 12px}.hm-card-titles{display:flex;flex-direction:column;gap:2px;min-width:0}.hm-header-side{display:flex;flex-direction:column;align-items:flex-end;gap:8px;max-width:100%;min-width:0}`,
     `.hm-seg{display:inline-flex;flex:0 1 auto;flex-wrap:wrap;max-width:100%;min-width:0;gap:2px;padding:2px;background:var(--hm-card-alt);border:1px solid var(--hm-border);border-radius:${theme.radius.control}px}.hm-seg button{font:inherit;font-size:12px;line-height:16px;font-weight:500;padding:3px 10px;border:0;border-radius:${Math.max(0, theme.radius.control - 2)}px;background:transparent;color:var(--hm-text-muted);cursor:pointer}.hm-seg button:hover{color:var(--hm-text)}.hm-seg button[aria-checked=true]{background:var(--hm-card);color:var(--hm-text);box-shadow:0 0 0 1px var(--hm-border-strong)}.hm-seg button:focus-visible{outline:2px solid var(--hm-focus);outline-offset:1px}[data-hm-grain][hidden]{display:none}`,
     periodStyles(theme),
-    segmentStyles(theme),
     `.hm-chart{position:relative}.hm-v{display:none}.hm-v svg{display:block;max-width:100%;height:auto;overflow:visible;touch-action:pan-y}.hm-v svg:focus,.hm-spark:focus{outline:none}.hm-v svg:focus-visible,.hm-spark:focus-visible,.hm-table-wrap:focus-visible{outline:2px solid var(--hm-focus);outline-offset:2px;border-radius:2px}`,
     `.hm-chart text{font-variant-numeric:tabular-nums}.hm-dim .hm-slice:not(.hm-on){opacity:.35}.hm-b-context{background:var(--hm-context)}`,
     `.hm-table-wrap{overflow-x:auto}.hm-table{width:100%;border-collapse:collapse}`,
@@ -530,19 +530,25 @@ export function pageStyles(
       .join(""),
     layouts,
     ...(groups ? [groupStyles(theme)] : []),
+    ...(segments ? [segmentStyles(theme)] : []),
   ].join("\n");
 }
 
 const THEME_SCRIPT =
   'var t=new URLSearchParams(location.search).get("theme");if(t==="dark"||t==="light")document.documentElement.dataset.theme=t';
 
-export function pageHead(assets: PageAssets, theme: Theme = DEFAULT_THEME, groups = false): string {
+export function pageHead(
+  assets: PageAssets,
+  theme: Theme = DEFAULT_THEME,
+  groups = false,
+  segments = false,
+): string {
   const preload = FONT_FILES.filter((f) => f.file.endsWith("-Latin1.woff2") && f.weight !== 600)
     .map((f) => assets.fonts[f.file])
     .filter((url) => url !== undefined)
     .map((url) => `<link rel="preload" href="${esc(url)}" as="font" type="font/woff2" crossorigin>`)
     .join("");
-  return `${preload}<style>${pageStyles(assets, theme, groups)}</style><script>${THEME_SCRIPT}</script><script defer src="${esc(assets.runtime)}"></script>`;
+  return `${preload}<style>${pageStyles(assets, theme, groups, segments)}</style><script>${THEME_SCRIPT}</script><script defer src="${esc(assets.runtime)}"></script>`;
 }
 
 function document(title: string, head: string, body: string): string {
@@ -638,7 +644,7 @@ function dashboardPage(data: DashboardData, options: PageOptions): string {
   const body = `<div class="hm-page">${header}<main class="hm-grid">${renderBlocks(data.blocks, ctx)}</main>${footer}</div>${embedded}`;
   return document(
     `${data.title} \u00B7 ${data.project}`,
-    pageHead(options.assets, theme, usesGroups(data)),
+    pageHead(options.assets, theme, usesGroups(data), data.segmentFilter !== undefined),
     body,
   );
 }

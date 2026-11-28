@@ -275,3 +275,73 @@ describe("segment filter checks", () => {
     expect(await codes([{ type: "segment", id: "a", segments: ["emea"] }])).toContain("HM2021");
   });
 });
+
+describe("segment filter over several sources", () => {
+  it("binds each segment to the sources that have its columns, for the default and every combination", async () => {
+    const both = {
+      type: "segment",
+      id: "segments",
+      segments: ["americas", "paid_marketing"],
+      default: ["americas", "paid_marketing"],
+    };
+    const mixed = await writeExample(
+      {
+        sources: {
+          orders: { type: "csv", path: "data/orders.csv" },
+          sessions: { type: "csv", path: "data/sessions.csv", freshness: { through: "as_of" } },
+        },
+      },
+      {
+        mixed: {
+          title: "Mixed",
+          period: { asOf: "2026-10-31", range: "last_30_days", compare: "previous_period" },
+          filters: [both],
+          blocks: [
+            { type: "kpi", id: "orders", metric: "orders" },
+            { type: "kpi", id: "sessions", metric: "sessions" },
+          ],
+        },
+      },
+    );
+    await writeFile(
+      path.join(mixed, "data", "sessions.csv"),
+      "region,started_at\nAmericas,2026-10-20T14:00:00Z\nEMEA,2026-10-21T19:00:00Z\nAmericas,2026-10-22T09:00:00Z\n",
+    );
+    await writeFile(
+      path.join(mixed, "metrics", "sessions.yaml"),
+      toYaml({
+        label: "Sessions",
+        type: "aggregate",
+        aggregate: "count",
+        table: "sessions",
+        time: "started_at",
+        format: { type: "number" },
+        better: "up",
+      }),
+    );
+    await mkdir(path.join(mixed, "segments"));
+    for (const [name, { spec }] of Object.entries(SEGMENTS)) {
+      await writeFile(path.join(mixed, "segments", `${name}.yaml`), toYaml(spec));
+    }
+    const loaded = await loadAt(mixed);
+    expect([...parseDiagnostics(loaded.project), ...checkReferences(loaded.project)]).toEqual([]);
+    const base = await run(mixed, loaded.project, "mixed");
+    expect(base.diagnostics).toEqual([]);
+    if (base.data === undefined) throw new Error("no data");
+    const config = loaded.project.config.spec;
+    if (config === undefined) throw new Error("invalid hatchmark.yaml");
+    const executor = await createDuckDbExecutor({ root: mixed, config });
+    try {
+      const result = await runSegmentData(loaded.project, "mixed", executor, base.data);
+      expect(result.diagnostics).toEqual([]);
+      const states = Object.values(result.data?.states ?? {});
+      expect(states).toHaveLength(4);
+      for (const state of states) {
+        const sessions = state.selected.includes("americas") ? 2 : 3;
+        expect(kpi(state.data, "sessions").value, state.selected.join(",")).toBe(sessions);
+      }
+    } finally {
+      await executor.close();
+    }
+  });
+});

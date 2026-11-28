@@ -83,6 +83,8 @@ export function mountPeriod(
   const initial = presets.find((b) => b.getAttribute("aria-checked") === "true")?.dataset.hmPreset;
   const fallback = initial ?? presets[0]?.dataset.hmPreset ?? "";
   let shown = fallback;
+  let wanted = fallback;
+  let turn = 0;
   const live = document.createElement("p");
   live.className = "hm-sr";
   live.setAttribute("aria-live", "polite");
@@ -287,11 +289,15 @@ export function mountPeriod(
     }
     const grid = document.querySelector<HTMLElement>("main.hm-grid");
     const src = root.dataset.hmEngine;
-    const payload = document.querySelector("script[data-hm-periods]")?.textContent;
-    if (!src || !payload) return;
+    if (!src) return;
+    wanted = key;
+    const mine = ++turn;
     grid?.setAttribute("aria-busy", "true");
     try {
-      const view = (await loadEngine(src)).view(JSON.parse(payload), key, ranges);
+      const engine = await loadEngine(src);
+      if (mine !== turn) return;
+      const payload = document.querySelector("script[data-hm-periods]")?.textContent ?? "{}";
+      const view = engine.view(JSON.parse(payload), key, ranges);
       if (view === undefined) throw new RangeError(`no range "${key}"`);
       shown = view.key;
       check(view.key);
@@ -317,10 +323,12 @@ export function mountPeriod(
       if (announce) live.textContent = `Showing ${view.name}${view.dates ? `, ${view.dates}` : ""}`;
       close(announce);
     } catch {
+      if (mine !== turn) return;
+      wanted = shown;
       if (!announce) writeParam(filter, undefined);
       else if (status) status.textContent = "This range is not available on this page";
     } finally {
-      grid?.removeAttribute("aria-busy");
+      if (mine === turn) grid?.removeAttribute("aria-busy");
     }
   };
 
@@ -466,6 +474,6 @@ export function mountPeriod(
   const requested = new URLSearchParams(location.search).get(filter);
   if (requested && requested !== shown) void choose(requested, false);
   return (force = false) => {
-    if (shown !== fallback || force) void choose(shown, false, true);
+    if (wanted !== fallback || force) void choose(wanted, false, true);
   };
 }

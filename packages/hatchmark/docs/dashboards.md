@@ -190,7 +190,7 @@ Build runs the dashboard once per combination of segments (at most 16), with eac
 period presets and day-level data when the dashboard also has a `period` filter, so every number
 on the page is exact. The combinations count toward the page weight warning (`HM5002`). The
 combination is kept in the URL under the filter's `id` (`?segments=paid_marketing,americas`,
-`?segments=none` for none when the default has some on).
+`?segments=` for none when the default has some on).
 
 **This version does not draw `select` controls yet:** the built page shows the data at each
 `select` filter's `default`, and does not say so on the page. A `select` filter with a `default`

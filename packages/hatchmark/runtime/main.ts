@@ -574,7 +574,7 @@ function mountSegments(group: HTMLElement, params: URLSearchParams): void {
     const chosen = key();
     const state = states[chosen];
     if (state === undefined) return;
-    writeParam(id, chosen === initial ? undefined : chosen === "" ? "none" : chosen);
+    writeParam(id, chosen === initial ? undefined : chosen);
     if (periods && state.periods !== undefined) {
       periods.textContent = JSON.stringify(state.periods);
       for (const again of refreshers) again(true);
@@ -606,7 +606,7 @@ function mountSegments(group: HTMLElement, params: URLSearchParams): void {
   }
   const requested = params.get(id);
   if (requested === null) return;
-  const names = requested === "none" ? [] : requested.split(",");
+  const names = requested === "" ? [] : requested.split(",");
   if (!names.every((n) => buttons.some((b) => b.dataset.hmSegment === n))) {
     writeParam(id, undefined);
     return;

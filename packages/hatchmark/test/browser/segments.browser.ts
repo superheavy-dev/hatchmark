@@ -16,6 +16,7 @@ const SEGMENTS = {
     filters: [{ column: "channel", op: "in", values: ["Paid search", "Social", "Affiliate"] }],
   },
   americas: { label: "Americas", filters: [{ column: "region", op: "eq", value: "Americas" }] },
+  none: { label: "Apparel", filters: [{ column: "category", op: "eq", value: "Apparel" }] },
 };
 const KPIS = [
   { type: "kpi", id: "revenue", metric: "revenue" },
@@ -41,9 +42,21 @@ beforeAll(async () => {
             id: "period",
             options: ["last_30_days", "last_12_months"],
             default: "last_12_months",
-            custom: false,
           },
           SEGMENT,
+        ],
+        blocks: KPIS,
+      },
+      "named-none": {
+        title: "A segment named none",
+        period: PERIOD,
+        filters: [
+          {
+            type: "segment",
+            id: "segments",
+            segments: ["none", "americas"],
+            default: ["americas"],
+          },
         ],
         blocks: KPIS,
       },
@@ -149,6 +162,58 @@ describe("segment toggle", () => {
     if (!month) throw new Error("no last_30_days preset");
     await expect.poll(() => kpi(page, "Revenue")).toBe(shown(month, "revenue"));
     expect(new URL(page.url()).searchParams.get("period")).toBe("last_30_days");
+    expect(errors).toEqual([]);
+    await page.close();
+  });
+
+  for (const range of ["last_30_days", "2026-09-01..2026-09-30"]) {
+    it(`opens ?segments=americas&period=${range} on that range with that combination`, async () => {
+      const clicked = await open("periods", `?period=${range}`);
+      await settled(clicked.page);
+      await chip(clicked.page, "americas").click();
+      await settled(clicked.page);
+      const want = await clicked.page.locator(".hm-kpi-value").allTextContents();
+      expect(new URL(clicked.page.url()).searchParams.get("period")).toBe(range);
+      await clicked.page.close();
+
+      const { page, errors } = await open("periods", `?segments=americas&period=${range}`);
+      await settled(page);
+      await expect.poll(() => page.locator(".hm-kpi-value").allTextContents()).toEqual(want);
+      expect(new URL(page.url()).searchParams.get("period")).toBe(range);
+      expect(new URL(page.url()).searchParams.get("segments")).toBe("americas");
+      expect(await chip(page, "americas").getAttribute("aria-pressed")).toBe("true");
+      await page.reload();
+      await settled(page);
+      await expect.poll(() => page.locator(".hm-kpi-value").allTextContents()).toEqual(want);
+      expect(new URL(page.url()).searchParams.get("period")).toBe(range);
+      expect(errors).toEqual([]);
+      await page.close();
+    });
+  }
+
+  it("tells none of the segments apart from a segment named none", async () => {
+    const { states } = await embedded("named-none");
+    const { page, errors } = await open("named-none");
+    await chip(page, "americas").click();
+    await settled(page);
+    expect(new URL(page.url()).searchParams.get("segments")).toBe("");
+    await page.reload();
+    await settled(page);
+    expect(await chip(page, "americas").getAttribute("aria-pressed")).toBe("false");
+    expect(await chip(page, "none").getAttribute("aria-pressed")).toBe("false");
+    const all = states[""]?.data;
+    if (!all) throw new Error("no empty state");
+    await expect.poll(() => kpi(page, "Revenue")).toBe(shown(all, "revenue"));
+
+    await chip(page, "none").click();
+    await settled(page);
+    expect(new URL(page.url()).searchParams.get("segments")).toBe("none");
+    await page.reload();
+    await settled(page);
+    expect(await chip(page, "none").getAttribute("aria-pressed")).toBe("true");
+    const apparel = states.none?.data;
+    if (!apparel) throw new Error("no none state");
+    await expect.poll(() => kpi(page, "Revenue")).toBe(shown(apparel, "revenue"));
     expect(errors).toEqual([]);
     await page.close();
   });
