@@ -89,8 +89,14 @@ describe("an additive SQL metric over no rows: plain SUM and COUNT zero-fill, no
     "sum(amount) * INTERVAL '1 day'",
     "list(amount)",
     "sum(amount) * 1",
-  ])("%s is not zero-filled: empty over rows and over no rows", async (sql) => {
-    expect((await kpi(sql, rows)).preset).toBeNull();
+  ])("%s is not zero-filled: empty over no rows in presets and custom ranges", async (sql) => {
     expect(await kpi(sql, noRows)).toEqual({ preset: null, custom: null });
   });
+
+  it.each(["sum(amount)::VARCHAR", "sum(amount)::BOOLEAN", "sum(amount) * INTERVAL '1 day'"])(
+    "%s stays empty over rows",
+    async (sql) => {
+      expect((await kpi(sql, rows)).preset).toBeNull();
+    },
+  );
 });
