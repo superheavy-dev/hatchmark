@@ -12,6 +12,7 @@ import {
   seriesPaints,
   type Theme,
 } from "../../src/render/index.js";
+import { GROUP_MAX_COUNT, GROUP_MAX_SIZE } from "../../src/spec/units.js";
 
 const steps = (prefix: string) => ["1", "2", "3"].map((s) => `#${prefix}000${s}`);
 const FIXTURE: Theme = {
@@ -39,6 +40,17 @@ const tagged = (groups: ({ index: number; step: number } | undefined)[]) =>
   groups.map((group) => (group === undefined ? {} : { group }));
 
 describe("series paints", () => {
+  it("lets the spec allow exactly what the Default theme can colour", () => {
+    const families = DEFAULT_THEME.groups?.families ?? [];
+    expect(families).toHaveLength(GROUP_MAX_COUNT);
+    for (const f of families) {
+      for (const mode of ["light", "dark"] as const) {
+        expect(f.stroke[mode]).toHaveLength(GROUP_MAX_SIZE);
+        expect(f.fill[mode]).toHaveLength(GROUP_MAX_SIZE);
+      }
+    }
+  });
+
   it("gives series without groups the categorical slots in order, wrapping after 8", () => {
     const paints = seriesPaints(FIXTURE, tagged(Array.from({ length: 10 }, () => undefined)));
     expect(paints.map((p) => p.stroke)).toEqual([

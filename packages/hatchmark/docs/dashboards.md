@@ -88,7 +88,8 @@ Fields every block takes:
 | `span`  | Width in the 12-column grid, 1–12. Default 3 for `kpi` (four to a row) and 12 for the rest. Line, area, bar and scatter charts take at least 3 columns; a smaller span gets warning HM2024 and is drawn 3 wide. Below 1024 px every block takes the full width. |
 
 Metric names in blocks are metric file names (see [metrics.md](metrics.md)); columns in `by` and
-`split` are source columns.
+`split` are source columns. `line`, `area` and `bar` blocks with several series take `groups` to colour
+related series as one hue family ([components/groups.md](components/groups.md)).
 
 ## Filters
 

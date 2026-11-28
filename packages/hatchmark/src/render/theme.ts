@@ -126,7 +126,7 @@ export const DEFAULT_THEME: Theme = {
     light: defaultTokens.data.light.categoricalFill,
     dark: defaultTokens.data.dark.categoricalFill,
   },
-  ...optionalGroups(groupTheme((defaultTokens.data as { groups?: GroupTokens }).groups)),
+  ...optionalGroups(groupTheme(defaultTokens.data.groups)),
   density: defaultTokens.density.compact,
   radius: defaultTokens.radius,
   partial: {

@@ -135,6 +135,13 @@ export function renderLine(
   const empty = values.length === 0;
 
   const nameStyle = { size: CAPTION, weight: 500 } as const;
+  const repeated = (label: string) => series.filter((s) => s.label === label).length > 1;
+  const directName = (k: number) => {
+    const s = series[k];
+    if (s === undefined) return "";
+    const group = s.group === undefined ? undefined : block.groups?.[s.group.index]?.label;
+    return group !== undefined && repeated(s.label) ? `${group} \u00B7 ${s.label}` : s.label;
+  };
   const lastIndex = series.map((s) => lastDefined(s.values));
   const lastText = series.map((s, k) =>
     formatValue(drawnValues(block, s)[lastIndex[k] ?? -1] ?? null, shown(k), locale, "compact"),
@@ -145,7 +152,7 @@ export function renderLine(
       ...series.map(
         (s, k) =>
           12 +
-          textWidth(s.label, nameStyle) +
+          textWidth(directName(k), nameStyle) +
           6 +
           textWidth(lastText[k] as string, { size: CAPTION }),
       ),
@@ -218,6 +225,7 @@ export function renderLine(
           svgText(paint, x, row * LEGEND_ROW + LABEL_LINE / 2, heading, {
             ...GROUP_STYLE,
             color: "text",
+            className: "hm-rg",
           }),
         );
         x += headingWidth;
@@ -405,7 +413,7 @@ export function renderLine(
           `<polyline points="${r(plotRight + 2)},${r(target)} ${r(plotRight + 6)},${r(target)} ${r(plotRight + 10)},${r(centre)}"${paint.attrs("none", "textSubtle")}/>`,
         );
       }
-      const name = series[k]?.label ?? "";
+      const name = directName(k);
       const nameWidth = textWidth(name, nameStyle);
       parts.push(
         `<circle cx="${r(labelX + 4)}" cy="${r(centre)}" r="4"${paint.attrs(strokeOf(k))}/>`,

@@ -186,3 +186,155 @@ describe.each(["light", "dark"] as const)("Default theme tokens, %s", (mode: Mod
     });
   });
 });
+
+type Family = (typeof tokens.data.groups.families)[number];
+type Part = "stroke" | "fill";
+const GROUP_BARS = { within: 10, across: 8, ungrouped: 8, context: 8 } as const;
+
+function closestLabelled(
+  hexes: { hex: string; label: string }[],
+  pairs: [number, number][],
+): Pairs {
+  return Object.fromEntries(
+    Object.entries(SIMULATIONS).map(([name, simulate]) => {
+      const labs = hexes.map((h) => lab(simulate(linear(h.hex))));
+      let best = { min: Number.POSITIVE_INFINITY, pair: "" };
+      for (const [i, j] of pairs) {
+        const d = ciede2000(labs[i] as Rgb, labs[j] as Rgb);
+        if (d < best.min) best = { min: d, pair: `${hexes[i]?.label}/${hexes[j]?.label}` };
+      }
+      return [name, { min: Math.round(best.min * 10) / 10, pair: best.pair }];
+    }),
+  );
+}
+
+const cross = (a: number, b: number): [number, number][] =>
+  Array.from({ length: a }, (_, i) =>
+    Array.from({ length: b }, (_, j) => [i, a + j] as [number, number]),
+  ).flat();
+
+describe.each(["light", "dark"] as const)("Default theme group tokens, %s", (mode: Mode) => {
+  const { families, steps } = tokens.data.groups;
+  const checks = tokens.checks[mode];
+  const surfaces = (mode === "light" ? ["card", "page"] : ["card", "cardAlt"]) as (
+    | "card"
+    | "page"
+    | "cardAlt"
+  )[];
+  const labelled = (f: Family, part: Part) =>
+    f[mode][part].map((hex, i) => ({ hex, label: `${f.id}${i + 1}` }));
+
+  test("every family has the same number of steps, and step 1 is its first slot", () => {
+    for (const f of families) {
+      for (const part of ["stroke", "fill"] as const) expect(f[mode][part]).toHaveLength(steps);
+      const slot = (f.slots[0] as number) - 1;
+      expect(f[mode].stroke[0]).toBe(tokens.data[mode].categorical[slot]);
+      expect(f[mode].fill[0]).toBe(tokens.data[mode].categoricalFill[slot]);
+    }
+    expect(new Set(families.flatMap((f) => f.slots)).size).toBe(
+      families.flatMap((f) => f.slots).length,
+    );
+  });
+
+  test("every step is at least 3:1 against the surfaces, as recorded", () => {
+    const measured = Object.fromEntries(
+      surfaces.map((s) => [
+        s,
+        Object.fromEntries(
+          families.map((f) => [
+            f.id,
+            Object.fromEntries(
+              (["stroke", "fill"] as const).map((part) => [
+                part,
+                f[mode][part].map(
+                  (h) => Math.round(contrast(h, tokens.color[mode][s]) * 100) / 100,
+                ),
+              ]),
+            ),
+          ]),
+        ),
+      ]),
+    );
+    expect(measured).toEqual(checks.groupContrastVsCard);
+    for (const v of Object.values(measured).flatMap((s) =>
+      Object.values(s).flatMap((f) => Object.values(f).flat()),
+    ))
+      expect(v).toBeGreaterThanOrEqual(3);
+  });
+
+  test("steps stay apart within a family, across families, from ungrouped slots and from context, as recorded", () => {
+    const parts = ["stroke", "fill"] as const;
+    const slotHexes = (part: Part) =>
+      tokens.data[mode][part === "stroke" ? "categorical" : "categoricalFill"];
+    const measured = {
+      bars: checks.groupCVD.bars,
+      withinFamily: Object.fromEntries(
+        parts.map((part) => [
+          part,
+          Object.fromEntries(
+            families.map((f) => [
+              f.id,
+              {
+                adjacent: closestLabelled(labelled(f, part), adjacent(steps)),
+                all: closestLabelled(labelled(f, part), within(steps)),
+              },
+            ]),
+          ),
+        ]),
+      ),
+      acrossFamilies: Object.fromEntries(
+        parts.map((part) => {
+          const all = families.flatMap((f) => labelled(f, part));
+          const pairs = within(all.length).filter(
+            ([i, j]) => Math.floor(i / steps) !== Math.floor(j / steps),
+          );
+          return [part, closestLabelled(all, pairs)];
+        }),
+      ),
+      vsUngrouped: Object.fromEntries(
+        parts.map((part) => [
+          part,
+          Object.fromEntries(
+            families.map((f) => {
+              const others = slotHexes(part)
+                .map((hex, i) => ({ hex, label: `c${i + 1}` }))
+                .filter((_, i) => !f.slots.includes(i + 1));
+              return [
+                f.id,
+                closestLabelled([...labelled(f, part), ...others], cross(steps, others.length)),
+              ];
+            }),
+          ),
+        ]),
+      ),
+      vsContext: Object.fromEntries(
+        parts.map((part) => [
+          part,
+          Object.fromEntries(
+            families.map((f) => [
+              f.id,
+              closestLabelled(
+                [...labelled(f, part), { hex: tokens.color[mode].context, label: "context" }],
+                cross(steps, 1),
+              ),
+            ]),
+          ),
+        ]),
+      ),
+    };
+    expect(measured).toEqual(checks.groupCVD);
+    const mins = (o: unknown): number[] =>
+      typeof o === "object" && o !== null
+        ? "min" in o
+          ? [(o as { min: number }).min]
+          : Object.values(o).flatMap(mins)
+        : [];
+    for (const v of mins(measured.withinFamily))
+      expect(v).toBeGreaterThanOrEqual(GROUP_BARS.within);
+    for (const v of mins(measured.acrossFamilies))
+      expect(v).toBeGreaterThanOrEqual(GROUP_BARS.across);
+    for (const v of mins(measured.vsUngrouped))
+      expect(v).toBeGreaterThanOrEqual(GROUP_BARS.ungrouped);
+    for (const v of mins(measured.vsContext)) expect(v).toBeGreaterThanOrEqual(GROUP_BARS.context);
+  });
+});

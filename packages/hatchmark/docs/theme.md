@@ -11,4 +11,19 @@ Series take eight categorical slots, c1 to c8, in a fixed order, and wrap after 
 
 Slot n is the same hue family in both sets, so a series keeps its colour when one card draws it as a line and another as bars. Every stroke and fill is at least 3:1 against the card in both modes, and the slots stay apart under deuteranopia, protanopia and tritanopia simulation; `checks.<mode>` in the tokens file records the measured numbers, and `test/render/tokens.test.ts` recomputes them.
 
+## Series groups
+
+A group of related series (see [components/groups.md](components/groups.md)) takes one of three hue
+families, in this order: blue (slots 1 and 5), pink and red (slots 2, 6 and 8), and green (slot 4).
+Each family has three lightness steps as strokes and fills, in light and dark (`data.groups`), and
+step 1 is the family's base slot colour. Slot 3 (cyan) and slot 7 (warm grey) host no group: cyan
+cannot step in lightness without running into the blues, and grey steps would read as context.
+While a group holds a family, ungrouped series skip its slots.
+
+Every step is at least 3:1 against the card; every pair of steps in a family is at least ΔE2000 10
+apart, and every step is at least 8 from the other families, from the ungrouped slots outside its
+family and from the context grey, under normal vision and deuteranopia, protanopia and tritanopia
+simulation. `checks.<mode>.groupContrastVsCard` and `checks.<mode>.groupCVD` record the measured
+numbers, and `test/render/tokens.test.ts` recomputes them.
+
 Categorical colours are adapted from the FT's g-chartcolour.

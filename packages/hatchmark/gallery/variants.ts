@@ -6,6 +6,7 @@ import type {
   MetricInfo,
   PieData,
   ScatterData,
+  Series,
   TableData,
   Value,
 } from "../src/compiler/dashboard-data.js";
@@ -67,7 +68,7 @@ import {
 
 /** One gallery entry: a component variant on sample data, wrapped as a one-block dashboard. */
 export interface GalleryVariant {
-  component: "kpi" | "line" | "bar" | "stacked" | "pie" | "scatter" | "table";
+  component: "kpi" | "line" | "bar" | "stacked" | "pie" | "scatter" | "table" | "groups";
   variant: string;
   title: string;
   data: DashboardData;
@@ -1457,6 +1458,205 @@ const SCATTER: GalleryVariant[] = [
   ),
 ];
 
+const withoutGroups = <T extends BarData | LineData>(block: T, id: string): T => {
+  const { groups: _groups, ...rest } = block;
+  return { ...rest, id, series: block.series.map(({ group: _group, ...s }) => s) } as T;
+};
+
+const grouped = (label: string, index: number, list: Series[]): Series[] =>
+  list.map((s, step) => ({ ...s, group: { index, step } }));
+
+const ACTUAL = last12.map((v, i) => (i < 10 ? v : null));
+const TARGET = last12.map((v, i) => round(v * (0.95 + 0.002 * i), 1000));
+const FORECAST = last12.map((v, i) =>
+  i < 9 ? null : round(v * (i === 9 ? 1 : 1.02 + 0.01 * i), 1000),
+);
+const PLAN_LINE: LineData = {
+  type: "line",
+  id: "groups_atf",
+  title: "Revenue is tracking 4% above target",
+  span: 8,
+  axis: monthAxis(12),
+  groups: [{ label: "Revenue" }],
+  series: grouped("Revenue", 0, [
+    series("revenue", "Actual", ACTUAL),
+    series("revenue", "Target", TARGET),
+    series("revenue", "Forecast", FORECAST),
+  ]),
+};
+
+const SALES_CHANNELS = [
+  { name: "Online store", share: 0.46 },
+  { name: "Marketplace", share: 0.22 },
+  { name: "Retail partners", share: 0.2 },
+  { name: "Wholesale", share: 0.12 },
+];
+const channelSeries = (axis: { share: number }[], total: number) =>
+  SALES_CHANNELS.map((c, k) =>
+    series(
+      "revenue",
+      c.name,
+      axis.map((a, i) => round(total * c.share * a.share * (0.9 + ((i * 7 + k * 3) % 5) * 0.05))),
+      c.name,
+    ),
+  );
+const channelGroups = (list: Series[]) => [
+  ...grouped("Online", 0, list.slice(0, 2)),
+  ...grouped("Offline", 1, list.slice(2)),
+];
+const CHANNEL_STACK = stacked(
+  bar("groups_stacked", "Online channels bring two thirds of revenue in every region", {
+    axis: regionAxis,
+    groups: [{ label: "Online" }, { label: "Offline" }],
+    series: channelGroups(channelSeries(REGIONS, 22_118_520)),
+  }),
+);
+const TOP_COUNTRIES = COUNTRIES.slice(0, 8);
+const COUNTRY_SHARE = stacked(
+  bar("groups_percent", "Wholesale matters most in Germany and Japan", {
+    axis: { kind: "category", column: "country", categories: TOP_COUNTRIES.map((c) => c.name) },
+    orientation: "horizontal",
+    groups: [{ label: "Online" }, { label: "Offline" }],
+    series: channelGroups(channelSeries(TOP_COUNTRIES, 22_118_520)),
+  }),
+  true,
+);
+
+const YEARS = bar("groups_years", "Every region grew on last year; Europe beat its plan", {
+  axis: regionAxis,
+  groups: [{ label: "Revenue" }],
+  series: [
+    ...grouped("Revenue", 0, [
+      series(
+        "revenue",
+        "2026",
+        REGIONS.map((r) => round(19_204_300 * r.share, 1000)),
+      ),
+      series(
+        "revenue",
+        "2025",
+        REGIONS.map((r, i) => round(19_204_300 * r.share * (0.84 + 0.03 * i), 1000)),
+      ),
+    ]),
+    series(
+      "revenue",
+      "Plan 2026",
+      REGIONS.map((r, i) => round(19_204_300 * r.share * (i === 1 ? 0.93 : 1.02), 1000)),
+    ),
+  ],
+});
+
+const MIX = [
+  { name: "New subscriptions", share: 0.34 },
+  { name: "Expansion", share: 0.22 },
+  { name: "Services", share: 0.26 },
+  { name: "Hardware", share: 0.18 },
+];
+const MIX_AREA = stacked({
+  type: "area" as const,
+  id: "groups_area",
+  title: "Subscription revenue keeps growing faster than services",
+  span: 12,
+  axis: monthAxis(12),
+  groups: [{ label: "Subscriptions" }],
+  series: [
+    ...grouped(
+      "Subscriptions",
+      0,
+      MIX.slice(0, 2).map((m, k) =>
+        series(
+          "revenue",
+          m.name,
+          last12.map((v, i) => round(v * m.share * (1 + (k + 1) * 0.012 * i))),
+          m.name,
+        ),
+      ),
+    ),
+    ...MIX.slice(2).map((m) =>
+      series(
+        "revenue",
+        m.name,
+        last12.map((v, i) => round(v * m.share * (1 - 0.006 * i))),
+        m.name,
+      ),
+    ),
+  ],
+} satisfies LineData);
+
+const regionYears = (region: (typeof REGIONS)[number], k: number) => [
+  series(
+    "revenue",
+    "2026",
+    last12.map((v, i) => round(v * region.share * (1 + 0.01 * i * (k + 1)))),
+  ),
+  series(
+    "revenue",
+    "2025",
+    MONTHLY_REVENUE.slice(0, 12).map((v) => round(v * region.share)),
+  ),
+];
+const REGION_YEARS: LineData = {
+  type: "line",
+  id: "groups_regions",
+  title: "North America and Europe both beat last year",
+  span: 12,
+  axis: monthAxis(12),
+  groups: [{ label: "North America" }, { label: "Europe" }],
+  series: [
+    ...grouped("North America", 0, regionYears(REGIONS[0] as (typeof REGIONS)[number], 0)).map(
+      (s) => ({ ...s, key: `na:${s.label}` }),
+    ),
+    ...grouped("Europe", 1, regionYears(REGIONS[1] as (typeof REGIONS)[number], 1)).map((s) => ({
+      ...s,
+      key: `eu:${s.label}`,
+    })),
+    ...REGIONS.slice(2).map((r) =>
+      series(
+        "revenue",
+        r.name,
+        last12.map((v) => round(v * r.share)),
+        r.name,
+      ),
+    ),
+  ],
+};
+
+const GROUPS: GalleryVariant[] = [
+  one("groups", "groups-line-plan", "Actual, target and forecast as one group", PLAN_LINE),
+  one(
+    "groups",
+    "groups-line-plan-ungrouped",
+    "The same series without groups, for comparison",
+    withoutGroups(PLAN_LINE, "groups_atf_plain"),
+  ),
+  one("groups", "groups-line-plan-narrow", "Narrow card (span 4): the key names the group", {
+    ...PLAN_LINE,
+    id: "groups_atf_narrow",
+    span: 4,
+  }),
+  one("groups", "groups-bar-years", "This year and last year grouped, plan ungrouped", YEARS),
+  one("groups", "groups-bar-stacked", "Stacked: two groups of channels", CHANNEL_STACK),
+  one(
+    "groups",
+    "groups-bar-stacked-ungrouped",
+    "The same stack without groups, for comparison",
+    withoutGroups(CHANNEL_STACK, "groups_stacked_plain"),
+  ),
+  one("groups", "groups-bar-percent", "100% stacked, horizontal, two groups", COUNTRY_SHARE),
+  one(
+    "groups",
+    "groups-area-stacked",
+    "Stacked area: one group and two ungrouped series",
+    MIX_AREA,
+  ),
+  one(
+    "groups",
+    "groups-line-two-groups",
+    "Two groups with the same member names, and two ungrouped series",
+    REGION_YEARS,
+  ),
+];
+
 export const GALLERY: GalleryVariant[] = [
   ...KPIS,
   ...LINES,
@@ -1469,6 +1669,7 @@ export const GALLERY: GalleryVariant[] = [
   ...PIES,
   ...SCATTER,
   ...TABLES,
+  ...GROUPS,
 ];
 
 export type { KpiData };
