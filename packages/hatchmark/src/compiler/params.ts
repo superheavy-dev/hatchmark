@@ -56,6 +56,9 @@ export function resolveParams(project: Project, dashboard: string): PlanParam[] 
       ];
     }
     const fallback = filter.default;
+    const geo = spec.blocks.find(
+      (b) => b.type === "map" && b.region.toLowerCase() === filter.column.toLowerCase(),
+    );
     return [
       {
         id: filter.id,
@@ -65,6 +68,7 @@ export function resolveParams(project: Project, dashboard: string): PlanParam[] 
         multiple: filter.multiple === true,
         default: fallback === undefined ? [] : Array.isArray(fallback) ? fallback : [fallback],
         sources: sources.filter((s) => hasColumn(project.columns.get(s), filter.column) !== false),
+        ...(geo?.type === "map" ? { geo: geo.geo } : {}),
       },
     ];
   });
@@ -82,8 +86,19 @@ export function paramsForQuery(
   return params.flatMap((param): PlannedParam[] => {
     if (param.kind === "select") {
       if (!param.sources.includes(source)) return [];
-      const { id, kind, column, operator, multiple } = param;
-      return [{ id, kind, source, column, operator, multiple, default: param.default }];
+      const { id, kind, column, operator, multiple, geo } = param;
+      return [
+        {
+          id,
+          kind,
+          source,
+          column,
+          operator,
+          multiple,
+          default: param.default,
+          ...(geo === undefined ? {} : { geo }),
+        },
+      ];
     }
     if (param.kind === "segment") {
       const segments = param.segments

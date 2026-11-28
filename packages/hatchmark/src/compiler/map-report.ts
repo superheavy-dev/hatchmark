@@ -146,11 +146,15 @@ export function matchDiagnostics(project: Project, data: DashboardData): Diagnos
         docs: docsCommand("HM5042"),
       });
     }
-    const hidden = listed("not_drawn");
+    const regions = new Map<string, { name: string; rows: number }>();
+    for (const e of listed("not_drawn")) {
+      const id = e.region ?? String(e.key);
+      const seen = regions.get(id);
+      regions.set(id, { name: e.name ?? id, rows: (seen?.rows ?? 0) + e.rows });
+    }
+    const hidden = [...regions.values()].sort((a, b) => b.rows - a.rows);
     if (hidden.length > 0) {
-      const shown = hidden
-        .slice(0, 5)
-        .map((e) => `${e.name ?? quoted(e.key)} (${plural(e.rows, "row")})`);
+      const shown = hidden.slice(0, 5).map((e) => `${e.name} (${plural(e.rows, "row")})`);
       out.push({
         code: "HM5043",
         severity: "warning",

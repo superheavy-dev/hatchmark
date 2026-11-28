@@ -25,7 +25,9 @@ ratio such as revenue per customer divides the region's revenue by its distinct 
 spelled `CA`, `California` and `06` count each customer once. Rows that name no region, name an
 ambiguous one or name a region the map does not draw are left out of the map, the bar list and the
 total, and each case gets its own warning. The dashboard period and select filters apply as for any
-block.
+block, except that a select filter on the map's own region column keeps every spelling of the
+picked region: with `California` selected, rows spelled `CA` and `06` stay in, on the map and in
+every other block on that column. A picked value that names no region keeps only that exact value.
 
 ## Scale
 
@@ -58,6 +60,8 @@ boundaries coincide, the classes merge rather than leave an empty colour in the 
 
 `hatchmark build --json` and `hatchmark check --json` carry the full match report under `maps`:
 every distinct value of the region column, its rows, and the region it joined or why it joined none.
+When `value` reads several sources, such as orders per session, a value's rows count the rows of
+every source.
 
 ## Checks
 

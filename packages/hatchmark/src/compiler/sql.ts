@@ -1,5 +1,12 @@
-import { notDrawnIds, regionKeySql } from "../geo/aliases.js";
-import { type Filter, keyComparison, parseTemporal, sameColumn, WEEKDAYS } from "../spec/index.js";
+import { matchRegion, notDrawnIds, regionKeySql } from "../geo/aliases.js";
+import {
+  type Filter,
+  type GeographyId,
+  keyComparison,
+  parseTemporal,
+  sameColumn,
+  WEEKDAYS,
+} from "../spec/index.js";
 import { canonicalJson } from "./hash.js";
 import { segmentValues, selectValues } from "./params.js";
 import type { ExecutionContext, MeasureComponent, PlannedQuery } from "./plan.js";
@@ -138,6 +145,29 @@ function anyEqual(
       return `${left} = ${right}`;
     })
     .join(" OR ")})`;
+}
+
+function sameRegion(
+  source: SqlSource,
+  name: string,
+  geo: GeographyId,
+  values: (string | number | boolean)[],
+  context: ExecutionContext,
+  sql: Sql,
+): string {
+  const ids = new Set<string>();
+  const raw: (string | number | boolean)[] = [];
+  for (const value of values) {
+    const match = matchRegion(geo, value);
+    if (match.kind === "matched" || match.kind === "not_drawn") ids.add(match.id);
+    else raw.push(value);
+  }
+  const key = regionKeySql(geo, quote(column(source, name).name));
+  const parts = [
+    ...(ids.size > 0 ? [`${key} IN (${[...ids].map((id) => sql.bind(id)).join(", ")})`] : []),
+    ...(raw.length > 0 ? [anyEqual(source, name, raw, context, sql)] : []),
+  ];
+  return `(${parts.join(" OR ")})`;
 }
 
 function filterSql(source: SqlSource, filter: Filter, context: ExecutionContext, sql: Sql): string {
@@ -329,7 +359,12 @@ function builtQuery(
     }
     if (param.kind !== "select") continue;
     const values = selectValues(param, context.bindings);
-    if (values.length > 0) where.push(anyEqual(source, param.column, values, context, sql));
+    if (values.length === 0) continue;
+    where.push(
+      param.geo === undefined
+        ? anyEqual(source, param.column, values, context, sql)
+        : sameRegion(source, param.column, param.geo, values, context, sql),
+    );
   }
 
   const components = query.measures.flatMap((m) => m.components);

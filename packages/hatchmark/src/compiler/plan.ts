@@ -164,6 +164,7 @@ export type PlannedParam =
       operator: "in";
       multiple: boolean;
       default: (string | number | boolean)[];
+      geo?: GeographyId;
     }
   | { id: string; kind: "period"; source: string; column: string; default: RangeSpec }
   | {
@@ -202,6 +203,11 @@ export type PlanParam =
       default: (string | number | boolean)[];
       /** Sources this filter binds to, sorted. */
       sources: string[];
+      /**
+       * Set when a map on the dashboard reads its regions from this column: a value naming a region
+       * keeps every spelling of that region, as the map groups them.
+       */
+      geo?: GeographyId;
     }
   | {
       id: string;

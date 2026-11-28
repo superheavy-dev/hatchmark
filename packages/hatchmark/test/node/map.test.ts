@@ -237,6 +237,74 @@ describe("map match report across sources", () => {
   });
 });
 
+describe("map ranks, classes and region filters", () => {
+  afterAll(removeProjects);
+
+  const project = (filters: unknown[] = []) =>
+    writeProject({
+      "hatchmark.yaml": {
+        ...PROJECT_DEFAULTS,
+        name: "Ties",
+        sources: { s: { type: "csv", path: "s.csv" } },
+      },
+      "s.csv": [
+        "d,state",
+        "2026-06-02,TX",
+        "2026-06-03,Texas",
+        "2026-06-04,48",
+        "2026-06-02,CA",
+        "2026-06-03,California",
+        "2026-06-02,NY",
+        "2026-06-05,36",
+        "2026-06-06,WA",
+      ].join("\n"),
+      "metrics/orders.yaml": metric({
+        type: "aggregate",
+        table: "s",
+        time: "d",
+        aggregate: "count",
+      }),
+      "dashboards/m.yaml": {
+        title: "Ties",
+        period: { asOf: "2026-06-30", range: "month_to_date", compare: "none" },
+        filters,
+        blocks: [
+          {
+            type: "map",
+            id: "m",
+            geo: "us-states",
+            region: "state",
+            value: "orders",
+            scale: { type: "threshold", breaks: [2, 3] },
+          },
+        ],
+      },
+    });
+  const regions = async (filters?: unknown[]) => {
+    const { root, project: p } = await project(filters);
+    const map = (await run(root, p, "m")).data?.blocks[0] as MapData;
+    return Object.fromEntries(map.regions.map((r) => [r.id, [r.value, r.rank, r.class]]));
+  };
+
+  it("tied regions share a rank and the next rank skips, and a value on a break takes the class above", async () => {
+    expect(await regions()).toEqual({
+      TX: [3, 1, 2],
+      CA: [2, 2, 1],
+      NY: [2, 2, 1],
+      WA: [1, 4, 0],
+    });
+  });
+
+  it("a select filter on the region column keeps every spelling of the picked region", async () => {
+    const filter = { type: "select", id: "state", column: "state", multiple: true };
+    expect(await regions([{ ...filter, default: ["Texas", "New York"] }])).toEqual({
+      TX: [3, 1, 2],
+      NY: [2, 2, 1],
+    });
+    expect(await regions([{ ...filter, default: ["Narnia"] }])).toEqual({});
+  });
+});
+
 describe("hatchmark check on a map block", () => {
   afterAll(removeProjects);
 
