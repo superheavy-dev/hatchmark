@@ -1,5 +1,8 @@
+import { readFile } from "node:fs/promises";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { run as cli } from "../../src/cli/main.js";
 import type { DashboardData, MapData } from "../../src/compiler/dashboard-data.js";
+import { customRangeDashboard, type PeriodData } from "../../src/compiler/period-data.js";
 import { PROJECT_DEFAULTS } from "../../src/spec/index.js";
 import { metric, Oracle, removeProjects, run, writeProject } from "./fixture.js";
 
@@ -53,7 +56,7 @@ const rand = () => {
 };
 const pick = <T>(xs: readonly T[]) => xs[Math.floor(rand() * xs.length)] as T;
 const cell = (v: string | number | null) =>
-  v === null ? "" : `"${String(v).replaceAll('"', '""')}"`;
+  v === null ? "" : '"' + String(v).replaceAll('"', '""') + '"';
 const day = (i: number) =>
   new Date(Date.parse("2026-10-01T00:00:00Z") + i * 86_400_000).toISOString().slice(0, 10);
 
@@ -63,11 +66,11 @@ function data() {
     const d = Math.floor(rand() * 56);
     orders.push(
       [
-        `${day(d)}T12:00:00Z`,
-        rand() < 0.1 ? null : `${day(d + Math.floor(rand() * 12))}T15:00:00Z`,
+        day(d) + "T12:00:00Z",
+        rand() < 0.1 ? null : day(d + Math.floor(rand() * 12)) + "T15:00:00Z",
         pick(TRUTH)[0],
         rand() < 0.3 ? "refunded" : "paid",
-        `C${Math.floor(rand() * 80)}`,
+        "C" + Math.floor(rand() * 80),
         (1 + rand() * 99).toFixed(2),
       ]
         .map(cell)
@@ -77,7 +80,7 @@ function data() {
   const sessions = ["started_at,state"];
   for (let i = 0; i < 4000; i++)
     sessions.push(
-      [`${day(Math.floor(rand() * 56))}T12:00:00Z`, pick(TRUTH)[0]].map(cell).join(","),
+      [day(Math.floor(rand() * 56)) + "T12:00:00Z", pick(TRUTH)[0]].map(cell).join(","),
     );
   const stores = ["opened,fips,sales"];
   for (let i = 0; i < 300; i++)
@@ -85,9 +88,9 @@ function data() {
       [day(Math.floor(rand() * 56)), pick(FIPS)[0] ?? "", (rand() * 500).toFixed(2)].join(","),
     );
   return {
-    orders: `${orders.join("\n")}\n`,
-    sessions: `${sessions.join("\n")}\n`,
-    stores: `${stores.join("\n")}\n`,
+    orders: orders.join("\n") + "\n",
+    sessions: sessions.join("\n") + "\n",
+    stores: stores.join("\n") + "\n",
   };
 }
 
@@ -158,10 +161,18 @@ const LEAF: Record<string, { table: string; agg: string; filter?: string; time?:
     filter: "x.shipped_at IS NOT NULL",
     time: "shipped_at",
   },
-  revenue: { table: "orders", agg: `sum(x.amount::DOUBLE) FILTER (WHERE ${PAID})`, filter: PAID },
-  paid_orders: { table: "orders", agg: `count(*) FILTER (WHERE ${PAID})`, filter: PAID },
-  refunds: { table: "orders", agg: `count(*) FILTER (WHERE ${REFUNDED})`, filter: REFUNDED },
-  paid_sql: { table: "orders", agg: `sum(x.amount::DOUBLE) FILTER (WHERE ${PAID})`, filter: PAID },
+  revenue: {
+    table: "orders",
+    agg: "sum(x.amount::DOUBLE) FILTER (WHERE " + PAID + ")",
+    filter: PAID,
+  },
+  paid_orders: { table: "orders", agg: "count(*) FILTER (WHERE " + PAID + ")", filter: PAID },
+  refunds: { table: "orders", agg: "count(*) FILTER (WHERE " + REFUNDED + ")", filter: REFUNDED },
+  paid_sql: {
+    table: "orders",
+    agg: "sum(x.amount::DOUBLE) FILTER (WHERE " + PAID + ")",
+    filter: PAID,
+  },
   sessions: { table: "sessions", agg: "count(*)" },
   store_sales: { table: "stores", agg: "sum(x.sales::DOUBLE)" },
 };
@@ -185,7 +196,7 @@ interface MapSpec {
   value: string;
 }
 const us = (value: string): MapSpec => ({
-  id: `us_${value}`,
+  id: "us_" + value,
   geo: "us-states",
   column: "state",
   value,
@@ -220,7 +231,9 @@ const block = (s: MapSpec) => ({
 });
 const PERIOD = { asOf: "2026-11-20", range: "last_30_days", compare: "none" };
 const SELECT = { type: "select", id: "state", column: "state", default: "California" };
-const DASHBOARDS: Record<string, { blocks: MapSpec[]; select?: boolean }> = {
+const CUSTOM: MapSpec[] = [us("ship_rate"), us("revenue"), us("conversion"), us("refund_share")];
+const DASHBOARDS: Record<string, { blocks: MapSpec[]; select?: boolean; period?: boolean }> = {
+  custom: { blocks: CUSTOM, period: true },
   shapes: { blocks: [...SHAPES, FIPS_MAP] },
   same: { blocks: [us("revenue"), us("conversion")], select: true },
   mixed_a: { blocks: [us("revenue"), WORLD_ON_STATE], select: true },
@@ -229,6 +242,7 @@ const DASHBOARDS: Record<string, { blocks: MapSpec[]; select?: boolean }> = {
 const WINDOW = { start: "2026-10-22", end: "2026-11-21" };
 
 let db: Oracle;
+let payload: PeriodData;
 const out: Record<string, DashboardData> = {};
 const diagnostics: Record<string, { code: string; message: string }[]> = {};
 
@@ -249,33 +263,67 @@ beforeAll(async () => {
     "sessions.csv": d.sessions,
     "stores.csv": d.stores,
   };
-  for (const [name, spec] of Object.entries(METRICS)) files[`metrics/${name}.yaml`] = spec;
+  for (const [name, spec] of Object.entries(METRICS)) files["metrics/" + name + ".yaml"] = spec;
   for (const [name, x] of Object.entries(DASHBOARDS))
-    files[`dashboards/${name}.yaml`] = {
+    files["dashboards/" + name + ".yaml"] = {
       title: name,
       period: PERIOD,
       ...(x.select ? { filters: [SELECT] } : {}),
+      ...(x.period
+        ? {
+            filters: [
+              {
+                type: "period",
+                id: "period",
+                options: [{ last: 30, unit: "day" }],
+                default: { last: 30, unit: "day" },
+              },
+            ],
+          }
+        : {}),
       blocks: x.blocks.map(block),
     };
   const { root, project } = await writeProject(files);
   for (const name of Object.keys(DASHBOARDS)) {
     const r = await run(root, project, name);
     if (r.data === undefined)
-      throw new Error(`${name}: ${JSON.stringify(r.diagnostics).slice(0, 2000)}`);
+      throw new Error(name + ": " + JSON.stringify(r.diagnostics).slice(0, 2000));
     out[name] = r.data;
     diagnostics[name] = r.diagnostics;
   }
+  let log = "";
+  const code = await cli(["build", "--json", "--cwd", root], {
+    stdout: (t) => {
+      log += t;
+    },
+    stderr: (t) => {
+      log += t;
+    },
+    cwd: root,
+    env: {},
+    stdoutIsTTY: false,
+    isAgent: async () => false,
+  });
+  if (code !== 0) throw new Error(log.slice(0, 3000));
+  const page = await readFile(root + "/dist/custom/index.html", "utf8");
+  payload = JSON.parse(
+    /<script type="application\/json" data-hm-periods>(.*?)<\/script>/s.exec(page)?.[1] ?? "null",
+  );
   db = await Oracle.open();
-  const path = (f: string) => `${root}/${f}`.replaceAll("'", "''");
+  const path = (f: string) => (root + "/" + f).replaceAll("'", "''");
   for (const t of ["orders", "sessions", "stores"])
     await db.run(
-      `CREATE TABLE ${t} AS SELECT * FROM read_csv('${path(`${t}.csv`)}', all_varchar = true, strict_mode = false)`,
+      "CREATE TABLE " +
+        t +
+        " AS SELECT * FROM read_csv('" +
+        path(t + ".csv") +
+        "', all_varchar = true, strict_mode = false)",
     );
   await db.run("CREATE TABLE truth (geo VARCHAR, raw VARCHAR, status VARCHAR, id VARCHAR)");
-  const lit = (v: unknown) => (v === null ? "NULL" : `'${String(v).replaceAll("'", "''")}'`);
+  const lit = (v: unknown) => (v === null ? "NULL" : "'" + String(v).replaceAll("'", "''") + "'");
   const rows = [...TRUTH.map((t) => ["state", ...t]), ...FIPS.map((t) => ["fips", ...t])];
   await db.run(
-    `INSERT INTO truth VALUES ${rows.map((r) => `(${r.map(lit).join(", ")})`).join(", ")}`,
+    "INSERT INTO truth VALUES " + rows.map((r) => "(" + r.map(lit).join(", ") + ")").join(", "),
   );
 }, 300_000);
 afterAll(async () => {
@@ -285,20 +333,37 @@ afterAll(async () => {
 
 const mapOf = (dash: string, id: string) =>
   out[dash]?.blocks.find((b): b is MapData => b.type === "map" && b.id === id) as MapData;
-const inWindow = (table: string, time = TIME[table]) => {
-  const t = `x.${time}`;
-  const d = table === "stores" ? `${t}::DATE` : `CAST(${t}::TIMESTAMPTZ AS DATE)`;
-  return `${d} >= DATE '${WINDOW.start}' AND ${d} < DATE '${WINDOW.end}'`;
+const inWindow = (table: string, time = TIME[table], win = WINDOW) => {
+  const t = "x." + time;
+  const d = table === "stores" ? t + "::DATE" : "CAST(" + t + "::TIMESTAMPTZ AS DATE)";
+  return d + " >= DATE '" + win.start + "' AND " + d + " < DATE '" + win.end + "'";
 };
 const join = (s: MapSpec) =>
-  `LEFT JOIN truth t ON t.geo = '${s.column === "fips" ? "fips" : "state"}' AND t.raw IS NOT DISTINCT FROM x.${s.column}`;
+  "LEFT JOIN truth t ON t.geo = '" +
+  (s.column === "fips" ? "fips" : "state") +
+  "' AND t.raw IS NOT DISTINCT FROM x." +
+  s.column;
 
-async function regionValues(s: MapSpec, extra = "TRUE"): Promise<Map<string, number | null>> {
+async function regionValues(
+  s: MapSpec,
+  extra = "TRUE",
+  win = WINDOW,
+): Promise<Map<string, number | null>> {
   const parts = await Promise.all(
     leaves(s.value).map(async (leaf) => {
       const { table, agg, time } = LEAF[leaf] as { table: string; agg: string; time?: string };
       const rows = await db.rows(
-        `SELECT t.id, ${agg} AS v FROM ${table} x ${join(s)} WHERE t.status = 'matched' AND ${inWindow(table, time)} AND ${extra} GROUP BY t.id`,
+        "SELECT t.id, " +
+          agg +
+          " AS v FROM " +
+          table +
+          " x " +
+          join(s) +
+          " WHERE t.status = 'matched' AND " +
+          inWindow(table, time, win) +
+          " AND " +
+          extra +
+          " GROUP BY t.id",
       );
       return new Map(rows.map((r) => [r.id as string, r.v === null ? null : Number(r.v)]));
     }),
@@ -319,19 +384,28 @@ async function regionValues(s: MapSpec, extra = "TRUE"): Promise<Map<string, num
 
 async function reportRows(
   s: MapSpec,
+  win = WINDOW,
 ): Promise<Map<string | null, { rows: number; status: Status }>> {
   const byTable = new Map<string, string[]>();
   for (const leaf of leaves(s.value)) {
     const { table, filter, time } = LEAF[leaf] as { table: string; filter?: string; time?: string };
     byTable.set(table, [
       ...(byTable.get(table) ?? []),
-      `(${filter ?? "TRUE"}) AND ${inWindow(table, time)}`,
+      "(" + (filter ?? "TRUE") + ") AND " + inWindow(table, time, win),
     ]);
   }
   const out = new Map<string | null, { rows: number; status: Status }>();
   for (const [table, filters] of byTable) {
     const rows = await db.rows(
-      `SELECT x.${s.column} AS k, t.status, count(*) AS n FROM ${table} x ${join(s)} WHERE (${filters.map((f) => `(${f})`).join(" OR ")}) GROUP BY ALL`,
+      "SELECT x." +
+        s.column +
+        " AS k, t.status, count(*) AS n FROM " +
+        table +
+        " x " +
+        join(s) +
+        " WHERE (" +
+        filters.map((f) => "(" + f + ")").join(" OR ") +
+        ") GROUP BY ALL",
     );
     for (const r of rows) {
       const k = r.k === null ? null : String(r.k);
@@ -358,9 +432,9 @@ describe("map invariants: region filters, per-source report rows, signed codes",
       const map = mapOf("shapes", s.id);
       for (const r of map.regions)
         if (!close(r.value, want.get(r.id)))
-          problems.push(`${s.id}/${r.id}: ${r.value} oracle ${want.get(r.id)}`);
+          problems.push(s.id + "/" + r.id + ": " + r.value + " oracle " + want.get(r.id));
       for (const id of want.keys())
-        if (!map.regions.some((r) => r.id === id)) problems.push(`${s.id}/${id}: missing`);
+        if (!map.regions.some((r) => r.id === id)) problems.push(s.id + "/" + id + ": missing");
     }
     expect(problems).toEqual([]);
   });
@@ -374,13 +448,15 @@ describe("map invariants: region filters, per-source report rows, signed codes",
       for (const [k, w] of want) {
         const g = got.get(k);
         if ((g?.rows ?? 0) !== w.rows)
-          problems.push(`${s.id} ${JSON.stringify(k)}: rows ${g?.rows} oracle ${w.rows}`);
+          problems.push(s.id + " " + JSON.stringify(k) + ": rows " + g?.rows + " oracle " + w.rows);
         if (w.status !== "matched" && g?.region != null)
-          problems.push(`${s.id} ${JSON.stringify(k)}: joined ${g.region}, oracle ${w.status}`);
+          problems.push(
+            s.id + " " + JSON.stringify(k) + ": joined " + g.region + ", oracle " + w.status,
+          );
       }
       for (const [k, g] of got)
         if (!want.has(k) && g.rows !== 0)
-          problems.push(`${s.id} ${JSON.stringify(k)}: ${g.rows} rows, oracle none`);
+          problems.push(s.id + " " + JSON.stringify(k) + ": " + g.rows + " rows, oracle none");
     }
     expect(problems).toEqual([]);
   });
@@ -393,7 +469,7 @@ describe("map invariants: region filters, per-source report rows, signed codes",
       mapOf("shapes", s.id).match.flatMap((m) =>
         m.region !== null &&
         (signed.includes(String(m.key)) || (typeof m.key === "number" && m.key < 0))
-          ? [`${s.id} ${JSON.stringify(m.key)} -> ${m.region}`]
+          ? [s.id + " " + JSON.stringify(m.key) + " -> " + m.region]
           : [],
       ),
     );
@@ -402,7 +478,10 @@ describe("map invariants: region filters, per-source report rows, signed codes",
 
   it("a region filter keeps every spelling when every map on the column shares a geo", async () => {
     const ca = await db.rows("SELECT raw FROM truth WHERE geo = 'state' AND id = 'CA'");
-    const spellings = `x.state IN (${ca.map((r) => `'${String(r.raw).replaceAll("'", "''")}'`).join(", ")})`;
+    const spellings =
+      "x.state IN (" +
+      ca.map((r) => "'" + String(r.raw).replaceAll("'", "''") + "'").join(", ") +
+      ")";
     for (const s of [us("revenue"), us("conversion")]) {
       const want = await regionValues(s, spellings);
       const map = mapOf("same", s.id);
@@ -412,7 +491,7 @@ describe("map invariants: region filters, per-source report rows, signed codes",
       ).toEqual(["CA"]);
       expect(
         close(map.regions[0]?.value, want.get("CA")),
-        `${s.id}: ${map.regions[0]?.value} vs ${want.get("CA")}`,
+        s.id + ": " + map.regions[0]?.value + " vs " + want.get("CA"),
       ).toBe(true);
     }
   });
@@ -427,7 +506,7 @@ describe("map invariants: region filters, per-source report rows, signed codes",
       ).toEqual(["CA"]);
       expect(
         close(map.regions[0]?.value, want.get("CA")),
-        `${dash}: ${map.regions[0]?.value} vs ${want.get("CA")}`,
+        dash + ": " + map.regions[0]?.value + " vs " + want.get("CA"),
       ).toBe(true);
     }
     const a = mapOf("mixed_a", "w_revenue");
@@ -437,5 +516,56 @@ describe("map invariants: region filters, per-source report rows, signed codes",
       total: a.total,
       match: a.match,
     });
+  });
+  it("custom ranges keep each operand's own date window in values and report rows", async () => {
+    const problems: string[] = [];
+    const wins = [
+      { start: "2026-10-22", end: "2026-11-21" },
+      { start: "2026-10-25", end: "2026-11-05" },
+      { start: "2026-11-10", end: "2026-11-11" },
+      { start: "2026-11-01", end: "2026-11-21" },
+    ];
+    for (const win of wins) {
+      const data = customRangeDashboard(
+        payload.custom as NonNullable<PeriodData["custom"]>,
+        payload.filter,
+        win,
+      );
+      for (const s of CUSTOM) {
+        const map = data.blocks.find(
+          (b): b is MapData => b.type === "map" && b.id === s.id,
+        ) as MapData;
+        const want = await regionValues(s, "TRUE", win);
+        for (const r of map.regions)
+          if (!close(r.value, want.get(r.id)))
+            problems.push(
+              win.start + "/" + s.id + "/" + r.id + ": " + r.value + " oracle " + want.get(r.id),
+            );
+        for (const [id, v] of want)
+          if (v !== null && !map.regions.some((r) => r.id === id))
+            problems.push(win.start + "/" + s.id + "/" + id + ": missing");
+        const rows = await reportRows(s, win);
+        const got = new Map(map.match.map((m) => [m.key === null ? null : String(m.key), m.rows]));
+        for (const [k, w] of rows)
+          if ((got.get(k) ?? 0) !== w.rows)
+            problems.push(
+              win.start +
+                "/" +
+                s.id +
+                " " +
+                JSON.stringify(k) +
+                ": rows " +
+                got.get(k) +
+                " oracle " +
+                w.rows,
+            );
+        for (const [k, n] of got)
+          if (!rows.has(k) && n !== 0)
+            problems.push(
+              win.start + "/" + s.id + " " + JSON.stringify(k) + ": " + n + " rows, oracle none",
+            );
+      }
+    }
+    expect(problems).toEqual([]);
   });
 });
