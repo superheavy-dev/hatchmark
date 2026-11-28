@@ -205,6 +205,11 @@ export const CODES = {
     explanation:
       'Cards that sit side by side end level. Charts in one grid row are drawn at the tallest "height" preset among them, and KPIs in one strip at the tallest among the strip\'s KPIs, so a shorter preset is drawn taller on wide screens. Below 1024 px cards stack, and every card, each KPI included, keeps its own preset. Set the same height on every card in the row (the fix sets this one to the height it is drawn at, which also changes how it looks on phones), or give the chart its own row with span: 12. Tables keep their own height.',
   },
+  HM2030: {
+    title: "filter on a column no source has",
+    explanation:
+      "A select filter's column, or the columns of a segment in a segment filter, are in none of the sources the dashboard's blocks read, so turning the filter or the segment on would change nothing. Name a column one of the dashboard's sources has, or remove the filter or the segment.",
+  },
   HM2029: {
     title: "in_table key of another type",
     explanation:

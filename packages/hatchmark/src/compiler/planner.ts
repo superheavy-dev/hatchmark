@@ -179,10 +179,19 @@ export function notBuiltYet(
 function filterTables(
   sources: Record<string, Source>,
   measures: PlannedMeasure[],
+  params: PlanParam[],
+  source: string,
 ): Record<string, FileSource> | undefined {
-  const names = measures
-    .flatMap((m) => m.components)
-    .flatMap((c) => [...c.filters, ...(c.anyOf ?? []).flatMap((s) => s.filters)])
+  const names = [
+    ...measures
+      .flatMap((m) => m.components)
+      .flatMap((c) => [...c.filters, ...(c.anyOf ?? []).flatMap((s) => s.filters)]),
+    ...params.flatMap((param) =>
+      param.kind === "segment"
+        ? param.segments.filter((s) => s.sources.includes(source)).flatMap((s) => s.filters)
+        : [],
+    ),
+  ]
     .flatMap((f) => (f.op === "in_table" || f.op === "not_in_table" ? [f.table] : []))
     .sort();
   const tables: Record<string, FileSource> = {};
@@ -286,7 +295,7 @@ function planReading(
         );
       return measure ? [measure] : [];
     });
-    const tables = filterTables(ctx.sources, measures);
+    const tables = filterTables(ctx.sources, measures, ctx.params, group.source);
     const shape: Omit<PlannedQuery, "id"> = {
       source: group.source,
       input,
@@ -352,7 +361,7 @@ function planReading(
         ...(only === undefined ? { anyOf: sets } : { filters: only.filters }),
       };
       const measure: PlannedMeasure = { ...ROWS_MEASURE, components: [counted] };
-      const tables = filterTables(ctx.sources, [measure]);
+      const tables = filterTables(ctx.sources, [measure], ctx.params, source);
       const shape: Omit<PlannedQuery, "id"> = {
         source,
         input: ctx.sources[source] as PlannedQuery["input"],
@@ -455,14 +464,28 @@ function planBlockAt(
   }
 
   const shown = shownMetrics(block);
-  const toggled = ctx.params.some(
-    (p) =>
-      p.kind === "segment" &&
-      p.segments.some((s) => s.filters.some((f) => f.op === "in_table" || f.op === "not_in_table")),
-  );
   for (const name of shown) {
-    const feature = toggled
-      ? "a segment filter with in_table filters"
+    const tables = new Set(
+      leaves(name, ctx.metrics).flatMap((leaf) => {
+        const metric = ctx.metrics.get(leaf);
+        return metric?.type === "aggregate" || metric?.type === "sql" ? [metric.table] : [];
+      }),
+    );
+    const lookupKey = ctx.params.some(
+      (p) =>
+        p.kind === "segment" &&
+        p.segments.some(
+          (s) =>
+            s.sources.some((source) => tables.has(source)) &&
+            s.filters.some(
+              (f) =>
+                (f.op === "in_table" || f.op === "not_in_table") &&
+                ctx.sources[f.table]?.type === "lookup",
+            ),
+        ),
+    );
+    const feature = lookupKey
+      ? "a segment filter with in_table on a lookup source"
       : notBuiltYet(name, ctx.metrics, ctx.sources);
     if (feature === undefined) continue;
     return {

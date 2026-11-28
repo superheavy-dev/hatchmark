@@ -617,6 +617,7 @@ function mountSegments(group: HTMLElement, params: URLSearchParams): void {
   for (const b of buttons)
     b.setAttribute("aria-pressed", String(names.includes(b.dataset.hmSegment ?? "")));
   if (key() !== initial) void show(false);
+  else writeParam(id, undefined);
 }
 
 const refreshers: ((force?: boolean) => void)[] = [];

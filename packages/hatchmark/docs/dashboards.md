@@ -184,8 +184,11 @@ on combine with AND and apply to every block, before anything else is computed. 
 to 4 segment names, each once, and the optional `default` lists the ones on when the page opens
 (none by default). A dashboard has at most one `segment` filter (`HM3007`). An unknown segment is
 `HM2021`, and a block reading several sources of which only some have a segment's columns is
-`HM2013`. A segment whose filters use `in_table` or `not_in_table` can't be a toggle yet
-(`HM4023`).
+`HM2013`. A segment whose columns none of the dashboard's sources have would change nothing, and
+is warning `HM2030` (so is a `select` filter on such a column). Segments may use `in_table` and
+`not_in_table`; their key columns follow the same type rule as in metrics (`HM2029`). A key table that is a
+`lookup` source isn't evaluated yet: a block whose sources the segment applies to is left out with
+`HM4023`, and blocks whose sources it can't apply to are unaffected.
 
 Build runs the dashboard once per combination of segments (at most 16), with each combination's
 period presets and day-level data when the dashboard also has a `period` filter, so every number

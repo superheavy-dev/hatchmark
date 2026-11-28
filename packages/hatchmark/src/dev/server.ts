@@ -297,7 +297,7 @@ export async function startDevServer(
         }
         const planKey = plan === undefined ? undefined : JSON.stringify(plan);
         const reads = new Set([
-          ...(plan?.queries.map((q) => q.source) ?? []),
+          ...(plan?.queries.flatMap((q) => [q.source, ...Object.keys(q.tables ?? {})]) ?? []),
           ...(plan?.horizons.map((h) => h.source) ?? []),
         ]);
         const page = pages.get(name);

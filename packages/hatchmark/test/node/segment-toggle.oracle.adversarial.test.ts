@@ -694,7 +694,7 @@ describe("segment toggle edges", () => {
     expect(codes).toContain("HM2013:error");
   });
 
-  it("leaves blocks out with HM4023 for a toggle segment with in_table, and still builds", async () => {
+  it("builds a toggle segment with in_table and keeps its blocks", async () => {
     const root = await twoSources(
       [{ type: "kpi", id: "orders", metric: "orders" }],
       ["americas", "members"],
@@ -702,6 +702,6 @@ describe("segment toggle edges", () => {
     const { code, report } = await buildProject(root);
     const diags = (report as { diagnostics: { code: string; severity: string }[] }).diagnostics;
     expect(code, JSON.stringify(diags)).toBe(0);
-    expect(diags.map((d) => d.code + ":" + d.severity)).toContain("HM4023:warning");
+    expect(diags.map((d) => d.code)).not.toContain("HM4023");
   });
 });
