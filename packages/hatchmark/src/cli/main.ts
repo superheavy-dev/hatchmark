@@ -10,6 +10,7 @@ import { doctor, doctorHelp } from "./commands/doctor.js";
 import { explain, explainHelp } from "./commands/explain.js";
 import { init, initHelp } from "./commands/init.js";
 import { schema, schemaHelp } from "./commands/schema.js";
+import { test, testHelp } from "./commands/test.js";
 import { version, versionHelp } from "./commands/version.js";
 import { type CommandHelp, GLOBAL_OPTIONS, renderCommandHelp, renderTopHelp } from "./help.js";
 import {
@@ -122,6 +123,7 @@ const COMMANDS: Record<string, Command> = {
         ...(typeof flags.block === "string" ? { block: flags.block } : {}),
       }),
   },
+  test: { help: testHelp, options: {}, run: (ctx, positionals) => test(ctx, positionals) },
   version: { help: versionHelp, options: {}, run: (ctx) => version(ctx) },
   doctor: { help: doctorHelp, options: {}, run: (ctx) => doctor(ctx) },
 };

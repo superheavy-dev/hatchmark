@@ -275,6 +275,11 @@ function checkSources(project: Project, out: Diagnostic[]): void {
   const r = reporter(config, out);
   const names = Object.keys(sources);
   for (const [name, source] of Object.entries(sources)) {
+    (source.tests ?? []).forEach((test, i) => {
+      const base = `/sources/${name}/tests/${i}/where`;
+      checkColumns(r, project, name, filterColumnRefs(test.where ?? [], base));
+      checkFilterTables(r, project, config, test.where ?? [], base, names);
+    });
     if (source.type !== "lookup") continue;
     const base = `/sources/${name}`;
     const tables = [

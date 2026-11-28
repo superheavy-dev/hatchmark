@@ -410,6 +410,16 @@ export const CODES = {
     explanation:
       "check validates the metric-layer primitives of RFC 0001 (formula, per_entity, lookup sources, in_table filters on a lookup source, value, entity, active, trailing, scale, a sql metric on a snapshot table, and the freshness and timezone source options), but the planner does not evaluate them yet. A block that shows such a metric is left out of the build with this warning rather than computed as a plain sum, which would show a wrong number. The block appears once the planner evaluates the primitive. A target whose table is a lookup source is not evaluated yet either: the block keeps its numbers and shows no target, with this warning at its target.",
   },
+  HM4030: {
+    title: "test failed",
+    explanation:
+      "hatchmark test read a value that differs from what a test pins. For a metric test (tests in metrics/<name>.yaml), the value is the metric over the test's window, or at the end of its at date, with its where filters and segments, read the way a dashboard reads it; the diagnostic gives expected, actual and the difference. With no tolerance both sides must be equal after rounding to 6 decimals; with tolerance their difference may be at most that much. For a row-count test (tests under a source in hatchmark.yaml), the number of rows that match where is below min or above max. If the data or the definition changed on purpose, update the test; the fix that rewrites expect is unsafe, so say that you changed a pinned number.",
+  },
+  HM4031: {
+    title: "test reads past the data",
+    explanation:
+      "A metric test's window, or its at date, ends after the newest data of a source the metric reads, so the value can still change as data arrives. Move the test to a period the data fully covers, or swap in a fixture with data.",
+  },
   HM4040: {
     title: "default business definition",
     explanation:

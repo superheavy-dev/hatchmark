@@ -18,6 +18,7 @@ example. [README.md](README.md) lists every docs page; the files a project holds
 | `explain <code>`                          | Explains a diagnostic code such as `HM2003` and how to fix it.                                                                                                                                                                                                                                           |
 | `explain <metric>`                        | Prints the SQL that build runs for a metric. See [Printing the SQL](#printing-the-sql).                                                                                                                                                                                                                  |
 | `explain --dashboard <name> --block <id>` | Prints the SQL of one block. See [Printing the SQL](#printing-the-sql).                                                                                                                                                                                                                                  |
+| `test [metric                             | source ...]`                                                                                                                                                                                                                                                                                             | Runs the tests pinned in metric files and the row-count tests of sources against the data. Exits 1 when one fails. See [test](#test). |
 | `version`                                 | Prints the Hatchmark and Node.js versions.                                                                                                                                                                                                                                                               |
 | `doctor`                                  | Checks that this machine can run Hatchmark: Node.js, bundled docs and schemas, project config.                                                                                                                                                                                                           |
 
@@ -181,6 +182,21 @@ so what it prints always matches the version that runs your project, offline.
   `section` to print it, its `title`, the `line` in the page and a `snippet`.
 
 JSON results carry `version`. A page or section result has `topic`, `path`, `title` and `content`.
+
+## test
+
+`hatchmark test` runs every test in the project, or those of the metrics and sources it names, and
+exits 1 when one fails, so it fits a CI step. Metric tests are described in
+[metrics.md](metrics.md#tests) and row-count tests in [project.md](project.md#row-count-tests). Each
+test reads the data through the same queries as `build`, so a pinned number is the number a
+dashboard shows.
+
+JSON gives `passed`, `failed`, `errors` (tests that could not run, such as a missing fixture file),
+one entry per test in `results` (`kind`, `target`, `index`, `name`, `file`, `pointer`, `status`,
+`expected`, `actual`, `difference`), and the diagnostics: `HM4030` for each failure, `HM4031` for a
+test that reads past the data. A test with `by` gives `actual` and `difference` per group. Exit
+codes: 0 every test passed, 1 a test failed or could not run, 2 an error in `hatchmark.yaml` or a
+name that is no metric or source, 3 a missing data or fixture file.
 
 ## dev
 

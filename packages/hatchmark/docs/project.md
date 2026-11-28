@@ -133,6 +133,28 @@ Column types are inferred from every row of the file (see [numbers.md](numbers.m
 A metric or block that names a column the file does not have fails `hatchmark build` with `HM2015`,
 which names the source and the column; `hatchmark check` does not catch every such case.
 
+### Row-count tests
+
+A source can carry `tests` that `hatchmark test` runs: each counts the source's rows, optionally only
+those that match `where` ([metric filters](metrics.md#filters)), against inclusive bounds.
+
+```yaml
+sources:
+  orders:
+    type: csv
+    path: data/orders.csv
+    tests:
+      - name: full export
+        rows: { min: 1000 }
+      - rows: { max: 0 }
+        where:
+          - column: amount
+            op: is_null
+```
+
+`rows` needs `min`, `max` or both. A count outside them is `HM4030`. Tests never change what a query
+reads, so editing them keeps the build cache.
+
 ## Starting from `init --template minimal`
 
 `hatchmark init --template minimal` writes `hatchmark.yaml` with `sources: {}` and empty

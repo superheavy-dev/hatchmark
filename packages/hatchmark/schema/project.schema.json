@@ -145,6 +145,13 @@
               "type": "string",
               "minLength": 1
             },
+            "tests": {
+              "description": "Row-count checks that hatchmark test runs against the data.",
+              "type": "array",
+              "items": {
+                "$ref": "#/$defs/SourceTest"
+              }
+            },
             "snapshot": {
               "description": "The source is a full snapshot per value of this date column; metrics on it must not sum over time.",
               "type": "string",
@@ -265,6 +272,13 @@
               "type": "string",
               "minLength": 1
             },
+            "tests": {
+              "description": "Row-count checks that hatchmark test runs against the data.",
+              "type": "array",
+              "items": {
+                "$ref": "#/$defs/SourceTest"
+              }
+            },
             "snapshot": {
               "description": "The source is a full snapshot per value of this date column; metrics on it must not sum over time.",
               "type": "string",
@@ -374,6 +388,13 @@
             "path": {
               "type": "string",
               "minLength": 1
+            },
+            "tests": {
+              "description": "Row-count checks that hatchmark test runs against the data.",
+              "type": "array",
+              "items": {
+                "$ref": "#/$defs/SourceTest"
+              }
             },
             "snapshot": {
               "description": "The source is a full snapshot per value of this date column; metrics on it must not sum over time.",
@@ -632,6 +653,13 @@
                 }
               ],
               "description": "How complete the source is. Default: through its latest timestamp, or through the whole latest date of a date column."
+            },
+            "tests": {
+              "description": "Row-count checks that hatchmark test runs against the data.",
+              "type": "array",
+              "items": {
+                "$ref": "#/$defs/SourceTest"
+              }
             }
           },
           "required": [
@@ -644,6 +672,212 @@
         }
       ],
       "description": "A table read from a file in the project, or a lookup over others."
+    },
+    "SourceTest": {
+      "type": "object",
+      "properties": {
+        "name": {
+          "type": "string",
+          "minLength": 1
+        },
+        "rows": {
+          "type": "object",
+          "properties": {
+            "min": {
+              "description": "Fewest rows allowed.",
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 9007199254740991
+            },
+            "max": {
+              "description": "Most rows allowed.",
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 9007199254740991
+            }
+          },
+          "additionalProperties": false,
+          "description": "Inclusive bounds on the number of rows.",
+          "minProperties": 1
+        },
+        "where": {
+          "description": "Count only the rows that match.",
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/Filter"
+          }
+        }
+      },
+      "required": [
+        "rows"
+      ],
+      "additionalProperties": false,
+      "description": "A row-count check that hatchmark test runs against the data."
+    },
+    "Filter": {
+      "oneOf": [
+        {
+          "type": "object",
+          "properties": {
+            "column": {
+              "type": "string",
+              "minLength": 1,
+              "description": "A column name in the source data."
+            },
+            "op": {
+              "type": "string",
+              "enum": [
+                "eq",
+                "neq",
+                "gt",
+                "gte",
+                "lt",
+                "lte"
+              ]
+            },
+            "value": {
+              "type": [
+                "string",
+                "number",
+                "boolean"
+              ]
+            }
+          },
+          "required": [
+            "column",
+            "op",
+            "value"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "column": {
+              "type": "string",
+              "minLength": 1,
+              "description": "A column name in the source data."
+            },
+            "op": {
+              "type": "string",
+              "enum": [
+                "in",
+                "not_in"
+              ]
+            },
+            "values": {
+              "minItems": 1,
+              "type": "array",
+              "items": {
+                "type": [
+                  "string",
+                  "number",
+                  "boolean"
+                ]
+              }
+            }
+          },
+          "required": [
+            "column",
+            "op",
+            "values"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "column": {
+              "type": "string",
+              "minLength": 1,
+              "description": "A column name in the source data."
+            },
+            "op": {
+              "type": "string",
+              "enum": [
+                "is_null",
+                "not_null"
+              ]
+            }
+          },
+          "required": [
+            "column",
+            "op"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "column": {
+              "type": "string",
+              "minLength": 1,
+              "description": "A column name in the source data."
+            },
+            "op": {
+              "type": "string",
+              "const": "between"
+            },
+            "from": {
+              "type": [
+                "string",
+                "number",
+                "boolean"
+              ]
+            },
+            "to": {
+              "type": [
+                "string",
+                "number",
+                "boolean"
+              ]
+            }
+          },
+          "required": [
+            "column",
+            "op",
+            "from",
+            "to"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "column": {
+              "type": "string",
+              "minLength": 1,
+              "description": "A column name in the source data."
+            },
+            "op": {
+              "type": "string",
+              "enum": [
+                "in_table",
+                "not_in_table"
+              ]
+            },
+            "table": {
+              "type": "string",
+              "pattern": "^[a-z][a-z0-9_]*$",
+              "description": "A source name from hatchmark.yaml."
+            },
+            "key": {
+              "type": "string",
+              "minLength": 1,
+              "description": "The column of that source to match against."
+            }
+          },
+          "required": [
+            "column",
+            "op",
+            "table",
+            "key"
+          ],
+          "additionalProperties": false,
+          "description": "Keeps rows whose column value appears (in_table) or does not appear (not_in_table) in another source's key column. A null value passes not_in_table and fails in_table."
+        }
+      ],
+      "description": "A row filter. between is inclusive at both ends. A date (YYYY-MM-DD) compared with a timestamp column compares the row's calendar date in the project time zone, so eq matches the whole day and between includes all of its last day. neq and not_in keep rows whose column is null; the other operators never match null."
     }
   }
 }

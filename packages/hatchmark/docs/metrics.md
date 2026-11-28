@@ -224,6 +224,43 @@ lacks (inline values have no columns), or a segment is on that the target cannot
 hides the target and says why; check warns ahead of time with `HM4021`. A target that lists its
 `segments` is shown while only those segments are on, without being filtered again.
 
+## Tests
+
+`tests` pins values of the metric so that `hatchmark test` fails when the data or the definition
+changes them. Each test reads the metric the way a dashboard does, through the same queries:
+
+```yaml
+tests:
+  - name: October revenue
+    window: [2026-10-01, 2026-10-31]
+    expect: 42420.42
+  - window: [2026-10-01, 2026-10-31]
+    where:
+      - column: region
+        op: eq
+        value: West
+    expect: 9490.92
+  - window: [2026-10-01, 2026-10-31]
+    by: region
+    expect: { South: 16101.04, West: 9490.92 }
+```
+
+| Field       | Meaning                                                                                                                                                                                           |
+| ----------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `window`    | Metrics summed over time: an inclusive pair of local dates.                                                                                                                                       |
+| `at`        | Point-in-time metrics (`over_time` other than `sum`): the value at the end of that local date, from the latest snapshot on or before it.                                                          |
+| `where`     | Optional [filters](#filters) added to the metric's own. A ratio or formula applies them to every metric it reads.                                                                                 |
+| `segments`  | Optional segments applied as well.                                                                                                                                                                |
+| `by`        | Optional column: `expect` then maps each group to its value. Groups not listed are not checked; an empty group is `(empty)`.                                                                      |
+| `expect`    | The value, in the metric's units after `scale` (no currency or percent formatting).                                                                                                               |
+| `tolerance` | Optional absolute difference allowed. Without it, both sides must be equal after rounding to 6 decimals.                                                                                          |
+| `data`      | Optional fixture files that replace sources for this test, by source name, such as `{ orders: tests/orders_small.csv }`. Fixture tests pin the definition; tests on the real data pin the number. |
+| `name`      | Optional label shown in the results.                                                                                                                                                              |
+
+A test that fails is `HM4030` with the expected and actual values and the difference; its fix rewrites
+`expect` and is unsafe, so say when you change a pinned number. A test whose window reaches past the
+newest data of a source it reads gets warning `HM4031`: the number can still change.
+
 ## Format
 
 | `type`     | Options                                                     | Shows                          |

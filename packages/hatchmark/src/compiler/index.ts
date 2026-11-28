@@ -16,5 +16,6 @@ export * from "./run.js";
 export * from "./segment-build.js";
 export * from "./sql.js";
 export * from "./targets.js";
+export * from "./tests.js";
 export * from "./weight.js";
 export * from "./windows.js";
