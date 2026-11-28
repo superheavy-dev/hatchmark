@@ -11,7 +11,7 @@ import {
 } from "./format.js";
 import { textWidth } from "./measure.js";
 import { esc, langAttr, r, scriptJson, svgText } from "./svg.js";
-import type { MapColor, Theme } from "./theme.js";
+import { type MapColor, onMapColor, type Theme } from "./theme.js";
 
 /** At or above this card width the bar list sits beside the map, else below it. */
 export const MAP_SIDE_MIN = 640;
@@ -19,6 +19,8 @@ export const MAP_LIST_WIDTH = 260;
 export const MAP_LIST_GAP = 24;
 const MAX_HEIGHT = 520;
 const LEADER_SWATCH = 8;
+const TILE_LABEL_MIN = 8;
+const TILE_LABEL_SHARE = 0.5;
 
 /**
  * The fill of each class, lowest first. Sequential scales take the theme's ramp for their number
@@ -151,10 +153,42 @@ export function mapLayers(
     ];
   });
   const over =
-    labels.length === 0
-      ? ""
-      : `<svg class="hm-map-layer hm-map-labels" ${box}><defs>${noDataPattern(ctx, `${hatch}-k`, s)}</defs>${labels.join("")}</svg>`;
+    geography.labels === "inside"
+      ? tileLabels(
+          ctx,
+          geography,
+          new Map(geography.regions.map((g) => [g.id, regionColor(byId.get(g.id), colors)])),
+          s,
+          box,
+        )
+      : labels.length === 0
+        ? ""
+        : `<svg class="hm-map-layer hm-map-labels" ${box}><defs>${noDataPattern(ctx, `${hatch}-k`, s)}</defs>${labels.join("")}</svg>`;
   return { under, over };
+}
+
+function tileLabels(
+  ctx: RenderContext,
+  geography: Geography,
+  fills: Map<string, MapColor | undefined>,
+  scale: number,
+  box: string,
+): string {
+  const pitch = Math.sqrt(geography.regions[0]?.area ?? 0) * scale;
+  const size = Math.min(ctx.theme.leader.size, Math.floor(pitch * TILE_LABEL_SHARE));
+  if (size < TILE_LABEL_MIN) return "";
+  const u = (px: number) => Math.round((px / scale) * 1e3) / 1e3;
+  const texts = geography.regions.map(
+    (g) =>
+      `<text x="${g.label[0]}" y="${g.label[1]}" dy="0.35em" text-anchor="middle" font-size="${u(size)}" font-weight="500"${tileLabelPaint(ctx, fills.get(g.id))}>${esc(g.id)}</text>`,
+  );
+  return `<svg class="hm-map-layer hm-map-tiles" ${box}>${texts.join("")}</svg>`;
+}
+
+function tileLabelPaint(ctx: RenderContext, fill: MapColor | undefined): string {
+  if (fill === undefined) return ctx.paint.attrs("text");
+  if (ctx.paint.mode === undefined) return ` class="hm-on-${fill}"`;
+  return ` fill="${onMapColor(ctx.theme, ctx.paint.mode, fill)}"`;
 }
 
 /**
@@ -398,9 +432,10 @@ export function mapBody(
       )
       .join("");
   const plot = `<div class="hm-map-frame" style="max-width:${Math.floor((geography.width * MAX_HEIGHT) / geography.height)}px">${layer("under")}${renderMapSvg(block, ctx, geography)}${layer("over")}</div>`;
+  const tiles = block.shape === "tiles";
   const empty =
     block.regions.length === 0
-      ? `<p class="hm-map-empty">${block.empty === "no_complete_day" ? "No complete day yet" : `No ${esc(lowerFirst(metricOf(ctx, block.metric).label))} in this period`}</p>`
+      ? `<p class="hm-map-empty"${tiles ? ' style="position:static;margin-bottom:12px"' : ""}>${block.empty === "no_complete_day" ? "No complete day yet" : `No ${esc(lowerFirst(metricOf(ctx, block.metric).label))} in this period`}</p>`
       : "";
   const list = block.pair === "bars" ? barList(block, ctx, names) : "";
   const note = matchNote(block, ctx);
@@ -409,7 +444,7 @@ export function mapBody(
     `<figure class="hm-chart hm-map" data-hm-map="${esc(block.id)}">`,
     `<script type="application/json">${scriptJson(runtimeData(block, ctx, names))}</script>`,
     legend(block, ctx),
-    `<div class="hm-map-body${block.pair === "bars" ? sideClass : ""}"><div class="hm-map-plot">${plot}${empty}</div>`,
+    `<div class="hm-map-body${block.pair === "bars" ? sideClass : ""}"><div class="hm-map-plot">${tiles ? empty + plot : plot + empty}</div>`,
     list || note
       ? `<div class="hm-map-side"><div class="hm-map-side-in">${list}${note}</div></div>`
       : "",

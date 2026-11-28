@@ -13,6 +13,7 @@ import type {
 } from "../compiler/dashboard-data.js";
 import type { PeriodData } from "../compiler/period-data.js";
 import type { SegmentData } from "../compiler/segment-build.js";
+import { tileGeography } from "../geo/us-tiles.js";
 import { type HeightPreset, layoutItems, MIN_CHART_SPAN } from "../spec/layout.js";
 import type { GeographyId } from "../spec/units.js";
 import { barCategories, barHeight, renderBar } from "./bar.js";
@@ -44,6 +45,7 @@ import {
   hexPaint,
   MAP_COLORS,
   type Mode,
+  onMapColor,
   type Theme,
 } from "./theme.js";
 
@@ -360,7 +362,9 @@ function mapCard(block: MapData, ctx: RenderContext): string {
   const widths = LAYOUTS.map(
     (layout) => cardWidth(layout, span, ctx.theme) - 2 * ctx.theme.density.cardPadding - 2,
   );
-  const body = mapBody(block, ctx, title, widths, ctx.geographies?.[block.geo]);
+  const geography =
+    block.shape === "tiles" ? tileGeography(block.tile ?? "square") : ctx.geographies?.[block.geo];
+  const body = mapBody(block, ctx, title, widths, geography);
   return `<section class="hm-card hm-map-card" style="--span:${span}" aria-labelledby="${esc(id)}"><header class="hm-card-head"><h2 id="${esc(id)}">${esc(title)}</h2>${subtitle ? `<p>${esc(subtitle)}</p>` : ""}</header>${body}</section>`;
 }
 
@@ -469,16 +473,33 @@ function groupStyles(theme: Theme): string {
   ].join("\n");
 }
 
+function tileStyles(theme: Theme): string {
+  const keys = MAP_COLORS.filter((k) => k !== "land");
+  const vars = (mode: Mode) =>
+    keys.map((k) => `--hm-on-${k}:${onMapColor(theme, mode, k)}`).join(";");
+  return [
+    `:root{${vars("light")}}`,
+    `@media (prefers-color-scheme:dark){:root:not([data-theme=light]){${vars("dark")}}}`,
+    `:root[data-theme=dark]{${vars("dark")}}`,
+    keys.map((k) => `.hm-on-${k}{fill:var(--hm-on-${k})}`).join(""),
+  ].join("\n");
+}
+
 export function usesGroups(data: DashboardData): boolean {
   return data.blocks.some((b) => "groups" in b && b.groups !== undefined);
+}
+
+export interface PageFeatures {
+  groups?: boolean;
+  segments?: boolean;
+  maps?: boolean;
+  tiles?: boolean;
 }
 
 export function pageStyles(
   assets: PageAssets,
   theme: Theme = DEFAULT_THEME,
-  groups = false,
-  segments = false,
-  maps = false,
+  { groups = false, segments = false, maps = false, tiles = false }: PageFeatures = {},
 ): string {
   const d = theme.density;
   const fonts = FONT_FILES.filter((f) => assets.fonts[f.file] !== undefined)
@@ -574,6 +595,7 @@ export function pageStyles(
     layouts,
     ...(groups ? [groupStyles(theme)] : []),
     ...(segments ? [segmentStyles(theme)] : []),
+    ...(tiles ? [tileStyles(theme)] : []),
   ].join("\n");
 }
 
@@ -583,16 +605,14 @@ const THEME_SCRIPT =
 export function pageHead(
   assets: PageAssets,
   theme: Theme = DEFAULT_THEME,
-  groups = false,
-  segments = false,
-  maps = false,
+  features: PageFeatures = {},
 ): string {
   const preload = FONT_FILES.filter((f) => f.file.endsWith("-Latin1.woff2") && f.weight !== 600)
     .map((f) => assets.fonts[f.file])
     .filter((url) => url !== undefined)
     .map((url) => `<link rel="preload" href="${esc(url)}" as="font" type="font/woff2" crossorigin>`)
     .join("");
-  return `${preload}<style>${pageStyles(assets, theme, groups, segments, maps)}</style><script>${THEME_SCRIPT}</script><script defer src="${esc(assets.runtime)}"></script>`;
+  return `${preload}<style>${pageStyles(assets, theme, features)}</style><script>${THEME_SCRIPT}</script><script defer src="${esc(assets.runtime)}"></script>`;
 }
 
 function document(title: string, head: string, body: string): string {
@@ -700,13 +720,12 @@ function dashboardPage(data: DashboardData, options: PageOptions): string {
   const body = `<div class="hm-page">${header}<main class="hm-grid">${renderBlocks(data.blocks, ctx)}</main>${footer}</div>${embedded}`;
   return document(
     `${data.title} \u00B7 ${data.project}`,
-    pageHead(
-      options.assets,
-      theme,
-      usesGroups(data),
-      data.segmentFilter !== undefined,
-      data.blocks.some((b) => b.type === "map"),
-    ),
+    pageHead(options.assets, theme, {
+      groups: usesGroups(data),
+      segments: data.segmentFilter !== undefined,
+      maps: data.blocks.some((b) => b.type === "map"),
+      tiles: data.blocks.some((b) => b.type === "map" && b.shape === "tiles"),
+    }),
     body,
   );
 }

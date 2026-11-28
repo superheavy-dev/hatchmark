@@ -499,6 +499,9 @@ export interface MapScale {
 export interface MapData extends BlockCommon {
   type: "map";
   geo: GeographyId;
+  /** Set when the map draws equal tiles instead of boundaries. */
+  shape?: "tiles";
+  tile?: "square" | "hex";
   metric: string;
   column: string;
   pair: "bars" | "none";

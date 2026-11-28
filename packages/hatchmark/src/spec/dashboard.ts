@@ -480,6 +480,14 @@ const mapBlock = z
       description:
         "Metric that colours each region. A rate, ratio or average reads well on a filled map; a sum or count mostly shows where people are (HM5040).",
     }),
+    shape: z.enum(["regions", "tiles"]).optional().meta({
+      description:
+        '"regions" (default): the real boundaries. "tiles": one equal tile per state, DC and Puerto Rico, so small states read as clearly as large ones; us-states only.',
+    }),
+    tile: z.enum(["square", "hex"]).optional().meta({
+      description:
+        'The tile of shape "tiles": "square" (default), the clearest grid for state codes at any width, or "hex", which keeps more neighbours touching.',
+    }),
     scale: mapScale.optional(),
     pair: z.enum(["bars", "none"]).optional().meta({
       description:

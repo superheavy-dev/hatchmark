@@ -65,6 +65,7 @@ interface Spec {
   skip?: string[];
   only?: number;
   empty?: boolean;
+  tile?: "square" | "hex";
 }
 
 function block(s: Spec): MapData {
@@ -103,6 +104,7 @@ function block(s: Spec): MapData {
     title: s.title,
     span: s.span ?? 12,
     geo: s.geo,
+    ...(s.tile === undefined ? {} : { shape: "tiles" as const, tile: s.tile }),
     metric: s.metric,
     column: s.geo === "us-states" ? "state" : "country",
     pair: s.pair ?? "bars",
@@ -206,6 +208,34 @@ export const MAPS: GalleryVariant[] = [
     value: rpc,
     span: 6,
     scale: { classes: 3 },
+  }),
+  map("map-us-tiles-square", "Tile grid, square tiles (recommended): every state the same size", {
+    id: "map_us_tiles_square",
+    title: "Revenue per customer by state",
+    geo: "us-states",
+    metric: "revenue_per_customer",
+    value: rpc,
+    skip: ["WY", "ND"],
+    tile: "square",
+  }),
+  map("map-us-tiles-hex", "Tile grid, hex tiles: more neighbours touch", {
+    id: "map_us_tiles_hex",
+    title: "Revenue per customer by state",
+    geo: "us-states",
+    metric: "revenue_per_customer",
+    value: rpc,
+    skip: ["WY", "ND"],
+    tile: "hex",
+  }),
+  map("map-us-tiles-narrow", "Tile grid on a narrow card (span 6), diverging", {
+    id: "map_us_tiles_narrow",
+    title: "Revenue growth vs last year by state",
+    geo: "us-states",
+    metric: "revenue_growth",
+    value: growth,
+    scale: { type: "threshold", breaks: [-0.1, -0.03, 0, 0.03, 0.1], midpoint: 0 },
+    span: 6,
+    tile: "square",
   }),
   map("map-world-empty", "Empty period", {
     id: "map_world_empty",

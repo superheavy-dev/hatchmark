@@ -5,6 +5,7 @@ import { WORLD_COUNTRIES } from "./world-countries.js";
 
 export * from "./aliases.js";
 export type * from "./types.js";
+export { type TileShape, tileGeography } from "./us-tiles.js";
 
 /** Every geography's boundaries, by id. */
 export const GEOGRAPHY_DATA: Record<GeographyId, Geography> = {
@@ -14,11 +15,12 @@ export const GEOGRAPHY_DATA: Record<GeographyId, Geography> = {
 
 /** The geographies a dashboard's map blocks draw, by id. */
 export function usedGeographies(
-  blocks: readonly { type: string; geo?: GeographyId }[],
+  blocks: readonly { type: string; geo?: GeographyId; shape?: string }[],
 ): Partial<Record<GeographyId, Geography>> {
   const out: Partial<Record<GeographyId, Geography>> = {};
   for (const b of blocks)
-    if (b.type === "map" && b.geo !== undefined) out[b.geo] = GEOGRAPHY_DATA[b.geo];
+    if (b.type === "map" && b.geo !== undefined && b.shape !== "tiles")
+      out[b.geo] = GEOGRAPHY_DATA[b.geo];
   return out;
 }
 

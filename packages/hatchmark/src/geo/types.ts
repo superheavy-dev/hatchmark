@@ -38,4 +38,6 @@ export interface Geography {
   insets: GeoInset[];
   /** Regions that rows can name but this geography does not draw, sorted by id. */
   notDrawn: { id: string; name: string }[];
+  /** "inside": every region is large enough to carry its id as a label at its label point. */
+  labels?: "inside";
 }

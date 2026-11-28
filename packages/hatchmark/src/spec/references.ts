@@ -1310,6 +1310,19 @@ function checkMap(
       },
     );
   }
+  if (block.shape === "tiles" && block.geo !== "us-states") {
+    r.report("HM2033", `${base}/shape`, `there is no tile layout for ${block.geo}`, {
+      label: "tile maps are available for us-states only",
+      help: "remove shape to draw the boundaries, or set geo: us-states",
+    });
+  }
+  if (block.tile !== undefined && block.shape !== "tiles") {
+    r.report("HM2034", `${base}/tile`, `tile "${block.tile}" has no effect without shape: tiles`, {
+      severity: "warning",
+      label: "this map draws boundaries",
+      help: "add shape: tiles, or remove tile",
+    });
+  }
   const scale = block.scale;
   if (scale?.midpoint === undefined || scale.breaks === undefined) return;
   const { breaks, midpoint } = scale;

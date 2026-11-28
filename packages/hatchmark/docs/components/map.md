@@ -16,6 +16,8 @@ value: revenue_per_customer
 | `geo`     | `us-states` (50 states, DC and Puerto Rico) or `world-countries`. [geo.md](../geo.md) lists the sources, projections and which regions are drawn.                                       |
 | `region`  | The column naming each row's region: a code (USPS, FIPS, ISO 3166 alpha-2, alpha-3 or numeric, ISO 3166-2) or an English name, matched ignoring case, accents, punctuation and spacing. |
 | `value`   | The metric that colours each region. A rate, ratio or average reads well; a sum or a count mostly shows where people are (HM5040).                                                      |
+| `shape`   | Optional. `regions` (default) draws the boundaries. `tiles` draws one equal tile per state, DC and Puerto Rico; us-states only. See "Tile grid" below.                                  |
+| `tile`    | Optional, with `shape: tiles`. `square` (default) or `hex`.                                                                                                                             |
 | `scale`   | Optional. How values become colour classes; see below.                                                                                                                                  |
 | `pair`    | Optional. `bars` (default) adds a ranked bar list of the same values, beside the map on wide cards and under it on narrow ones. `none` draws the map alone.                             |
 | `missing` | Optional. `hatch` (default): regions without a value are drawn crosshatched on the land colour.                                                                                         |
@@ -28,6 +30,28 @@ total, and each case gets its own warning. The dashboard period and select filte
 block, except that a select filter on the map's own region column keeps every spelling of the
 picked region: with `California` selected, rows spelled `CA` and `06` stay in, on the map and in
 every other block on that column. A picked value that names no region keeps only that exact value.
+
+## Tile grid
+
+`shape: tiles` replaces the boundaries with a grid of equal tiles, each labelled with its state code
+and laid out roughly where the state lies. On a boundary map, Texas and Montana dominate and Rhode
+Island, Delaware and DC are a few pixels, so a rate looks most like the large, empty states. With
+tiles every state carries the same weight, which suits rates, rankings and comparisons between
+states. Tiles do not show geography: use the boundaries when where things are matters, such as
+regional patterns across a border.
+
+```yaml
+type: map
+geo: us-states
+shape: tiles
+region: state
+value: revenue_per_customer
+```
+
+`tile: square`, the default, is the recommended tile. Squares in rows and columns give the code the
+most room, so labels stay legible down to a narrow card, and the grid is easy to scan along a row.
+`tile: hex` keeps more neighbours touching (each tile has six sides), at the cost of tighter labels
+and a staggered grid. The page carries no boundary data for a tile map, so it is lighter than a boundary map.
 
 ## Scale
 
@@ -72,5 +96,7 @@ and shipped per paid order counts a row shipped in the window even if it was ord
 | `HM5041` | Build warning. Values match no region; the warning lists them with row counts and the closest regions.                                                    | Fix the values in the data or the source's SQL, or filter those rows out on purpose. |
 | `HM5042` | Build warning. A value could name more than one region, such as "Congo" or "Korea".                                                                       | Use a code or the full name.                                                         |
 | `HM5043` | Build warning. Values name regions the map does not draw, such as Guam or Singapore.                                                                      | Show them in a table or bar chart beside the map, or filter them out.                |
+| `HM2033` | Error. `shape: tiles` on a geography without a tile layout (only us-states has one).                                                                      | Remove `shape`, or set `geo: us-states`.                                             |
+| `HM2034` | Warning. `tile` on a map that draws boundaries.                                                                                                           | Add `shape: tiles`, or remove `tile`.                                                |
 | `HM2032` | Error. A threshold scale's midpoint leaves more classes on one side than the other.                                                                       | Make the midpoint the middle break, or put it inside the middle class.               |
 | `HM3007` | Error. `breaks` without `type: threshold`, `classes` that disagree with `breaks`, or a diverging scale with too few or an odd number of quantile classes. | Follow the message.                                                                  |
