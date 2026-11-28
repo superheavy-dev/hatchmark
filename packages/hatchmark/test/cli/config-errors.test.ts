@@ -1,4 +1,5 @@
-import { readdir, readFile, rm, writeFile } from "node:fs/promises";
+import { mkdtemp, readdir, readFile, rm, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
 import path from "node:path";
 import { afterAll, describe, expect, it } from "vitest";
 import { run } from "../../src/cli/main.js";
@@ -118,6 +119,29 @@ describe("an invalid hatchmark.yaml", { timeout: 30_000 }, () => {
       }
     });
   }
+
+  it("exits 2 from data and explain without a usable hatchmark.yaml", async () => {
+    const empty = await mkdtemp(path.join(tmpdir(), "hatchmark-noproject-"));
+    const yml = await mkdtemp(path.join(tmpdir(), "hatchmark-yml-"));
+    dirs.push(empty, yml);
+    await writeFile(path.join(yml, "hatchmark.yml"), GOOD);
+    for (const [dir, code] of [
+      [empty, "HM1005"],
+      [yml, "HM1007"],
+    ] as const) {
+      for (const argv of [
+        ["data", "describe", "orders"],
+        ["data", "query", "SELECT 1"],
+        ["explain", "orders"],
+      ]) {
+        const out = await cli([...argv, "--cwd", dir, "--json"]);
+        expect(out.code, `${code} ${argv.join(" ")}`).toBe(2);
+        const report = JSON.parse(out.stdout);
+        expect(report.ok).toBe(false);
+        expect(report.diagnostics.map((d: { code: string }) => d.code)).toEqual([code]);
+      }
+    }
+  });
 
   it("shows each case in the dev overlay, from startup and after an edit", async () => {
     const [first, ...rest] = CASES;

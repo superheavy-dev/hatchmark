@@ -115,10 +115,11 @@ export async function data(
   const { project, diagnostics } = await loadProject(nodeProjectHost(ctx.root));
   const config = project?.config.spec;
   if (config === undefined) {
-    return report(ctx, [
-      ...diagnostics,
-      ...(project === undefined ? [] : parseDiagnostics(project)),
-    ]);
+    return report(
+      ctx,
+      [...diagnostics, ...(project === undefined ? [] : parseDiagnostics(project))],
+      EXIT.usage,
+    );
   }
   const fileSources = Object.entries(config.sources)
     .filter(([, s]) => s.type !== "lookup")
