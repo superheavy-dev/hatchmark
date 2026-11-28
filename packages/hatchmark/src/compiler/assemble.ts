@@ -83,6 +83,7 @@ interface IndexedQuery {
   rows: Map<string, unknown[]>;
   keys: Map<number, Key[][]>;
   components: Map<string, number>;
+  empty: Record<string, number | null>;
 }
 
 function rowKey(set: number, keys: readonly Key[]): string {
@@ -106,7 +107,7 @@ function index(query: PlannedQuery, result: QueryResult): IndexedQuery {
     keys.set(set, [...(keys.get(set) ?? []), values]);
   });
   const components = new Map(result.columns.map((c, i) => [c.name, i]));
-  return { query, rows, keys, components };
+  return { query, rows, keys, components, empty: result.empty ?? {} };
 }
 
 function divide(a: Value, b: Value): Value {
@@ -232,16 +233,19 @@ class Assembler {
     const component = (id: string): Value => {
       const at = indexed.components.get(id);
       const reaggregate = measure.components.find((c) => c.id === id)?.reaggregate ?? "none";
+      const empty = id in indexed.empty ? indexed.empty[id] : 0;
       const values = keys.map((key) => {
         const row = indexed.rows.get(key);
         if (row !== undefined && rowsAt !== undefined && row[rowsAt] === 0) return 0;
         const raw = row === undefined || at === undefined ? null : row[at];
         const value = typeof raw === "number" ? raw : null;
-        return value === null && reaggregate === "sum" && row === undefined && gapless ? 0 : value;
+        return value === null && reaggregate === "sum" && row === undefined && gapless
+          ? (empty ?? null)
+          : value;
       });
       if (!fold) return values[0] ?? null;
       const present = values.filter((v): v is number => v !== null);
-      if (reaggregate === "none" || present.length === 0) return null;
+      if (reaggregate === "none" || present.length === 0 || empty !== 0) return null;
       if (reaggregate === "min") return present.reduce((m, v) => Math.min(m, v));
       if (reaggregate === "max") return present.reduce((m, v) => Math.max(m, v));
       return present.reduce((sum, v) => sum + v, 0);

@@ -27,6 +27,7 @@ import type {
 import { planDashboard, queryId } from "./planner.js";
 import {
   type DashboardExecutor,
+  emptyValues,
   executionContext,
   pointMetrics,
   runDashboardBindings,
@@ -190,20 +191,32 @@ function toKey(value: unknown): Key {
     : null;
 }
 
-function presetOnlyMetrics(plan: QueryPlan): string[] {
+function addsUp(empty: Record<string, number | null> | undefined, id: string): boolean {
+  return empty === undefined || !(id in empty) || empty[id] === 0;
+}
+
+function presetOnlyMetrics(
+  plan: QueryPlan,
+  empty: (query: PlannedQuery) => Record<string, number | null> | undefined,
+): string[] {
   const names = new Set<string>();
   for (const query of plan.queries) {
     if (dayCubeQuery(query) === undefined) continue;
     for (const measure of query.measures) {
       const cubeable = (c: MeasureComponent) =>
-        query.evaluation === undefined ? c.reaggregate !== "none" : snapshotCubeable(c);
+        query.evaluation === undefined
+          ? c.reaggregate !== "none" && addsUp(empty(query), c.id)
+          : snapshotCubeable(c);
       if (!measure.components.every(cubeable)) names.add(measure.metric);
     }
   }
   return [...names].sort();
 }
 
-function portablePlan(plan: QueryPlan): QueryPlan {
+function portablePlan(
+  plan: QueryPlan,
+  empty: (query: PlannedQuery) => Record<string, number | null> | undefined,
+): QueryPlan {
   return {
     ...plan,
     queries: plan.queries.map((q) => ({
@@ -211,7 +224,11 @@ function portablePlan(plan: QueryPlan): QueryPlan {
       measures: q.measures.map((m) => ({
         ...m,
         components: m.components.map(
-          ({ sql: _, anyOf: __, ...c }): MeasureComponent => ({ ...c, filters: [] }),
+          ({ sql: _, anyOf: __, ...c }): MeasureComponent => ({
+            ...c,
+            filters: [],
+            ...(addsUp(empty(q), c.id) ? {} : { reaggregate: "none" as const }),
+          }),
         ),
       })),
     })),
@@ -282,7 +299,10 @@ export async function runPeriodData(
   if (context === undefined) return { data, diagnostics };
   const last = dayNumber(context.asOf);
   const queries: CustomRangeData["queries"] = {};
-  const runs = new Map<string, { query: PlannedQuery; result: QueryResult }>();
+  const runs = new Map<
+    string,
+    { query: PlannedQuery; result: QueryResult; empty?: Record<string, number | null> }
+  >();
   const shown = new Set(
     plan.blocks.flatMap((b) =>
       [b.measures, b.previous, b.sparkline, ...(b.grains ?? []).map((g) => g.measures)].flatMap(
@@ -301,15 +321,20 @@ export async function runPeriodData(
       if (cubeQuery === undefined) {
         if (queryBounds(query, context) !== undefined) {
           const result = await executor.execute(query, context);
-          queries[query.id] = { result: domains.has(query.id) ? keysOnly(query, result) : result };
+          const empty = await emptyValues(executor, query, context);
+          const full = empty === undefined ? result : { ...result, empty };
+          queries[query.id] = { result: domains.has(query.id) ? keysOnly(query, full) : full };
         }
         continue;
       }
       queries[query.id] = { cube: cubeQuery.id };
       if (!runs.has(cubeQuery.id)) {
+        const result = await executor.execute(cubeQuery, context);
+        const empty = await emptyValues(executor, cubeQuery, context);
         runs.set(cubeQuery.id, {
           query: cubeQuery,
-          result: await executor.execute(cubeQuery, context),
+          result,
+          ...(empty === undefined ? {} : { empty }),
         });
       }
     }
@@ -333,8 +358,11 @@ export async function runPeriodData(
     }
   }
   const cubes: Record<string, DayCube> = {};
-  for (const [id, { query, result }] of [...runs].sort(([a], [b]) => (a < b ? -1 : 1))) {
-    cubes[id] = cubeFrom(query, result, first, last);
+  for (const [id, { query, result, empty }] of [...runs].sort(([a], [b]) => (a < b ? -1 : 1))) {
+    cubes[id] = {
+      ...cubeFrom(query, result, first, last),
+      ...(empty === undefined ? {} : { empty }),
+    };
   }
   if (first > last) return { data, diagnostics };
   const metrics: Record<string, PortableMetric> = {};
@@ -353,16 +381,49 @@ export async function runPeriodData(
       ...(points.has(name) ? { nature: "point" as const } : {}),
     };
   }
+  const cubeOf = (query: PlannedQuery) => {
+    const source = queries[query.id];
+    return source !== undefined && "cube" in source ? cubes[source.cube] : undefined;
+  };
+  const presetOnly = presetOnlyMetrics(plan, (query) => cubeOf(query)?.empty);
+  const unfolded = new Set(presetOnlyMetrics(plan, () => undefined));
+  const dashboardFile = project.dashboards.get(dashboard);
+  const pointer = `/filters/${spec.filters?.indexOf(filter) ?? 0}`;
+  for (const query of plan.queries) {
+    for (const measure of query.measures) {
+      if (!presetOnly.includes(measure.metric) || unfolded.has(measure.metric)) continue;
+      const empty = cubeOf(query)?.empty ?? {};
+      const value = measure.components
+        .flatMap((c) => (c.id in empty ? [empty[c.id]] : []))
+        .find((v) => v !== 0);
+      const unknown = value === null || value === undefined;
+      unfolded.add(measure.metric);
+      diagnostics.push({
+        code: "HM4041",
+        severity: "note",
+        message: unknown
+          ? `metric "${measure.metric}": what its SQL gives over no rows could not be computed, so a custom range shows it as "—" and asks for a preset`
+          : `metric "${measure.metric}" gives ${value} over no rows, so days with no rows would each add it and a custom range shows it as "—" and asks for a preset`,
+        ...(dashboardFile
+          ? { file: dashboardFile.file, pointer, ...dashboardFile.document.locationOf(pointer) }
+          : {}),
+        help: unknown
+          ? "every preset computes it exactly; make the SQL run over an empty set of rows to add it up from days, or set custom: false"
+          : "every preset computes it exactly; give the SQL no fallback for an empty set (or 0) to add it up from days, or set custom: false",
+        docs: docsCommand("HM4041"),
+      });
+    }
+  }
   data.custom = {
     span: { start: dayText(first), end: nextDay(context.asOf) },
     dashboard: spec,
     metrics,
     project: { name: config.name, locale: config.locale, currency: config.currency },
-    plan: portablePlan(plan),
+    plan: portablePlan(plan, (query) => cubeOf(query)?.empty),
     context,
     queries,
     cubes,
-    presetOnly: presetOnlyMetrics(plan),
+    presetOnly,
     textOrder: textOrder(config.locale, cubes, queries),
   };
   return { data, diagnostics };

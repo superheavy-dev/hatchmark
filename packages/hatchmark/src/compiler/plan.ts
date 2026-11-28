@@ -187,6 +187,11 @@ export interface PlannedQuery {
   params: PlannedParam[];
   /** Set for a snapshot read; absent, a timed query sums its rows over each bucket (a flow). */
   evaluation?: SnapshotEvaluation;
+  /**
+   * Reads no rows at all, so each measure is what its SQL gives over an empty set: the value an
+   * SQL metric shows for a group, bucket or range without rows (emptyValues in run.ts).
+   */
+  noRows?: true;
   orderBy?: { key: string; order: "asc" | "desc" }[];
   limit?: number;
 }
@@ -421,6 +426,12 @@ export interface QueryResult {
    * shows one as an HM4004 warning.
    */
   large?: { metric: string; maxAbs: number }[];
+  /**
+   * For SQL components that add up across groups: the number the metric's SQL gives over no rows,
+   * such as 0 for coalesce(sum(x), 0); absent when it gives null; null when it could not be
+   * computed. A group or bucket without rows shows it instead of 0, and no value for null.
+   */
+  empty?: Record<string, number | null>;
 }
 
 /**

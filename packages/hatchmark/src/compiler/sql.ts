@@ -420,6 +420,7 @@ function builtQuery(
         : sameRegion(source, param.column, param.geo, values, context, sql),
     );
   }
+  if (query.noRows) where.push("FALSE");
 
   const components = query.measures.flatMap((m) => m.components);
   const filtered = components.filter((c) => c.aggregate === "sql" && c.filters.length > 0);
