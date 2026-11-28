@@ -591,6 +591,23 @@
           }
         }
       ],
+      "textOrder": [
+        "Australia",
+        "Brazil",
+        "Canada",
+        "France",
+        "Germany",
+        "India",
+        "Italy",
+        "Japan",
+        "Mexico",
+        "Netherlands",
+        "Singapore",
+        "Spain",
+        "Sweden",
+        "United Kingdom",
+        "United States"
+      ],
       "rowCount": 21,
       "total": {
         "values": {

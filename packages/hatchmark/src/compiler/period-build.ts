@@ -1,5 +1,6 @@
 import { type Diagnostic, docsCommand } from "../diagnostics/index.js";
 import type { Project, RangeSpec } from "../spec/index.js";
+import { textComparer } from "./assemble.js";
 import type { DashboardData } from "./dashboard-data.js";
 import {
   type CustomRangeData,
@@ -234,8 +235,26 @@ export async function runPeriodData(
     queries,
     cubes,
     presetOnly: presetOnlyMetrics(plan),
+    textOrder: textOrder(config.locale, cubes, queries),
   };
   return { data, diagnostics };
+}
+
+function textOrder(
+  locale: string,
+  cubes: Record<string, DayCube>,
+  queries: CustomRangeData["queries"],
+): string[] {
+  const texts = new Set<string>();
+  const add = (values: readonly unknown[]) => {
+    for (const v of values) if (typeof v === "string") texts.add(v);
+  };
+  for (const cube of Object.values(cubes)) for (const keys of cube.keys) add(keys);
+  for (const source of Object.values(queries)) {
+    if ("result" in source) for (const row of source.result.rows) add(row);
+  }
+  const compare = textComparer(locale);
+  return [...texts].sort((a, b) => compare(a, b) || (a < b ? -1 : 1));
 }
 
 function referenced(plan: QueryPlan, name: string): boolean {

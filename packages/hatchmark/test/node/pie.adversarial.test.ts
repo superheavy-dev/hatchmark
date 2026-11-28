@@ -463,6 +463,9 @@ const byKey = (a: Key, b: Key): number => {
   const ra = TYPE_RANK[typeof a] ?? 3;
   const rb = TYPE_RANK[typeof b] ?? 3;
   if (ra !== rb) return ra - rb;
+  if (typeof a === "string" && typeof b === "string" && a.toLowerCase() !== b.toLowerCase()) {
+    return a.toLowerCase() < b.toLowerCase() ? -1 : 1;
+  }
   return a < b ? -1 : 1;
 };
 
@@ -953,7 +956,7 @@ describe("pie and donut against a SQL oracle", () => {
     expect(renderFragment(e.data)).not.toMatch(/No early amount in this period/);
   });
 
-  it("ties at the limit break by key (A-Z, then a-z, null last); empty categories are counted", async () => {
+  it("ties at the limit break by key in the project locale's order (alpha before Charlie and Zulu, null last); empty categories are counted", async () => {
     const t = await dash("ties");
     const w = tsWin(rangeWindow("month_to_date", asOfLatest, end("ties")));
     for (const [id, limit, i] of [
@@ -972,7 +975,14 @@ describe("pie and donut against a SQL oracle", () => {
         id,
       ).toEqual([]);
     }
-    expect(pieOf(t.data, "t3")?.slices.map((s) => s.label)).toEqual(["Alpha", "Bravo", "Charlie"]);
+    expect(pieOf(t.data, "t3")?.slices.map((s) => s.label)).toEqual(["Alpha", "Bravo", "alpha"]);
+    expect(pieOf(t.data, "t5")?.slices.map((s) => s.label)).toEqual([
+      "Alpha",
+      "Bravo",
+      "alpha",
+      "Charlie",
+      "Zulu",
+    ]);
   });
 
   it("the renderer's runtime JSON (headers, values, percent text, hit-test cuts) matches DashboardData", () => {

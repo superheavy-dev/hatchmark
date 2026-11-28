@@ -222,7 +222,7 @@ export function renderLine(
           x + LEGEND_NAME_X + textWidth(name, style) + 6,
           cy,
           readoutValue(block, k, last, ctx),
-          { ...style, color: "text", className: `hm-rv hm-rv-${k}` },
+          { ...style, color: "text", className: `hm-rv hm-rv-${k}`, lang: ctx.data.locale },
         ),
       );
       x += width + LEGEND_GAP;
@@ -365,6 +365,7 @@ export function renderLine(
         size: CAPTION,
         anchor: "middle",
         color: "textSubtle",
+        lang: locale,
       }),
     ),
   );
@@ -393,6 +394,7 @@ export function renderLine(
         svgText(paint, labelX + 12 + nameWidth + 6, centre, lastText[k] as string, {
           size: CAPTION,
           color: "textMuted",
+          lang: locale,
         }),
       );
     });

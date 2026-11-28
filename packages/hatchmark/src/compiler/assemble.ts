@@ -102,29 +102,55 @@ function divide(a: Value, b: Value): Value {
 
 const TYPE_RANK = { boolean: 0, number: 1, string: 2 } as const;
 
-/** Orders keys: booleans, numbers, strings, then null last; strings by UTF-16 code unit. */
-function compareKey(a: Key, b: Key): number {
+type CompareText = (a: string, b: string) => number;
+
+/**
+ * How text keys compare: by a given order of every text (a page's embedded build order), or by
+ * the project locale's collation, in en-US when this runtime cannot collate in that locale.
+ */
+export function textComparer(locale: string, order?: readonly string[]): CompareText {
+  if (order !== undefined) {
+    const rank = new Map(order.map((text, i) => [text, i]));
+    return (a, b) => (rank.get(a) ?? order.length) - (rank.get(b) ?? order.length);
+  }
+  const supported = Intl.Collator.supportedLocalesOf(locale).length > 0;
+  return new Intl.Collator(supported ? locale : "en-US", { numeric: true }).compare;
+}
+
+/**
+ * Orders keys: booleans, numbers, strings, then null last; strings by the project locale's
+ * collation, and by UTF-16 code unit where the collation sees them as equal.
+ */
+function compareKey(a: Key, b: Key, compareText: CompareText): number {
   if (a === b) return 0;
   if (a === null) return 1;
   if (b === null) return -1;
   const ta = TYPE_RANK[typeof a as keyof typeof TYPE_RANK];
   const tb = TYPE_RANK[typeof b as keyof typeof TYPE_RANK];
   if (ta !== tb) return ta - tb;
+  if (typeof a === "string" && typeof b === "string") {
+    return compareText(a, b) || (a < b ? -1 : 1);
+  }
   return a < b ? -1 : 1;
 }
 
-function compareKeys(a: readonly Key[], b: readonly Key[]): number {
+function compareKeys(a: readonly Key[], b: readonly Key[], compareText: CompareText): number {
   for (let i = 0; i < Math.max(a.length, b.length); i++) {
-    const c = compareKey(a[i] ?? null, b[i] ?? null);
+    const c = compareKey(a[i] ?? null, b[i] ?? null, compareText);
     if (c !== 0) return c;
   }
   return 0;
 }
 
 /** Orders keys in either direction, null last in both. */
-function compareKeyOrdered(a: Key, b: Key, order: "asc" | "desc"): number {
-  if (a === null || b === null) return compareKey(a, b);
-  return order === "asc" ? compareKey(a, b) : compareKey(b, a);
+function compareKeyOrdered(
+  a: Key,
+  b: Key,
+  order: "asc" | "desc",
+  compareText: CompareText,
+): number {
+  if (a === null || b === null) return compareKey(a, b, compareText);
+  return order === "asc" ? compareKey(a, b, compareText) : compareKey(b, a, compareText);
 }
 
 /** Orders values, null last in both directions. */
@@ -175,6 +201,7 @@ class Assembler {
     private readonly plan: QueryPlan,
     results: ReadonlyMap<string, QueryResult>,
     private readonly context: ExecutionContext,
+    private readonly compareText: CompareText,
   ) {
     for (const query of plan.queries) {
       const result = results.get(query.id);
@@ -393,7 +420,7 @@ class Assembler {
         seen.set(JSON.stringify(keys), keys);
       }
     }
-    return [...seen.values()].sort(compareKeys);
+    return [...seen.values()].sort((a, b) => compareKeys(a, b, this.compareText));
   }
 
   timeAxis(expressions: (MeasureExpression | undefined)[], grain: ResolvedGrain): TimeAxis {
@@ -452,7 +479,10 @@ class Assembler {
     };
     const ordered = unique
       .map((value) => ({ value, total: total(value) }))
-      .sort((a, b) => compareValues(a.total, b.total, "desc") || compareKey(a.value, b.value));
+      .sort(
+        (a, b) =>
+          compareValues(a.total, b.total, "desc") || compareKey(a.value, b.value, this.compareText),
+      );
     const used = new Set<string>();
     return ordered.map(({ value }) => {
       const label = value === null ? "(empty)" : String(value);
@@ -701,10 +731,13 @@ class Assembler {
         : this.evaluate(plan.measures[sort.by], 0, [c]);
     const sorted =
       sort.by === column || plan.measures[sort.by] === undefined
-        ? categories.sort((a, b) => compareKeyOrdered(a, b, sort.order))
+        ? categories.sort((a, b) => compareKeyOrdered(a, b, sort.order, this.compareText))
         : categories
             .map((c) => ({ c, v: value(c) }))
-            .sort((a, b) => compareValues(a.v, b.v, sort.order) || compareKey(a.c, b.c))
+            .sort(
+              (a, b) =>
+                compareValues(a.v, b.v, sort.order) || compareKey(a.c, b.c, this.compareText),
+            )
             .map(({ c }) => c);
     const shown = block.limit === undefined ? sorted : sorted.slice(0, block.limit);
     const axis: CategoryAxis = { kind: "category", column, categories: shown };
@@ -797,10 +830,10 @@ class Assembler {
     });
     const positive = rows
       .filter((r): r is typeof r & { value: number } => r.value !== null && r.value > 0)
-      .sort((a, b) => b.value - a.value || compareKey(a.key, b.key));
+      .sort((a, b) => b.value - a.value || compareKey(a.key, b.key, this.compareText));
     const negative = rows
       .filter((r): r is typeof r & { value: number } => r.value !== null && r.value < 0)
-      .sort((a, b) => a.value - b.value || compareKey(a.key, b.key));
+      .sort((a, b) => a.value - b.value || compareKey(a.key, b.key, this.compareText));
     const empty = rows.length - positive.length - negative.length;
     const whole = positive.reduce((sum, r) => sum + r.value, 0);
     const share = (v: number) => (whole === 0 ? 0 : v / whole);
@@ -897,9 +930,14 @@ class Assembler {
     const column = block.by.indexOf(sort.by);
     const order = (a: TableRow, b: TableRow): number =>
       (column >= 0
-        ? compareKeyOrdered(a.keys[column] ?? null, b.keys[column] ?? null, sort.order)
+        ? compareKeyOrdered(
+            a.keys[column] ?? null,
+            b.keys[column] ?? null,
+            sort.order,
+            this.compareText,
+          )
         : compareValues(a.values[sort.by] ?? null, b.values[sort.by] ?? null, sort.order)) ||
-      compareKeys(a.keys, b.keys);
+      compareKeys(a.keys, b.keys, this.compareText);
     /** The rows of one innermost group (or of the whole table): sorted, limited, then Other. */
     const cut = (members: TableRow[], parent: readonly Key[]): TableRow[] => {
       const sorted = members.sort(order);
@@ -1002,6 +1040,9 @@ class Assembler {
         : [];
     const emptyMetrics: Record<string, EmptyWindow> = {};
     for (const [m, why] of emptyOf) if (why && !empty) emptyMetrics[m] = why;
+    const texts = [
+      ...new Set(rows.flatMap((r) => r.keys.filter((k): k is string => typeof k === "string"))),
+    ].sort((a, b) => compareKey(a, b, this.compareText));
     return {
       ...common,
       type: "table",
@@ -1012,6 +1053,7 @@ class Assembler {
       ...(block.bars !== undefined && block.bars.length > 0 ? { bars: block.bars } : {}),
       ...(block.overflow !== undefined ? { overflow: block.overflow } : {}),
       rows,
+      ...(texts.length > 0 ? { textOrder: texts } : {}),
       rowCount: leaves.length,
       ...(subtotals ? { subtotals: true } : {}),
       ...(block.totals !== false
@@ -1053,7 +1095,10 @@ class Assembler {
     }));
     const placed = all.filter((p) => p.x !== null && p.y !== null);
     const rank = (p: ScatterPoint) => (block.size === undefined ? p.y : (p.size ?? null));
-    placed.sort((a, b) => compareValues(rank(a), rank(b), "desc") || compareKey(a.key, b.key));
+    placed.sort(
+      (a, b) =>
+        compareValues(rank(a), rank(b), "desc") || compareKey(a.key, b.key, this.compareText),
+    );
     const limit = block.limit ?? MAX_SCATTER_POINTS;
     const points = placed.slice(0, limit);
     const omittedPoints = all.length - placed.length;
@@ -1269,11 +1314,18 @@ export function assembleWith(
   results: ReadonlyMap<string, QueryResult>,
   context: ExecutionContext,
   pointMetrics: ReadonlySet<string>,
+  textOrder?: readonly string[],
 ): { data?: DashboardData; diagnostics: Diagnostic[] } {
   const spec = project.dashboards.get(plan.dashboard)?.spec;
   const config = project.config.spec;
   if (spec === undefined || config === undefined) return { diagnostics: [] };
-  const assembler = new Assembler(project, plan, results, context);
+  const assembler = new Assembler(
+    project,
+    plan,
+    results,
+    context,
+    textComparer(config.locale, textOrder),
+  );
   const period = assembler.dashboardPeriod();
   const blocks: BlockData[] = [];
   const shown = new Set<string>();

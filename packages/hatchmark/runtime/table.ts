@@ -18,12 +18,18 @@ const value = (cell: Element | undefined | null): string => cell?.getAttribute("
 const sameKey = (a: Element | undefined | null, b: Element | undefined | null): boolean =>
   value(a) === value(b) && a?.getAttribute("data-t") === b?.getAttribute("data-t");
 
-/** The tbody rows as a tree: each subtotal row owns the rows after it, down to the next group. */
+const firstPaint = new WeakMap<HTMLTableRowElement, number>();
+
+/**
+ * The tbody rows as a tree: each subtotal row owns the rows after it, down to the next group. A
+ * node's index is its row's place at first paint.
+ */
 function rowTree(rows: HTMLTableRowElement[]): RowNode {
   const root: RowNode = { row: undefined, index: -1, children: [] };
   const stack: RowNode[] = [root];
-  rows.forEach((row, index) => {
-    const node: RowNode = { row, index, children: [] };
+  rows.forEach((row, at) => {
+    if (!firstPaint.has(row)) firstPaint.set(row, at);
+    const node: RowNode = { row, index: firstPaint.get(row) ?? at, children: [] };
     if (row.dataset.hmKind === "subtotal") {
       const level = Math.max(1, Number(row.dataset.hmLevel) || 1);
       stack.length = Math.min(stack.length, level);
@@ -36,7 +42,10 @@ function rowTree(rows: HTMLTableRowElement[]): RowNode {
   return root;
 }
 
-/** Sorts the rows by one column in place: empty values last, ties in their previous order. */
+/**
+ * Sorts the rows by one column in place: empty values last, numbers before text, text by the
+ * build's rank of each value (data-hm-rank), ties in first-paint order.
+ */
 export function sortRows(
   table: HTMLTableElement,
   column: number,
@@ -45,7 +54,8 @@ export function sortRows(
 ): void {
   const body = table.tBodies[0];
   if (!body) return;
-  const collator = new Intl.Collator(undefined, { numeric: true });
+  const isText = (cell: Element | undefined) => (cell?.getAttribute("data-t") === "n" ? 0 : 1);
+  const rank = (cell: Element | undefined) => Number(cell?.getAttribute("data-hm-rank") ?? 0);
   const compare = (a: RowNode, b: RowNode): number => {
     const ao = a.row?.dataset.hmKind === "other";
     const bo = b.row?.dataset.hmKind === "other";
@@ -53,9 +63,12 @@ export function sortRows(
     const va = value(a.row?.cells[column]);
     const vb = value(b.row?.cells[column]);
     if (va === "" || vb === "") return va === vb ? a.index - b.index : va === "" ? 1 : -1;
-    const cells = [a.row?.cells[column], b.row?.cells[column]];
-    const byNumber = numeric || cells.every((cell) => cell?.getAttribute("data-t") === "n");
-    const c = byNumber ? Number(va) - Number(vb) : collator.compare(va, vb);
+    const ca = a.row?.cells[column];
+    const cb = b.row?.cells[column];
+    const c =
+      numeric || isText(ca) + isText(cb) === 0
+        ? Number(va) - Number(vb)
+        : isText(ca) - isText(cb) || rank(ca) - rank(cb) || (va < vb ? -1 : va > vb ? 1 : 0);
     return (order === "asc" ? c : -c) || a.index - b.index;
   };
   const ordered: HTMLTableRowElement[] = [];

@@ -6,7 +6,7 @@ import { plottedValues, readoutHead, readoutValue } from "./line.js";
 import { bucketLines, bucketName, partialPositions } from "./partial.js";
 import { isPie, pieCuts, pieEmptyText, pieItems, pieNote } from "./pie.js";
 import { scatterOrder, scatterPoints } from "./scatter.js";
-import { esc } from "./svg.js";
+import { esc, langAttr } from "./svg.js";
 
 type ChartBlock = LineData | BarData;
 
@@ -45,7 +45,7 @@ function scatterTable(block: ScatterData, ctx: RenderContext, caption: string): 
   const rows = block.points
     .map((p) => {
       const values = [p.x, p.y, ...(block.size === undefined ? [] : [p.size ?? null])];
-      return `<tr><th scope="row">${esc(p.label)}</th>${values.map((v, k) => `<td>${esc(full(ctx, metrics[k] as string, v))}</td>`).join("")}</tr>`;
+      return `<tr><th scope="row">${esc(p.label)}</th>${values.map((v, k) => `<td${langAttr(ctx.data.locale)}>${esc(full(ctx, metrics[k] as string, v))}</td>`).join("")}</tr>`;
     })
     .join("");
   return `<div class="hm-sr"><table><caption>${esc(caption)}</caption><thead>${head}</thead><tbody>${rows}</tbody></table></div>`;
@@ -152,10 +152,11 @@ export function chartTable(
   const totals = block.totals;
   const metric = block.series[0]?.metric ?? "";
   const partial = partialPositions(block, ctx);
+  const lang = langAttr(ctx.data.locale);
   const total = (i: number) => {
     const text = full(ctx, metric, totals?.[i] ?? null);
     const { note } = totalPartial(block, i) ? bucketLines(block, i, ctx, partial) : {};
-    return note ? `${text} \u00B7 ${note}` : text;
+    return note ? `<td>${esc(`${text} \u00B7 ${note}`)}</td>` : `<td${lang}>${esc(text)}</td>`;
   };
   const cell = (s: ChartBlock["series"][number], i: number) =>
     s.share
@@ -165,7 +166,7 @@ export function chartTable(
   const rows = names
     .map(
       (name, i) =>
-        `<tr><th scope="row">${esc(name)}</th>${block.series.map((s) => `<td>${esc(cell(s, i))}</td>`).join("")}${totals ? `<td>${esc(total(i))}</td>` : ""}</tr>`,
+        `<tr><th scope="row">${esc(name)}</th>${block.series.map((s) => `<td${lang}>${esc(cell(s, i))}</td>`).join("")}${totals ? total(i) : ""}</tr>`,
     )
     .join("");
   return `<div class="hm-sr"><table><caption>${esc(caption)}</caption><thead>${head}</thead><tbody>${rows}</tbody></table></div>`;
@@ -309,13 +310,14 @@ function describePie(block: PieData, ctx: RenderContext): string {
 
 function pieTable(block: PieData, ctx: RenderContext, caption: string): string {
   const metric = metricOf(ctx, block.metric);
+  const lang = langAttr(ctx.data.locale);
   const rows = pieItems(block)
     .map(
       (i) =>
-        `<tr><th scope="row">${esc(i.label)}</th><td>${esc(full(ctx, block.metric, i.value))}</td><td>${esc(share(ctx, i.share))}</td></tr>`,
+        `<tr><th scope="row">${esc(i.label)}</th><td${lang}>${esc(full(ctx, block.metric, i.value))}</td><td${lang}>${esc(share(ctx, i.share))}</td></tr>`,
     )
     .join("");
-  return `<div class="hm-sr"><table><caption>${esc(caption)}</caption><thead><tr><th scope="col">${esc(block.column.replaceAll("_", " "))}</th><th scope="col">${esc(metric.label)}</th><th scope="col">Share</th></tr></thead><tbody>${rows}</tbody><tfoot><tr><th scope="row">Total</th><td>${esc(full(ctx, block.metric, block.total))}</td><td></td></tr></tfoot></table></div>`;
+  return `<div class="hm-sr"><table><caption>${esc(caption)}</caption><thead><tr><th scope="col">${esc(block.column.replaceAll("_", " "))}</th><th scope="col">${esc(metric.label)}</th><th scope="col">Share</th></tr></thead><tbody>${rows}</tbody><tfoot><tr><th scope="row">Total</th><td${lang}>${esc(full(ctx, block.metric, block.total))}</td><td></td></tr></tfoot></table></div>`;
 }
 
 function pieRuntimeData(block: PieData, ctx: RenderContext): ChartRuntimeData {

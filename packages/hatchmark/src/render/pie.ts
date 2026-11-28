@@ -240,6 +240,7 @@ export function renderPie(
                 size: g.total?.size ?? 20,
                 anchor: "middle",
                 color: "text",
+                lang: locale,
               },
             ),
           ]
@@ -268,6 +269,7 @@ export function renderPie(
           size: g.total.size,
           anchor: "middle",
           color: isNumber(block.total) ? "text" : "textSubtle",
+          lang: locale,
         }),
       );
     }
@@ -303,11 +305,13 @@ export function renderPie(
         ...VALUE_STYLE,
         anchor: "end",
         color: "text",
+        lang: locale,
       }),
       svgText(paint, g.keyX + g.keyWidth, cy, formatValue(item.share, SHARE, locale, "full"), {
         size: CAPTION,
         anchor: "end",
         color: "textMuted",
+        lang: locale,
       }),
     );
   });
@@ -320,6 +324,7 @@ export function renderPie(
         ...VALUE_STYLE,
         anchor: "end",
         color: isNumber(block.total) ? "text" : "textSubtle",
+        lang: locale,
       }),
     );
   }

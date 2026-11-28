@@ -6,5 +6,6 @@ export default defineConfig({
     include: ["packages/*/test/browser/**/*.browser.ts"],
     globalSetup: ["packages/hatchmark/test/setup-runtime.ts"],
     testTimeout: 60_000,
+    hookTimeout: 60_000,
   },
 });

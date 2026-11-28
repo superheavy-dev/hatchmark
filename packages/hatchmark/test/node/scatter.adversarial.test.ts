@@ -521,6 +521,7 @@ async function perKey(
 
 const desc = (a: number | null | undefined, b: number | null | undefined) =>
   a === b ? 0 : a === null || a === undefined ? 1 : b === null || b === undefined ? -1 : b - a;
+const folded = (text: string) => text.normalize("NFD").replace(/\p{M}/gu, "").toLowerCase();
 const keyOrder = (a: Key, b: Key) =>
   a === b
     ? 0
@@ -532,9 +533,13 @@ const keyOrder = (a: Key, b: Key) =>
           ? typeof a < typeof b
             ? -1
             : 1
-          : a < b
-            ? -1
-            : 1;
+          : typeof a === "string" && typeof b === "string" && folded(a) !== folded(b)
+            ? folded(a) < folded(b)
+              ? -1
+              : 1
+            : a < b
+              ? -1
+              : 1;
 
 // A to-date range reads through the horizon itself, today's partial day included; any other range
 // ends at the last complete day, the local midnight at or before the horizon.

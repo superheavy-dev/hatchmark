@@ -10,6 +10,20 @@ export function esc(text: string): string {
     .replaceAll('"', "&quot;");
 }
 
+/**
+ * The lang for text that is wholly a value formatted in locale, so screen readers read it in that
+ * language; none for English, which the page's own lang already says.
+ */
+export function valueLang(locale: string): string | undefined {
+  return new Intl.Locale(locale).language === "en" ? undefined : locale;
+}
+
+/** valueLang as an attribute, or nothing. */
+export function langAttr(locale: string): string {
+  const lang = valueLang(locale);
+  return lang === undefined ? "" : ` lang="${esc(lang)}"`;
+}
+
 /** JSON for a script element: "<" escaped so the data can never close the element. */
 export function scriptJson(value: unknown): string {
   return JSON.stringify(value).replaceAll("<", "\\u003c");
@@ -36,6 +50,8 @@ export interface TextOptions {
   className?: string;
   /** Full text for a native tooltip, when content is shortened. */
   title?: string;
+  /** The locale the content is formatted in, when all of it is a formatted value. */
+  lang?: string;
 }
 
 /** An SVG text element vertically centred on y. */
@@ -49,7 +65,7 @@ export function svgText(
   const anchor =
     options.anchor && options.anchor !== "start" ? ` text-anchor="${options.anchor}"` : "";
   const weight = options.weight && options.weight !== 400 ? ` font-weight="${options.weight}"` : "";
-  return `<text x="${r(x)}" y="${r(y + options.size * BASELINE_FROM_CENTER)}" font-size="${options.size}"${weight}${anchor}${paint.attrs(options.color, undefined, options.className)}>${options.title === undefined ? "" : `<title>${esc(options.title)}</title>`}${esc(content)}</text>`;
+  return `<text x="${r(x)}" y="${r(y + options.size * BASELINE_FROM_CENTER)}" font-size="${options.size}"${weight}${anchor}${options.lang === undefined ? "" : langAttr(options.lang)}${paint.attrs(options.color, undefined, options.className)}>${options.title === undefined ? "" : `<title>${esc(options.title)}</title>`}${esc(content)}</text>`;
 }
 
 export function svgLine(

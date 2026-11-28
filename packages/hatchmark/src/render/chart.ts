@@ -70,6 +70,8 @@ export interface YAxis {
   ticks: number[];
   labels: string[];
   labelWidth: number;
+  /** The locale the labels are formatted in. */
+  locale: string;
 }
 
 export function yAxis(
@@ -81,7 +83,7 @@ export function yAxis(
   const { domain, ticks } = yTicks(values, plotHeight);
   const labels = formatTicks(ticks, metric, locale);
   const labelWidth = Math.max(0, ...labels.map((l) => textWidth(l, { size: CAPTION })));
-  return { domain, ticks, labels, labelWidth };
+  return { domain, ticks, labels, labelWidth, locale };
 }
 
 /**
@@ -101,7 +103,7 @@ export function shareAxis(
   const ticks = length >= quartersFrom ? [0, 0.25, 0.5, 0.75, 1] : [0, 0.5, 1];
   const labels = formatTicks(ticks, SHARE, locale);
   const labelWidth = Math.max(0, ...labels.map((l) => textWidth(l, { size: CAPTION })));
-  return { domain: [0, 1], ticks, labels, labelWidth };
+  return { domain: [0, 1], ticks, labels, labelWidth, locale };
 }
 
 /** Horizontal gridlines with the zero line as the baseline, and right-aligned tick labels. */
@@ -120,6 +122,7 @@ export function drawYAxis(
           size: CAPTION,
           anchor: "end",
           color: "textSubtle",
+          lang: axis.locale,
         }),
     )
     .join("");

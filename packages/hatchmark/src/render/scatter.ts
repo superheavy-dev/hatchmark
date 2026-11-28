@@ -54,7 +54,7 @@ function axisFor(
   const { domain, ticks } = scatterTicks(values, length, spacing);
   const labels = formatTicks(ticks, metric, locale);
   const labelWidth = Math.max(0, ...labels.map((l) => textWidth(l, { size: CAPTION })));
-  return { domain, ticks, labels, labelWidth };
+  return { domain, ticks, labels, labelWidth, locale };
 }
 
 interface Box {
@@ -192,6 +192,7 @@ export function renderScatter(
           ...caption,
           anchor: "middle",
           color: "textSubtle",
+          lang: xAxis.locale,
         }),
       );
     });
