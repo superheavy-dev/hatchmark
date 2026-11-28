@@ -54,6 +54,8 @@ export interface DayCube {
   snapshots?: { days: number[]; instants: string[] };
   /** One array per measure component, by component id, aligned with days. */
   values: Record<string, Value[]>;
+  /** What SQL components that add up give over no rows (QueryResult.empty). */
+  empty?: Record<string, number | null>;
 }
 
 /** The part of a metric assembly reads: its label, format and direction. */
@@ -202,7 +204,9 @@ export function cubeResult(
               ? Math.min(acc, v)
               : Math.max(acc, v);
     }
-    return acc === null && (c.aggregate === "sum" || c.aggregate === "count") ? 0 : acc;
+    if (acc !== null) return acc;
+    if (rows.length === 0 && cube.empty?.[c.id] !== undefined) return cube.empty[c.id] ?? null;
+    return c.aggregate === "sum" || c.aggregate === "count" ? 0 : null;
   };
   const rows: unknown[][] = [];
   const groupingSet: number[] = [];
@@ -226,6 +230,7 @@ export function cubeResult(
     ],
     rows,
     ...(query.groupingSets.length > 1 ? { groupingSet } : {}),
+    ...(cube.empty === undefined ? {} : { empty: cube.empty }),
   };
 }
 

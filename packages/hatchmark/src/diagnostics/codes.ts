@@ -438,7 +438,7 @@ export const CODES = {
   HM4041: {
     title: "metric needs a preset",
     explanation:
-      'Informational. A period filter offers custom ranges, which a static page computes in the browser by adding up day-grain aggregates. Distinct counts, medians and SQL metrics not declared additive cannot be added up that way, so for a custom range the page shows them as "—" and says to pick a preset; every preset is computed exactly at build time. Live custom ranges come with hatchmark serve. Set custom: false on the filter to offer presets only.',
+      'Informational. A period filter offers custom ranges, which a static page computes in the browser by adding up day-grain aggregates. Distinct counts, medians, SQL metrics not declared additive, and additive SQL metrics that give a nonzero value over no rows (such as coalesce(sum(amount), 99)) or whose value over no rows could not be computed cannot be added up that way, so for a custom range the page shows them as "—" and says to pick a preset; every preset is computed exactly at build time. Live custom ranges come with hatchmark serve. Set custom: false on the filter to offer presets only.',
   },
   HM5001: {
     title: "too many points per series",

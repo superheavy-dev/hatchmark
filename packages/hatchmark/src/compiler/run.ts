@@ -32,6 +32,7 @@ import { matchDiagnostics } from "./map-report.js";
 import { segmentValues, selectValues } from "./params.js";
 import {
   type ExecutionContext,
+  type MeasureComponent,
   type MeasureExpression,
   type ParamBindings,
   type PlannedQuery,
@@ -450,6 +451,8 @@ export async function runDashboardBindings(
     });
     outcomes.push(outcome);
   }
+  const empties: (Record<string, number | null> | undefined)[] = [];
+  for (const query of plan.queries) empties.push(await emptyValues(executor, query, base));
   const snapshots = await snapshotDays(plan, executor, base);
   const message = (error: unknown) => (error instanceof Error ? error.message : String(error));
   return contexts.map((context, at) => {
@@ -467,7 +470,8 @@ export async function runDashboardBindings(
         };
       }
       const { result } = outcome;
-      results.set(query.id, result);
+      const zero = empties[q];
+      results.set(query.id, zero === undefined ? result : { ...result, empty: zero });
       for (const { column, maxAbs } of result.imprecise ?? []) {
         imprecise.set(JSON.stringify([query.source, column]), {
           code: "HM4004",
@@ -633,6 +637,42 @@ function snapshotGaps(
     }
   }
   return out;
+}
+
+/**
+ * What the SQL of each additive SQL metric in a query gives over no rows, by component id, for the
+ * metrics without a row count (planner.ts): DuckDB runs the metric's own SQL over an empty set, so
+ * coalesce(sum(x), 0) gives 0 and a sum gives null, which is left out. Each component is null when
+ * the query fails, so no group, bucket or day is filled with a number that may be wrong. Undefined
+ * when the query has no such metric or none gives a number.
+ */
+export async function emptyValues(
+  executor: QueryExecutor,
+  query: PlannedQuery,
+  context: ExecutionContext,
+): Promise<Record<string, number | null> | undefined> {
+  const summed = (c: MeasureComponent) => c.aggregate === "sql" && c.reaggregate === "sum";
+  const measures = query.measures.flatMap((m) =>
+    m.rows === undefined && m.components.some(summed)
+      ? [{ ...m, components: m.components.filter(summed) }]
+      : [],
+  );
+  if (measures.length === 0) return undefined;
+  const { id: _, orderBy: __, limit: ___, ...rest } = query;
+  const shape = { ...rest, measures, dimensions: [], groupingSets: [[]], noRows: true as const };
+  const components = measures.flatMap((m) => m.components);
+  let row: unknown[];
+  try {
+    row = (await executor.execute({ id: queryId(shape), ...shape }, context)).rows[0] ?? [];
+  } catch {
+    return Object.fromEntries(components.map((c) => [c.id, null]));
+  }
+  const out: Record<string, number> = {};
+  components.forEach((c, i) => {
+    const value = row[i];
+    if (typeof value === "number") out[c.id] = value;
+  });
+  return Object.keys(out).length === 0 ? undefined : out;
 }
 
 async function runQuery(
