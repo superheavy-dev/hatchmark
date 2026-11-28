@@ -15,6 +15,7 @@ import {
   metricOf,
   type RenderContext,
   SHARE,
+  seriesName,
   shareAxis,
   svgRoot,
   yAxis,
@@ -122,7 +123,7 @@ export function renderLine(
   const locale = data.locale;
   const n = block.axis.buckets.length;
   const series = block.series;
-  const paints = seriesPaints(ctx.theme, series);
+  const paints = seriesPaints(ctx.theme, series, block.groups?.length);
   const strokeOf = (k: number) => (paints[k] as SeriesPaint).stroke;
   const fillOf = (k: number) => (paints[k] as SeriesPaint).fill;
   const dash = ctx.theme.groups?.dash;
@@ -135,13 +136,7 @@ export function renderLine(
   const empty = values.length === 0;
 
   const nameStyle = { size: CAPTION, weight: 500 } as const;
-  const repeated = (label: string) => series.filter((s) => s.label === label).length > 1;
-  const directName = (k: number) => {
-    const s = series[k];
-    if (s === undefined) return "";
-    const group = s.group === undefined ? undefined : block.groups?.[s.group.index]?.label;
-    return group !== undefined && repeated(s.label) ? `${group} \u00B7 ${s.label}` : s.label;
-  };
+  const directName = (k: number) => seriesName(block, k);
   const lastIndex = series.map((s) => lastDefined(s.values));
   const lastText = series.map((s, k) =>
     formatValue(drawnValues(block, s)[lastIndex[k] ?? -1] ?? null, shown(k), locale, "compact"),
@@ -214,7 +209,11 @@ export function renderLine(
     }
     series.forEach((s, k) => {
       const width = LEGEND_NAME_X + textWidth(s.label, style) + 6 + (valueWidth[k] as number);
-      const heading = groupHeading(block, k);
+      const fullHeading = groupHeading(block, k);
+      const heading =
+        fullHeading === undefined
+          ? undefined
+          : truncateEnd(fullHeading, Math.max(size.width / 2, size.width - width - 8), GROUP_STYLE);
       if (heading !== undefined) {
         const headingWidth = textWidth(heading, GROUP_STYLE) + 8;
         if (x > 0 && x + headingWidth + width > size.width) {
@@ -226,6 +225,7 @@ export function renderLine(
             ...GROUP_STYLE,
             color: "text",
             className: "hm-rg",
+            ...(heading === fullHeading ? {} : { title: fullHeading ?? "" }),
           }),
         );
         x += headingWidth;

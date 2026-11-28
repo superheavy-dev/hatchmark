@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { BarData, LineData, Series } from "../../src/compiler/dashboard-data.js";
+import { GROUP_STYLE } from "../../src/render/chart.js";
 import { chartRuntimeData, chartTable, describeChart } from "../../src/render/describe.js";
 import {
   colorValue,
@@ -12,6 +13,7 @@ import {
   seriesPaints,
   type Theme,
 } from "../../src/render/index.js";
+import { textWidth } from "../../src/render/measure.js";
 import { GROUP_MAX_COUNT, GROUP_MAX_SIZE } from "../../src/spec/units.js";
 
 const steps = (prefix: string) => ["1", "2", "3"].map((s) => `#${prefix}000${s}`);
@@ -194,6 +196,9 @@ describe("grouped charts", () => {
   it("heads the data table with the group over its members", () => {
     const table = chartTable(BAR, ctx, "Groups");
     expect(table).toContain(
+      '</caption><colgroup><col></colgroup><colgroup span="2"></colgroup><colgroup><col></colgroup><thead>',
+    );
+    expect(table).toContain(
       '<thead><tr><th scope="col" rowspan="2">region</th><th scope="colgroup" colspan="2">Revenue</th><th scope="col" rowspan="2">Cost</th></tr><tr><th scope="col">Actual</th><th scope="col">Target</th></tr></thead>',
     );
     expect(describeChart(BAR, ctx)).toMatch(
@@ -209,6 +214,64 @@ describe("grouped charts", () => {
       ["g1-2", 0],
       [2, undefined],
     ]);
+  });
+
+  it("names the group with a repeated label in announcements", () => {
+    const years: BarData = {
+      ...BAR,
+      groups: [{ label: "North America" }, { label: "Europe" }],
+      series: [
+        series("na26", "2026", [5, 6], { index: 0, step: 0 }),
+        series("na25", "2025", [4, 7], { index: 0, step: 1 }),
+        series("eu26", "2026", [2, 3], { index: 1, step: 0 }),
+        series("plan", "Plan", [2, 3]),
+      ],
+    };
+    const runtime = chartRuntimeData(years, { ...ctx, data: { ...DATA, blocks: [years] } });
+    expect(runtime.series.map((s) => s.name ?? s.label)).toEqual([
+      "North America · 2026",
+      "2025",
+      "Europe · 2026",
+      "Plan",
+    ]);
+  });
+
+  it("keeps a long group heading inside a phone-width chart, with the full name kept", () => {
+    const label =
+      "Direct-to-consumer channels across North America, Europe and Asia-Pacific, excluding wholesale partners";
+    const width = 358;
+    const bar: BarData = { ...BAR, groups: [{ label }] };
+    const line: LineData = {
+      id: "l",
+      type: "line",
+      span: 12,
+      axis: {
+        kind: "time",
+        grain: "month",
+        buckets: ["2026-01-01", "2026-02-01", "2026-03-01"],
+        window: { start: "2026-01-01", end: "2026-04-01" },
+      },
+      groups: [{ label }],
+      series: [
+        series("actual", "Actual", [5, 6, 7], { index: 0, step: 0 }),
+        series("target", "Target", [4, 7, 8], { index: 0, step: 1 }),
+        series("cost", "Cost", [2, 3, 4]),
+      ],
+    };
+    for (const block of [bar, line]) {
+      const svg = renderChartSvg(block, { ...DATA, blocks: [block] }, { width, theme: FIXTURE });
+      const heading = svg.match(
+        /<text x="([\d.]+)" y="[\d.]+"([^>]*)><title>([^<]*)<\/title>([^<]*)<\/text>/,
+      );
+      expect(heading, block.type).not.toBeNull();
+      const [, x, attrs, title, shown] = heading ?? [];
+      expect(title).toBe(label);
+      expect(shown?.endsWith("…")).toBe(true);
+      const end = attrs?.includes('text-anchor="end"')
+        ? Number(x)
+        : Number(x) + textWidth(shown ?? "", GROUP_STYLE);
+      expect(end, block.type).toBeLessThanOrEqual(width);
+    }
   });
 
   it("dashes secondary lines only when the theme sets a dash", () => {

@@ -5,6 +5,7 @@ import path from "node:path";
 import { type Browser, chromium } from "playwright";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { GALLERY } from "../../gallery/variants.js";
+import type { DashboardData } from "../../src/compiler/index.js";
 import { renderDashboardPage } from "../../src/render/index.js";
 import tokens from "../../src/render/themes/default.json" with { type: "json" };
 
@@ -27,9 +28,15 @@ const rgb = (hex: string) =>
   `rgb(${[1, 3, 5].map((i) => Number.parseInt(hex.slice(i, i + 2), 16)).join(", ")})`;
 const [blue, pink] = tokens.data.groups.families;
 
-async function open(variant: string, theme: "light" | "dark", width = 1440) {
-  const data = GALLERY.find((v) => v.variant === variant)?.data;
-  if (data === undefined) throw new Error(`gallery variant ${variant} missing`);
+async function open(
+  variant: string,
+  theme: "light" | "dark",
+  width = 1440,
+  edit: (data: DashboardData) => DashboardData = (d) => d,
+) {
+  const found = GALLERY.find((v) => v.variant === variant)?.data;
+  if (found === undefined) throw new Error(`gallery variant ${variant} missing`);
+  const data = edit(found);
   const page = await browser.newPage({ viewport: { width, height: 900 } });
   const file = path.join(dir, `${variant}.html`);
   await writeFile(
@@ -92,6 +99,36 @@ describe.each(["light", "dark"] as const)("series groups in the browser, %s", (t
         (h) => rgb(h as string),
       ),
     );
+  });
+
+  it("keeps a long group heading inside the chart at 390 px", async () => {
+    const label =
+      "Direct-to-consumer channels across North America, Europe and Asia-Pacific, excluding wholesale partners";
+    const long = (data: DashboardData): DashboardData => ({
+      ...data,
+      blocks: data.blocks.map((b) =>
+        "groups" in b && b.groups ? { ...b, groups: b.groups.map((g) => ({ ...g, label })) } : b,
+      ),
+    });
+    for (const variant of ["groups-bar-stacked", "groups-line-two-groups"]) {
+      const page = await open(variant, theme, 390, long);
+      try {
+        const svg = page.locator("svg[data-hm-kind]").filter({ visible: true }).first();
+        const box = await svg.boundingBox();
+        const headings = await svg.locator("text:has(title)").evaluateAll((nodes) =>
+          nodes.map((n) => ({
+            title: n.querySelector("title")?.textContent,
+            right: n.getBoundingClientRect().right,
+          })),
+        );
+        const named = headings.filter((h) => h.title === label);
+        expect(named.length, variant).toBeGreaterThan(0);
+        for (const h of named)
+          expect(h.right, variant).toBeLessThanOrEqual((box?.x ?? 0) + (box?.width ?? 0) + 0.5);
+      } finally {
+        await page.close();
+      }
+    }
   });
 
   it("names the group before its members in the key, on desktop and phone", async () => {

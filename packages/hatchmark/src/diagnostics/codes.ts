@@ -195,10 +195,10 @@ export const CODES = {
     explanation:
       "A grain filter offers a grain that no line, area or bar block lists in its grains, so choosing it changes nothing on the page. The filter drives only blocks whose grains include the chosen grain, compared at the project anchors. Add the grain to the blocks that should switch, or remove the option.",
   },
-  HM2027: {
+  HM2030: {
     title: "group names a series the chart does not draw",
     explanation:
-      "Every series in a block's groups must be one the chart draws: a name from the block's metrics or, when the block splits, a split value as the chart labels it (null is \"(empty)\"). Metric names are checked against metrics as an error. Split values come from the data, so build warns when a value never appears; the group keeps the colour step of every listed series, so colours stay put when a value is missing from one period.",
+      'Every series in a block\'s groups must be one the chart draws: a name from the block\'s metrics or, when the block splits, a split value as the chart labels it (null is "(empty)"). Metric names are checked against metrics as an error. Split values come from the data, so build warns when a listed value has no rows in the source at all, whatever the period or filters. A value missing from only some periods or filter choices is not warned about: the group keeps the colour step of every listed series, so colours stay put while it is missing. When the split holds both empty values and the text "(empty)", a group that lists "(empty)" takes the empty values and build warns about the text.',
   },
   HM3001: {
     title: "missing required property",

@@ -119,6 +119,11 @@ export interface Series {
   /** The block's group this series belongs to (index into the block's groups) and its place in it, lead first. */
   group?: { index: number; step: number };
   /**
+   * An ungrouped split series' place among the split values no group lists, over all time and
+   * without filters, so its colour does not change with the period or filters shown.
+   */
+  colorRank?: number;
+  /**
    * One value per x position (bucket or category), same order and length as the axis. On a time
    * axis, buckets at or after the series' horizon have no value (null).
    */

@@ -89,7 +89,7 @@ interface KeyItem {
 }
 
 function keyItems(block: BarData, theme: Theme): KeyItem[] {
-  const paints = seriesPaints(theme, block.series);
+  const paints = seriesPaints(theme, block.series, block.groups?.length);
   return block.series.map((s, k) => {
     const heading = groupHeading(block, k);
     return {
@@ -114,15 +114,17 @@ function drawKey(
     const text = truncateEnd(label, width - 14, { size: CAPTION });
     const w = 14 + textWidth(text, { size: CAPTION });
     if (heading !== undefined) {
-      const headingWidth = textWidth(heading, GROUP_STYLE) + 8;
+      const shown = truncateEnd(heading, Math.max(width / 2, width - w - 8), GROUP_STYLE);
+      const headingWidth = textWidth(shown, GROUP_STYLE) + 8;
       if (x > 0 && x + headingWidth + w > width) {
         x = 0;
         row++;
       }
       parts.push(
-        svgText(paint, x, row * LABEL_LINE + LABEL_LINE / 2, heading, {
+        svgText(paint, x, row * LABEL_LINE + LABEL_LINE / 2, shown, {
           ...GROUP_STYLE,
           color: "text",
+          ...(shown === heading ? {} : { title: heading }),
         }),
       );
       x += headingWidth;
@@ -223,7 +225,7 @@ export function renderBar(
   const totalText = totals?.map((v) =>
     isNumber(v) ? formatValue(v, metric, locale, "compact") : "",
   );
-  const paints = seriesPaints(ctx.theme, series);
+  const paints = seriesPaints(ctx.theme, series, block.groups?.length);
   const strokeOf = (k: number) => (paints[k] as SeriesPaint).stroke;
   const fillOf = (k: number) => (paints[k] as SeriesPaint).fill;
   const key = drawKey(paint, keyItems(block, ctx.theme), size.width);

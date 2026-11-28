@@ -926,12 +926,6 @@ function notAdditiveLabel(metric: Metric): string {
   return `${kind} does not add up across rows`;
 }
 
-/**
- * A block's groups: a single-series chart has nothing to group (HM5031), a metric name must be one
- * the block draws (HM2027; split values are checked against the data at build), a series belongs to
- * one group once (HM3011), and the theme's hue families bound a group's size (HM5030) and the
- * number of groups (HM5032).
- */
 function checkGroups(
   r: Reporter,
   file: SpecFile<"dashboard">,
@@ -974,13 +968,19 @@ function checkGroups(
       const name = String(member);
       const at = `${pointer}/${i}`;
       if (!split && !block.metrics.includes(name)) {
+        const listed = new Set(groups.flatMap((other) => other.series.map(String)));
         r.report(
-          "HM2027",
+          "HM2030",
           at,
           `group "${group.label}" names "${name}", which this chart does not draw`,
           {
             expected: block.metrics,
-            ...suggestion(file.document, name, block.metrics, at),
+            ...suggestion(
+              file.document,
+              name,
+              block.metrics.filter((m) => !listed.has(m)),
+              at,
+            ),
           },
         );
         return;
@@ -993,19 +993,23 @@ function checkGroups(
           owner === g
             ? `"${name}" is listed twice in group "${group.label}"`
             : `"${name}" is already in group "${groups[owner]?.label ?? ""}"`,
-          {
-            help: "a series takes its colour from one group; remove the repeat",
-            ...optional(
-              "fix",
-              removeItemFix(
-                file.document,
-                pointer,
-                i,
-                "unsafe",
-                `remove "${name}" from this group`,
-              ),
-            ),
-          },
+          group.series.length > 2
+            ? {
+                help: "a series takes its colour from one group; remove the repeat",
+                ...optional(
+                  "fix",
+                  removeItemFix(
+                    file.document,
+                    pointer,
+                    i,
+                    "unsafe",
+                    `remove "${name}" from this group`,
+                  ),
+                ),
+              }
+            : {
+                help: "a series takes its colour from one group; list another series in its place, or remove this group",
+              },
         );
         return;
       }

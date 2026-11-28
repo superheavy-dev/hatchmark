@@ -20,6 +20,7 @@ interface RuntimeSeries {
   label: string;
   color: number | string;
   group?: number;
+  name?: string;
   v: (number | null)[];
   text: string[];
   short: string[];
@@ -422,7 +423,9 @@ function attach(figure: HTMLElement, chart: RuntimeChart): void {
     live.textContent = [
       chart.headers[index],
       ...(chart.status?.[index] ? [chart.status[index]] : []),
-      ...chart.series.map((s) => `${s.label} ${s.text[index]}${s.pct ? `, ${s.pct[index]}` : ""}`),
+      ...chart.series.map(
+        (s) => `${s.name ?? s.label} ${s.text[index]}${s.pct ? `, ${s.pct[index]}` : ""}`,
+      ),
       ...(chart.total
         ? [
             `Total ${chart.total[index]}${chart.totalStatus?.[index] ? `, ${chart.totalStatus[index]}` : ""}`,

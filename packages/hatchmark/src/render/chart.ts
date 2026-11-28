@@ -54,6 +54,19 @@ export function groupHeading(
   return block.groups?.[group.index]?.label;
 }
 
+/** A series' label, prefixed with its group's name when another series of the block shares the label. */
+export function seriesName(
+  block: { series: readonly Series[]; groups?: readonly SeriesGroup[] },
+  k: number,
+): string {
+  const s = block.series[k];
+  if (s === undefined) return "";
+  const group = s.group === undefined ? undefined : block.groups?.[s.group.index]?.label;
+  if (group === undefined || block.series.filter((t) => t.label === s.label).length < 2)
+    return s.label;
+  return `${group} \u00B7 ${s.label}`;
+}
+
 /** The format of a share of a total: the value axis of a 100% stack, tooltip and key shares. */
 export const SHARE: MetricInfo = {
   name: "share",

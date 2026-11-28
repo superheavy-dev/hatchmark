@@ -181,32 +181,48 @@ export interface SeriesPaint {
 
 /**
  * Each series' colours. Without groups, series take the categorical slots in order, wrapping after
- * slot 8. A group takes the hue family at its index in theme.groups, and its members step through
- * the family's lightness in group order; ungrouped series then take the categorical slots in order,
- * skipping the slots of every family a group holds.
+ * slot 8. With groups, group i takes the hue family at index i of theme.groups (declared groups hold
+ * their family even when none of their series draw), and its members step through the family's
+ * lightness in group order. Ungrouped series take the categorical slots outside every held family:
+ * in series order for metrics, and in order of their split value for a split, so a value keeps its
+ * colour when periods or filters reorder the series by size.
  */
 export function seriesPaints(
   theme: Theme,
-  series: readonly { group?: { index: number; step: number } }[],
+  series: readonly {
+    key?: string;
+    label?: string;
+    splitValue?: unknown;
+    group?: { index: number; step: number };
+    colorRank?: number;
+  }[],
+  declaredGroups = 0,
 ): SeriesPaint[] {
   const families = theme.groups?.families ?? [];
-  const familyOf = (s: { group?: { index: number } }) =>
-    s.group === undefined ? undefined : families[s.group.index];
-  if (!series.some((s) => familyOf(s) !== undefined)) {
+  const held = Math.min(
+    families.length,
+    Math.max(declaredGroups, ...series.map((s) => (s.group === undefined ? 0 : s.group.index + 1))),
+  );
+  if (held === 0) {
     return series.map((_, k) => ({
       stroke: seriesColor(k),
       fill: seriesFill(k),
       secondary: false,
     }));
   }
-  const held = new Set(series.flatMap((s) => familyOf(s)?.slots ?? []));
-  const free = SLOTS.filter((slot) => !held.has(slot));
+  const taken = new Set(families.slice(0, held).flatMap((f) => f.slots));
+  const free = SLOTS.filter((slot) => !taken.has(slot));
   const slots = free.length > 0 ? free : [...SLOTS];
-  let next = 0;
-  return series.map((s) => {
-    const family = familyOf(s);
-    if (family === undefined || s.group === undefined) {
-      const slot = slots[next++ % slots.length] as Slot;
+  const ungrouped = series
+    .map((s, k) => ({ s, k }))
+    .filter(({ s }) => s.group === undefined || s.group.index >= held);
+  const slotOf = new Map(
+    ungrouped.map(({ s, k }, i) => [k, slots[(s.colorRank ?? i) % slots.length] as Slot]),
+  );
+  return series.map((s, k) => {
+    const family = s.group === undefined ? undefined : families[s.group.index];
+    if (family === undefined || s.group === undefined || s.group.index >= held) {
+      const slot = slotOf.get(k) as Slot;
       return { stroke: `c${slot}`, fill: `f${slot}`, secondary: false };
     }
     const id = `g${s.group.index + 1}-${Math.min(s.group.step, family.stroke.light.length - 1) + 1}`;

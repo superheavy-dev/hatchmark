@@ -7,6 +7,7 @@ import {
   metricOf,
   type RenderContext,
   SHARE,
+  seriesName,
 } from "./chart.js";
 import { formatBucket, formatSpan, formatValue } from "./format.js";
 import { plottedValues, readoutHead, readoutValue } from "./line.js";
@@ -197,13 +198,10 @@ export function chartTable(
         `<tr><th scope="row">${esc(name)}</th>${block.series.map((s) => `<td${lang}>${esc(cell(s, i))}</td>`).join("")}${totals ? total(i) : ""}</tr>`,
     )
     .join("");
-  return `<div class="hm-sr"><table><caption>${esc(caption)}</caption><thead>${head}</thead><tbody>${rows}</tbody></table></div>`;
+  const cols = block.groups ? groupedCols(block, totals !== undefined) : "";
+  return `<div class="hm-sr"><table><caption>${esc(caption)}</caption>${cols}<thead>${head}</thead><tbody>${rows}</tbody></table></div>`;
 }
 
-/**
- * A grouped chart's table header: a first row with each group's name over its members and
- * ungrouped series spanning both rows, then a row of the members' names.
- */
 function groupedHead(block: ChartBlock, corner: string, total: boolean): string {
   const top: string[] = [`<th scope="col" rowspan="2">${corner}</th>`];
   const members: string[] = [];
@@ -220,6 +218,21 @@ function groupedHead(block: ChartBlock, corner: string, total: boolean): string 
   });
   if (total) top.push('<th scope="col" rowspan="2">Total</th>');
   return `<tr>${top.join("")}</tr><tr>${members.join("")}</tr>`;
+}
+
+function groupedCols(block: ChartBlock, total: boolean): string {
+  const cols = ["<colgroup><col></colgroup>"];
+  block.series.forEach((s, k) => {
+    if (s.group === undefined) {
+      cols.push("<colgroup><col></colgroup>");
+      return;
+    }
+    if (groupHeading(block, k) === undefined) return;
+    const size = block.series.filter((t) => t.group?.index === s.group?.index).length;
+    cols.push(`<colgroup span="${size}"></colgroup>`);
+  });
+  if (total) cols.push("<colgroup><col></colgroup>");
+  return cols.join("");
 }
 
 function totalPartial(block: ChartBlock, i: number): boolean {
@@ -248,6 +261,8 @@ export interface ChartRuntimeData {
     color: number | string;
     /** Index into groups. */
     group?: number;
+    /** The label with its group's name, when another series shares the label: for announcements. */
+    name?: string;
     /** Raw values, for sorting tooltip rows. */
     v: Value[];
     /** Full-format text per position. */
@@ -289,7 +304,7 @@ export function chartRuntimeData(
     block.axis.kind === "time"
       ? block.axis.buckets.map((_, i) => bucketLines(block, i, ctx, partial))
       : undefined;
-  const paints = seriesPaints(ctx.theme, block.series);
+  const paints = seriesPaints(ctx.theme, block.series, block.groups?.length);
   const color = (k: number) => {
     const slot = (paints[k] as SeriesPaint).stroke.slice(1);
     return /^\d+$/.test(slot) ? Number(slot) : slot;
@@ -304,6 +319,7 @@ export function chartRuntimeData(
       label: s.label,
       color: color(k),
       ...(s.group === undefined ? {} : { group: s.group.index }),
+      ...(seriesName(block, k) === s.label ? {} : { name: seriesName(block, k) }),
       v: s.values,
       text: s.values.map((v) => full(ctx, s.metric, v)),
       short:

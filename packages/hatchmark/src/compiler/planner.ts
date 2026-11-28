@@ -174,6 +174,7 @@ function planReading(
   shift: Comparison,
   oneWindow = false,
   edges?: "clip",
+  unbound = false,
 ): Reading {
   const groups = new Map<
     string,
@@ -240,7 +241,7 @@ function planReading(
       dimensions,
       groupingSets,
       window:
-        group.time === undefined
+        group.time === undefined || unbound
           ? { range: "all_time", shift: "none" }
           : {
               range: ctx.range,
@@ -249,7 +250,7 @@ function planReading(
               horizons: group.horizons,
               ...(edges !== undefined && grainAxis ? { edges } : {}),
             },
-      params: paramsForQuery(ctx.params, group.source, group.time),
+      params: unbound ? [] : paramsForQuery(ctx.params, group.source, group.time),
     };
     const id = queryId(shape);
     ids.set(key, id);
@@ -368,6 +369,7 @@ function planBlockAt(
     measures: Reading;
     previous?: Reading;
     sparkline?: Reading;
+    domain?: Reading;
     grain?: ResolvedGrain;
     grains?: { grain: ResolvedGrain; reading: Reading }[];
   } = (() => {
@@ -397,10 +399,28 @@ function planBlockAt(
       case "line":
       case "area":
       case "bar": {
-        if (block.grain === undefined) return { measures: seriesReading(ctx, block, undefined) };
+        const domain =
+          block.split === undefined || block.groups === undefined
+            ? {}
+            : {
+                domain: planReading(
+                  ctx,
+                  block.metrics,
+                  [{ kind: "column", column: block.split }],
+                  [[0]],
+                  "none",
+                  false,
+                  undefined,
+                  true,
+                ),
+              };
+        if (block.grain === undefined) {
+          return { measures: seriesReading(ctx, block, undefined), ...domain };
+        }
         const grain = shownGrain(ctx, block.grain, block.grains);
         return {
           measures: seriesReading(ctx, block, grain),
+          ...domain,
           ...(block.grains === undefined ? {} : { grain }),
           ...(block.grains === undefined
             ? {}
@@ -449,6 +469,7 @@ function planBlockAt(
     readings.measures,
     readings.previous,
     readings.sparkline,
+    readings.domain,
     ...(readings.grains ?? []).map((g) => g.reading),
   ].flatMap((r) => (r ? r.queries : []));
   const queries = [...new Map(all.map((q) => [q.id, q])).values()];
@@ -460,6 +481,7 @@ function planBlockAt(
       measures: readings.measures.measures,
       ...(readings.previous ? { previous: readings.previous.measures } : {}),
       ...(readings.sparkline ? { sparkline: readings.sparkline.measures } : {}),
+      ...(readings.domain ? { domain: readings.domain.measures } : {}),
       ...(readings.grain ? { grain: readings.grain } : {}),
       ...(readings.grains
         ? {

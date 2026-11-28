@@ -8,8 +8,10 @@ const dashboard = (...blocks: unknown[]) => ({ sales: { ...DASHBOARD, filters: [
 const project = (...blocks: unknown[]) => projectFrom({ dashboards: dashboard(...blocks) });
 const refs = (...blocks: unknown[]) => checkReferences(project(...blocks));
 const text = (block: unknown) => toYaml({ ...DASHBOARD, filters: [], blocks: [block] });
-const afterFix = (block: unknown, fix: Parameters<typeof applyFix>[1]) =>
-  refs(...(fromYaml(applyFix(text(block), fix)) as { blocks: unknown[] }).blocks);
+const afterFix = (block: unknown, fix: Parameters<typeof applyFix>[1]) => {
+  const fixed = project(...(fromYaml(applyFix(text(block), fix)) as { blocks: unknown[] }).blocks);
+  return [...parseDiagnostics(fixed), ...checkReferences(fixed)];
+};
 const line = (groups: unknown, extra: Record<string, unknown> = {}) => ({
   type: "line",
   metrics: ["revenue", "net_revenue", "orders"],
@@ -80,12 +82,12 @@ describe("series groups", () => {
     });
   });
 
-  it("names an unknown metric with a suggestion (HM2027)", () => {
+  it("names an unknown metric with a suggestion (HM2030)", () => {
     const block = line([{ label: "Revenue", series: ["revenue", "net_revenu"] }]);
     const [d, ...rest] = refs(block);
     expect(rest).toEqual([]);
     expect(d).toMatchObject({
-      code: "HM2027",
+      code: "HM2030",
       severity: "error",
       pointer: "/blocks/0/groups/0/series/1",
       message: 'group "Revenue" names "net_revenu", which this chart does not draw',
@@ -93,6 +95,22 @@ describe("series groups", () => {
       expected: ["revenue", "net_revenue", "orders"],
     });
     expect(afterFix(block, d?.fix)).toEqual([]);
+  });
+
+  it("never suggests a metric another group already lists (HM2030)", () => {
+    for (const block of [
+      line([{ label: "Revenue", series: ["revenue", "Revenue"] }]),
+      line([
+        { label: "Revenue", series: ["revenue", "orders"] },
+        { label: "Net", series: ["net_revenue", "Revenue"] },
+      ]),
+    ]) {
+      const found = refs(block);
+      expect(found.map((d) => d.code)).toEqual(["HM2030"]);
+      const [d] = found;
+      if (d?.fix !== undefined) expect(afterFix(block, d.fix)).toEqual([]);
+      expect(d?.help ?? "").not.toContain('"revenue"');
+    }
   });
 
   it("leaves split values to the build", () => {
@@ -120,7 +138,16 @@ describe("series groups", () => {
       pointer: "/blocks/0/groups/1/series/1",
       message: '"revenue" is already in group "Revenue"',
     });
-    expect(afterFix(block, d?.fix)).toEqual([]);
+    expect(d?.fix).toBeUndefined();
+    expect(d?.help).toBe(
+      "a series takes its colour from one group; list another series in its place, or remove this group",
+    );
+    const three = line([{ label: "Revenue", series: ["revenue", "net_revenue", "revenue"] }]);
+    const [fixable, ...others] = refs(three);
+    expect(others).toEqual([]);
+    expect(fixable).toMatchObject({ code: "HM3011", pointer: "/blocks/0/groups/0/series/2" });
+    expect(fixable?.fix).toBeDefined();
+    expect(afterFix(three, fixable?.fix)).toEqual([]);
     const [twice] = refs(
       line([{ label: "Revenue", series: ["revenue", "net_revenue", "revenue"] }]),
     );

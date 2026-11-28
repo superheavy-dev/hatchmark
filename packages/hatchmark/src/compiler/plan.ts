@@ -197,6 +197,11 @@ export interface BlockPlan {
   /** A KPI's metric by month over the current window, when the block asks for a sparkline. */
   sparkline?: Record<string, MeasureExpression>;
   /**
+   * A grouped split block's metrics by split value over all time and without filters: every value
+   * the series can take, so each keeps its colour whichever period or filter is shown.
+   */
+  domain?: Record<string, MeasureExpression>;
+  /**
    * The grain a time-series block shows first, when it switches grains: the grain filter's default
    * when the block lists it, else the block's grain. measures are this grain's.
    */

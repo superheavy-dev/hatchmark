@@ -434,10 +434,6 @@ function themeVariables(theme: Theme, mode: Mode): string {
   ].join(";");
 }
 
-/**
- * Colours and tooltip headings of series groups, added only to pages that draw a group, so pages
- * without groups keep their exact bytes.
- */
 function groupStyles(theme: Theme): string {
   const keys = groupColorKeys(theme);
   if (keys.length === 0) return "";
