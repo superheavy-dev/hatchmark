@@ -29,7 +29,7 @@ ship with it (`hatchmark docs`) over memory.
 1. Orient. `hatchmark docs` lists the bundled topics; `hatchmark docs --search "<words>"` finds
    a section and `hatchmark docs <topic>#<section>` prints it. Read the existing YAML files.
    No `hatchmark.yaml` yet? `hatchmark init` creates a sample project, `--template minimal` an
-   empty one.
+   empty one. Init also adds a Hatchmark block to `AGENTS.md` and entries to `.gitignore`.
 2. Look at the data before writing a metric. `hatchmark data describe <source> --json` lists
    columns, types, null and distinct counts and time ranges. `hatchmark data query "<sql>" --json`
    runs one read-only SELECT; each source is a table named after it.
@@ -50,7 +50,10 @@ ship with it (`hatchmark docs`) over memory.
 
 ## When something is off
 
-- `hatchmark doctor --json` checks Node.js, the bundled docs and schemas, the project config, and
-  whether this skill matches the installed CLI.
-- A copy of this skill from another version: `hatchmark skills install` refreshes it.
+- `hatchmark doctor --json` checks Node.js, the bundled docs and schemas, that `hatchmark.yaml`
+  exists (not that it is valid: `hatchmark check` does that), and whether an installed copy of this
+  skill is from another version or was changed.
+- A copy of this skill from another version: run the exact `hatchmark skills install --agent ...
+  --scope ...` command doctor prints. Install refreshes an unchanged copy on its own, but never
+  overwrites a copy that was edited unless you add `--force`.
 - The CLI disagrees with this skill: the CLI and `hatchmark docs` win.
