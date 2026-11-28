@@ -427,6 +427,21 @@ function checkMetrics(project: Project, out: Diagnostic[]): void {
       checkEvaluationLookups(r, name, metric, configured, metrics);
       if (
         metric.type === "aggregate" &&
+        metric.over_time === "avg" &&
+        metric.entity === undefined
+      ) {
+        r.report(
+          "HM4040",
+          "/over_time",
+          "uses the default: over_time avg averages the snapshots present in each period, not every calendar day",
+          {
+            severity: "note",
+            help: "a day with no snapshot is left out of the average rather than carrying the previous snapshot forward; calendar-day averaging is not available yet",
+          },
+        );
+      }
+      if (
+        metric.type === "aggregate" &&
         metric.active !== undefined &&
         metric.active.ends === undefined
       ) {

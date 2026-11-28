@@ -59,6 +59,31 @@ ZONE` value is converted to it. A timestamp without an offset (`2026-01-31 18:30
   is compared as a UTC instant, so it stays exact inside a
   repeated fall-back hour, and `axis.window.endAt` gives its local time.
 
+## Snapshots
+
+A metric with `over_time` `last`, `first`, `avg`, `min` or `max` reads a snapshot table (a source
+with `snapshot` set, or any table that holds a full copy of its rows at each date), never adding up
+the copies (RFC 0001 section 3.2).
+
+- **A snapshot is one value of the time column**: a date, or an instant for a timestamp. Rows that
+  share it are one snapshot; two instants on one day are two snapshots; a row with no time is in
+  none.
+- **The snapshot is chosen before filters.** In each time bucket, or the whole window for a KPI,
+  table, pie, map, scatter or category bar, `last` reads the source's latest snapshot and `first`
+  its earliest, over every row. Filters and segments then keep rows at that snapshot, so selecting
+  a region never moves the date: a region with no rows there is 0.
+- **avg, min and max** take each group's value at every snapshot in the bucket (0 for a sum or
+  count with no rows there) and average it, or take the smallest or largest. `avg` averages the
+  snapshots present, not calendar days (note HM4040, which stays until calendar-day averaging
+  exists).
+- **Gaps.** A bucket with no snapshot is empty, never 0, so a line breaks there. The build warns
+  (HM4015) for complete buckets with no snapshot or whose last snapshot is before their last day.
+- **Totals** (a table's total row, a split's total, a stack's position total) are the metric over
+  their own bucket or window, never the sum of group values. `last`, `first` and `avg` of a sum or
+  count add up across groups; `min` and `max` do not (HM4001 for percent of total).
+- Custom date ranges give the same numbers as the executor. A per-snapshot `count_distinct`,
+  `median` or `avg` read with `avg`, `min` or `max` over time is shown for presets only.
+
 ## Filters
 
 Metric filters and dashboard select filters compare a column with a value:
@@ -99,7 +124,8 @@ Metric filters and dashboard select filters compare a column with a value:
   the total row, and the total still covers every row.
 - **Other** (a table's `other: true`) is recomputed from the parts of the rows past the limit:
   sums and counts add, min and max take the extreme, averages and ratios divide folded sums.
-  Distinct counts, medians and non-additive SQL cannot be folded and show "—" (HM4063).
+  Distinct counts, medians, non-additive SQL, any metric read with `over_time` min or max, and an
+  average, min or max read with `over_time` avg cannot be folded and show "—" (HM4063).
 - **Subtotals** come from the query's grouping sets (SQL ROLLUP), like the total, never from adding
   the rows below them.
 - **Empty groups and buckets.** Sums, counts and additive SQL metrics with a numeric result are 0

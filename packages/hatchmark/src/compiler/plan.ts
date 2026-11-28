@@ -90,7 +90,35 @@ export type PlannedDimension =
       /** Only rows passing these filters get a bucket; the others get null. */
       filters?: Filter[];
     }
-  | { kind: "region"; column: string; geo: GeographyId; unmatched?: "keep" };
+  | { kind: "region"; column: string; geo: GeographyId; unmatched?: "keep" }
+  /**
+   * The snapshot a row belongs to: its time column's value, as "YYYY-MM-DD" for a DATE column and
+   * as the UTC instant "YYYY-MM-DDTHH:MM:SS.ffffffZ" for a timestamp, with nine fraction digits for
+   * a TIMESTAMP_NS column, so values a nanosecond apart stay apart. Only in a snapshot query's day
+   * cube, where it makes each snapshot its own bucket.
+   */
+  | { kind: "snapshot"; column: string };
+
+/** Which snapshots of a bucket a snapshot query reads (RFC 0001 section 3.2). */
+export type SnapshotPick = "last" | "first" | "avg" | "min" | "max";
+
+/**
+ * How a snapshot query places rows in time (RFC 0001 section 3.2). A snapshot is the set of rows
+ * that share one value of the time column. In each bucket (a time bucket of a grouping set, or the
+ * whole window for a set without a time dimension) the snapshots are chosen from every row in the
+ * window, before any filter or segment: the latest for "last", the earliest for "first", all of
+ * them for "avg", "min" and "max". Each group's value at a snapshot is the aggregate of its
+ * filtered rows there, 0 for sum, count and count_distinct when it has none and null otherwise.
+ * "last" and "first" read that value at their snapshot; "avg", "min" and "max" take it over the
+ * bucket's snapshots, skipping nulls. A bucket with no snapshot has no row. The groups of a grouping
+ * set are those with rows passing the query's params anywhere in the window (component filters only
+ * decide values), so each has a row in every bucket that has a snapshot.
+ */
+export interface SnapshotEvaluation {
+  kind: "snapshot";
+  column: string;
+  pick: SnapshotPick;
+}
 
 /**
  * The time window a query reads, explicit enough that the executor needs nothing else from the
@@ -157,6 +185,8 @@ export interface PlannedQuery {
    * part of the query's identity, so the same filter id on another column is another query.
    */
   params: PlannedParam[];
+  /** Set for a snapshot read; absent, a timed query sums its rows over each bucket (a flow). */
+  evaluation?: SnapshotEvaluation;
   orderBy?: { key: string; order: "asc" | "desc" }[];
   limit?: number;
 }

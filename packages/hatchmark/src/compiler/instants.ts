@@ -1,6 +1,8 @@
-// Source horizons need microseconds (RFC 0001 section 6.1), which Date and Date.parse drop,
-// so instants are bigint microseconds since 1970-01-01T00:00:00Z.
-export const DAY_US = 86_400_000_000n;
+// Source horizons need the time column's own precision, down to nanoseconds for TIMESTAMP_NS
+// (RFC 0001 section 6.1), which Date and Date.parse drop, so instants are bigint nanoseconds since
+// 1970-01-01T00:00:00Z.
+export const DAY_NS = 86_400_000_000_000n;
+const SECOND_NS = 1_000_000_000n;
 
 const floorDiv = (a: bigint, b: bigint) => (a >= 0n ? a / b : -((-a + b - 1n) / b));
 
@@ -29,30 +31,32 @@ function civilFromDays(days: number): { y: number; m: number; d: number } {
 
 export function parseInstant(text: string): bigint {
   const match =
-    /^(\d{4,5})-(\d{2})-(\d{2})(?:[T ](\d{2}):(\d{2}):(\d{2})(?:\.(\d{1,6}))?)?Z?$/.exec(text);
+    /^(\d{4,5})-(\d{2})-(\d{2})(?:[T ](\d{2}):(\d{2}):(\d{2})(?:\.(\d{1,9}))?)?Z?$/.exec(text);
   if (match === null) throw new RangeError(`not an instant: ${text}`);
   const [, y, mo, d, h = "0", mi = "0", s = "0", f = ""] = match;
   const seconds =
     BigInt(daysFromCivil(Number(y), Number(mo), Number(d))) * 86_400n +
     BigInt(Number(h) * 3600 + Number(mi) * 60 + Number(s));
-  return seconds * 1_000_000n + BigInt(f.padEnd(6, "0"));
+  return seconds * SECOND_NS + BigInt(f.padEnd(9, "0"));
 }
 
-export function formatWall(us: bigint): string {
-  const seconds = floorDiv(us, 1_000_000n);
-  const micros = us - seconds * 1_000_000n;
+export function formatWall(ns: bigint): string {
+  const seconds = floorDiv(ns, SECOND_NS);
+  const nanos = ns - seconds * SECOND_NS;
+  const fraction =
+    nanos % 1000n === 0n ? String(nanos / 1000n).padStart(6, "0") : String(nanos).padStart(9, "0");
   const days = floorDiv(seconds, 86_400n);
   const rest = Number(seconds - days * 86_400n);
   const { y, m, d } = civilFromDays(Number(days));
   const p = (n: number, w = 2) => String(n).padStart(w, "0");
-  return `${p(y, 4)}-${p(m)}-${p(d)}T${p(Math.floor(rest / 3600))}:${p(Math.floor(rest / 60) % 60)}:${p(rest % 60)}.${String(micros).padStart(6, "0")}`;
+  return `${p(y, 4)}-${p(m)}-${p(d)}T${p(Math.floor(rest / 3600))}:${p(Math.floor(rest / 60) % 60)}:${p(rest % 60)}.${fraction}`;
 }
 
-export const formatInstant = (us: bigint) => `${formatWall(us)}Z`;
+export const formatInstant = (ns: bigint) => `${formatWall(ns)}Z`;
 
 const formatters = new Map<string, Intl.DateTimeFormat>();
 
-function offsetSeconds(us: bigint, timezone: string): bigint {
+function offsetSeconds(ns: bigint, timezone: string): bigint {
   let format = formatters.get(timezone);
   if (format === undefined) {
     format = new Intl.DateTimeFormat("en-US", {
@@ -68,7 +72,7 @@ function offsetSeconds(us: bigint, timezone: string): bigint {
     });
     formatters.set(timezone, format);
   }
-  const seconds = floorDiv(us, 1_000_000n);
+  const seconds = floorDiv(ns, SECOND_NS);
   const parts = Object.fromEntries(
     format.formatToParts(new Date(Number(seconds) * 1000)).map((p) => [p.type, p.value]),
   );
@@ -80,14 +84,14 @@ function offsetSeconds(us: bigint, timezone: string): bigint {
   return wall - seconds;
 }
 
-export function toLocal(us: bigint, timezone: string): bigint {
-  return us + offsetSeconds(us, timezone) * 1_000_000n;
+export function toLocal(ns: bigint, timezone: string): bigint {
+  return ns + offsetSeconds(ns, timezone) * SECOND_NS;
 }
 
 function readings(wall: bigint, timezone: string): { before: bigint; shown: bigint[] } {
-  const before = wall - offsetSeconds(wall - DAY_US, timezone) * 1_000_000n;
-  const after = wall - offsetSeconds(wall + DAY_US, timezone) * 1_000_000n;
-  const shown = [...new Set([before, after])].filter((us) => toLocal(us, timezone) === wall);
+  const before = wall - offsetSeconds(wall - DAY_NS, timezone) * SECOND_NS;
+  const after = wall - offsetSeconds(wall + DAY_NS, timezone) * SECOND_NS;
+  const shown = [...new Set([before, after])].filter((ns) => toLocal(ns, timezone) === wall);
   return { before, shown };
 }
 
@@ -103,10 +107,10 @@ export function isRepeated(wall: bigint, timezone: string): boolean {
 
 // Some zones repeat midnight when clocks go back (America/Havana), so an instant whose wall time is
 // midnight still ends the day before.
-export function lastWallBefore(us: bigint, timezone: string): bigint {
-  const wall = toLocal(us, timezone);
-  return wall % DAY_US === 0n ? wall - 1n : toLocal(us - 1n, timezone);
+export function lastWallBefore(ns: bigint, timezone: string): bigint {
+  const wall = toLocal(ns, timezone);
+  return wall % DAY_NS === 0n ? wall - 1n : toLocal(ns - 1n, timezone);
 }
 
-export const describeInstant = (us: bigint, timezone: string) =>
-  formatWall(toLocal(us, timezone)).slice(0, 16).replace("T", " ");
+export const describeInstant = (ns: bigint, timezone: string) =>
+  formatWall(toLocal(ns, timezone)).slice(0, 16).replace("T", " ");

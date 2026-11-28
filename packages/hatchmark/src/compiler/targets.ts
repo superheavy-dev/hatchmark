@@ -1,5 +1,5 @@
 import type { ResolvedGrain } from "../spec/index.js";
-import { DAY_US, parseInstant } from "./instants.js";
+import { DAY_NS, parseInstant } from "./instants.js";
 import { bucketEnd, bucketStart, timeBuckets } from "./windows.js";
 
 /** A target's values by bucket start (YYYY-MM-DD at the target's grain). */
@@ -23,14 +23,14 @@ export function targetBuckets(
 }
 
 /**
- * The share of a period [start, end) that [from, to) covers, in local wall-clock microseconds: the
+ * The share of a period [start, end) that [from, to) covers, in local wall-clock nanoseconds: the
  * elapsed share of a partial bucket (RFC 0001 section 6.1), unrounded.
  */
 export function elapsedShare(from: bigint, to: bigint, start: bigint, end: bigint): number {
   return Number(to - from) / Number(end - start);
 }
 
-const days = (from: string, to: string) => Number((parseInstant(to) - parseInstant(from)) / DAY_US);
+const days = (from: string, to: string) => Number((parseInstant(to) - parseInstant(from)) / DAY_NS);
 
 /**
  * A flow target over the local dates [start, end) (RFC 0001 section 7). Every target bucket the
@@ -70,9 +70,9 @@ export function flowTarget(
 }
 
 /**
- * A point-in-time target at a local wall-clock instant (microseconds since 1970-01-01T00:00 local,
+ * A point-in-time target at a local wall-clock instant (nanoseconds since 1970-01-01T00:00 local,
  * instants.ts). Each value holds at the end of its bucket; between two of them the target follows
- * the path: "linear" moves by the same amount per microsecond, "compound" by the same factor, which
+ * the path: "linear" moves by the same amount per nanosecond, "compound" by the same factor, which
  * needs both values positive (null otherwise). At a value's own instant the target is that value.
  * Null before the first value's instant and after the
  * last one's.

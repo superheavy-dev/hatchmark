@@ -39,13 +39,14 @@ format:
 better: up
 ```
 
-| Field       | Meaning                                                                                                                                 |
-| ----------- | --------------------------------------------------------------------------------------------------------------------------------------- |
-| `table`     | A source name from `hatchmark.yaml`.                                                                                                    |
-| `aggregate` | `sum`, `count`, `count_distinct`, `avg`, `min`, `max` or `median`.                                                                      |
-| `column`    | The column to aggregate. Required for everything but `count`; `count` without a column counts rows, with one it counts non-null values. |
-| `filters`   | Optional. Rows to keep; see [Filters](#filters).                                                                                        |
-| `time`      | The date or timestamp column that places a row in time. Needed for time series and period comparison, so set it on almost every metric. |
+| Field       | Meaning                                                                                                                                                            |
+| ----------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `table`     | A source name from `hatchmark.yaml`.                                                                                                                               |
+| `aggregate` | `sum`, `count`, `count_distinct`, `avg`, `min`, `max` or `median`.                                                                                                 |
+| `column`    | The column to aggregate. Required for everything but `count`; `count` without a column counts rows, with one it counts non-null values.                            |
+| `filters`   | Optional. Rows to keep; see [Filters](#filters).                                                                                                                   |
+| `time`      | The date or timestamp column that places a row in time. Needed for time series and period comparison, so set it on almost every metric.                            |
+| `over_time` | Optional. `sum` (default) adds rows over each period. `last`, `first`, `avg`, `min` or `max` read a snapshot table instead: see [Snapshots](numbers.md#snapshots). |
 
 Only `sum` and `count` add up across groups, so only they can show a percent of total in a table
 (`HM4001` otherwise).

@@ -8,7 +8,7 @@ import type {
 } from "../spec/index.js";
 import { PERIOD_RANGES, TIME_GRAINS, WEEKDAYS } from "../spec/units.js";
 import {
-  DAY_US,
+  DAY_NS,
   formatInstant,
   formatWall,
   fromLocal,
@@ -20,7 +20,8 @@ import type { ExecutionContext, PlannedParam, PlannedQuery } from "./plan.js";
 
 /**
  * A window in the project time zone: start inclusive, end exclusive. Each bound is a local date
- * (YYYY-MM-DD, its midnight), or a UTC instant YYYY-MM-DDTHH:MM:SS.ffffffZ where a measure's
+ * (YYYY-MM-DD, its midnight), or a UTC instant YYYY-MM-DDTHH:MM:SS.ffffffZ (nine fraction digits
+ * when a TIMESTAMP_NS horizon puts it between microseconds) where a measure's
  * horizon cuts a day (RFC 0001 section 6.4). An unbounded window (all_time) may still end at the
  * horizon. The executor compares a row's local date with a date and its instant with an instant.
  */
@@ -242,7 +243,7 @@ export function queryBounds(query: PlannedQuery, context: BoundsContext): Window
 }
 
 /**
- * A measure's horizon as UTC microseconds (instants.ts): the earliest of the as-of instant T and
+ * A measure's horizon as UTC nanoseconds (instants.ts): the earliest of the as-of instant T and
  * the horizons of the time columns its window lists. Undefined when the context carries no
  * horizons (a context built without measuring them).
  */
@@ -261,17 +262,17 @@ export function measureHorizon(query: PlannedQuery, context: BoundsContext): big
   return horizon;
 }
 
-/** A bound as UTC microseconds: a local date is its local midnight, a "...Z" bound its instant. */
+/** A bound as UTC nanoseconds: a local date is its local midnight, a "...Z" bound its instant. */
 export function boundInstant(value: string, timezone: string): bigint {
   return value.endsWith("Z") ? parseInstant(value) : fromLocal(parseInstant(value), timezone);
 }
 
 function daysBetween(from: string, to: string): number {
-  return Math.round(Number(parseInstant(to) - parseInstant(from)) / Number(DAY_US));
+  return Math.round(Number(parseInstant(to) - parseInstant(from)) / Number(DAY_NS));
 }
 
 /**
- * A query's window ended at a horizon (UTC microseconds; none keeps the window as written), when
+ * A query's window ended at a horizon (UTC nanoseconds; none keeps the window as written), when
  * the horizon is before the end of the range as written (RFC 0001 section 6.4).
  *
  * KPIs and tables read whole local days ending at the last complete day: the window ends at the

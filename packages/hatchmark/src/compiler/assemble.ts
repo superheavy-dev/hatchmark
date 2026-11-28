@@ -74,7 +74,7 @@ import {
   windowAt,
 } from "./windows.js";
 
-const DAY_US = 86_400_000_000n;
+const DAY_NS = 86_400_000_000_000n;
 
 type Key = string | number | boolean | null;
 
@@ -228,6 +228,7 @@ class Assembler {
     if (indexed === undefined || measure === undefined) return null;
     const { combine } = measure;
     const rowsAt = measure.rows === undefined ? undefined : indexed.components.get(measure.rows);
+    const gapless = indexed.query.evaluation === undefined;
     const component = (id: string): Value => {
       const at = indexed.components.get(id);
       const reaggregate = measure.components.find((c) => c.id === id)?.reaggregate ?? "none";
@@ -236,7 +237,7 @@ class Assembler {
         if (row !== undefined && rowsAt !== undefined && row[rowsAt] === 0) return 0;
         const raw = row === undefined || at === undefined ? null : row[at];
         const value = typeof raw === "number" ? raw : null;
-        return value === null && reaggregate === "sum" && row === undefined ? 0 : value;
+        return value === null && reaggregate === "sum" && row === undefined && gapless ? 0 : value;
       });
       if (!fold) return values[0] ?? null;
       const present = values.filter((v): v is number => v !== null);
@@ -319,7 +320,7 @@ class Assembler {
           index,
           elapsed: Number(((to - from) * 1_000_000n) / (end - start)) / 1e6,
           ...(from > start ? { edge: "start" as const } : {}),
-          days: Number((to - 1n) / DAY_US - from / DAY_US) + 1,
+          days: Number((to - 1n) / DAY_NS - from / DAY_NS) + 1,
           ...(to < end ? { through: formatWall(to).slice(0, 19) } : {}),
         });
       }
@@ -329,7 +330,7 @@ class Assembler {
   }
 
   /**
-   * What a time series reads of each bucket [start, end), in local wall-clock microseconds: from a
+   * What a time series reads of each bucket [start, end), in local wall-clock nanoseconds: from a
    * clipped window start or the bucket start, to the measure's horizon or the bucket end; null for
    * a bucket at or after the horizon. Undefined when there is neither a horizon nor a clip.
    */

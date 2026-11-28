@@ -355,6 +355,11 @@ export const CODES = {
     explanation:
       'A time series with incomplete: show draws its last bucket like the others, but the data covers only part of it, so a flow metric (a sum or count over the bucket) reads low there. Leave incomplete at "mark" to show it as in progress, or set "hide" to leave the bucket out.',
   },
+  HM4015: {
+    title: "snapshot missing from a period",
+    explanation:
+      "A metric with over_time last, first, avg, min or max reads a snapshot table one snapshot at a time. A complete period of a time series with no snapshot of the source in it shows no value (a gap), never 0, and a period whose latest snapshot is before its last day shows the value as of that earlier snapshot. Both usually mean a nightly load was missed. Load the missing snapshots, or show the series at a coarser grain. The warning comes from the source's snapshots, whatever the dashboard's filters keep.",
+  },
   HM4016: {
     title: "timestamps without an offset",
     explanation:
@@ -383,12 +388,12 @@ export const CODES = {
   HM4023: {
     title: "metric primitive not evaluated yet",
     explanation:
-      "check validates the metric-layer primitives of RFC 0001 (formula, per_entity, lookup sources, in_table filters on a lookup source, value, over_time, entity, active, trailing, scale, and the snapshot, freshness and timezone source options), but the planner does not evaluate them yet. A block that shows such a metric is left out of the build with this warning rather than computed as a plain sum, which would show a wrong number. The block appears once the planner evaluates the primitive. A target whose table is a lookup source is not evaluated yet either: the block keeps its numbers and shows no target, with this warning at its target.",
+      "check validates the metric-layer primitives of RFC 0001 (formula, per_entity, lookup sources, in_table filters on a lookup source, value, entity, active, trailing, scale, a sql metric on a snapshot table, and the freshness and timezone source options), but the planner does not evaluate them yet. A block that shows such a metric is left out of the build with this warning rather than computed as a plain sum, which would show a wrong number. The block appears once the planner evaluates the primitive. A target whose table is a lookup source is not evaluated yet either: the block keeps its numbers and shows no target, with this warning at its target.",
   },
   HM4040: {
     title: "default business definition",
     explanation:
-      "Informational. The file relies on a default for a choice that differs between companies: where weeks, quarters and years start, whether a time series starts at the start of its first bucket (edges), how buckets the data does not fully cover are shown (incomplete), which source horizon a dashboard ends at (period asOf), how complete a source is through its newest date (freshness), whether an interval ending exactly at a bucket end still counts in that bucket, which instant gives an entity its group, how a flow target splits at a finer grain (prorate), or how a point-in-time target moves between its values (path). The note names the default and the option that changes it. Setting the option explicitly, even to its default value, silences the note. Human output folds these notes into one line per file; hatchmark check --explain-defaults prints them all, and the JSON report always lists them.",
+      "Informational. The file relies on a default for a choice that differs between companies: where weeks, quarters and years start, whether a time series starts at the start of its first bucket (edges), how buckets the data does not fully cover are shown (incomplete), which source horizon a dashboard ends at (period asOf), how complete a source is through its newest date (freshness), whether an interval ending exactly at a bucket end still counts in that bucket, which instant gives an entity its group, how a flow target splits at a finer grain (prorate), how a point-in-time target moves between its values (path), or what over_time avg averages (the snapshots present in each period). The note names the default and the option that changes it. Setting the option explicitly, even to its default value, silences the note; over_time avg has no option yet, since calendar-day averaging is not available, so its note stays. Human output folds these notes into one line per file; hatchmark check --explain-defaults prints them all, and the JSON report always lists them.",
   },
   HM4060: {
     title: "stacked metrics do not add up",
